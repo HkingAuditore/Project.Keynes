@@ -2779,6 +2779,18 @@
       "status": "active"
     },
     {
+      "id": "INV-CLIMATE-0232",
+      "reason": "climate_section_published_hash_mismatch",
+      "kind": "unknown",
+      "stage": "native_self_test",
+      "invariant": "A restored climate view publishes the hash of the state that was installed.",
+      "witness": {},
+      "owner": "climate.persistence",
+      "first_seen": null,
+      "playbook": [],
+      "status": "active"
+    },
+    {
       "id": "INV-CORE-0001",
       "reason": "annual_commit_dedupe_failed",
       "kind": "unknown",
@@ -32116,6 +32128,18 @@
         "Check the remap table for a duplicate insert or for an entry written under the old id.",
         "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect snapshot test."
       ],
+      "status": "active"
+    },
+    {
+      "id": "INV-SAVE-0128",
+      "reason": "runtime_bundle_player_confirmation_invalid",
+      "kind": "rejection",
+      "stage": "save_restore",
+      "invariant": "The confirmation section must decode completely before the runtime bundle can be queued for restore.",
+      "witness": {},
+      "owner": "native.host.persistence",
+      "first_seen": null,
+      "playbook": [],
       "status": "active"
     },
     {

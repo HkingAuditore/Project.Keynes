@@ -69,11 +69,8 @@ extends Resource
 #     fragment 采样分支。
 #
 # ─── Step 9：接主流程 + debug menu 守门 ────────────────────────
-# 文件：scripts/main.gd
-# 改：在 `_on_day_changed`（或对应 SUS tick 钩子）末尾按开关调
-#     `ext.run_<name>_pass(...)` + snapshot 回 map（如果 GDScript 端有
-#     消费者，如 baker）；如果是 demo-only，把整段包在
-#     `if cp.<name>_enabled` 里。
+# 正式模拟：把每日计算接入后台日推进，发布结果供 MapData 或渲染读取。
+# 纯渲染演示：在渲染协作者里按配置开关读取已发布结果，参考 docs/architecture/module-map.md。
 # 文件：scripts/ui/debug_console.gd
 # 改：`ordered_modes()` 循环里按开关 skip 该 mode，避免开关关闭时
 #     用户能切到一个空通道。

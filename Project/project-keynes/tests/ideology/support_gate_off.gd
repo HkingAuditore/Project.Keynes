@@ -3,9 +3,6 @@ extends RefCounted
 ## Fixtures that are NOT about the support gate use this to make equip/unequip
 ## deterministic: zero the authored stance table so the material model takes its
 ## `stance_count == 0` bypass.
-##
-## This is the same technique `ideology_worker_authority_parity_test._zero_support_gates`
-## already used for its main-thread legs, extracted so the two paths cannot drift.
 
 static func apply(native: Dictionary) -> Dictionary:
 	var count := (native.get("ideology_ids", PackedStringArray()) as PackedStringArray).size()

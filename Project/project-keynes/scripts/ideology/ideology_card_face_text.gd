@@ -1,5 +1,7 @@
 extends RefCounted
 
+const IdeologyEffectCommandScript = preload("res://scripts/effect/effect_command.gd")
+
 const IdeologyCatalogTextScript = preload("res://scripts/ideology/ideology_catalog_text.gd")
 const GoodProfileRegistryScript = preload("res://scripts/data/good_profile_registry.gd")
 const ResourceProfileRegistryScript = preload(
@@ -398,3 +400,27 @@ static func _collapse_colons(text: String) -> String:
 	while out.contains("：："):
 		out = out.replace("：：", "：")
 	return out
+
+
+static func _present_on_enter_effect(effect: Resource, modifier_catalog = null) -> String:
+	if effect == null or not effect is IdeologyEffectCommandScript:
+		return ""
+	if effect.action == 1 and effect.opcode == 1 and modifier_catalog != null \
+			and modifier_catalog.has_method("present_definition_for_ideology"):
+		var lines: PackedStringArray = modifier_catalog.present_definition_for_ideology(
+			effect.definition_key, int(effect.value_q16))
+		if not lines.is_empty():
+			var joined := "；".join(lines)
+			if int(effect.duration_days) > 0:
+				return "首次推行冲击（持续 %d 天）：%s" % [int(effect.duration_days), joined]
+			return "首次推行时：%s" % joined
+	# The only authored one-shot today is the native free-draw adapter. Keep the
+	# mapping explicit so a future on-enter write cannot silently acquire a
+	# player-facing promise the runtime does not implement.
+	if effect.action == 6 and effect.domain == 6 and effect.opcode == 3:
+		var count := int(effect.value_q16)
+		if count == 1:
+			return "首次达到化育等级时：免费获得 1 次理念抽取。该奖励只能领取一次。"
+		if count > 1:
+			return "首次达到化育等级时：免费获得 %d 次理念抽取。该奖励只能领取一次。" % count
+	return ""

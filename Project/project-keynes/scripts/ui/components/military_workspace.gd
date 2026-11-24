@@ -1,5 +1,7 @@
 extends Control
 class_name MilitaryWorkspace
+
+const ForceTarget = preload("res://scripts/ui/components/military_force_target.gd")
 const MilitaryTableRows = preload("res://scripts/ui/components/military_table_rows.gd")
 
 
@@ -635,81 +637,30 @@ func _apply_training(rows: Array) -> void:
 
 
 func _update_target_readout() -> void:
-	var budget_mode := _mode_budget.button_pressed
-	var per := float(_forces.get("per_soldier_cost", 0)) / MilitaryViewModel.MONEY_SCALE
-	var value := _target_slider.value
-	_target_value_icon.visible = budget_mode
-	_cost_icon.visible = not budget_mode and per > 0.0
-	if budget_mode:
-		_target_value.text = "%s / 日" % UITokens.format_compact_number_cn(value, 1)
-		_cost_caption.text = "约可维持 %s 人" % (UITokens.format_compact_number_cn(
-			value / per, 0) if per > 0.0 else "—")
-		_cost_value.text = ""
-	else:
-		_target_value.text = "%s 人" % UITokens.format_compact_number_cn(value, 1)
-		_cost_caption.text = "预计日军费" if per > 0.0 else "人均军费待首次结算"
-		_cost_value.text = UITokens.format_compact_number_cn(value * per, 1) if per > 0.0 else ""
-	MoneyDisplay.apply_icon(_target_value_icon, 22)
-	MoneyDisplay.apply_icon(_cost_icon, 14)
+	ForceTarget._update_target_readout(self)
 
 
 ## 用户改了滑条值。拖动中只更新读数（松手时统一提交，免得每 100 人发一条命令）；
 ## 其余输入（键盘、点击轨道、无障碍调整）没有 `drag_ended`，靠防抖计时器落库。
 func _on_target_value_changed(_value: float) -> void:
-	_update_target_readout()
-	if _slider_dragging:
-		return
-	if _target_commit_timer != null:
-		_target_commit_timer.start()
+	ForceTarget._on_target_value_changed(self, _value)
 
 
 func _on_target_drag_ended(_changed_value: bool) -> void:
-	_slider_dragging = false
-	_commit_target()
+	ForceTarget._on_target_drag_ended(self, _changed_value)
 
 
 ## 提交当前滑条位置。松手与防抖到期都走这里；同一个值不重复发命令。
 func _commit_target() -> void:
-	if _target_commit_timer != null:
-		_target_commit_timer.stop()
-	_submit_target(1 if _mode_budget.button_pressed else 0)
+	ForceTarget._commit_target(self)
 
 
 func _on_target_mode(mode: int) -> void:
-	_mode_headcount.set_pressed_no_signal(mode == 0)
-	_mode_budget.set_pressed_no_signal(mode == 1)
-	var current_mode := _target_pending_mode if _target_pending_mode >= 0 \
-		else int(_forces.get("target_mode", 0))
-	if mode == current_mode:
-		# 重复点当前模式：只同步按钮状态，不发命令。以前这里会照发一条
-		# 「value = 滑条当前值」的命令，滑条停在 0 时等于把招募目标清零。
-		return
-	var per := float(_forces.get("per_soldier_cost", 0)) / MilitaryViewModel.MONEY_SCALE
-	if per > 0.0:
-		# Keep the same force size when switching units of the slider.
-		var converted := _target_slider.value * per if mode == 1 else _target_slider.value / per
-		_target_slider.max_value = BUDGET_MAX if mode == 1 else HEADCOUNT_MAX
-		_target_slider.step = 50.0 if mode == 1 else 100.0
-		_target_slider.set_value_no_signal(converted)
-	_update_target_readout()
-	_submit_target(mode)
+	ForceTarget._on_target_mode(self, mode)
 
 
 func _submit_target(mode: int) -> void:
-	var value := _target_slider.value
-	if mode == _target_pending_mode and is_equal_approx(value, _target_pending_value):
-		return
-	var raw := int(round(value * MilitaryViewModel.MONEY_SCALE)) if mode == 1 else int(round(value))
-	_target_pending_mode = mode
-	_target_pending_value = value
-	var result: Dictionary = _request(
-		PlayerControllerScript.COMMAND_MILITARY_FORCE_TARGET, {"mode": mode, "value": raw})
-	if bool(result.get("ok", false)):
-		return
-	# 没被受理（会话未就绪 / 参数被拒）：立刻放弃覆盖，下一次刷新把把手退回原生
-	# 真值。顶部那句拒绝理由由 `_request` 留下，不在这里用本地值假装已生效。
-	_target_pending_mode = -1
-	_target_pending_value = -1.0
+	ForceTarget._submit_target(self, mode)
 
 
 func _on_toggle(enabled: bool, command: StringName) -> void:
@@ -717,44 +668,14 @@ func _on_toggle(enabled: bool, command: StringName) -> void:
 
 
 func _on_roster_step(unit_id: String, delta_bp: int) -> void:
-	var current := 0
-	for unit in _forces.get("units", []):
-		if String(unit.id) == unit_id:
-			current = int(unit.bp)
-			break
-	# 份额合计上限 10000，未分配的部分保持民兵。
-	var ceiling := maxi(current, 10000 - (int(_forces.get("share_total", 0)) - current))
-	var target := clampi(current + delta_bp, 0, ceiling)
-	if target == current:
-		return
-	_request(PlayerControllerScript.COMMAND_MILITARY_CONFIG_SHARES,
-		{"unit": unit_id, "bp": target})
+	ForceTarget._on_roster_step(self, unit_id, delta_bp)
 
 
 ## 份额条点击：色段宽度只反映现有份额，所以点击是「把这个兵种调整到该处」，
 ## 不是重新划分整条。落在段内的位置换算成该段已占份额的绝对千分比，
 ## 再夹到「其他兵种份额之和」允许的余量里，未分配部分仍旧留给民兵。
 func _on_share_bar_clicked(unit_id: String, ratio: float) -> void:
-	if unit_id.is_empty():
-		return
-	var current := 0
-	var others := 0
-	for unit in _forces.get("units", []):
-		if bool(unit.get("is_militia_row", false)):
-			continue
-		var bp := int(unit.bp)
-		if String(unit.id) == unit_id:
-			current = bp
-		else:
-			others += bp
-	if current <= 0:
-		return
-	var target := clampi(int(round(float(current) * clampf(ratio, 0.0, 1.0))),
-		0, maxi(0, 10000 - others))
-	if target == current:
-		return
-	_request(PlayerControllerScript.COMMAND_MILITARY_CONFIG_SHARES,
-		{"unit": unit_id, "bp": target})
+	ForceTarget._on_share_bar_clicked(self, unit_id, ratio)
 
 
 func _on_barracks_action(cell, action_id: String) -> void:

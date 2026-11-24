@@ -1,6 +1,8 @@
 class_name ModifierCatalog
 extends Resource
 
+const DisplayNames = preload("res://scripts/modifier/modifier_display_names.gd")
+
 const DEFAULT_PATH := "res://data/modifiers/default_modifier_catalog.tres"
 const StatDefinitionScript = preload("res://scripts/modifier/modifier_stat_definition.gd")
 const DefinitionScript = preload("res://scripts/modifier/modifier_definition.gd")
@@ -847,7 +849,7 @@ static func _describe_stat_key(stat_key: String) -> Dictionary:
 		# economy.class.<class_id>.satisfaction_bp
 		if parts[0] == "economy" and parts[1] == "class" \
 				and parts[3] == "satisfaction_bp":
-			var class_label := String(POLITICAL_CLASS_DISPLAY_NAMES.get(
+			var class_label := String(DisplayNames.POLITICAL_CLASS_DISPLAY_NAMES.get(
 				parts[2], parts[2]))
 			return {"label": "%s满意度" % class_label, "unit": UNIT_POINTS}
 		# country.resource.<stable_id>.<use_factor|managed_generation_factor>
@@ -1022,68 +1024,11 @@ static func present_stat_delta(stat_key: String, operation: int, value: float,
 	return "%s %+d%%" % [label, percent]
 
 
-const POLITICAL_CLASS_DISPLAY_NAMES := {
-	"farmer": "农民阶层",
-	"worker": "工人阶层",
-	"technology": "科技阶层",
-	"military": "军事阶层",
-	"general": "普通阶层",
-}
-
-const PROFESSION_DISPLAY_NAMES := {
-	"agricultural_worker": "农业工人",
-	"ai_researcher": "AI 研究员",
-	"apprentice": "学徒",
-	"artisan": "工匠",
-	"chemist": "化学家",
-	"construction_worker": "建筑工人",
-	"cooperative_member": "合作社成员",
-	"corvee_worker": "徭役劳动者",
-	"data_scientist": "数据科学家",
-	"electrician": "电工",
-	"engineer": "工程师",
-	"enslaved_laborer": "奴隶劳工",
-	"fisher": "渔民",
-	"forager": "采集者",
-	"forestry_worker": "林业工人",
-	"guild_master": "行会师傅",
-	"household_farmer": "家庭小农",
-	"hunter": "猎人",
-	"indentured_laborer": "契约劳工",
-	"industrial_worker": "产业工人",
-	"industrialist": "工业资本家",
-	"journeyman": "熟练工",
-	"landlord": "地主",
-	"lorekeeper": "传知者",
-	"machinist": "机械师",
-	"manager": "经理",
-	"merchant": "商人",
-	"metallurgist": "冶金师",
-	"miner": "矿工",
-	"natural_philosopher": "自然哲学家",
-	"pastoralist": "牧民",
-	"petroleum_worker": "石油工人",
-	"research_scientist": "研究科学家",
-	"researcher": "研究员",
-	"scholar": "学者",
-	"scientist": "科学家",
-	"scribe": "书记员",
-	"serf": "农奴",
-	"sharecropper": "分成佃农",
-	"subsistence_farmer": "自给农民",
-	"technician": "技术员",
-	"tenant_farmer": "佃农",
-	"transport_worker": "运输工人",
-	"unemployed": "失业者",
-	"worker": "工人",
-}
-
-
 static func _profession_display_name(stable_id: String) -> String:
 	var registered := display_name_of(&"profession", stable_id)
 	if registered != stable_id:
 		return registered
-	return String(PROFESSION_DISPLAY_NAMES.get(stable_id, stable_id))
+	return String(DisplayNames.PROFESSION_DISPLAY_NAMES.get(stable_id, stable_id))
 
 
 static func _format_decimal(value: float) -> String:
@@ -1174,14 +1119,14 @@ func present_definition_for_ideology(definition_key: StringName,
 
 
 static func _profession_id_for_display_name(display_name: String) -> String:
-	for stable_id in PROFESSION_DISPLAY_NAMES:
-		if String(PROFESSION_DISPLAY_NAMES[stable_id]) == display_name:
+	for stable_id in DisplayNames.PROFESSION_DISPLAY_NAMES:
+		if String(DisplayNames.PROFESSION_DISPLAY_NAMES[stable_id]) == display_name:
 			return String(stable_id)
 	return display_name
 
 
 static func _known_profession_count() -> int:
-	return PROFESSION_DISPLAY_NAMES.size()
+	return DisplayNames.PROFESSION_DISPLAY_NAMES.size()
 
 
 func present_definition(definition_key: StringName,

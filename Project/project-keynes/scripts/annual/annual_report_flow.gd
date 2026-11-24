@@ -56,51 +56,17 @@ func _ensure_scribe() -> void:
 func is_open() -> bool:
 	return _open
 
-## GM「屏蔽弹窗」：清掉已排队/恢复中的年报，并立即确认待确认年报以解除后台停表栅栏。
 func set_popups_suppressed(value: bool) -> void:
+	if value == _popups_suppressed:
+		return
 	_popups_suppressed = value
-	if not value:
-		return
-	var pending_ids: Array[int] = _collect_pending_report_ids()
-	_queued = 0
-	_reopen_pending = false
-	_viewed.clear()
-	if _open:
+	if value and _open:
 		_open = false
-		if _ui != null and _ui.has_method("is_annual_report_open") \
-				and _ui.is_annual_report_open() and _ui.has_method("close_annual_report"):
-			_ui.close_annual_report()
-	_acknowledge_report_ids(pending_ids)
+		_viewed.clear()
+		_ui.close_annual_report()
 
-
-func _collect_pending_report_ids() -> Array[int]:
-	var ids: Array[int] = []
-	if _queued > 0:
-		ids.append(_queued)
-	for viewed_id in _viewed:
-		if viewed_id > 0 and not ids.has(viewed_id):
-			ids.append(viewed_id)
-	if _host != null and _host.has_method("annual_report_status"):
-		var ready_id: int = int(_host.annual_report_status().get("ready_report_id", 0))
-		if ready_id > 0 and not ids.has(ready_id):
-			ids.append(ready_id)
-	return ids
-
-
-func _acknowledge_report_ids(ids: Array[int]) -> void:
-	if _host == null or not _host.has_method("mark_annual_report_presented"):
-		return
-	for id in ids:
-		if id > 0:
-			_host.mark_annual_report_presented(id)
 
 func queue_report(id: int) -> void:
-	if _popups_suppressed:
-		if _host != null and _host.has_method("mark_annual_report_presented"):
-			_host.mark_annual_report_presented(id)
-		return
-	# 纪事在「报告就绪」时预生成：从就绪到玩家开卷通常隔几秒以上，异步请求基本赶得上。
-	# 赶不上的话本次不显示，下次开卷自然就有——历史报告也一样命中缓存。
 	_prewarm_chronicle(id)
 	_queued = id
 	try_present()
@@ -127,8 +93,6 @@ func _confirmation_reason() -> String:
 
 func try_present() -> void:
 	if _popups_suppressed:
-		if _confirmation_reason() == "annual_report_confirmation_required":
-			_acknowledge_report_ids(_collect_pending_report_ids())
 		return
 	if _host == null or _ui == null or _open:
 		return

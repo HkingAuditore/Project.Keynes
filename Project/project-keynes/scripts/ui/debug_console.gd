@@ -21,6 +21,10 @@
 class_name DebugConsole
 extends PanelContainer
 
+const RecordingPage = preload("res://scripts/ui/debug_console_recording_page.gd")
+
+const DebugPerformanceSnapshot = preload("res://scripts/ui/debug_performance_snapshot.gd")
+
 # 信号：其它子系统不直接引用 DebugConsole 的按钮/下拉，通过信号解耦。
 signal overlay_mode_changed(mode: int)
 signal overlay_alpha_changed(alpha: float)
@@ -403,80 +407,7 @@ func _build_gm_toggle_page(parent: Control) -> void:
 
 
 func _build_gm_recording_page(parent: Control) -> void:
-	var page := _new_gm_page(parent, "recording")
-	var hint := Label.new()
-	hint.text = "记录器沿用现有 CSV 导出路径；再次点击对应按钮停止并导出。"
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-	page.add_child(hint)
-	_add_gm_recorder_row(page, "performance", "性能采样", _on_btn_toggle_record)
-	_add_gm_recorder_row(page, "tiles", "地块全量", _on_btn_toggle_tile_record)
-
-	var dims := HBoxContainer.new()
-	dims.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	_economy_record_checkboxes.clear()
-	for pair in [["summary", "汇总"], ["cohorts", "阶层"], ["buildings", "建筑"],
-			["resources", "资源"], ["market", "市场"]]:
-		var checkbox := CheckBox.new()
-		checkbox.text = String(pair[1])
-		checkbox.button_pressed = true
-		checkbox.pressed.connect(_on_economy_dim_toggled.bind(String(pair[0]), checkbox))
-		_economy_record_checkboxes[String(pair[0])] = checkbox
-		dims.add_child(checkbox)
-	page.add_child(dims)
-	_economy_current_cell_checkbox = CheckBox.new()
-	_economy_current_cell_checkbox.text = "仅当前地块"
-	_economy_current_cell_checkbox.toggled.connect(func(_pressed: bool) -> void: _on_economy_scope_toggled())
-	page.add_child(_economy_current_cell_checkbox)
-	_add_gm_recorder_row(page, "economy", "经济周期", _on_btn_toggle_economy_record)
-
-	var snapshot_row := HBoxContainer.new()
-	var snapshot_button := Button.new()
-	snapshot_button.tooltip_text = "导出当前性能快照"
-	snapshot_button.custom_minimum_size = Vector2(38.0, 34.0)
-	IconButton.apply(snapshot_button, &"action.save", 15)
-	snapshot_button.pressed.connect(_on_gm_snapshot_pressed)
-	snapshot_row.add_child(snapshot_button)
-	var snapshot_label := Label.new()
-	snapshot_label.text = "导出当前调度与性能快照"
-	snapshot_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	snapshot_row.add_child(snapshot_label)
-	page.add_child(snapshot_row)
-	_snapshot_btn = snapshot_button
-
-	var profile_row := HBoxContainer.new()
-	var profile_button := Button.new()
-	profile_button.tooltip_text = "采样 120 帧的帧墙钟/渲染指标，打印到控制台（编辑器输出面板 / stdout）"
-	profile_button.custom_minimum_size = Vector2(38.0, 34.0)
-	IconButton.apply(profile_button, &"summary.overview", 15)
-	profile_button.pressed.connect(_on_gm_render_profile_pressed)
-	profile_row.add_child(profile_button)
-	var profile_label := Label.new()
-	profile_label.text = "Dump 渲染性能监视器（120 帧采样 → 控制台）"
-	profile_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	profile_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	profile_row.add_child(profile_label)
-	page.add_child(profile_row)
-
-	_add_gm_atlas_probe_recorder_row(page)
-
-	var log_dir_row := HBoxContainer.new()
-	log_dir_row.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	var log_dir_button := Button.new()
-	log_dir_button.name = "GMOpenLogDirButton"
-	log_dir_button.tooltip_text = "打开日志输出文件夹（%s）" % _resolve_log_output_dir()
-	log_dir_button.custom_minimum_size = Vector2(38.0, 34.0)
-	IconButton.apply(log_dir_button, &"action.chevron_right", 15)
-	log_dir_button.pressed.connect(_on_gm_open_log_dir_pressed)
-	log_dir_row.add_child(log_dir_button)
-	var log_dir_label := Label.new()
-	log_dir_label.text = "打开日志文件夹"
-	log_dir_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	log_dir_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	log_dir_row.add_child(log_dir_label)
-	page.add_child(log_dir_row)
-	_open_log_dir_btn = log_dir_button
-	_open_log_dir_label = log_dir_label
+	RecordingPage._build_gm_recording_page(self, parent)
 
 
 func _add_gm_recorder_row(parent: VBoxContainer, recorder_id: String,
@@ -1270,7 +1201,7 @@ func _on_btn_snapshot() -> void:
 	# 采样窗口为空时 avg/min/max 可能是 NaN/INF；JSON.stringify 会把它们写成
 	# null 并只报一次警告，事后无法知道是哪个指标。这里替换成 null 并指出键路径。
 	var non_finite_paths: Array = []
-	var safe_payload = _sanitize_non_finite(payload, "$", non_finite_paths)
+	var safe_payload = DebugPerformanceSnapshot.sanitize_non_finite(payload, "$", non_finite_paths)
 	if not non_finite_paths.is_empty():
 		push_warning("[PerfSnapshot] non-finite float replaced with null at %s"
 			% ", ".join(PackedStringArray(non_finite_paths.slice(0, 4))))
@@ -1281,37 +1212,6 @@ func _on_btn_snapshot() -> void:
 	var abs_path: String = ProjectSettings.globalize_path(fname)
 	print_rich("[color=cyan][PerfSnapshot][/color] saved to %s" % abs_path)
 	_show_snapshot_toast("已保存：%s" % fname.get_file(), false)
-
-
-## Replaces NaN/INF floats with null so JSON.stringify cannot silently write null
-## for an unknown metric, and records the offending paths for the log line.
-static func _sanitize_non_finite(value, path: String, reported: Array):
-	if value is float:
-		var number := float(value)
-		if is_nan(number) or is_inf(number):
-			if reported.size() < 32:
-				reported.append(path)
-			return null
-		return number
-	if value is PackedFloat32Array or value is PackedFloat64Array:
-		var floats := []
-		for index in range(value.size()):
-			floats.append(_sanitize_non_finite(float(value[index]),
-				"%s[%d]" % [path, index], reported))
-		return floats
-	if value is Dictionary:
-		var sanitized := {}
-		for key in value:
-			sanitized[key] = _sanitize_non_finite(value[key],
-				"%s.%s" % [path, key], reported)
-		return sanitized
-	if value is Array:
-		var sanitized_array := []
-		for index in range(value.size()):
-			sanitized_array.append(_sanitize_non_finite(value[index],
-				"%s[%d]" % [path, index], reported))
-		return sanitized_array
-	return value
 
 
 func _build_snapshot_payload() -> Dictionary:

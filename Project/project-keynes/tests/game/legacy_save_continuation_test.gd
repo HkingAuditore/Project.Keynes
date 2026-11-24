@@ -31,7 +31,7 @@ func _run() -> void:
 	_expect("game flow autoload is available", _game_flow != null)
 	_expect("game save autoload is available", _game_save != null)
 	if _game_flow == null or _game_save == null:
-		_finish()
+		await _finish()
 		return
 	var slot := OS.get_environment("PK_LEGACY_SAVE_SLOT").strip_edges()
 	if slot.is_empty():
@@ -41,7 +41,7 @@ func _run() -> void:
 	_expect("PK_SAVE_DIR points away from the player's saves",
 		save_dir != SaveRepository.SAVE_DIR)
 	if save_dir == SaveRepository.SAVE_DIR:
-		_finish()
+		await _finish()
 		return
 
 	var expected_day := -1
@@ -55,7 +55,7 @@ func _run() -> void:
 			staged_found and bool(entry.get("loadable", false)))
 	_expect("staged slot exists", staged_found)
 	if not staged_found:
-		_finish()
+		await _finish()
 		return
 
 	# Bootstrap a world first; the staged save then replaces it in-session.
@@ -75,7 +75,7 @@ func _run() -> void:
 	var host: WorldRuntimeHost = await _wait_for_runtime(previous_scene)
 	_expect("bootstrap world reached a ready runtime", host != null)
 	if host == null:
-		_finish()
+		await _finish()
 		return
 	var bootstrap_scene := host.get_parent() as PlayerGame
 	var clock: WorldClock = bootstrap_scene.get_node("WorldClock")
@@ -98,23 +98,32 @@ func _run() -> void:
 	# Save once before loading, exactly like the round-trip fixture: the save
 	# waits for the safe boundary (country idle + economy committed) and that is
 	# the state the world-close path can actually drain.
-	var primed: Dictionary = await _game_save.call("request_manual_save", "manual_1")
+	var prime_slot := "manual_2" if slot == "manual_1" else "manual_1"
+	var primed: Dictionary = await _game_save.call("request_manual_save", prime_slot)
 	_expect("bootstrap world reaches a save boundary", bool(primed.get("ok", false)))
 
-	var load_result := []
+	var load_result: Array[Dictionary] = []
 	_game_save.load_completed.connect(
-		func(_slot_id: String, result: Dictionary) -> void:
-			load_result.append(result),
+		func(loaded_slot: String, result: Dictionary) -> void:
+			if loaded_slot == slot:
+				load_result.append(result),
+		CONNECT_ONE_SHOT)
+	_game_flow.player_start_failed.connect(
+		func(result: Dictionary) -> void: load_result.append(result),
 		CONNECT_ONE_SHOT)
 	var load_begin: Dictionary = _game_flow.call("begin_load_game", slot)
 	_expect("staged save load request accepted", bool(load_begin.get("ok", false)))
-	# Detect the restore by the clock reaching the staged day instead of by scene
-	# identity: an in-session load may reuse the player scene.
-	var restored := await _wait_for_day(expected_day)
-	_expect("staged save restored to day %d (result %s)"
-		% [expected_day, JSON.stringify(load_result)], restored.get("ok", false))
+	if not bool(load_begin.get("ok", false)):
+		await _finish()
+		return
+	# The bootstrap can already have advanced beyond the saved day. Require
+	# the provider's completion for this slot before looking at the calendar.
+	var restored := await _wait_for_day(bootstrap_scene, expected_day, load_result)
+	_expect("staged save actually restored (day %d, result %s, error %s)"
+		% [expected_day, JSON.stringify(load_result), restored.get("error", "")],
+		restored.get("ok", false))
 	if not bool(restored.get("ok", false)):
-		_finish()
+		await _finish()
 		return
 	var loaded_host: WorldRuntimeHost = restored.host
 	var loaded_scene := loaded_host.get_parent() as PlayerGame
@@ -140,23 +149,30 @@ func _run() -> void:
 	_expect("restored legacy world advances (day %d -> %d)"
 		% [start_day, loaded_clock.day_index()],
 		loaded_clock.day_index() > start_day)
-	_finish()
+	await _finish()
 
 
 ## Waits until a PlayerGame scene reports the staged day with a tickable runtime.
 ## Reports what it saw on timeout so a stall is diagnosable from the log alone.
-func _wait_for_day(expected_day: int) -> Dictionary:
+func _wait_for_day(previous_scene: PlayerGame, expected_day: int,
+		load_result: Array[Dictionary]) -> Dictionary:
 	var last := {}
 	# The transition runs the catalog cache and drains the previous world, which
 	# can take seconds; and a restored world keeps ticking the moment it is live,
 	# so the day may already be past the saved one when the loop looks.
 	for _frame in range(12000):
 		await get_tree().process_frame
+		if not load_result.is_empty() and not bool(load_result[0].get("ok", false)):
+			return {"ok": false, "error": JSON.stringify(load_result[0])}
 		var scene_ref := get_tree().current_scene
-		if scene_ref == null or not scene_ref is PlayerGame:
+		if scene_ref == null or scene_ref == previous_scene or not scene_ref is PlayerGame:
 			continue
 		var host := scene_ref.get_node_or_null("RuntimeHost") as WorldRuntimeHost
-		if host == null or host.generator() == null:
+		if host == null:
+			continue
+		if not host.last_world_generation_error.is_empty():
+			return {"ok": false, "error": JSON.stringify(host.last_world_generation_error)}
+		if host.generator() == null:
 			continue
 		var clock := (scene_ref as PlayerGame).get_node_or_null("WorldClock") as WorldClock
 		if clock == null:
@@ -168,7 +184,6 @@ func _wait_for_day(expected_day: int) -> Dictionary:
 				"simulation_host_state", "")),
 			"eco_day": int(host.generator().get_economy_report().get(
 				"last_committed_day", -1)),
-			"generation_error": host.last_world_generation_error,
 		}
 		if _frame % 600 == 0:
 			print("[legacy-continuation] waiting: %s flow=%s" % [
@@ -179,7 +194,8 @@ func _wait_for_day(expected_day: int) -> Dictionary:
 					"busy": _game_save.get("_busy"),
 					"pending_load": _game_save.get("_pending_load"),
 				})])
-		if int(last.day) >= expected_day and bool(last.ready):
+		if not load_result.is_empty() and bool(load_result[0].get("ok", false)) \
+				and int(last.day) >= expected_day and bool(last.ready):
 			return {"ok": true, "host": host}
 	print("[legacy-continuation] timeout: %s" % JSON.stringify(last))
 	return {"ok": false}
@@ -213,5 +229,9 @@ func _expect(label: String, condition: bool) -> void:
 
 
 func _finish() -> void:
+	for host in get_tree().get_nodes_in_group(&"world_sessions"):
+		var closed: Dictionary = await host.close_world()
+		_expect("world closes cleanly", bool(closed.get("ok", false)))
+	await get_tree().process_frame
 	print("legacy save continuation: %d failures" % _failures.size())
 	get_tree().quit(1 if _failures.size() > 0 else 0)

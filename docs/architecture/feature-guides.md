@@ -476,12 +476,9 @@ Replay 使用、不跨调用存活，诊断计数在 Plan 后一次汇入报告�
 
 ## GM 屏蔽与叙事弹窗
 
-阶层动员事件由玩家控制器在每日提交后投递，使用动员事实的独立游标，并复用叙事弹窗和暂停流程。
-叛乱服务状态随 `pknr` 保存。旧档缺少这份状态时，首次提交后以当前玩家领地的动员快照补发仍需处理的阶段。
-叙事弹窗展示前生成各选项的真实后果，显示与选择共用同一组原生概率。让步和收买按实际报价计算
-资金加成，两种结果均安排国库向当地居民拨款。置之不理与弃城各只有一个确定结果，首都和仅余城市
-不可弃城。读档恢复的旧弹窗在呈现前补齐这些字段。经济接受选择后才写入叙事史册，拨款进入既有
-可存档的待结算命令队列，经济忙碌时保留选择。验证入口为 `tests/politics/stratum_unrest_service_test.gd`
+阶层动员由后台评价，选择与结果由后台按生效日结算。地图告警与弹窗读取同一份已发布事实。
+让步和收买按原生报价计算，首都和仅余城市不能弃城。经济接受选择后写入叙事史册。相关回归入口为
+`tests/game/narrative_event_runtime_test.gd`、`tests/game/narrative_popup_suppression_test.gd`
 和 `tests/economy/economy_stratum_save_restore_test.gd`。
 
 城市独立经 `CREATE_COUNTRY` 生效。国家提交时为新国家追加全零的研究信号位图行和两个空证据区间。
@@ -489,8 +486,11 @@ Replay 使用、不跨调用存活，诊断计数在 Plan 后一次汇入报告�
 当前国家槽位表的前缀，须逐槽校验国家身份。新国家按理念初始规则建行，收到首份实际民意时建立积分基线。
 验证入口为 `tests/runtime/runtime_inline_coordinator_save_test.gd`。
 
-- GM 的 `ui.suppress_popups` 必须同时阻止事件/年报/时代奖励/家族创立/理念抽取流程进入暂停展示路径，并在运行时切换时清理已锁定弹窗；新增 UI 屏蔽开关应经 `gm_toggle_changed` 接入 PlayerGame，由 `GameUIManager` 保存并恢复层可见性，GM 面板保持可用。
-- 叙事自动选择/确认未取得弹窗暂停锁时不得恢复 `_was_paused` / `_previous_speed`：它们可能是默认值或上一事件的快照。`NarrativeEventFlow` 仅在持有 `locked` / `reopen_pending` 时登记恢复，`restore_pending` 消费一次；其他弹窗忙碌时延后释放。回归入口：`tests/game/narrative_popup_suppression_test.gd`，覆盖连续事件、手动暂停、倍速、运行中切换屏蔽、读档弹窗和故障锁。
+- GM 的 `ui.suppress_popups` 由后台按生效日处理。后台为待答剧情选择可用的默认选项，年报奖励结算后
+  跳过强制开卷，历史年报仍可查阅。时代大典只影响演出。时代奖励、家族创立和理念抽取沿用各自的确认规则。
+  该设置与 `ui.hide_all_except_gm` 和正常剧情暂停选项独立，生效设置与待生效请求一起保存。
+  确认段出现这份设置时写入版本 2，旧确认段仍可读。读档在接受整份运行存档前校验确认段。
+  前台读取后台发布的状态，负责呈现和转交玩家选择。回归入口为 `tests/game/narrative_popup_suppression_test.gd`。
 
 叙事事件额度统一为每格每游戏年**一次**：周期抽样、事实触发、普通 AI 事件共用
 `NarrativeEventService` 的入队检查和展示检查。队列出队时丢弃当年已超额的普通事件，
@@ -498,18 +498,11 @@ Replay 使用、不跨调用存活，诊断计数在 Plan 后一次汇入报告�
 AI 定时后续请求携带 `scheduled_followup`，生成结果重新进入定时队列，
 不得提前展示，也不得将普通 AI 预热结果当作定时后续豁免。
 
-- **弹窗静置**：玩家开着国家卷宗（科技 / 政治 / 经济(税收) / 军事 / 外交）、营造、家族档案、
-  军务档案、派遣、议和、史册、GM 面板或时代纸笺时，叙事弹窗不得展示，也不得替玩家关掉这些窗口。
-  `NarrativeEventFlow` 在静置那一刻自己 `pause(true)`（暂停快照也只在那时登记一次）并播一次
-  提示音，offer 留在服务的 `active_offer` 里不下线；窗口关闭后再展示，关闭弹窗时用同一份快照
-  恢复，不能把「静置暂停」当成玩家本来的状态记下来，否则关掉弹窗后时间再也不会走。玩家在静置
-  期间自己按继续，兜底重试不得再把他按回暂停。
-  窗口清单只在 `GameUIManager.is_player_workspace_open()` 里维护；新增窗口要同时在该清单和它的
-  关闭路径上接 `notify_workspace_closed()`（内部延后一帧重查——同一个输入回合里关旧窗、开新窗
-  不能把弹窗抢进来），流程另有 0.2 秒兜底重试，漏接只会晚一帧，不会卡死。
-  右侧地块档案与暂停菜单不算窗口：前者是选格后的常驻看板，后者本来就停了表。
-  回归入口：`tests/game/narrative_window_deferral_test.gd`、
-  `tests/game/player_country_ui_smoke_test.gd`（卷宗开着跑日的静态检查）。
+- **弹窗静置**：玩家开着国家卷宗、营造、家族或军务档案、派遣、议和、史册、年报、GM 面板或时代纸笺时，
+  叙事提示响一次，等当前窗口关闭后再显示后台发布的同一个选项。要求回应的事件由后台停在日末。
+  窗口清单在 `GameUIManager.is_player_workspace_open()` 中维护。关窗通过 `notify_workspace_closed()`
+  延后一拍重查，支持同一次操作关旧窗并开新窗。地块看板和暂停菜单沿用各自的显示规则。
+  回归入口为 `tests/game/narrative_window_deferral_test.gd`。
 
 AI 事件有三个入口：脉冲预热、事实驱动（`GameplayEventBus` 白名单 `AI_FACT_HINTS`）
 和定时后续预取，共用 `ai_min_request_gap_days`（默认 60 日）节流与单条在途；概率按
@@ -581,16 +574,10 @@ epoch 的 mint/burn；先判断 opening snapshot 是否已包含该变化。回�
 
 ## 军事预算份额与季节地形重推
 
-国库页的三条预算份额（`budget_share_bp` / `budget_wage_bp` / `budget_upkeep_bp`）按需求 9.3 是
-transient，不进 PKMI（`military_core_save.cpp` 的 `write_policies` 只写 `procurement_share_bp`，
-restore 按默认值重建 policy 行）。所以 `MilitaryFacade.set_terrain()` 不得对整份军事状态无条件做
-`encode_military_state()` → `restore_military_state()` 往返：那一圈会把玩家调好的档位打回默认
-（总份额 0、通道 60%/20%），而季节 cover 重推每季都走一次，玩家看到的就是「过几个 tick 自己归零」。
-原生只在 shape 或邻居表变化时才 `reset_state()`（`military_core.cpp` 的 same_topology 分支），
-同拓扑推送原地换数组、policy 原位保留；facade 必须按同一条规则判断，只对真换拓扑的推送做快照
-恢复，同拓扑路径如实把 `state_preserved` 报成 true，读档类重推仍由
-`PlayerController._repush_military_budget()` 兜底。回归运行
-`tests/military/military_budget_terrain_refresh_test.gd`（带原生 same-topology 控制组）。
+后台保存总预算、军饷、维持和采购四项份额。季节仅改变地表覆盖时，`MilitaryFacade.set_terrain()`
+向原生提交新地表数据，原生保留已生效的军事政策。地图形状或邻居表变化时才重置地图相关状态。
+`tests/runtime/military_index_continuation_test.gd` 执行原生军务自检，覆盖同拓扑地表重推和 PKMI
+读档后的预算一致性。
 
 ## 科技详情栏效果优先级
 

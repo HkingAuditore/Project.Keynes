@@ -106,7 +106,9 @@ serve_web.bat          :: = python tools/serve_web.py --port 8060 --root WebBuil
 
 threads 变体需要页面处于 **cross-origin isolated** 状态（SharedArrayBuffer）：
 `tools/serve_web.py` 已经发 `Cross-Origin-Opener-Policy` + `Cross-Origin-Embedder-Policy`。
-部署到静态托管时若不能设置这两个响应头，浏览器会拒绝启动。
+项目的 OA Pages 发布预设开启 PWA，用浏览器的 Service Worker 补齐这两个响应头。
+`Build-Web.cmd` 在导出后调用 `tools/patch_web_shell.py --wait-for-pwa`，等 Service Worker
+生效后再刷新一次。上面的本地服务直接提供响应头，可以直接启动。
 
 ### 3.2 必须 `disable_exceptions=no`
 

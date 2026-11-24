@@ -7,7 +7,7 @@ extends RefCounted
 ##   waterworks 写「一件事如何改变一个地方」（工程、工期、长尾）；
 ##   people     写「一群人在这一刻怎么活」（饥荒、安置、怨气）。
 ##
-## 这一包用到的人群杠杆（见 narrative_context_sampler / narrative_condition）：
+## 这一包用到的人群杠杆（后台见 native_simulation_host_narrative.cpp 与 runtime_narrative.cpp）：
 ##   SUBSISTENCE_SHORTFALL_GTE  严重入不敷出人口占比（生计覆盖率 < 0.5，且非全员失业）
 ##   UNEMPLOYMENT_GTE           失业人口占比
 ##   PROFESSION_SHARE_GTE       某职业人口占比（target_key = 职业 stable id）

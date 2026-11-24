@@ -609,14 +609,14 @@ rem Godot's shell reloads as soon as the service worker *registration* exists, n
 rem when the worker is active. The reloaded page is still uncontrolled, sees the
 rem registration and never reloads again, so a first-time visitor stays on the
 rem "missing Cross-Origin Isolation" notice until a manual refresh (observed on
-rem keynes.pages.example.invalid). tools\patch_web_html.py makes the reload wait for
+rem keynes.pages.example.invalid). tools\patch_web_shell.py makes the reload wait for
 rem navigator.serviceWorker.ready, reuses an existing registration, and keeps a
 rem one-shot reload guard. Idempotent; fails loudly if the stock markers change.
 rem Runs before :precompress so the .br/.gz sidecars cover the patched file.
 call :find_python
 if errorlevel 1 exit /b 1
 echo [html-patch] patching the exported web shell (service worker ready timing) ...
-!PY! "%ROOT%tools\patch_web_html.py" --root "!EXPORT_DIR!"
+!PY! "%ROOT%tools\patch_web_shell.py" --web-root "!EXPORT_DIR!" --wait-for-pwa
 if errorlevel 1 (
     echo === ERROR: patching the exported html FAILED ===
     exit /b 1

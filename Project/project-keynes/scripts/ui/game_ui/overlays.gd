@@ -45,14 +45,12 @@ func _ensure_cell_board(host) -> void:
 		board.name = "CellBoard"
 		panel_layer.add_child(board)
 		layout._cell_board = board
+		layout._cell_hover_card = host._cell_hover_card
 		# 两块浮层不互相遮挡：展板一出现就把自己的矩形推给卡片避让。
 		board.visibility_changed.connect(func() -> void:
 			if host._map_overlay_toolbar != null:
 				host._map_overlay_toolbar.set_board_obscured(board.visible)
-			if host._cell_hover_card == null:
-				return
-			host._cell_hover_card.set_avoid_rect(board.get_global_rect() \
-				if board.visible else Rect2()))
+			layout.sync_board_avoidance())
 		host.get_viewport().size_changed.connect(func() -> void:
 			layout._layout_cell_board())
 		if host._cell_hover_card != null:
@@ -241,7 +239,7 @@ func _on_runtime_gm_toggle_changed(host, toggle_id: String, enabled: bool) -> vo
 
 
 func show_annual_report(host, model: Dictionary, ceremonial: bool) -> void:
-	if host._annual_report_workspace != null:
+	if host.can_open_annual_report():
 		host._annual_report_workspace.present(model, ceremonial)
 
 
@@ -253,7 +251,7 @@ func set_annual_history(host, rows: Array, offset: int, has_more: bool) -> void:
 
 
 func is_annual_report_open(host) -> bool:
-	return host._annual_report_workspace != null and host._annual_report_workspace.visible
+	return is_instance_valid(host._annual_report_workspace) and host._annual_report_workspace.is_visible_in_tree()
 
 
 
@@ -262,21 +260,8 @@ func close_annual_report(host) -> void:
 		host._annual_report_workspace.call("_close")
 
 
-func annual_other_modal_open(host) -> bool:
-	return host.is_era_reward_modal_open() or host.is_family_founding_modal_open() \
-		or host.is_narrative_event_modal_open() \
-		or (host._pause_menu != null and host._pause_menu.visible)
-
-
 func show_narrative_event_offer(host, offer: Dictionary) -> void:
 	host._ensure_narrative_ui()
-	# [popup-deferral 2026-11-20] 正常路径下 NarrativeEventFlow 已经保证这些窗口是关着的
-	# （开着就静置），这里只剩兜底：万一某个入口漏了 gate，宁可收起卷宗也不让弹窗压在
-	# 全屏卷宗后面变成看不见的模态。
-	if host._country_panel != null and host._country_panel.is_panel_open():
-		host.close_country_panel()
-	if host._colonization_panel != null and host._colonization_panel.visible:
-		host._colonization_panel.close_panel()
 	if host._narrative_event_dialog != null and host._narrative_event_dialog.has_method("present_offer"):
 		host._narrative_event_dialog.present_offer(offer)
 
@@ -323,7 +308,6 @@ func show_narrative_chronicle(host, records: Array) -> void:
 func close_narrative_chronicle(host) -> void:
 	if host._narrative_chronicle_panel != null and host._narrative_chronicle_panel.has_method("close_panel"):
 		host._narrative_chronicle_panel.close_panel()
-		notify_workspace_closed(host)
 
 
 
@@ -345,7 +329,7 @@ func is_player_workspace_open(host) -> bool:
 		return true
 	if host._gm_console != null and host._gm_console.is_panel_open():
 		return true
-	if host.is_narrative_chronicle_open():
+	if host.is_narrative_chronicle_open() or host.is_annual_report_open():
 		return true
 	if host._right_panel != null and (host._right_panel.building_workspace_open()
 			or host._right_panel.family_workspace_open()
@@ -400,6 +384,8 @@ func dismiss_overlay_menu(host) -> bool:
 		host._colonization_panel.close_panel()
 		return true
 	if host._country_panel != null and host._country_panel.is_panel_open():
+		if host._country_panel.current_section() == "politics" and host._player_controller != null:
+			host._player_controller.dismiss_displayed_ideology_offer()
 		host.close_country_panel()
 		return true
 	if host._gm_console != null and host._gm_console.is_panel_open():
@@ -421,16 +407,6 @@ func toggle_pause_menu(host) -> void:
 	if host._pause_menu != null and not host.is_era_reward_modal_open() \
 			and not host.is_family_founding_modal_open():
 		host._pause_menu.toggle()
-
-
-func set_popups_suppressed(host, enabled: bool) -> void:
-	host._gm_popups_suppressed = enabled
-	if not enabled:
-		return
-	if host.is_era_ceremony_playing():
-		host._era_ceremony.skip()
-	if host._narrative_event_dialog != null and host._narrative_event_dialog.has_method("close_offer"):
-		host._narrative_event_dialog.close_offer()
 
 
 func set_all_ui_suppressed(host, enabled: bool) -> void:
@@ -497,7 +473,6 @@ func toggle_gm_panel(host) -> void:
 		return
 	if host._gm_console.is_panel_open():
 		host._gm_console.close_panel()
-		notify_workspace_closed(host)
 	else:
 		host._gm_console.open_panel()
 

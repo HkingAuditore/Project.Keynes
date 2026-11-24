@@ -19,7 +19,7 @@
   "Project/project-keynes/scripts/game/map_runtime_bridge.gd": {
     "climate": 2,
     "country": 3,
-    "economy": 4,
+    "economy": 3,
     "effect": 7,
     "events": 4,
     "ideology": 3,
@@ -28,15 +28,6 @@
   },
   "Project/project-keynes/scripts/game/save_modules/country_state.gd": {
     "country": 1
-  },
-  "Project/project-keynes/scripts/game/world_runtime_daily_adapter_part1.gd": {
-    "economy": 1
-  },
-  "Project/project-keynes/scripts/game/world_runtime_daily_adapter_part2.gd": {
-    "ideology": 2
-  },
-  "Project/project-keynes/scripts/game/world_runtime_generation_adapter.gd": {
-    "ideology": 1
   },
   "Project/project-keynes/scripts/game/world_runtime_presentation.gd": {
     "country": 1,
@@ -50,12 +41,11 @@
     "climate": 1
   },
   "Project/project-keynes/scripts/geography/map_generation/native_generation_bridge.gd": {
-    "core": 2,
-    "runtime": 2
+    "core": 2
   },
   "Project/project-keynes/scripts/geography/map_generation/terrain_gen.gd": {
     "climate": 6,
-    "core": 3
+    "core": 2
   },
   "Project/project-keynes/scripts/geography/map_generator.gd": {
     "core": 1,
@@ -68,8 +58,8 @@
     "runtime": 10,
     "visual": 2
   },
-  "Project/project-keynes/scripts/main/debug_tools.gd": {
-    "core": 16
+  "Project/project-keynes/scripts/ideology/ideology_facade.gd": {
+    "economy": 2
   },
   "Project/project-keynes/scripts/rendering/bakers/atlas_encoders.gd": {
     "runtime": 2
@@ -95,9 +85,6 @@
   "Project/project-keynes/scripts/rendering/renderer_sea_ice_diagnostics.gd": {
     "core": 2
   },
-  "Project/project-keynes/scripts/simulation/systems/bio_occupancy_daily_system.gd": {
-    "visual": 1
-  },
   "Project/project-keynes/scripts/simulation/systems/country_daily_system.gd": {
     "country": 2,
     "effect": 1
@@ -115,13 +102,9 @@
     "core": 1
   },
   "Project/project-keynes/scripts/ui/tile_data_recorder.gd": {
-    "country": 1,
-    "demo": 1
+    "country": 1
   },
   "Project/project-keynes/scripts/util/pk_log.gd": {
     "core": 3
-  },
-  "Project/project-keynes/scripts/ideology/ideology_facade.gd": {
-    "economy": 2
   }
 }

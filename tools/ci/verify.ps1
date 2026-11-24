@@ -87,23 +87,7 @@ $artifactDir = Join-Path $tmp "verify_$stamp"
 # Known-red: failures already recorded in this checkout, unrelated to the fault
 # infrastructure work. Printed loudly, never hidden, never skipped. Keys are the
 # script file name so the reason survives a rename of the check entry.
-$knownRed = [ordered]@{
-    'check_cpp_deps.py'     = @'
-pre-existing baseline drift, NOT caused by the fault-infrastructure work: HEAD already
-exceeds tools/ci/cpp_deps_baseline.json (6 economy->family keys, e.g.
-type:FamilyAccount, type:FamilyExpeditionPayload, include:economy_family_move_cash.h;
-total 2175 > 2170). This is family-migration debt carried in the committed sources; the
-baseline must not be tightened from this gate. Re-run
-`python tools/ci/check_cpp_deps.py` and follow its report.
-'@
-    'check_size_ratchet.py' = @'
-pre-existing baseline drift, NOT caused by the fault-infrastructure work: 21 files are
-above tools/ci/size_baseline.json at HEAD plus in-flight workspace edits, including
-scripts/ui/debug_console.gd (1736 > 1698), scripts/ui/icon_catalog.gd (1413 > 1406) and
-scripts/ui/perf_recorder.gd (977 > 966). Do not edit size_baseline.json from this gate;
-each owning change tightens it when its file lands.
-'@
-}
+$knownRed = [ordered]@{}
 
 # ---------------------------------------------------------------------------
 # helpers

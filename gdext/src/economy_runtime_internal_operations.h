@@ -338,7 +338,7 @@
                                 bool preferred_family_strict = false);
     // Cash that a move of `moved_population` from `source_slot` carries on the
     // live state, resolved through the same rule the write applies
-    // (economy_family_move_cash.h cohort_move_cash). Fills _family_move_plan as
+    // (economy_cohort_move_cash.h cohort_move_cash). Fills _family_move_plan as
     // a dry run and mutates no persisted column, so a caller can preflight a
     // transfer before writing. `will_drain_out` reports whether the move will
     // empty the source cohort.
@@ -1370,6 +1370,12 @@
     };
     bool investment_prepare_cell(BuildingInvestmentCellContext &ctx);
     bool investment_evaluate_cell_types(BuildingInvestmentCellContext &ctx);
+    struct InvestmentSparseFilter {
+        uint32_t stamp = 0;
+        bool ready = false;
+        bool active = false;
+    };
+    InvestmentSparseFilter prepare_investment_sparse_filter(const BuildingInvestmentCellContext &ctx);
     void investment_mark_rejection(const InvestmentExistingType *existing,
                                    int32_t reason);
     void investment_allocate_portfolio(BuildingInvestmentCellContext &ctx);

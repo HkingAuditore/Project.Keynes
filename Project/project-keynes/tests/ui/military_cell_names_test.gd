@@ -15,9 +15,6 @@ extends SceneTree
 ##   3. 名字进的是**军事段**， dossier 那种只拿 `model["military"]` 的调用面也能读到；
 ##   4. 取名链的降级顺序与割地表的判定（没有聚落名 → 只写地区名）。
 
-const ViewModelScript = preload("res://scripts/ui/country_view_model.gd")
-const MilitaryViewModelScript = preload("res://scripts/ui/military_view_model.gd")
-
 const SETTLEMENT_CELL := 10
 const UNNAMED_CELL := 11
 const DELTA_CELL := 12
@@ -98,7 +95,11 @@ static func _rows(cells: Array, names: Array, active: Array, revision: int,
 
 
 func _run() -> void:
-	var vm = ViewModelScript.new()
+	# Load the display scripts during the fixture, after the autoloads are ready.
+	# Preloading this dependency graph leaves resources alive at headless shutdown.
+	var country_script := load("res://scripts/ui/country_view_model.gd") as GDScript
+	var military_script := load("res://scripts/ui/military_view_model.gd") as GDScript
+	var vm = country_script.new()
 	var generator := GeneratorStub.new()
 	var economy := EconomyStub.new()
 	economy.first = _rows([SETTLEMENT_CELL, UNNAMED_CELL], ["青川城", "废村"],
@@ -144,7 +145,7 @@ func _run() -> void:
 		String(stale.get(30, "")) == "北港")
 
 	# ---- 4. 取名链：具名聚落 > 地区名 > 地块序号 ----
-	var military_vm = MilitaryViewModelScript.new()
+	var military_vm = military_script.new()
 	military_vm.configure({
 		"military": {
 			"available": true, "reason": "", "facade": null, "generator": generator,
@@ -171,7 +172,7 @@ func _run() -> void:
 			.contains("青川城"))
 
 	# ---- 5. 夹具兼容：顶层的 cell_names 仍然认 ----
-	var fixture_vm = MilitaryViewModelScript.new()
+	var fixture_vm = military_script.new()
 	fixture_vm.configure({
 		"military": {"available": true, "reason": "", "generator": null, "map": null,
 			"catalog": {"units": [], "categories": []}, "armies": [],
@@ -193,7 +194,7 @@ func _run() -> void:
 	_expect("the available military section carries the cell-name table",
 		live_section.get("cell_names", null) is Dictionary
 			and (live_section["cell_names"] as Dictionary).size() >= 1)
-	var live_vm = MilitaryViewModelScript.new()
+	var live_vm = military_script.new()
 	live_vm.configure(live_model)
 	_expect("the workspace reads names on the available path",
 		live_vm.cell_name_count() >= 1

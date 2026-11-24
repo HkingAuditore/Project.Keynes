@@ -4,22 +4,57 @@ extends "res://tests/runtime/background_daily_self_sufficiency_test.gd"
 class SkippingDisplayHost extends WorldRuntimeHost:
 	var skip_display := false
 
+	var simulate_unbound_start := false
+	var opening := {}
+
+	func _bind_renderer_and_camera(safe_area: Rect2) -> void:
+		await super._bind_renderer_and_camera(safe_area)
+		if not simulate_unbound_start:
+			return
+		var ext: DCWorldExt = generator().get_data_core_world_ext()
+		var map := current_map()
+		var configured: Dictionary = ext.configure_vision_research({
+			"cell_count": map.cell_count(),
+			"neighbor_indices": map.neighbor_indices_packed(),
+			"view_height": _world_data.cell_view_height,
+			"view_block": _world_data.cell_view_block,
+			"signal_offsets": map.cell_research_signal_offsets,
+			"signal_ids": map.cell_research_signal_ids,
+			"world_day": 0,
+			"player_start_cell": -1,
+			"occupancy": map.bio_occupancy_bits_arr,
+			"fog_available": true,
+			"fog_enabled": true,
+		})
+		if configured.get("ok", false):
+			opening = ext.get_runtime_vision_frame(-1)
+
 	func apply_runtime_vision_display() -> Dictionary:
 		if skip_display:
 			return {"ok": false, "reason": "test_display_failure"}
 		return super.apply_runtime_vision_display()
 
 
+var _simulate_unbound_start := false
+
+
 func _create_host() -> WorldRuntimeHost:
-	return SkippingDisplayHost.new()
+	var host := SkippingDisplayHost.new()
+	host.simulate_unbound_start = _simulate_unbound_start
+	return host
 
 
 func _run() -> void:
+	await _run_world(false, true)
+	_simulate_unbound_start = true
 	await _run_world(false, true)
 	_finish()
 
 
 func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictionary:
+	if _simulate_unbound_start:
+		await _check_initial_vision(host, clock)
+		return {}
 	var generator := host.get_generator()
 	var country = generator.get_country_facade()
 	var economy = generator.get_economy_facade()
@@ -156,3 +191,19 @@ func _hidden_quote(host: WorldRuntimeHost, economy, map: MapData, start: int, pl
 		if bool(quote.get("ok", false)) and not quote.get("quote_tokens", PackedInt64Array()).is_empty():
 			return {"target": cell, "quote": quote}
 	return {}
+
+
+func _check_initial_vision(host: WorldRuntimeHost, clock: WorldClock) -> void:
+	var opening := (host as SkippingDisplayHost).opening
+	var hidden := bool(opening.get("fog_enabled", false)) \
+		and int(opening.get("visible", -1)) == 0 and int(opening.get("explored", -1)) == 0
+	_expect("native opening frame keeps unknown player visibility fully covered", hidden)
+	var economy: EconomyFacade = host.generator().get_economy_facade()
+	clock.set_speed(SPEED)
+	_publish_day(host, clock, 1)
+	if await _wait_golden_read_boundary(host, economy, 1):
+		var frame: Dictionary = economy.world_ext().get_runtime_vision_frame(-1)
+		_expect("native vision resolves on the first committed day with a bound country",
+			bool(frame.get("fog_enabled", false)) and int(frame.get("visible", 0)) > 0)
+	else:
+		_expect("first committed day with restored vision", false)

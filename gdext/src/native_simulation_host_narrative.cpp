@@ -150,10 +150,12 @@ std::vector<uint8_t> NativeSimulationHost::capture_narrative_save_bytes() const 
         : std::vector<uint8_t>(wire.ptr(), wire.ptr() + wire.size());
 }
 
-const char *NativeSimulationHost::narrative_input_block() const {
+const char *NativeSimulationHost::narrative_input_block(bool suppress_popups) const {
     const auto view = latest_narrative();
     if (!_world_environment || !view) return nullptr;
-    if (!view->active_offer.is_empty()) return "narrative_choice_required";
+    if (!view->active_offer.is_empty() &&
+            (!suppress_popups || RuntimeNarrative::automatic_option_index(view->active_offer) < 0))
+        return "narrative_choice_required";
     if (view->waiting_for_external_input_day >= 0) return "narrative_external_input_required";
     return nullptr;
 }
@@ -259,7 +261,7 @@ bool NativeSimulationHost::prepare_narrative_day(int64_t day) {
     auto &narrative = *_executor_narrative;
     narrative.apply_pause_policy(day);
     narrative.apply_ai_policy(day);
-    narrative.queue_automatic_choice(day);
+    narrative.queue_automatic_choice(day, suppress_event_popups_on(day));
     const auto choice = narrative.take_due_choice(day);
     if (choice.is_empty()) return false;
     if (!bool(resolve_narrative_choice(day - 1, choice).get("ok", false)))

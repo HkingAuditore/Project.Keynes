@@ -20,13 +20,15 @@ var _fold_action: Dictionary = {}
 var _blocked := false
 var _pending := false
 
-@onready var _icon: IconBadge = $Row/Icon
-@onready var _name: Label = $Row/Info/Name
+@onready var _icon: IconBadge = $Row/Info/Summary/Icon
+@onready var _name: Label = $Row/Info/Summary/Name
 @onready var _meta: Label = $Row/Info/Meta
-@onready var _cash_row: Control = $Row/CashRow
-@onready var _cash_icon: TextureRect = $Row/CashRow/CashIcon
-@onready var _cash: Label = $Row/CashRow/Cash
-@onready var _build: Button = $Row/BuildButton
+@onready var _cash_row: Control = $Row/Info/Summary/CashRow
+@onready var _cash_icon: TextureRect = $Row/Info/Summary/CashRow/CashIcon
+@onready var _cash: Label = $Row/Info/Summary/CashRow/Cash
+@onready var _build: Button = %BuildButton
+@onready var _materials: VBoxContainer = $Row/Materials
+@onready var _material_list = $Row/Materials/List
 
 
 func _ready() -> void:
@@ -51,7 +53,12 @@ func set_row(row: Dictionary, pending: bool = false) -> void:
 		UITokens.DOSSIER_UMBER if _blocked else UITokens.DOSSIER_INK_SOFT)
 	_name.text = String(row.get("name", "建筑"))
 	_name.tooltip_text = _name.text
-	_meta.text = meta_text(row)
+	var materials: Array = row.get("material_status", [])
+	var quoted: Array = materials.filter(func(material: Dictionary) -> bool:
+		return material.has("text"))
+	_material_list.set_rows(quoted, false)
+	_materials.visible = not quoted.is_empty()
+	_meta.text = meta_text(row, _materials.visible)
 	_meta.visible = not _meta.text.is_empty()
 	_meta.tooltip_text = _meta.text
 	_meta.add_theme_color_override("font_color",

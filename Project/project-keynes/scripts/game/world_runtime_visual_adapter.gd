@@ -2,10 +2,6 @@ extends RefCounted
 
 ## Passive visual/vision adapter. Host owns state and signals.
 
-## 视野 init 只补一次：native 侧一次 configure 都没成功时（例如首帧 start_cell 还解不出），
-## refresh_country_visuals 补一次，之后不再重试——避免每帧重配 native。
-var _vision_init_gate_done := false
-
 func _bind_renderer_and_camera(host, safe_area: Rect2) -> void:
 	if host._current_map == null or host._world_data == null:
 		return
@@ -211,16 +207,6 @@ func refresh_country_visuals(host, reason: String) -> Dictionary:
 	var out = {"reason": reason, "vision": {}, "border": {}, "lut": {}}
 	if host._current_map == null or host._world_data == null:
 		return out
-	# 一次性 gate：视野帧从没成功过、且现在真的能解出玩家落点时才补一次 init。
-	# 首帧 start_cell 往往还没就绪；那时就置位会把这唯一一次自愈机会烧掉
-	# （native 会按同一组解不出的输入回 fog_enabled=false，整图全亮）。
-	if not _vision_init_gate_done \
-			and host._pending_load_bundle.is_empty() \
-			and not bool(host._runtime_vision_result.get("ok", false)) \
-			and _resolve_player_start_cell(host) >= 0:
-		var retry: Dictionary = _initialize_runtime_vision(host, false)
-		out["vision_init"] = retry
-		_vision_init_gate_done = bool(retry.get("ok", false))
 	var _cv_t = Time.get_ticks_usec()
 	out["territory_sync"] = _sync_country_territory_to_map(host)
 	_cv_phase(host, "territory_sync", _cv_t)
@@ -303,14 +289,8 @@ func finalize_save_restore_visuals(host) -> Dictionary:
 	# 迷雾开着却绑不到玩家国家，说明 PKCN 领土或 player_context 没恢复成功。
 	# 这种状态解算出来的视野是全黑的，继续跑还会被下一次自动存档写死，
 	# 所以直接让读档失败，而不是交出一张「全部未探索」的地图。
-	# 这里判的是**玩家设置** `fog_of_war_enabled`，不是解析后的 `_fog_of_war_enabled`：
-	# 后者正是被 `_fog_allowed` 的 `start_cell < 0` 打 false 的那个值。拿它当条件，
-	# 「start_cell 解析失败」会顺手把守卫自己也关掉 —— 静默读档成功、整图全亮、
-	# 零命令零 flip。存档缺 `player_context.start_cell` 时必走这条。
-	var restore_start_cell := _resolve_player_start_cell(host)
-	if host.fog_of_war_enabled \
-			and (restore_start_cell < 0 or host._player_country_slot < 0):
-		var start_cell := restore_start_cell
+	var start_cell := _resolve_player_start_cell(host)
+	if host._fog_of_war_enabled and (start_cell < 0 or host._player_country_slot < 0):
 		var mirror_slot = -2
 		if host._current_map != null and start_cell >= 0 \
 				and start_cell < host._current_map.country_slot_arr.size():
@@ -332,10 +312,8 @@ func finalize_save_restore_visuals(host) -> Dictionary:
 	var seeded := _initialize_runtime_vision(host, true)
 	if not bool(seeded.get("ok", false)):
 		return {"vision": seeded, "border": {}, "lut": {}}
-	# 旧档（11-23 及更早）没有 native 视野检查点：native 从「全部未探索」起步，
-	# 表现为开雾即全黑。不能静默吞掉——给玩家一句可读提示，同时记一条日志。
-	# 与上面的读档守卫是两个场景：那条是「绑不到玩家国家」，这条是「能绑但没种子」。
-	if int(seeded.get("explored", 0)) == 0 and _saved_player_start_cell(host) >= 0:
+	# 旧存档缺少探索记录时，仍保留当前玩家视野，并提示历史探索将重新累积。
+	if not bool(seeded.get("restored_exploration", false)) and host._fog_of_war_enabled:
 		var legacy_notice := "该存档来自旧版：没有视野检查点，已探索区域不会恢复，迷雾将从全部未探索重新累积。"
 		push_warning("[fog] legacy save without native vision checkpoint: " + legacy_notice)
 		if host._ui_manager != null and host._ui_manager.has_method("show_transient_message"):
@@ -412,36 +390,21 @@ func set_fog_of_war_enabled(host, enabled: bool) -> Dictionary:
 	var ext = host._generator.get_data_core_world_ext()
 	if ext == null:
 		return {"ok": false, "code": "vision_fog_command_unavailable"}
-	var result: Dictionary = ext.set_runtime_fog_enabled(enabled)
-	# native 命令是排队到日边界生效的，但 GDScript 侧的「玩家设置」必须当场回写。
-	# 不回写会有两处后果：`_initialize_runtime_vision` 下一次 configure 用旧的
-	# `fog_of_war_enabled=true` 把迷雾又打开（且不通知渲染层），而 GM 面板/存档读到的
-	# 也是旧值——同一个值有两个真源，只在 UI 上表现成「关了又自己回来」。
-	if bool(result.get("ok", false)):
-		host.fog_of_war_enabled = enabled
-	return result
+	return ext.set_runtime_fog_enabled(enabled)
 
 
-## 设置层：迷雾是否被玩家允许（QA 关雾 / 玩家设置关雾）。**不含**玩家落点解析。
-func _fog_setting_allowed(host) -> bool:
+func _fog_allowed() -> bool:
 	if bool(Engine.get_meta("pk_fog_off", false)) or OS.get_environment("PK_FOG_OFF") == "1":
 		return false
 	var fog_cfg := ConfigFile.new()
 	if fog_cfg.load("user://pk_debug.cfg") == OK \
 			and bool(fog_cfg.get_value("render", "fog_off", false)):
 		return false
-	return bool(host.fog_of_war_enabled)
-
-
-## 解算层：设置允许**且**玩家落点解得出。native 侧 `fog_available` 的输入。
-## 两个 false 的原因必须分开看：设置关雾 = 该全亮；落点解不出 = 雾保持开着、
-## 整图全暗并报错（见 apply_runtime_vision_display），不能静默变成全亮。
-func _fog_allowed(host) -> bool:
-	return _fog_setting_allowed(host) and _resolve_player_start_cell(host) >= 0
+	return true
 
 
 func _resolve_fog_of_war_enabled(host) -> bool:
-	return host.fog_of_war_enabled and _fog_allowed(host)
+	return host.fog_of_war_enabled and _fog_allowed()
 
 
 func _resolve_player_country_slot(host) -> int:
@@ -524,14 +487,17 @@ func _initialize_runtime_vision(host, restored: bool) -> Dictionary:
 		"player_start_cell": _resolve_player_start_cell(host),
 		"remote_technology": tech_ids.find("tech.magnetic_navigation"),
 		"occupancy": map.bio_occupancy_bits_arr,
-		"fog_available": _fog_allowed(host),
+		"fog_available": _fog_allowed(),
 		"fog_enabled": host.fog_of_war_enabled,
 		"restored": restored,
 	})
 	if not bool(seeded.get("ok", false)):
 		push_error("Vision setup: " + String(seeded.get("reason", seeded.get("code", "unknown"))))
 		return seeded
-	return apply_runtime_vision_display(host)
+	var frame := apply_runtime_vision_display(host)
+	if restored:
+		frame["restored_exploration"] = bool(seeded.get("restored_exploration", false))
+	return frame
 
 
 func apply_runtime_vision_display(host) -> Dictionary:
@@ -551,31 +517,12 @@ func apply_runtime_vision_display(host) -> Dictionary:
 	if physical.size() != count or explored.size() != count or fog.size() != count:
 		return {"ok": false, "reason": "vision_display_shape_invalid"}
 	var enabled := bool(frame.fog_enabled)
-	# 「native 说没开雾」有两种完全不同的原因，不能合并成一个全亮分支：
-	#   a) 雾本来就该关（QA 关雾 / 玩家设置关雾）→ 全亮，保持旧行为；
-	#   b) 玩家落点还没解出来（fog_available / player_handle 未就绪）→ 不许静默全亮，
-	#      否则读档初期或首帧就会「一格雾都没有」且零告警。保持雾层开着、整图全暗，
-	#      并把原因报一次，等 start_cell 就绪后由下一次 refresh + init gate 自愈。
-	var fog_renders := enabled
-	var unresolved_start := false
-	if not enabled:
-		if _fog_setting_allowed(host) and _resolve_player_start_cell(host) < 0:
-			unresolved_start = true
-			fog_renders = true
-			if not bool(host.get_meta("_fog_unresolved_reported", false)):
-				host.set_meta("_fog_unresolved_reported", true)
-				push_error("[fog] player start cell unresolved: native cannot solve player " +
-					"vision; fog stays ON and the map is fully dark instead of silently bright.")
 	var visible := physical
 	if not enabled:
 		visible = physical.duplicate()
-		if unresolved_start:
-			fog.fill(0)
-			visible.fill(0)
-		else:
-			fog.fill(255)
-			visible.fill(1)
-	var enabled_changed: bool = host._fog_of_war_enabled != fog_renders
+		fog.fill(255)
+		visible.fill(1)
+	var enabled_changed: bool = host._fog_of_war_enabled != enabled
 	var pending_dirty := {}
 	for cell in host._vision_dirty_indices:
 		pending_dirty[cell] = true
@@ -584,7 +531,7 @@ func apply_runtime_vision_display(host) -> Dictionary:
 	for cell in count:
 		if not compare or map.fog_k_arr[cell] != fog[cell] or map.visible_arr[cell] != visible[cell]:
 			pending_dirty[cell] = true
-		if fog_renders and visible[cell] != 0 and (not compare or map.visible_arr[cell] == 0):
+		if enabled and visible[cell] != 0 and (not compare or map.visible_arr[cell] == 0):
 			revealed.append(cell)
 	map.physical_visible_arr = physical
 	map.explored_arr = explored
@@ -599,17 +546,15 @@ func apply_runtime_vision_display(host) -> Dictionary:
 	frame["newly_visible_cells"] = pending_revealed
 	frame["vision_revision"] = map.vision_revision
 	frame["applied"] = true
-	frame["fog_enabled"] = fog_renders
-	frame["fog_unresolved_start"] = unresolved_start
 	host._runtime_vision_result = frame
 	host._country_visual_refresh_pending = true
 	host._country_visual_refresh_reason = "committed_vision"
-	host._fog_of_war_enabled = fog_renders
+	host._fog_of_war_enabled = enabled
 	if enabled_changed:
 		host._building_visual_force_full_refresh = true
 		if host._renderer != null:
-			host._renderer.set_fog_of_war_enabled(fog_renders, host.fog_early_out_enabled)
-		host.gm_toggle_changed.emit("visual.fog_of_war", fog_renders)
+			host._renderer.set_fog_of_war_enabled(enabled, host.fog_early_out_enabled)
+		host.gm_toggle_changed.emit("visual.fog_of_war", enabled)
 	if not revealed.is_empty():
 		map.publish_resource_visual_inputs(MapData.RESOURCE_VISUAL_BANDS |
 			MapData.RESOURCE_VISUAL_CLIMATE | MapData.RESOURCE_VISUAL_GEOMETRY, revealed)

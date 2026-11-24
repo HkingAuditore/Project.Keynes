@@ -166,7 +166,11 @@ func _apply_quote(eligible: bool) -> void:
 		if material.has("text"):
 			var item := material.duplicate()
 			if missing:
-				var shortage := "市场缺 %s 单位" % String(material.get("missing_text", ""))
+				var missing_quantity := String(material.get("missing_text", ""))
+				var cause := String(material.get("reason", ""))
+				var shortage := "市场缺 %s 单位" % missing_quantity
+				if not cause.is_empty():
+					shortage = "%s · %s" % [cause, shortage]
 				var source := String(material.get("detail", ""))
 				item["detail"] = "%s，%s" % [source, shortage] if not source.is_empty() else shortage
 				item["detail_accent"] = UITokens.DOSSIER_OXBLOOD

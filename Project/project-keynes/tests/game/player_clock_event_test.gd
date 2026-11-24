@@ -15,6 +15,10 @@ class CeremonySurface extends RefCounted:
 	var _era_ceremony: EraAscensionCeremony
 	var _era_ceremony_index := 1
 	var _player_controller = null
+	var workspace_rechecks := 0
+
+	func notify_workspace_closed() -> void:
+		workspace_rechecks += 1
 
 var failures := 0
 func _initialize() -> void:
@@ -79,6 +83,7 @@ func _run() -> void:
 	preload("res://scripts/ui/game_ui/era_progression.gd").new()._on_era_ceremony_finished(ceremony)
 	_expect("ending a ceremony does not release a manual pause", second.paused)
 	_expect("ending a ceremony clears the displayed era", ceremony._era_ceremony_index == -1)
+	_expect("ending a ceremony rechecks deferred story presentation", ceremony.workspace_rechecks == 1)
 	controller.free()
 	first.free()
 	second.free()

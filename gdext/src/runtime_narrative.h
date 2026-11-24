@@ -64,7 +64,8 @@ public:
     static godot::Dictionary validate_offer(const godot::Dictionary &offer, uint64_t country,
         const godot::Dictionary &args);
     godot::Dictionary take_due_choice(int64_t day);
-    void queue_automatic_choice(int64_t day);
+    static int64_t automatic_option_index(const godot::Dictionary &offer);
+    void queue_automatic_choice(int64_t day, bool suppress_popups = false);
     void set_pause_policy(int64_t day, uint16_t mask);
     void apply_pause_policy(int64_t day);
     std::vector<RuntimeNotice> take_notices();

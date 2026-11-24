@@ -1,5 +1,6 @@
 extends Control
 
+const LandLayout = preload("res://scripts/ui/main_menu_land_layout.gd")
 const MenuLayout = preload("res://scripts/ui/main_menu_layout.gd")
 const SavePreviewCodecScript = preload("res://scripts/game/save_preview_codec.gd")
 
@@ -153,19 +154,6 @@ func _spawn_web_shader_progress() -> void:
 		return
 	_shader_progress = strip
 	add_child(strip)
-
-
-## Web 自动测试入口（仅 autotest=1 生效）：不经过任何按钮，直接走
-## GameFlow.begin_new_game —— 与 %StartButton 的回调是同一条代码路径，
-## 区别只是配置来自 URL。
-## 返回 true 表示已成功开局、_ready 应立刻结束；开局失败时返回 false，
-## 让菜单继续按普通流程初始化（页面仍可手动操作，原因已在事件流里）。
-## Web：菜单阶段预编译所有运行期会首次绘制的 shader（详见 web_shader_warmup.gd）。
-## 桌面直接返回，不影响任何行为。
-func _warmup_web_shaders() -> void:
-	if not OS.has_feature("web"):
-		return
-	WebShaderWarmup.begin(self)
 
 
 func _start_web_autotest() -> bool:
@@ -346,13 +334,6 @@ func _apply_responsive_layout() -> void:
 
 ## 触摸端最小命中区（设计像素）。52 × 2.39 ≈ 45dp（440dpi 档位）。
 const TOUCH_MIN_HEIGHT := 52.0
-
-
-func _enforce_touch_targets() -> void:
-	for page in get_tree().get_nodes_in_group("main_menu_pages"):
-		var page_control := page as Control
-		if page_control != null:
-			_apply_touch_minimums(page_control)
 
 
 func _apply_touch_minimums(node: Node) -> void:
@@ -735,33 +716,11 @@ func _on_land_layout_selected(index: int) -> void:
 
 
 func _apply_land_layout(layout_id: String) -> void:
-	var preset := NewGameConfig.land_layout_by_id(layout_id)
-	if preset.is_empty():
-		return
-	_layout_syncing = true
-	if String(preset.get("id", "")) != NewGameConfig.CUSTOM_LAND_LAYOUT:
-		(_advanced_controls.num_continents as SpinBox).value = int(preset.get("num_continents", 2))
-		(_advanced_controls.continent_size as SpinBox).value = float(preset.get("continent_size", 0.50))
-		(_advanced_controls.sea_level as SpinBox).value = float(preset.get("sea_level", 0.50))
-		(_advanced_controls.continent_spacing as SpinBox).value = int(preset.get("continent_spacing", 55))
-		(_advanced_controls.island_amount as SpinBox).value = int(preset.get("island_amount", 50))
-	var resolved_id := String(preset.get("id", NewGameConfig.CUSTOM_LAND_LAYOUT))
-	var select_index := NewGameConfig.land_layout_index(resolved_id)
-	if _layout_option.selected != select_index:
-		_layout_option.select(select_index)
-	_sync_layout_cards(resolved_id)
-	_layout_syncing = false
-	_refresh_layout_hint()
-	_sync_map_preview(true)
+	LandLayout._apply_land_layout(self, layout_id)
 
 
 func _sync_layout_cards(active_id: String) -> void:
-	for id_key in _layout_cards:
-		var card := _layout_cards[id_key] as Button
-		if card != null:
-			card.set_pressed_no_signal(String(id_key) == active_id)
-			if card.has_method("_refresh_visual"):
-				card.call("_refresh_visual")
+	LandLayout._sync_layout_cards(self, active_id)
 
 
 func _on_layout_spin_changed() -> void:
@@ -777,33 +736,11 @@ func _on_layout_spin_changed() -> void:
 
 
 func _matched_land_layout_id() -> String:
-	for preset in NewGameConfig.LAND_LAYOUT_PRESETS:
-		var layout: Dictionary = preset
-		if String(layout.get("id", "")) == NewGameConfig.CUSTOM_LAND_LAYOUT:
-			continue
-		if int((_advanced_controls.num_continents as SpinBox).value) != int(layout.get("num_continents", 0)):
-			continue
-		if not is_equal_approx(float((_advanced_controls.continent_size as SpinBox).value),
-				float(layout.get("continent_size", 0.0))):
-			continue
-		if not is_equal_approx(float((_advanced_controls.sea_level as SpinBox).value),
-				float(layout.get("sea_level", 0.0))):
-			continue
-		if int((_advanced_controls.continent_spacing as SpinBox).value) != int(layout.get("continent_spacing", 0)):
-			continue
-		if int((_advanced_controls.island_amount as SpinBox).value) != int(layout.get("island_amount", 0)):
-			continue
-		return String(layout.get("id", NewGameConfig.CUSTOM_LAND_LAYOUT))
-	return NewGameConfig.CUSTOM_LAND_LAYOUT
+	return LandLayout._matched_land_layout_id(self)
 
 
 func _refresh_layout_hint() -> void:
-	if _is_pkmap_source():
-		_layout_hint.text = "作者地图已冻结河湖与陆地形状。"
-		return
-	var layout_id := String(_layout_option.get_item_metadata(_layout_option.selected))
-	var preset := NewGameConfig.land_layout_by_id(layout_id)
-	_layout_hint.text = String(preset.get("hint", ""))
+	LandLayout._refresh_layout_hint(self)
 
 
 func _set_custom_size_enabled(enabled: bool) -> void:

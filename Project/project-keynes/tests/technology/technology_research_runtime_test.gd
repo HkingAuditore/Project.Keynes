@@ -3,6 +3,7 @@ extends SceneTree
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const CountryFacadeScript = preload("res://scripts/country/country_facade.gd")
 const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd")
+const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 
 var _failures := 0
 
@@ -26,7 +27,18 @@ func _init() -> void:
 	var stone_knapping := ids.find("tech.stone_knapping")
 	var settled_knowledge := ids.find("tech.settled_knowledge")
 	var milestone_candidates: PackedInt32Array = compiled.technology_milestone_candidates
-	_expect("era-scaled milestone candidate contract", milestone_candidates.size() == 143)
+	var milestone_offsets: PackedInt32Array = compiled.technology_milestone_offsets
+	for era in TechnologyCatalogScript.public_era_metadata():
+		var milestone_index := ids.find(era.milestone_id)
+		_expect("milestone exists for %s" % era.id, milestone_index >= 0)
+		if milestone_index < 0:
+			continue
+		var actual := PackedStringArray()
+		for offset in range(milestone_offsets[milestone_index], milestone_offsets[milestone_index + 1]):
+			actual.append(ids[milestone_candidates[offset]])
+		_expect("milestone thresholds and candidates match %s" % era.id,
+			actual == era.milestone_candidate_ids and
+			int(compiled.technology_milestone_required_counts[milestone_index]) == era.candidate_required)
 	var previous_maize := ids.find("tech.wild_maize_collection")
 	var previous_maritime := ids.find("tech.fishing_boats")
 	var early_knowledge := ids.find("tech.early_knowledge_institution")

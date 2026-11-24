@@ -838,15 +838,15 @@ void NativeEconomyRuntime::drop_expedition_transit_person(
         family_expeditions_store().active.size());
     int32_t removed = -1;
     size_t owner_payload = 0;
+    const auto &payloads = family_expedition_payloads();
     for (int32_t e = 0; e < expedition_count && removed < 0; ++e) {
         if (family_expeditions_store().active[e] == 0) continue;
         const size_t begin = family_expeditions_store().payload_begin[e];
         const size_t end = std::min<size_t>(begin +
             family_expeditions_store().payload_count[e],
-            family_expedition_payloads().size());
+            payloads.size());
         for (size_t p = begin; p < end && removed < 0; ++p) {
-            const FamilyExpeditionPayload &lane =
-                family_expedition_payloads()[p];
+            const auto &lane = payloads[p];
             const size_t lane_end = std::min<size_t>(
                 static_cast<size_t>(lane.person_begin) + lane.person_count,
                 handles.size());

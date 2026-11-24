@@ -762,8 +762,6 @@ bool parse_catalog(const Dictionary &catalog, MilitaryCatalog &out, std::string 
     out.economy_good_count = std::max(0, dict_i32(catalog, "economy_good_count", 0));
     out.ration_need_per_head_q16 = std::max<int32_t>(
         1, q16_from_float(dict_f64(catalog, "ration_need_per_head", 1.0)));
-    // Water-crossing gates (contract-2 §2.2): resolved by MilitaryCatalogCompiler
-    // from the four navigation technologies. -1 means the catalog has no such bit.
     out.water_lake_bit = dict_i32(catalog, "water_lake_bit", -1);
     out.water_shallow_bit = dict_i32(catalog, "water_shallow_bit", -1);
     out.water_far_bit = dict_i32(catalog, "water_far_bit", -1);

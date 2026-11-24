@@ -10,7 +10,7 @@
 namespace pk {
 
 struct RuntimePlayerConfirmationRequest {
-    enum class Kind { DISMISS_IDEOLOGY, POPUP_POLICY };
+    enum class Kind { DISMISS_IDEOLOGY, POPUP_POLICY, EVENT_POPUP_POLICY };
     Kind kind;
     int64_t value;
     int64_t day;
@@ -23,6 +23,7 @@ struct RuntimePlayerConfirmationView {
     godot::Dictionary family_offer;
     uint32_t ideology_generation = 0;
     bool hide_popups = false;
+    bool suppress_event_popups = false;
 };
 
 struct RuntimeEraRewardRequest;
@@ -32,6 +33,8 @@ struct RuntimePlayerConfirmation {
     bool hide_popups = false;
     uint32_t dismissed_ideology = 0;
     std::map<int64_t, bool> popup_updates;
+    bool suppress_event_popups = false;
+    std::map<int64_t, bool> event_popup_updates;
     std::deque<std::shared_ptr<RuntimeEraRewardRequest>> era_selections;
     std::deque<std::shared_ptr<RuntimeEraRewardRequest>> era_advancement;
     std::deque<RuntimePlayerConfirmationRequest> requests; // control mutex

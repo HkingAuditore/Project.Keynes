@@ -60,7 +60,7 @@ func _run() -> int:
 				_expect("the old input queue fills through valid future captures", false)
 				break
 		_expect("the stopped world has a full input queue", not target.environment_ring_has_capacity())
-		_expect("complete bundle prepares on the already-used host", target.restore_runtime_bundle(saved.bytes).get("ok", false))
+		_expect("complete bundle prepares on the already-used host", target.restore_runtime_bundle(saved.bytes, saved.economy_ecp2).get("ok", false))
 		_expect("the saved Country checkpoint restores before startup", target.restore_country_runtime_checkpoint(saved.country_pkcn).get("ok", false))
 		# Replace the previous timeline's environment before startup. The
 		# threaded executor consumes a ready day 1 immediately, so seed its
@@ -101,7 +101,7 @@ func _run() -> int:
 					controlled.get("ideology_parity_worker_opinion_revision", -1) == published.get("revision", -2))
 		_expect("the test-only input is removed before another restore", target.clear_class_opinion_source_override_for_test().get("ok", false))
 		await _stop(target)
-		_expect("the original timeline can be restored again", target.restore_runtime_bundle(saved.bytes).get("ok", false))
+		_expect("the original timeline can be restored again", target.restore_runtime_bundle(saved.bytes, saved.economy_ecp2).get("ok", false))
 		_expect("its Country checkpoint restores again", target.restore_country_runtime_checkpoint(saved.country_pkcn).get("ok", false))
 		_capture_input(target, 1 if inline_mode else 0)
 		_expect("the second restored executor starts", target.start_runtime_worker(_opinion_config(inline_mode)).get("ok", false))
@@ -231,5 +231,7 @@ func _opinion_save(ext: Object) -> Dictionary:
 			break
 		await process_frame
 	_expect("opinion source reaches its committed save boundary", result.get("ready", false))
+	var economy: PackedByteArray = result.get("economy_ecp2", PackedByteArray())
+	_expect("the boundary captured the Economy checkpoint", not economy.is_empty())
 	if not result.get("ready", false): print("[opinion-save] ", result)
-	return result if result.get("ready", false) else {}
+	return result if result.get("ready", false) and not economy.is_empty() else {}

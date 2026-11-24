@@ -144,7 +144,9 @@ func set_suppressed(suppressed: bool) -> void:
 
 ## 由左侧展板在显隐时推送：空矩形表示当前没有需要避让的浮层。
 func set_avoid_rect(rect: Rect2) -> void:
-	_avoid_rect = rect
+	if rect != _avoid_rect:
+		_avoid_rect = rect
+		_dirty = true
 
 
 func current_cell_index() -> int:
@@ -343,6 +345,10 @@ static func avoid_overlap(origin: Vector2, size: Vector2, avoid: Rect2,
 	return origin
 
 
+static func fits_right_of(edge: float, safe: Rect2, card_width: float = CARD_SIZE.x) -> bool:
+	return edge + POINTER_OFFSET.x + card_width <= safe.end.x - EDGE_MARGIN
+
+
 ## 指针右下偏移；右侧/下方不够就翻到另一侧，最后夹进安全区。
 ## 安全区比卡片还小（极小窗口）时返回空矩形 = 不出卡。
 static func placement_rect(pointer: Vector2, viewport: Vector2, safe: Rect2, card_size: Vector2 = CARD_SIZE) -> Rect2:
@@ -441,14 +447,14 @@ func _apply_resources(new_payload: Dictionary) -> void:
 ## 保留图标槽；跨日刷新只改内容，避免快进时销毁节点。
 func _apply_species(rows: Array) -> void:
 	while _species_row.get_child_count() < rows.size():
-		var entry := HBoxContainer.new()
+		var entry := UIControlParts.h_box_container()
 		entry.custom_minimum_size = Vector2(0, 20)
 		entry.add_theme_constant_override("separation", 2)
 		entry.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var icon := IconBadge.new()
 		icon.custom_minimum_size = Vector2(20, 20)
 		entry.add_child(icon)
-		var label := Label.new()
+		var label := UIControlParts.label()
 		label.autowrap_mode = TextServer.AUTOWRAP_OFF
 		label.add_theme_font_size_override("font_size", 10)
 		label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_SOFT)

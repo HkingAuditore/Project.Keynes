@@ -86,6 +86,8 @@ func _init() -> void:
 
 
 func _run() -> void:
+	root.gui_embed_subwindows = true
+	root.size = Vector2i(1280, 720)
 	var runtime := FakeRuntime.new()
 	root.add_child(runtime)
 	var console := DebugConsole.new()

@@ -183,11 +183,6 @@ var _cell_situation_picker: Callable
 var _player_country_handle := 0
 var _command_sequence := 1
 var _pause_before_menu := false
-## GM「屏蔽弹窗」：所有会自动锁时钟的玩家提示（年报、叙事、时代奖励、家族创立、
-## 理念抽取）都不再抢焦点。本代没有 era/family/ideology 暂停子系统，
-## 这两个字段只负责记录「屏蔽期间是否该恢复时钟」。
-var _popups_suppressed: bool = false
-var _suppression_resume_running: bool = false
 var _country_facade = null
 var _economy_facade = null
 var _ideology_facade = null
@@ -258,12 +253,6 @@ func _apply_camera_view_scale_compensation() -> void:
 
 
 func _on_clock_control_changed(_paused: bool, _speed: float) -> void:
-	if _popups_suppressed and _suppression_resume_running and _world_clock != null \
-			and _world_clock.paused and not _world_clock.authority_fault_hold \
-			and _is_suppressed_popup_pause_source(String(_world_clock.last_pause_source)):
-		# 等这次时钟通知完成后释放被屏蔽提示申请的暂停。
-		# 只释放已知的 UI 自动暂停来源，保留手动暂停、存档暂停和故障保护。
-		_world_clock.pause(false)
 	_sync_clock_visual_state()
 	_sync_time_ui()
 
@@ -788,7 +777,11 @@ func player_confirmation_reason() -> String:
 	return String(_runtime_host.player_confirmation_view().get("reason", ""))
 
 
-func _on_player_confirmation_updated(_view: Dictionary) -> void:
+func _on_player_confirmation_updated(view: Dictionary) -> void:
+	var suppress := bool(view.get("suppress_event_popups", false))
+	var reason := String(view.get("reason", ""))
+	_annual_report_flow.set_popups_suppressed(suppress and reason != "annual_report_confirmation_required")
+	_narrative_flow.set_popups_suppressed(suppress and reason != "narrative_choice_required")
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
 	_sync_ideology_draw()
@@ -1559,17 +1552,6 @@ func narrative_event_locked() -> bool:
 func recheck_narrative_popup() -> void:
 	_narrative_component.recheck_narrative_popup(self)
 
-
-func set_popups_suppressed(enabled: bool) -> void:
-	_narrative_component.set_popups_suppressed(self, enabled)
-
-
-static func _is_suppressed_popup_pause_source(source: String) -> bool:
-	for marker in ["_pause_clock", "open_era_reward_offer", "_sync_era_reward_offer",
-			"_sync_family_founding_offer", "_sync_ideology_draw", "_pause_clock_for_ceremony"]:
-		if source.find(marker) >= 0:
-			return true
-	return false
 
 func open_narrative_chronicle(filter_cell: int = -1) -> void:
 	_narrative_component.open_narrative_chronicle(self, filter_cell)

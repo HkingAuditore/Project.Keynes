@@ -1,6 +1,7 @@
 extends Node
 
 signal request_changed(kind: String)
+signal player_start_failed(result: Dictionary)
 
 const MAIN_MENU_SCENE := "res://scenes/main_menu.tscn"
 const PLAYER_GAME_SCENE := "res://scenes/player_game.tscn"
@@ -112,6 +113,10 @@ func set_session(context: Dictionary) -> void:
 
 func session() -> Dictionary:
 	return _session.duplicate(true)
+
+
+func report_player_start_failure(result: Dictionary) -> void:
+	player_start_failed.emit(result)
 
 
 func clear_session() -> void:

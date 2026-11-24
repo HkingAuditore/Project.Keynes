@@ -86,7 +86,16 @@ func _run() -> void:
 	var tax_change: Dictionary = country_facade.set_tax_default(
 		player_handle, CountryFacade.TaxKind.INCOME, 10, first_clock.day_index() + 1, 1)
 	_expect("income tax change is admitted", bool(tax_change.get("ok", false)))
+	var gm_enabled := first_host.set_gm_toggle("ui.suppress_popups", true)
+	_expect("GM popup policy is admitted before the advancing save fixture",
+		gm_enabled.get("ok", false) and gm_enabled.has("effective_day"))
 	await _advance_days(first_host, first_clock, 20)
+	_expect("GM popup policy takes effect before saving",
+		first_host.get_gm_toggle_state("ui.suppress_popups").get("enabled") == true)
+	var gm_disabled := first_host.set_gm_toggle("ui.suppress_popups", false)
+	_expect("the save fixture has a future GM popup policy change",
+		gm_disabled.get("ok", false) and int(gm_disabled.get("effective_day", -1)) >
+			first_host.generator().get_data_core_world_ext().runtime_committed_day())
 	_expect("country state actually changed on the worker before saving",
 		int(country_facade.cell_summary(capital_cell).get("cash", 0)) \
 			!= int(start_capital.get("cash", 0)))
@@ -226,7 +235,12 @@ func _run() -> void:
 		_expect("loaded clock retains request-time pause state and zero speed",
 			not restored_clocks.is_empty() and bool(restored_clocks[0].paused) == _saved_paused
 			and is_zero_approx(float(restored_clocks[0].speed_multiplier)))
+		_expect("the committed GM popup policy survives restore",
+			loaded_host.get_gm_toggle_state("ui.suppress_popups").get("enabled") == true
+			and loaded_host.get_gm_toggle_state("ui.hide_all_except_gm").get("enabled") == false)
 		await _verify_post_restore_cycle(loaded_host, loaded_clock)
+		_expect("the pending GM popup policy change applies after restore",
+			loaded_host.get_gm_toggle_state("ui.suppress_popups").get("enabled") == false)
 	_finish()
 
 

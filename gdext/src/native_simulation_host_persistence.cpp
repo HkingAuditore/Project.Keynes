@@ -954,6 +954,12 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
         error = "runtime_bundle_producer_cursor_invalid";
         return false;
     }
+    if ((parsed.section_mask & RUNTIME_SAVE_SECTION_PLAYER_CONFIRMATION) != 0u &&
+            (parsed.player_confirmation_bytes.empty() ||
+             !decode_player_confirmation(parsed.player_confirmation_bytes, parsed.committed_day, nullptr))) {
+        error = "runtime_bundle_player_confirmation_invalid";
+        return false;
+    }
     _pending_restore_bundle = std::move(parsed);
     if (try_fault_injection("restore.validate.before")) {
         error = "restore_validate_fault_injected_before";
