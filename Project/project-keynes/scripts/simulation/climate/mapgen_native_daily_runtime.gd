@@ -60,7 +60,7 @@ func _ensure_maritime_factor(map: MapData, decay_cells: float) -> PackedFloat32A
 
 func publish_worker_climate_visuals(defer_upload: bool, commit: Dictionary = {}) -> Dictionary:
 	if _generator._baker == null or _generator._sus_map == null or _generator._last_world == null:
-		return {}
+		return {"lut_encode_path": "none", "reason": "missing_baker_map_or_world"}
 	var dirty: PackedInt32Array = commit.get("display_dirty_cells", PackedInt32Array())
 	return DCCellLutBaker.refresh_cell_luts_daily(_generator._baker,
 			_generator._sus_map, _generator._last_world, dirty,

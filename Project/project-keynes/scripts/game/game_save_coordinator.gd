@@ -391,13 +391,11 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 	if ext != null:
 		var resources := EconomyDisplay.apply_published_resources(ext)
 		var species := BioOccupancyDailySystem.apply_published_occupancy(ext)
-		var vision := _runtime_host.apply_runtime_vision_display()
+		var vision := _runtime_host.synchronize_vision_display_for_save()
 		if not bool(vision.get("ok", false)):
 			_restore_clock_mode(was_paused, previous_speed, generation)
 			_busy = false
 			return _result(false, "save_vision_writeback_failed", "视野未能写入地图，已取消保存。")
-		if not _runtime_host._vision_dirty_indices.is_empty():
-			_runtime_host._service_worker_map_presentation(Time.get_ticks_usec())
 		if not bool(resources.get("ok", false)) or not bool(species.get("ok", false)):
 			_restore_clock_mode(was_paused, previous_speed, generation)
 			_busy = false

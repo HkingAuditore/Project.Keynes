@@ -83,17 +83,28 @@ done
 导入关卡未通过。运行和导入日志分别是 `/private/tmp/keynes-63-verify.nm8ULe/regression-isolated.log`
 和 `/private/tmp/keynes-63-verify.nm8ULe/isolated-import.log`。
 
-改后窗口复测待完成。桌面采集在启动 Godot 时得到 LaunchServices `-10827`，没有生成绘制样本。
-直接启动停在 macOS 窗口服务连接阶段，记录见 `/private/tmp/keynes-issue63.zOmKne/first.log`。
-续跑的 LaunchServices 调用和退出状态见 `/private/tmp/keynes-63-verify.nm8ULe/launch-probe.run.json`。
-既有基线不能替代同版本配对样本，改后实际绘制间隔、后台天/秒、地图更新频率、落后游戏日
-和各档绘制瓶颈待测。用两份已导入的同基线项目，安装相应的本地扩展，复制相同的
+审查修复的定向用例验证了无地图批次保留积压变格、拒绝残缺生态数组、贴图失败后日期继续推进，
+以及宿主负责帧信号和保存时的视野同步。生态用例在仓外构建的 macOS arm64 扩展和脚本编码路径
+同时通过。定向日志见 `/private/tmp/keynes-63-review.qKdUuF/logs/`。
+审查修复版和 `9ddb12734` 的无窗口对照中，1× 前 8 日和 50× 三个帧率档的前 180 日
+逐日业务摘要和回执一致。模拟忙帧时，30、60、自适应档分别有 8、13、14 帧继续领取结果并
+暂缓地图，三档均合并积压并在恢复区间追上。记录见 `/private/tmp/keynes-63-review.qKdUuF/headless/summary.json`。
+18 项静态检查、211 项工厂测试通过。无窗口回归批量运行通过 127 项，包括正式存读档往返。
+存档列表用例首轮读到了复制来的旧测试存档，换用空目录的副本后通过全部 26 项检查。
+改前和改后导入均报系统证书和编辑器目录错误，运行及导入日志见同一目录下的 `logs/`。
+
+改后窗口复测仍待完成。首次直接启动停在 macOS 窗口服务连接阶段，记录见
+`/private/tmp/keynes-issue63.zOmKne/first.log`。审查修复版的正式配对采集在第一轮启动时收到
+LaunchServices `-10827`，桌面工具也未获准打开 Godot，两边均没有新绘制样本。命令、退出状态和
+日志见 `/private/tmp/keynes-63-review.qKdUuF/window-overload/` 及 `logs/window-overload.log`。
+改后实际绘制间隔、后台天/秒、地图更新频率、落后游戏日和各档绘制瓶颈待测。
+配对采集使用两份已导入的项目、对应版本的本地扩展和相同的
 `player_scene_handoff_probe.gd`、`player_scene_handoff_timings.gd` 和
 `player_scene_display_checks.gd`。本机已准备以下两份项目。
 
 ```sh
-baseline_copy=/private/tmp/keynes-issue63.zOmKne/baseline
-candidate_copy=/private/tmp/keynes-63-verify.nm8ULe/candidate
+baseline_copy=/private/tmp/keynes-63-review.qKdUuF/comparison-before
+candidate_copy=/private/tmp/keynes-63-review.qKdUuF/comparison-after
 sample_dir=$(mktemp -d /tmp/keynes-63-pairs.XXXXXX)
 python3 tools/perf/run_rendered_player_handoff.py "$baseline_copy" "$candidate_copy" \
   --macos-app /Applications/Godot.app --fps 30 --fps 60 --fps adaptive --output "$sample_dir/alternating"

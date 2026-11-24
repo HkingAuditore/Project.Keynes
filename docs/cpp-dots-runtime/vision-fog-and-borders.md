@@ -173,7 +173,9 @@ solve 的 LUT 重烘都会把整张地图刷成未探索。LUT 首烘推迟到 `
 
 视野变化时不能等 `DynamicVisualAtlasUploadSystem` 的日刷——它在 `dirty_count == 0`
 时会 early-return，而视野变化不体现在 climate/weather 的 dirty mask 上。所以
-`refresh_country_visuals()` 显式调 `MapBaker.refresh_cell_luts_daily()` 强制重烘。
+宿主优先将视野变格并入待绘制的每日地图。单独的视野变化由 `refresh_country_visuals()`
+调用 `MapBaker.refresh_cell_luts_daily()` 重烘。保存时由宿主同步已发布视野和建筑情报，
+再由存档服务采集建筑情报。
 
 ## 渲染层次
 

@@ -149,7 +149,8 @@ world_setup.tscn
   -> background executor / inline executor runs the same daily plan
   -> atomic publication of a committed display batch
   -> WorldRuntimeHost drains player-facing records every frame
-  -> WorldRuntimePresentation applies the latest map textures when the frame has room
+  -> WorldRuntimePresentation schedules the latest map update when the frame has room
+  -> WorldRuntimeHost publishes textures and records timings
 ```
 
 核心边界：

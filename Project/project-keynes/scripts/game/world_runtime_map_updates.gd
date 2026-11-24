@@ -23,10 +23,9 @@ var _last_update_frame := -1
 var _update_usec := INITIAL_UPDATE_USEC
 
 
-func queue(commit: Dictionary) -> void:
+func queue(commit: Dictionary) -> bool:
 	if commit.is_empty():
-		clear_pending()
-		return
+		return false
 	if has_pending():
 		_add_cells(_held_dirty, _latest.get(DIRTY, PackedInt32Array()))
 		_add_cells(_held_classes, _latest[CLASSES])
@@ -34,6 +33,7 @@ func queue(commit: Dictionary) -> void:
 	var dirty: PackedInt32Array = commit.get(DIRTY, PackedInt32Array())
 	_latest = {DIRTY: dirty, CLASSES: commit.get(CLASSES, dirty),
 		CELLS: commit.get(CELLS, {})}
+	return true
 
 
 func has_pending() -> bool:
@@ -64,7 +64,7 @@ func _add_cells(held: Dictionary, cells: PackedInt32Array) -> void:
 		held[cell] = true
 
 
-func clear_pending() -> void:
+func _clear_pending() -> void:
 	_latest.clear()
 	_held_dirty.clear()
 	_held_classes.clear()
@@ -116,11 +116,17 @@ func _frame_budget_usec(fps: int) -> float:
 func applied(frame: int, elapsed_usec: int) -> void:
 	_last_update_frame = frame
 	_update_usec = roundi(lerpf(_update_usec, elapsed_usec, 0.25))
-	clear_pending()
+	_clear_pending()
+
+
+func reject() -> void:
+	_clear_pending()
+	# The next publication's dirty cells are relative to a day we did not draw.
+	_full_update = true
 
 
 func reset() -> void:
-	clear_pending()
+	_clear_pending()
 	_frame_started_usec = 0
 	_last_draw_usec = 0
 	_fps = 0
