@@ -167,21 +167,28 @@ bool DCWorldExt::climate_physics_authoritative() const {
         input->climate_physics_knobs.ready && input->climate_physics_knobs.enabled;
 }
 
-Dictionary DCWorldExt::get_climate_physics_read_view() const {
+Dictionary DCWorldExt::get_climate_physics_commit_info() const {
     Dictionary out;
-    const auto committed = _climate_physics_committed;
     const bool ready = climate_physics_authoritative();
     out["ready"] = ready;
     out["authoritative"] = ready;
     out["ok"] = ready;
     out["code"] = ready ? "ok" : "physics_not_committed_or_not_granted";
     if (!ready) return out;
-    const auto &s = *committed;
+    const auto &s = *_climate_physics_committed;
     out["committed_day"] = s.committed_day;
     out["input_generation"] = static_cast<int64_t>(s.input_generation);
     out["generation"] = static_cast<int64_t>(s.generation);
-    out["state_hash"] = static_cast<int64_t>(s.state_hash());
+    out["map_instance_id"] = static_cast<int64_t>(_climate_physics_map_id);
     out["cell_count"] = s.cell_count;
+    return out;
+}
+
+Dictionary DCWorldExt::get_climate_physics_read_view() const {
+    Dictionary out = get_climate_physics_commit_info();
+    if (!static_cast<bool>(out["ready"])) return out;
+    const auto &s = *_climate_physics_committed;
+    out["state_hash"] = static_cast<int64_t>(s.state_hash());
     out["last_slp_day"] = s.last_slp_day;
     out["last_wind_day"] = s.last_wind_day;
     out["last_ocean_day"] = s.last_ocean_day;
