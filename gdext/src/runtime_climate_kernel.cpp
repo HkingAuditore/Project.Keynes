@@ -3138,6 +3138,8 @@ bool RuntimeClimateKernel::self_test(std::string &error) {
             if (!physics || !pk_async_physics::restore_physics_state(
                     current.physics_state.data(), current.physics_state.size(), decoded, error) ||
                 !decoded.initialized || physics->state_hash() != decoded.state_hash() ||
+                !physics->wind_display_signature || !reference._physics.wind_display_signature ||
+                physics->wind_display_signature->words != reference._physics.wind_display_signature->words ||
                 !physics->wind_traj_valid ||
                 physics->wind_traj_generation != decoded.wind_traj_generation) {
                 error = "climate_physics_writeback_mismatch:" + std::to_string(day);

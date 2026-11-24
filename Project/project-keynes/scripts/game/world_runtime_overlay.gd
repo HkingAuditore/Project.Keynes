@@ -187,14 +187,15 @@ func _refresh_map_overlay(force: bool) -> void:
 			inputs = reader.call(_current_map, mode == OverlayMode.MODE.WIND_DIR,
 				_current_map.cell_count(), _baked_inputs if comparable else {})
 		if comparable and inputs.get("same", false):
-			# The bytes still match the last bake. Keep the newest proof so
-			# later publishes of this solve need no full-column comparison.
+			# Keep the latest backing arrays and any key supplied by their publisher.
 			_baked_inputs = inputs
 			_input_check = &"unchanged"
 			_refresh_processed(now)
 			return
-		_input_check = &"inputs_unavailable" if inputs.is_empty() else \
-			&"changed" if comparable else &"rebuild"
+		if inputs.is_empty() or (comparable and not inputs.get("change_known", false)):
+			_input_check = &"inputs_unavailable"
+		else:
+			_input_check = &"changed" if comparable else &"rebuild"
 	var resource_profile: ResourceProfile = null
 	if mode == OverlayMode.MODE.RESOURCE_RESERVE:
 		var wanted := StringName(_map_overlay_request.get("resource_id", &""))

@@ -709,8 +709,7 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     if (has_ring) _runtime_host->release_climate_writeback(slot);
 
     flush_slots_to_map_keys(touched_slots);
-    publish_map_overlay_wind(_map_data, wind_written ? physics->wind_display_solve_id : 0,
-        wind_written ? physics->last_wind_day : -1);
+    publish_map_overlay_wind(_map_data, wind_written ? physics->wind_display_signature : std::nullopt);
     _climate_physics_committed = apply_physics ? std::move(physics) : nullptr;
     _climate_physics_map_id = _map_data->get_instance_id();
     // B8 诊断（一次性）：确认天气场在 writeback 之后是否真的进了 MapData。用它

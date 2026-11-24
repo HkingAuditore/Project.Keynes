@@ -1,6 +1,5 @@
 #include "runtime_climate_physics.h"
 
-#include <atomic>
 #include <cmath>
 #include <cstring>
 
@@ -27,14 +26,12 @@ constexpr uint32_t kPhysicsFlagTtaSeeded = 8u;
 }
 
 void RuntimeClimatePhysicsState::note_wind_solve(int64_t day) {
-    // The date can repeat after a restore or on another authority. The id
-    // distinguishes those solves without scanning the wind or affecting it.
-    static std::atomic<int64_t> next_id{1};
     last_wind_day = day;
-    wind_display_solve_id = next_id.fetch_add(1, std::memory_order_relaxed);
+    wind_display_signature.reset();
 }
 
-bool RuntimeClimatePhysicsState::validate_values(std::string &error) const {
+bool RuntimeClimatePhysicsState::validate_values(std::string &error,
+                                                MapOverlayInputSignature *wind_signature) const {
     for (auto member : saved_physics_lanes) {
         for (float v : this->*member) {
             if (!std::isfinite(v)) { error = "physics_non_finite"; return false; }
@@ -52,12 +49,18 @@ bool RuntimeClimatePhysicsState::validate_values(std::string &error) const {
         error = "physics_cadence_invalid"; return false;
     }
     for (int i = 0; i < cell_count; ++i) {
-        if (std::abs(wind_x[i]) > 1.0f || std::abs(wind_y[i]) > 1.0f ||
-            wind_speed[i] < 0.0f || std::abs(ocean_current_x[i]) > 1.0f ||
+        const float x = wind_x[i], y = wind_y[i], speed = wind_speed[i];
+        if (std::abs(x) > 1.0f || std::abs(y) > 1.0f ||
+            speed < 0.0f || std::abs(ocean_current_x[i]) > 1.0f ||
             std::abs(ocean_current_y[i]) > 1.0f || std::abs(upwelling[i]) > 1.0f ||
             std::abs(synoptic_psi[i]) > 1.0f || std::abs(synoptic_psi_prev[i]) > 1.0f ||
             std::abs(monsoon_thermal[i]) > 1.0f) {
             error = "physics_lane_bounds"; return false;
+        }
+        if (wind_signature) {
+            wind_signature->add(x);
+            wind_signature->add(y);
+            wind_signature->add(speed);
         }
     }
     if (topo_valid) {
@@ -95,9 +98,13 @@ bool RuntimeClimatePhysicsState::validate_values(std::string &error) const {
     return true;
 }
 
-bool serialize_physics_state(const RuntimeClimatePhysicsState &s,
+bool serialize_physics_state(RuntimeClimatePhysicsState &s,
                              std::vector<uint8_t> &blob, std::string &error) {
-    if (!s.validate(error)) return false;
+    // The required validation already visits the final corrected wind. A
+    // solve invalidates the key even when it produces identical values.
+    MapOverlayInputSignature wind_signature;
+    const bool needs_wind_signature = s.last_wind_day >= 0 && !s.wind_display_signature;
+    if (!s.validate(error, needs_wind_signature ? &wind_signature : nullptr)) return false;
     // 校验通过后无其他失败点；复用胶囊容量，避免每天分配并逐字节 push_back。
     std::vector<uint8_t> &out = blob;
     out.resize(120u + static_cast<size_t>(s.cell_count) * 4u * kPhysicsLanesV2);
@@ -130,6 +137,7 @@ bool serialize_physics_state(const RuntimeClimatePhysicsState &s,
             }
         }
     }
+    if (needs_wind_signature) s.wind_display_signature = wind_signature;
     error.clear();
     return true;
 }
@@ -147,7 +155,7 @@ void copy_committed_physics_fields(const RuntimeClimatePhysicsState &source,
     out.last_daily_day = source.last_daily_day;
     out.last_slp_day = source.last_slp_day;
     out.last_wind_day = source.last_wind_day;
-    out.wind_display_solve_id = source.wind_display_solve_id;
+    out.wind_display_signature = source.wind_display_signature;
     out.last_ocean_day = source.last_ocean_day;
     out.daily_due_seq = source.daily_due_seq;
     out.synoptic_tick = source.synoptic_tick;

@@ -103,16 +103,23 @@ func _run() -> void:
 	_expect("biology overlay has occupied cells", int(biology_stats.get("count", 0)) > 0)
 	diag = biology_diag
 	var refresh_before := int(diag.get("refresh_count", 0))
+	var refresh_due := runtime._map_overlay_last_refresh_msec + int(diag.refresh_interval_msec)
 	runtime.mark_map_overlay_dirty(&"test_a")
 	runtime.mark_map_overlay_dirty(&"test_b")
 	runtime.mark_map_overlay_dirty(&"test_c")
 	_expect("dirty events merge", int(runtime.map_overlay_diagnostics().get(
 		"merged_dirty_count", 0)) >= 2)
-	# process_frame runs before the host. A long frame can cross the wall-clock
-	# wait before the host gets a frame where the request is due.
-	var refresh_interval := runtime._map_overlay_refresh_interval_msec()
-	runtime._map_overlay_last_refresh_msec = Time.get_ticks_msec() - refresh_interval
-	await process_frame
+	var refreshed_early := false
+	while Time.get_ticks_msec() < refresh_due:
+		await process_frame
+		if runtime._map_overlay_last_refresh_msec < refresh_due \
+				and int(runtime.map_overlay_diagnostics().refresh_count) > refresh_before:
+			refreshed_early = true
+	# process_frame resumes before node processing. Check the first due frame
+	# after the host has had its turn, even if one long frame crossed the deadline.
+	await create_timer(0.0).timeout
+	_expect("merged requests wait for the real refresh interval", not refreshed_early
+		and runtime._map_overlay_last_refresh_msec >= refresh_due)
 	var refresh_delta := int(runtime.map_overlay_diagnostics().get(
 		"refresh_count", 0)) - refresh_before
 	_expect("merged dirty avoids per-event refresh fanout",

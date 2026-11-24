@@ -132,43 +132,56 @@ func _check_runtime_refresh(map: MapData, world: WorldData) -> void:
 	map.wind_y_arr[0] = 1.0
 	_refresh(overlay, 0, "wind direction does not rebuild elevation")
 
+	var elevation_slot: int = ext.component_id(&"cell_elevation")
+	var elevation_keys := PackedStringArray(["cell_elevation"])
+	var saved_height := map.elevation_arr[1]
+	ext.write_f32(elevation_slot, 1, 0.75)
+	ext.flush_slots_to_map_keys(elevation_keys)
+	overlay.mark_map_overlay_dirty(&"test")
+	ext.write_f32(elevation_slot, 1, saved_height)
+	ext.flush_slots_to_map_keys(elevation_keys)
+	_refresh(overlay, 0, "coalesced height edits return to the last baked bytes")
+	map.elevation_arr = map.elevation_arr.to_byte_array().to_float32_array()
+	ext.refresh_slots_from_map_keys(elevation_keys)
+	ext.flush_slots_to_map_keys(elevation_keys)
+	_expect_key_comparison(map, false, overlay._baked_inputs, true,
+		"replacement elevation can be checked with no previous column")
+	_refresh(overlay, 0, "equal replacement elevation column")
+
 	var original_pixels := overlay._map_overlay_image.get_data()
 	var heights := map.elevation_arr
 	heights.set(1, 0.22)
 	_refresh(overlay, 1, "one height edited through a packed array alias")
+	_expect("untracked height edits take the original bake path",
+		overlay._input_check == &"inputs_unavailable")
 	_expect("only the edited elevation texel changes",
 		overlay._map_overlay_buf.slice(0, 4) == original_pixels.slice(0, 4)
 		and overlay._map_overlay_buf.slice(4, 8) != original_pixels.slice(4, 8)
 		and overlay._map_overlay_buf.slice(8) == original_pixels.slice(8))
 	_expect_current_bake("edited elevation", overlay, map, world, OverlayMode.MODE.ELEVATION)
-	var saved_height := heights[1]
-	heights[1] = 0.75
-	overlay.mark_map_overlay_dirty(&"test")
-	heights[1] = saved_height
-	_refresh(overlay, 0, "coalesced height edits return to the last baked bytes")
-	map.elevation_arr = map.elevation_arr.duplicate()
-	_refresh(overlay, 0, "equal replacement elevation column")
-	ext.write_f32(ext.component_id(&"cell_elevation"), 1, 0.85)
-	ext.flush_slots_to_map_keys(PackedStringArray(["cell_elevation"]))
+	ext.write_f32(elevation_slot, 1, 0.85)
+	ext.flush_slots_to_map_keys(elevation_keys)
 	_refresh(overlay, 1, "native whole-column height writeback")
 	_expect_current_bake("native elevation", overlay, map, world, OverlayMode.MODE.ELEVATION)
 
 	var previous_count := overlay._map_overlay_refresh_count
+	var first_wind_key := _install_test_wind_receipt(map)
 	overlay.set_map_overlay({"mode": OverlayMode.MODE.WIND_DIR})
 	_expect("switch to wind builds into the shared texture",
 		overlay._map_overlay_refresh_count == previous_count + 1
 		and overlay._map_overlay_tex == shared_texture)
 	_expect_current_bake("first wind", overlay, map, world, OverlayMode.MODE.WIND_DIR)
-	_install_test_wind_receipt(map)
 	for i in range(3):
 		_refresh(overlay, 0, "unchanged wind %d" % i)
-	map.wind_x_arr = map.wind_x_arr.duplicate()
-	map.wind_y_arr = map.wind_y_arr.duplicate()
-	map.wind_speed_arr = map.wind_speed_arr.duplicate()
+	map.wind_x_arr = map.wind_x_arr.to_byte_array().to_float32_array()
+	map.wind_y_arr = map.wind_y_arr.to_byte_array().to_float32_array()
+	map.wind_speed_arr = map.wind_speed_arr.to_byte_array().to_float32_array()
 	_install_test_wind_receipt(map)
-	_refresh(overlay, 0, "republished columns from the same wind solve")
-	_expect("unchanged wind retains the verified solve",
-		overlay._baked_inputs.get("solve_id", 0) == 11)
+	_expect_key_comparison(map, true, overlay._baked_inputs, true,
+		"republished wind can be checked with no previous columns")
+	_refresh(overlay, 0, "a new wind publication with identical columns reuses the texture")
+	_expect("unchanged wind retains the verified content key",
+		overlay._baked_inputs.get("signature") == first_wind_key)
 	_expect_current_bake("unchanged wind", overlay, map, world, OverlayMode.MODE.WIND_DIR)
 	map.elevation_arr[0] = 0.19
 	_refresh(overlay, 0, "elevation does not rebuild wind")
@@ -176,7 +189,9 @@ func _check_runtime_refresh(map: MapData, world: WorldData) -> void:
 	map.wind_x_arr[0] = -1.0
 	_refresh(overlay, 1, "one cell changes wind x")
 	_expect("changing x changes hue", old_wind[0] != overlay._map_overlay_buf[0])
-	_expect("an edit rejects the stale wind receipt", overlay._baked_inputs.get("solve_id", -1) == 0)
+	_expect("an edit rejects the stale wind receipt",
+		overlay._input_check == &"inputs_unavailable"
+		and overlay._baked_inputs.get("signature") == PackedInt64Array())
 	old_wind = overlay._map_overlay_image.get_data()
 	map.wind_y_arr[0] = -1.0
 	_refresh(overlay, 1, "one cell changes wind y")
@@ -189,9 +204,15 @@ func _check_runtime_refresh(map: MapData, world: WorldData) -> void:
 		old_wind[0] == overlay._map_overlay_buf[0] and old_wind[1] != overlay._map_overlay_buf[1]
 		and old_wind.slice(4) == overlay._map_overlay_buf.slice(4))
 	_expect_current_bake("speed alone", overlay, map, world, OverlayMode.MODE.WIND_DIR)
+	_install_test_wind_receipt(map)
+	_refresh(overlay, 0, "verified wind data matching the current texture needs no bake")
 	map.wind_speed_arr[0] = 0.45
+	_install_test_wind_receipt(map)
+	_expect_key_comparison(map, true, overlay._baked_inputs, false,
+		"a new speed key reveals a change with no previous columns")
 	overlay.mark_map_overlay_dirty(&"test")
 	map.wind_speed_arr[0] = 1.25
+	_install_test_wind_receipt(map)
 	_refresh(overlay, 0, "coalesced wind edits return to the last baked bytes")
 
 	overlay._map_overlay_tex = null
@@ -243,12 +264,29 @@ func _check_runtime_refresh(map: MapData, world: WorldData) -> void:
 	layer.free()
 
 
-func _install_test_wind_receipt(map: MapData) -> void:
-	# Use the native reader to retain each typed column independently of its
-	# script alias, as the real committed writeback does.
+func _install_test_wind_receipt(map: MapData) -> PackedInt64Array:
+	# Use a separate fixture digest for the opaque publisher key. The climate
+	# self-test checks the real producer against separate solves and column edits.
 	var reader: Callable = map.get_meta(RuntimeOverlay.OVERLAY_INPUT_READER, Callable())
 	var snapshot: Dictionary = reader.call(map, true, map.cell_count(), {})
-	map.set_meta(RuntimeOverlay.WIND_PUBLICATION, {"lanes": snapshot.lanes, "solve_id": 11, "solve_day": 3})
+	var hash_context := HashingContext.new()
+	hash_context.start(HashingContext.HASH_SHA256)
+	for lane: PackedFloat32Array in snapshot.lanes:
+		hash_context.update(lane.to_byte_array())
+	var digest := hash_context.finish()
+	var signature := PackedInt64Array([digest.decode_s64(0), digest.decode_s64(8)])
+	map.set_meta(RuntimeOverlay.WIND_PUBLICATION, {"lanes": snapshot.lanes, "signature": signature})
+	return signature
+
+
+func _expect_key_comparison(map: MapData, wind: bool, baked: Dictionary,
+		same: bool, label: String) -> void:
+	var reader: Callable = map.get_meta(RuntimeOverlay.OVERLAY_INPUT_READER, Callable())
+	var check: Dictionary = reader.call(map, wind, map.cell_count(), {
+		"signature": baked.get("signature"),
+		"cells": map.cell_count(),
+	})
+	_expect(label, check.get("change_known", false) and check.get("same", false) == same)
 
 
 func _refresh(overlay, bakes: int, label: String) -> void:
