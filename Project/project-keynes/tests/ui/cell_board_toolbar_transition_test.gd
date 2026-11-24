@@ -14,14 +14,6 @@ func _expect(condition: bool, message: String) -> void:
 	if not condition:
 		_failures.append(message)
 
-func _active_animation(control: Control) -> Tween:
-	return control.get_meta(&"_ui_active_tween") as Tween if control.has_meta(&"_ui_active_tween") else null
-
-func _finish_animation(control: Control) -> void:
-	var animation := _active_animation(control)
-	if animation != null:
-		await animation.finished
-
 func _run() -> void:
 	var settings := root.get_node("GameSettings")
 	var original: bool = settings.values().get("reduce_motion", false)
@@ -47,32 +39,24 @@ func _run() -> void:
 	var secondary := toolbar.get_node("SecondaryPanel") as Control
 	var secondary_rest := secondary.position
 	toolbar._set_category(MapOverlayToolbar.Category.GEOGRAPHY)
-	var secondary_entry := _active_animation(secondary)
-	_expect(secondary_entry != null, "切换分类时次级栏开始入场")
-	if secondary_entry != null:
-		secondary_entry.custom_step(0.04)
+	_step_midway(secondary, UITokens.ANIM_FAST)
 	var request := toolbar._active_request.duplicate(true)
 	board.show_board(true)
 	_expect(primary.mouse_behavior_recursive == Control.MOUSE_BEHAVIOR_DISABLED,
 		"工具栏淡出起始即停止接收输入")
-	await _finish_animation(primary)
-	await _finish_animation(secondary)
-	await _finish_animation(slide)
+	await _wait_for_animation(primary)
+	await _wait_for_animation(secondary)
+	await _wait_for_animation(slide)
 	_expect(not primary.visible and not secondary.visible, "展板可见时两级工具栏都隐藏")
 	_expect(toolbar.visible, "不改派遣等工作区管理的根可见性")
 	board.hide_board(false)
 	_expect(not primary.visible, "展板退场期间工具栏不提前出现")
-	# A long frame can finish both a timer and the exit animation. Sample the
-	# animation itself before allowing the engine to advance another frame.
-	var board_exit := _active_animation(slide)
-	_expect(board_exit != null, "展板开始退场动画")
-	if board_exit != null:
-		board_exit.custom_step(CellBoard.SLIDE_OUT_SEC * 0.5)
+	_step_midway(slide, CellBoard.SLIDE_OUT_SEC)
 	_expect(slide.modulate.a > 0.0 and slide.modulate.a < 1.0, "已进入展板退场中段")
 	_expect(board.visible and not primary.visible, "退场中段保持工具栏隐藏")
-	await _finish_animation(slide)
-	await _finish_animation(primary)
-	await _finish_animation(secondary)
+	await _wait_for_animation(slide)
+	await _wait_for_animation(primary)
+	await _wait_for_animation(secondary)
 	_expect(not board.visible and primary.visible and secondary.visible, "退场后恢复原分类工具栏")
 	_expect(is_equal_approx(primary.modulate.a, 1.0), "恢复后透明度完整")
 	_expect(secondary.position.is_equal_approx(secondary_rest), "打断次级栏入场后恢复原布局位置")
@@ -80,24 +64,23 @@ func _run() -> void:
 	# Reopen in the very same frame that exit starts: the old exit must be cancelled.
 	board.show_board(false)
 	board.hide_board(false)
-	board_exit = _active_animation(slide)
+	var interrupted_exit := _animation(slide)
 	board.show_board(true)
-	_expect(board_exit != null and not board_exit.is_valid(), "重新入场取消旧退场动画")
-	await _finish_animation(primary)
+	_expect(interrupted_exit != null and not interrupted_exit.is_valid(), "快速重入取消旧退场动画")
+	await _wait_for_animation(slide)
+	await _wait_for_animation(primary)
 	_expect(board.visible and not primary.visible, "快速重入不被旧退场回调隐藏")
 	board.hide_board(true)
-	var toolbar_entry := _active_animation(primary)
-	_expect(toolbar_entry != null, "展板退场后工具栏开始淡入")
-	if toolbar_entry != null:
-		toolbar_entry.custom_step(0.04)
+	_step_midway(primary, UITokens.ANIM_MED)
+	var interrupted_restore := _animation(primary)
 	board.show_board(true)
-	_expect(toolbar_entry != null and not toolbar_entry.is_valid(), "再次入场取消工具栏淡入")
-	await _finish_animation(primary)
+	_expect(interrupted_restore != null and not interrupted_restore.is_valid(), "再次入场取消工具栏恢复动画")
+	await _wait_for_animation(primary)
 	_expect(not primary.visible, "恢复淡入被再次入场打断后没有迟到回调")
 	paused = true
 	board.hide_board(false)
-	await _finish_animation(slide)
-	await _finish_animation(primary)
+	await _wait_for_animation(slide)
+	await _wait_for_animation(primary)
 	_expect(not board.visible and primary.visible and is_equal_approx(primary.modulate.a, 1.0),
 		"暂停期间退场与恢复动画仍能收尾")
 	paused = false
@@ -105,11 +88,11 @@ func _run() -> void:
 	# Another workspace owns the root: board dismissal must never unhide it.
 	toolbar.hide()
 	board.hide_board(true)
-	await _finish_animation(primary)
+	await _wait_for_animation(primary)
 	_expect(not toolbar.visible, "派遣等界面隐藏工具栏后不能被展板恢复")
 	toolbar.show()
 	toolbar._set_category(MapOverlayToolbar.Category.NONE)
-	await _finish_animation(secondary)
+	await _wait_for_animation(secondary)
 	settings.get("_settings")["reduce_motion"] = true
 	board.show_board(true)
 	_expect(not primary.visible and not secondary.visible, "减少动效时立即隐藏")
@@ -121,3 +104,27 @@ func _run() -> void:
 		printerr("[cell-board-toolbar] FAIL: ", failure)
 	print("[cell-board-toolbar] ", "PASS" if _failures.is_empty() else "FAIL")
 	quit(0 if _failures.is_empty() else 1)
+
+func _animation(control: Control) -> Tween:
+	return control.get_meta("_ui_active_tween") as Tween if control.has_meta("_ui_active_tween") else null
+
+func _step_midway(control: Control, duration: float) -> void:
+	var tween := _animation(control)
+	# A wall-clock timer can resume after the animation in a single slow frame.
+	var in_progress := tween != null and tween.is_valid() and tween.custom_step(duration * 0.5)
+	_expect(in_progress, "%s 的动画走到一半时仍在进行" % control.name)
+
+func _wait_for_animation(control: Control) -> void:
+	var tween := _animation(control)
+	if paused and tween != null and tween.is_running():
+		var start := tween.get_total_elapsed_time()
+		# These two signals bracket an idle frame even when the first precedes
+		# the tween's first update. Fail promptly if the tween is paused too.
+		await process_frame
+		await process_frame
+		var advanced := tween.get_total_elapsed_time() > start
+		_expect(advanced, "暂停期间 %s 的动画仍在推进" % control.name)
+		if not advanced:
+			return
+	if tween != null and tween.is_running():
+		await tween.finished

@@ -177,6 +177,20 @@ def conflict_markers(workdir: str, paths: list[str]) -> list[str]:
     return sorted(filter(None, result.out.split("\0")))
 
 
+def validate_conflict_files(workdir: str, resolutions: dict[str, tuple[str, str]]) -> None:
+    for path, (action, _) in resolutions.items():
+        target = Path(workdir) / path
+        if action == "delete":
+            if os.path.lexists(target):
+                raise ValueError(f"Conflict resolution declares deletion but {path!r} still exists")
+        elif target.is_symlink() or not target.is_file() or b"\0" in target.read_bytes():
+            raise ValueError(f"Conflict resolution must keep a regular text file at {path!r}")
+
+    marked = conflict_markers(workdir, list(resolutions))
+    if marked:
+        raise ValueError("conflict markers remain: " + ", ".join(marked))
+
+
 def remote_head(workdir: str, remote: str, branch: str) -> str | None:
     ref = f"refs/heads/{branch}"
     return git(workdir, "ls-remote", "--refs", remote, ref).partition("\t")[0] or None
