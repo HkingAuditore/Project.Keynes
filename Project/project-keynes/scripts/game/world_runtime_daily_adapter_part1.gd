@@ -145,8 +145,8 @@ func _service_runtime_progress(host, frame_usec: int) -> void:
 	if host.military_map_layers != null \
 			and host.military_map_layers.has_method("poll_snapshot"):
 		host.military_map_layers.poll_snapshot()
-	host._service_country_visual_refresh_budgeted(frame_usec)
 	host._sched_proc_country_visual_ms += host._sched_elapsed_ms(segment_usec)
+	host._service_worker_map_presentation(frame_usec)
 	segment_usec = Time.get_ticks_usec()
 	var now_msec = Time.get_ticks_msec()
 	if now_msec >= host._building_visual_next_poll_msec:

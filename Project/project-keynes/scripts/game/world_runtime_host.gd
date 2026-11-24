@@ -789,8 +789,33 @@ func _consume_modifier_worker_snapshot_if_authoritative() -> void:
 	_daily_adapter._consume_modifier_worker_snapshot_if_authoritative(self)
 func _consume_country_worker_read_view_if_authoritative() -> void:
 	_daily_adapter._consume_country_worker_read_view_if_authoritative(self)
-func _service_country_visual_refresh_budgeted(frame_started_usec: int) -> void:
-	_daily_adapter._service_country_visual_refresh_budgeted(self, frame_started_usec)
+func _service_worker_map_presentation(frame_started_usec: int) -> void:
+	var vision_changed := not _vision_dirty_indices.is_empty()
+	_presentation.apply_pending_worker_map(_vision_dirty_indices, _publish_worker_map)
+	var country_started_usec := Time.get_ticks_usec()
+	_daily_adapter._service_country_visual_refresh_budgeted(self, frame_started_usec, vision_changed)
+	_sched_proc_country_visual_ms += _sched_elapsed_ms(country_started_usec)
+
+func _publish_worker_map(update: Dictionary, day: int, started_usec: int) -> bool:
+	# Publish textures before the vision-dependent layers and weather read them.
+	var result := _generator.publish_worker_climate_visuals(false, update) \
+		if _generator != null else {"reason": "missing_generator"}
+	if result.get("lut_encode_path", "none") == "none":
+		push_warning("[worker-map] Day %d publication failed: %s" % [day, result.get("reason", "no_encode_path")])
+		return false
+	_vision_dirty_indices = PackedInt32Array()
+	if _renderer != null and _world_clock != null:
+		_renderer.set_season_phase(_world_clock.season_phase_for_day(day))
+		_renderer.set_climate_anomaly(_world_clock.climate_anomaly)
+	mark_map_overlay_dirty(&"worker_committed")
+	_runtime_last_visual_apply_ms = _sched_elapsed_ms(started_usec)
+	_sched_proc_visual_ms += _runtime_last_visual_apply_ms
+	if _dcp_on():
+		_dcp_visual_ms = _runtime_last_visual_apply_ms
+	_generator.record_runtime_visual_timings(_runtime_last_ui_feedback_ms,
+		_runtime_last_visual_apply_ms, _runtime_last_gpu_upload_ms)
+	return true
+
 func _consume_runtime_commit_if_ready(report_override: Dictionary = {}) -> void:
 	_daily_adapter._consume_runtime_commit_if_ready(self, report_override)
 func military_report() -> Dictionary:
@@ -1138,6 +1163,13 @@ func _sync_country_territory_to_map() -> Dictionary:
 	return _visual_adapter._sync_country_territory_to_map(self)
 func apply_runtime_vision_display() -> Dictionary:
 	return _visual_adapter.apply_runtime_vision_display(self)
+
+func synchronize_vision_display_for_save() -> Dictionary:
+	var vision := apply_runtime_vision_display()
+	if bool(vision.get("ok", false)) and not _vision_dirty_indices.is_empty():
+		_service_worker_map_presentation(Time.get_ticks_usec())
+	return vision
+
 func _republish_cell_luts(dirty_indices: PackedInt32Array = PackedInt32Array(),
 		force_full_encode: bool = false) -> Dictionary:
 	return _visual_adapter._republish_cell_luts(self, dirty_indices, force_full_encode)
@@ -1167,7 +1199,24 @@ func _on_baker_stage_progress(stage: String, fraction: float) -> void:
 	_generation_adapter._on_baker_stage_progress(self, stage, fraction)
 func _enter_tree() -> void:
 	_generation_adapter._enter_tree(self)
+	if DisplayServer.get_name() != "headless":
+		_connect_presentation_frames()
+
+func _connect_presentation_frames() -> void:
+	get_tree().process_frame.connect(_on_presentation_frame_started)
+	RenderingServer.frame_post_draw.connect(_on_presentation_frame_drawn)
+
+func _on_presentation_frame_started() -> void:
+	_presentation.begin_frame()
+
+func _on_presentation_frame_drawn() -> void:
+	_presentation.observe_draw()
+
 func _exit_tree() -> void:
+	if get_tree().process_frame.is_connected(_on_presentation_frame_started):
+		get_tree().process_frame.disconnect(_on_presentation_frame_started)
+	if RenderingServer.frame_post_draw.is_connected(_on_presentation_frame_drawn):
+		RenderingServer.frame_post_draw.disconnect(_on_presentation_frame_drawn)
 	_generation_adapter._exit_tree(self)
 var _loading_visual_usec := 0
 var _loading_visual_name := ""

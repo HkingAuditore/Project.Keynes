@@ -1,7 +1,6 @@
 extends RefCounted
 
 ## Extracted world_runtime_daily_adapter.gd group 3; state stays with host.
-const RendererWeatherState = preload("res://scripts/rendering/renderer_weather_state.gd")
 const EconomyDisplay = preload("res://scripts/economy/economy_facade_display.gd")
 
 func _apply_season_display(map: MapData, applied: Dictionary) -> bool:
@@ -123,16 +122,6 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		host.finish_daily_tick(0.0)
 		if dcp:
 			host._dcp_finish_ms = float(Time.get_ticks_usec() - finish_usec) / 1000.0
-	var visual_started_us = Time.get_ticks_usec()
-	if bool(report.get("authority_ready", false)):
-		var defer_cell_lut_upload := RendererWeatherState.can_defer_cell_lut_upload(
-				host._renderer, host._generator._baker, host._world_data)
-		host._generator.publish_worker_climate_visuals(defer_cell_lut_upload, commit)
-		host._vision_dirty_indices = PackedInt32Array()
-		if host._renderer != null:
-			host._renderer.set_season_phase(host._world_clock.season_phase_for_day(host._runtime_commit_day))
-			host._renderer.set_climate_anomaly(host._world_clock.climate_anomaly)
-		host.mark_map_overlay_dirty(&"worker_committed")
 	if not days.is_empty():
 		host.simulation_day_records.emit(days)
 	if host._world_clock != null:
@@ -145,19 +134,13 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 			commit["colonization_receipts"])
 	host._publish_player_confirmation(host._runtime_control_state())
 	host._gm_adapter.consume_territory_receipts(host)
+	var ideology = host._generator.get_ideology_facade()
+	if ideology != null:
+		ideology.drain_receipts()
 	host.simulation_committed.emit(from_day, host._runtime_commit_day, host._runtime_commit_generation)
 	ext.finish_runtime_display_frame()
 	host._presentation.queue_worker_commit(from_day,
-			host._runtime_commit_day, host._runtime_commit_generation)
-	host._runtime_last_visual_apply_ms = float(Time.get_ticks_usec() - visual_started_us) / 1000.0
-	host._sched_proc_visual_ms += host._runtime_last_visual_apply_ms
-	if dcp:
-		host._dcp_visual_ms = host._runtime_last_visual_apply_ms
-	if host._generator.has_method("record_runtime_visual_timings"):
-		host._generator.record_runtime_visual_timings(
-			host._runtime_last_ui_feedback_ms,
-			host._runtime_last_visual_apply_ms,
-			host._runtime_last_gpu_upload_ms)
+			host._runtime_commit_day, host._runtime_commit_generation, commit if whole_graph else {})
 
 
 func military_report(host) -> Dictionary:

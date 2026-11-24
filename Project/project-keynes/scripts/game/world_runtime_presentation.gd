@@ -20,26 +20,46 @@ var _presented_day := -1
 var _pending_from_day := -1
 var _pending_day := -1
 var _pending_generation := 0
+var _pending_map_day := -1
+var _map_updates := preload("res://scripts/game/world_runtime_map_updates.gd").new()
 
-## Display can skip dates. Keep the first source date until the next frame,
+## Display can skip dates. Keep the first source date until the next application,
 ## independently from the notification sent for every settled day.
-func queue_worker_commit(from_day: int, day: int, generation: int) -> void:
-	if not needs_worker_view(generation):
+func queue_worker_commit(from_day: int, day: int, generation: int, visual_commit: Dictionary = {}) -> void:
+	# A restarted executor can publish a lower generation in the same world.
+	if day <= maxi(_presented_day, _pending_day):
 		return
 	if _pending_day < 0:
 		_pending_from_day = _presented_day if _presented_day >= 0 else from_day
 	_pending_day = day
 	_pending_generation = generation
-
-func needs_worker_view(generation: int) -> bool:
-	return generation > _pending_generation
+	if _map_updates.queue(visual_commit):
+		_pending_map_day = day
 
 func publish_worker_view(publish: Callable) -> void:
-	if _pending_day < 0:
+	if _pending_day < 0 or _map_updates.has_pending():
 		return
 	_presented_day = _pending_day
 	_pending_day = -1
 	publish.call(_pending_from_day, _presented_day, _pending_generation)
+
+func begin_frame() -> void:
+	_map_updates.start_frame(Time.get_ticks_usec())
+
+func observe_draw() -> void:
+	_map_updates.observe_draw(Time.get_ticks_usec(), Engine.max_fps)
+
+func apply_pending_worker_map(vision_dirty: PackedInt32Array, publish_map: Callable) -> void:
+	if not _map_updates.has_pending():
+		return
+	var frame := Engine.get_process_frames()
+	var started := Time.get_ticks_usec()
+	if vision_dirty.is_empty() and not _map_updates.can_apply(frame, started, Engine.max_fps):
+		return
+	if not publish_map.call(_map_updates.collect(vision_dirty), _pending_map_day, started):
+		_map_updates.reject()
+		return
+	_map_updates.applied(frame, Time.get_ticks_usec() - started)
 
 func presented_worker_day() -> int:
 	return _presented_day
@@ -49,6 +69,8 @@ func reset_worker_views() -> void:
 	_pending_from_day = -1
 	_pending_day = -1
 	_pending_generation = 0
+	_pending_map_day = -1
+	_map_updates.reset()
 
 func map_wrap_period_x() -> float:
 	return _wrap_period

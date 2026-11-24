@@ -177,14 +177,14 @@ func _consume_country_worker_read_view_if_authoritative(host) -> void:
 ## already spent their sim budget so day capture and peer pumps stay responsive.
 
 
-func _service_country_visual_refresh_budgeted(host, frame_started_usec: int) -> void:
+func _service_country_visual_refresh_budgeted(host, frame_started_usec: int, vision_changed: bool) -> void:
 	if not host._country_visual_refresh_pending:
 		return
 	var frame_elapsed_ms = host._sched_elapsed_ms(frame_started_usec)
 	var budget_ms = host.COUNTRY_VISUAL_REFRESH_BUDGET_MS
 	if host._world_clock != null:
 		budget_ms = minf(budget_ms, float(host._world_clock.sim_frame_budget_ms))
-	var force = host._country_visual_refresh_deferred_frames >= \
+	var force = vision_changed or host._country_visual_refresh_deferred_frames >= \
 		host.COUNTRY_VISUAL_REFRESH_MAX_DEFER_FRAMES
 	if not force and frame_elapsed_ms >= budget_ms:
 		host._country_visual_refresh_deferred_frames += 1

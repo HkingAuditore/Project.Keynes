@@ -391,7 +391,7 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 	if ext != null:
 		var resources := EconomyDisplay.apply_published_resources(ext)
 		var species := BioOccupancyDailySystem.apply_published_occupancy(ext)
-		var vision := _runtime_host.apply_runtime_vision_display()
+		var vision := _runtime_host.synchronize_vision_display_for_save()
 		if not bool(vision.get("ok", false)):
 			_restore_clock_mode(was_paused, previous_speed, generation)
 			_busy = false

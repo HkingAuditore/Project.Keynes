@@ -58,6 +58,7 @@ func release_session_simulation(host) -> Dictionary:
 
 func cancel_session_presentation(host) -> void:
 	host._session_frames.cancel()
+	host._presentation.reset_worker_views()
 
 func release_session_presentation(host) -> Dictionary:
 	host.clear_map_overlay()

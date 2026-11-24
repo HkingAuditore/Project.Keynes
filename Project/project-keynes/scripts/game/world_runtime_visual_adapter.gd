@@ -516,7 +516,7 @@ func apply_runtime_vision_display(host) -> Dictionary:
 	var revealed := PackedInt32Array()
 	var compare := map.fog_solved and map.fog_k_arr.size() == count and map.visible_arr.size() == count
 	for cell in count:
-		if not compare or map.fog_k_arr[cell] != fog[cell] or map.visible_arr[cell] != visible[cell]:
+		if enabled_changed or not compare or map.fog_k_arr[cell] != fog[cell] or map.visible_arr[cell] != visible[cell]:
 			pending_dirty[cell] = true
 		if enabled and visible[cell] != 0 and (not compare or map.visible_arr[cell] == 0):
 			revealed.append(cell)

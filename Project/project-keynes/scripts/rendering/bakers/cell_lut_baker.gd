@@ -299,16 +299,25 @@ static func bake_cell_luts(baker: MapBaker, map: MapData, world: WorldData, cach
 	if map == null or world == null:
 		report.reason = "missing_map_or_world"
 		return report
-	if not defer_upload:
-		flush_staged_cell_lut_upload(baker, world)
 	if world.lut_dims.x <= 0 or world.lut_dims.y <= 0:
 		baker._ensure_cell_lut_dims(map, world)
 	var lw: int = world.lut_dims.x
 	var lh: int = world.lut_dims.y
-	if lw <= 0 or lh <= 0:
+	var n_cells: int = map.cell_count()
+	if lw <= 0 or lh <= 0 or n_cells <= 0 or lw * lh < n_cells:
 		report.reason = "invalid_lut_dims"
 		return report
-	var n_cells: int = map.cell_count()
+	var frame = runtime_commit.get("cell_lut_frame", {})
+	if runtime_commit.has("cell_lut_frame"):
+		var ages = frame.get("transition_age") if frame is Dictionary else null
+		var vitalities = frame.get("previous_vitality") if frame is Dictionary else null
+		if not ages is PackedByteArray or not vitalities is PackedByteArray \
+				or ages.size() != n_cells or vitalities.size() != n_cells:
+			report.reason = "invalid_cell_lut_frame"
+			push_warning("[cell-lut] Rejected worker publication: expected %d transition ages and previous vitalities" % n_cells)
+			return report
+	if not defer_upload:
+		flush_staged_cell_lut_upload(baker, world)
 	var snow_cover_override: PackedFloat32Array = PackedFloat32Array()
 	if map.snow_cover_arr.size() >= n_cells:
 		snow_cover_override = map.snow_cover_arr
@@ -330,7 +339,7 @@ static func bake_cell_luts(baker: MapBaker, map: MapData, world: WorldData, cach
 		# Do not call refresh_slots_from_map() here: several native climate fields can be
 		# newer in C++ slots than in MapData. Snow is different because weather/climate
 		# already flush it for gameplay and diagnostics, so pass that one field explicitly.
-		var out: Dictionary = baker._world_ext.encode_cell_luts({
+		var options := {
 			"map": map,
 			"lut_w": lw,
 			"lut_h": lh,
@@ -339,13 +348,15 @@ static func bake_cell_luts(baker: MapBaker, map: MapData, world: WorldData, cach
 			"terrain_sea_ice": int(TerrainType.TERRAIN.SEA_ICE),
 			"veg_none": int(VegetationType.VEG.NONE),
 			"cache_valid": cache_valid,
-			"runtime_frame": runtime_commit.has("display_dirty_cells"),
 			"dirty_indices": dirty_indices,
 			"force_full_encode": force_full_encode,
 			"include_weather_lut": publish_weather_lut,
 			"snow_cover_arr": snow_cover_override,
 			"fog_k_arr": fog_k_override,
-		})
+		}
+		if not frame.is_empty():
+			options["cell_lut_frame"] = frame
+		var out: Dictionary = baker._world_ext.encode_cell_luts(options)
 		# Payload arrays are consumed locally. Never deep-copy or return them through the
 		# scheduler/perf report: at 6400 cells the old path copied ~100 KiB several times.
 		report = out.duplicate(false)
@@ -381,7 +392,8 @@ static func bake_cell_luts(baker: MapBaker, map: MapData, world: WorldData, cach
 	# A legacy/fallback encode publishes immediately. Flush an earlier native
 	# batch first so a newer synchronous update cannot be replaced by it.
 	flush_staged_cell_lut_upload(baker, world)
-	baker._bake_cell_luts_gd(map, world, lw, lh, snow_cover_override, publish_weather_lut, fog_k_override)
+	_bake_cell_luts_gd(baker, map, world, lw, lh, snow_cover_override,
+		publish_weather_lut, fog_k_override, frame)
 
 	report["lut_encode_path"] = "gdscript"
 	report["path"] = "gdscript"
@@ -462,7 +474,7 @@ static func _publish_cell_lut_textures(baker: MapBaker, world: WorldData,
 	# 那一个实例（天气表也用该引用）；null 时
 	# _publish_cell_table 自己会把 bound/layers 归零。
 	report.merge(_publish_cell_table(baker, baker._last_bake_map, world, e, d,
-		enum_changed or not class_indices.is_empty(), dyn_changed,
+		enum_changed or force_full_encode or not class_indices.is_empty(), dyn_changed,
 		class_indices, force_full_encode), true)
 	var bounce_t0_us := Time.get_ticks_usec()
 	report["bounce_lut_published"] = false
@@ -527,8 +539,11 @@ static func flush_staged_cell_lut_upload(baker: MapBaker, world: WorldData) -> v
 static func _bake_cell_luts_gd(baker: MapBaker, map: MapData, world: WorldData, lw: int, lh: int,
 		snow_cover_override: PackedFloat32Array = PackedFloat32Array(),
 		publish_weather_lut: bool = true,
-		fog_k_override: PackedByteArray = PackedByteArray()) -> void:
+		fog_k_override: PackedByteArray = PackedByteArray(), cell_lut_frame: Dictionary = {}) -> void:
 	var slots: int = lw * lh
+	var transition_ages: PackedByteArray = cell_lut_frame.get("transition_age", PackedByteArray())
+	var previous_vitalities: PackedByteArray = cell_lut_frame.get("previous_vitality", PackedByteArray())
+	var has_transition := not cell_lut_frame.is_empty()
 	var enum_data := PackedByteArray(); enum_data.resize(slots * 4)
 	var dyn_data := PackedByteArray(); dyn_data.resize(slots * 4)
 	var eco_data := PackedByteArray(); eco_data.resize(slots * 4)
@@ -555,7 +570,9 @@ static func _bake_cell_luts_gd(baker: MapBaker, map: MapData, world: WorldData, 
 		dyn_data[d4 + 2] = (dsig >> 16) & 0xFF
 		dyn_data[d4 + 3] = (dsig >> 24) & 0xFF
 		var cur_vit_byte: int = baker._q01_byte(float(cell.vegetation_vitality))
-		var esig: int = baker._ecology_visual_signature(cell, 0, cur_vit_byte, snow_override)
+		var age := transition_ages[ci] if has_transition else 0
+		var previous_vit := previous_vitalities[ci] if has_transition else cur_vit_byte
+		var esig: int = baker._ecology_visual_signature(cell, age, previous_vit, snow_override)
 		var c4: int = ci * 4
 		eco_data[c4]     = esig & 0xFF
 		eco_data[c4 + 1] = (esig >> 8) & 0xFF
