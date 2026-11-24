@@ -262,6 +262,11 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
     out["schema_version"] = SCHEMA_VERSION;
     out["catalog_hash"] = _catalog_hash.get();
     out["committed_day"] = _last_committed_day.get();
+    // R4-2: generation / state_hash / restore_eligible. Without them the fatal
+    // snapshot manifest recorded native_generation=0 and native_state_hash=0 for
+    // a 42 MB archive that was in fact written at a committed boundary, while the
+    // paired country.pkcn recorded generation=1 and a real hash.
+    write_save_identity_report(out);
     return out;
 }
 
@@ -1406,6 +1411,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     const int32_t restored_commands = _restore.restored_commands;
     const int32_t restored_buildings = _restore.restored_buildings;
     const int32_t restored_schema = _restore.schema_version;
+    const int32_t dropped_transit_persons = _restore.dropped_transit_persons;
     _resource_stock_restored_pending_capture = _restore.resource_stock_seen;
     _restore = {};
     trace_begin_epoch();
@@ -1426,6 +1432,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     out["restored_families"] = families_store().active_count.get();
     out["restored_persons"] = persons_store().active_count.get();
     out["restored_person_needs"] = static_cast<int64_t>(person_needs().size());
+    out["dropped_transit_persons"] = dropped_transit_persons;
     out["migration"] = restored_schema == 27
         ? "v27_empty_birth_residual_bootstrap"
         : (restored_schema == 25

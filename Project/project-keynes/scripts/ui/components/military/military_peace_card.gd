@@ -40,7 +40,7 @@ func set_data(data: Dictionary) -> void:
 	var cooldown := int(data.get("cooldown_until", -1))
 	var day := int(data.get("day", -1))
 	if cooldown > day and day >= 0:
-		_hint.text = "对方上次拒绝和议：第 %d 日后可再次提出。" % cooldown
+		_hint.text = "对方上次拒绝和议：%s之后可再次提出。" % WorldClock.date_text_for_day(cooldown)
 	elif int(data.get("candidates", 0)) > 0:
 		_hint.text = "打开窗口勾选条款，并在地图上点选要交割的占领格。"
 	else:

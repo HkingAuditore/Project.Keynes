@@ -1070,11 +1070,22 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
                     append_le<uint16_t>(record, lane.satisfaction_dims[dim]);
                 append_le<uint8_t>(record, lane.anonymous);
-                append_le<uint32_t>(record, lane.person_count);
-                for (uint32_t person = 0; person < lane.person_count; ++person)
+                // The flat handle lane can shrink while the party is on the
+                // map (a retirement drops its reference). Never trust the
+                // cached payload count for the wire record: clamp it to the
+                // lane we actually hold, or the save reads past the vector.
+                const uint32_t handle_begin = lane.person_begin;
+                const uint32_t handle_total = static_cast<uint32_t>(
+                    family_expedition_person_handles().size());
+                const uint32_t person_count = handle_begin >= handle_total
+                    ? 0U
+                    : std::min<uint32_t>(lane.person_count,
+                        handle_total - handle_begin);
+                append_le<uint32_t>(record, person_count);
+                for (uint32_t person = 0; person < person_count; ++person)
                     append_le<uint64_t>(record,
                         family_expedition_person_handles()[
-                            lane.person_begin + person]);
+                            handle_begin + person]);
             }
             const uint32_t cargo_count = family_expeditions_store().active[i] != 0
                 ? family_expeditions_store().cargo_count[i] : 0;

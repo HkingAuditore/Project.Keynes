@@ -385,8 +385,8 @@ static func _evaluate_condition_atom(host, atom: Dictionary, states: PackedInt32
 	var name = String(host._signal_names.get(stable_id, stable_id))
 	var source = ""
 	if count > 0:
-		source = "，首次记录：第 %d 日 / 地块 %d" % [
-			int(row.get("first_day", -1)), int(row.get("first_cell", -1))]
+		source = "，首次记录：%s / 地块 %d" % [
+			WorldClock.date_text_for_day(int(row.get("first_day", -1))), int(row.get("first_cell", -1))]
 	return {
 		"met": met,
 		"items": [{

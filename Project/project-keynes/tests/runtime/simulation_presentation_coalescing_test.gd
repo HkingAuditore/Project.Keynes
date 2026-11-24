@@ -1,19 +1,17 @@
 extends SceneTree
 
 class UiProbe extends RefCounted:
-	var days: Array[int] = []
 	var rendered: Array[int] = []
 	var dates: Array[Vector3i] = []
 	var refreshes := 0
 
-	func record_committed_ledger(commit: Dictionary) -> void:
-		days.append(int(commit.gdp.day))
+	## 控制器侧 committed 三入口已收敛成 notify_committed_day()（fb4 语义），
+	## 假 UI 要跟着换，否则 has_method 不命中、refreshes 恒 0。
+	func notify_committed_day() -> void:
+		refreshes += 1
 
 	func refresh_selected_daily_lines(_force: bool, day: int) -> void:
 		rendered.append(day)
-
-	func refresh_committed_view() -> void:
-		refreshes += 1
 
 	func update_time_state(year: int, month: int, day: int, _paused: bool, _speed: float) -> void:
 		dates.append(Vector3i(year, month, day))
@@ -168,7 +166,7 @@ func _init() -> void:
 	clock.free()
 	host.free()
 	var ok := no_early_frame and coalesced and crossed_gap and restarted and correct_date \
-		and ui.days == [24] and ui.rendered == [24, 27, 1] and ui.refreshes == 3 \
+		and ui.rendered == [24, 27, 1] and ui.refreshes == 3 \
 		and daily_audio and music.refreshes == 4 and _check_matching_weather_day() \
 		and _check_empty_consumed_climate_writeback()
 	print("Simulation presentation coalescing: ", ok)

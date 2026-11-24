@@ -14,6 +14,7 @@ extends DossierChart
 
 signal action_pressed()
 signal demolish_pressed()
+signal preview_changed(show: bool, demolition: bool)
 
 const ROW_HEIGHT := 46.0
 const ICON_SIZE := 24.0
@@ -34,8 +35,6 @@ const STAMP_SECONDS := 0.24
 ## 数值变更的墨迹下划线淡出时长。
 const INK_SECONDS := 0.4
 ## 提示卡正文：15px 与营造提示卡同级，版心 390px 让 424px 档案列也放得下。
-const TOOLTIP_SIZE := 15
-const TOOLTIP_WIDTH := 390.0
 
 var _entry: Dictionary = {}
 var _primary: Button
@@ -76,84 +75,49 @@ func _init() -> void:
 	set_process(false)
 
 
-## 两个纸片键必须同形制：同一个 theme variation、同一套圆角与纸边，只换墨色。
-## 用 `ChipButton` 而不是裸 `Button`：Godot 的提示只问**被悬停的那个控件**，
-## 不会代问父节点。裸 Button 会拿自己的 `tooltip_text` 走默认 TooltipPanel——
-## 那个面板不换行、超宽就被屏幕边缘裁掉，正好是玩家看不全建材的那一类 bug。
 func _make_chip(width: float) -> Button:
-	var chip := ChipButton.new()
+	var chip := UIControlParts.button()
 	chip.theme_type_variation = &"PKDossierChip"
 	chip.focus_mode = Control.FOCUS_ALL
+	chip.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	chip.custom_minimum_size = Vector2(width, ACTION_HEIGHT)
 	chip.clip_text = true
-	chip.tooltip_builder = Callable(get_script(), "build_tooltip_card")
-	chip.mouse_entered.connect(_set_hovered.bind(true))
-	chip.mouse_exited.connect(_set_hovered.bind(false))
+	chip.mouse_entered.connect(_on_pointer_changed.bind(true))
+	chip.mouse_exited.connect(_on_pointer_changed.bind(false))
 	chip.focus_entered.connect(_on_focus_entered)
 	chip.focus_exited.connect(_on_focus_exited)
 	return chip
 
 
-## 提示卡走纸片弹窗样式并显式开自动换行，而不是原生 `tooltip_text`。
-## 原生 tooltip 只按最宽一行折、且不保证竖向空间：建材多到三五项时会被压成一条
-## 横贯屏幕的长句，甚至被屏幕边缘裁掉。这座建筑吃多少料、每天维护多少，正是玩家
-## 下单前必须看全的东西，不能赌渲染器的折行策略。
-## 样式取主题里的 `PKPaperPopup`：别处的手绘纸片弹窗都用它，提示卡不该自成一格。
-static func build_tooltip_card(text: String) -> Control:
-	if text.strip_edges().is_empty():
-		return null
-	var panel := UIControlParts.panel_container()
-	panel.theme_type_variation = &"PKPaperPopup"
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var copy := UIControlParts.label()
-	copy.text = text
-	copy.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	copy.add_theme_font_override("font", UITokens.dossier_font("sans"))
-	copy.add_theme_font_size_override("font_size", TOOLTIP_SIZE)
-	copy.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
-	# 版心宽度与营造提示卡一致（390px）：424px 的档案列也放得下，
-	# `AUTOWRAP_WORD_SMART` 让长建材名在词边界折行，不会把一项拆成两段。
-	copy.custom_minimum_size.x = TOOLTIP_WIDTH
-	copy.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	copy.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.add_child(copy)
-	return panel
+func _on_pointer_changed(entered: bool) -> void:
+	_set_hovered(entered)
+	_sync_preview_pointer.call_deferred()
 
 
-## 行本身的提示卡：指针落在图标、名字、成本段上都走这里。
-func _make_custom_tooltip(for_text: String) -> Object:
-	return build_tooltip_card(for_text)
-
-
-## 纸片键专用按钮。必须由按钮自己覆写提示卡：悬停按钮时 Godot 只问按钮，
-## 不会代问父行，裸 Button 于是退回不换行的默认 TooltipPanel。
-class ChipButton extends Button:
-	## 由建筑行注入的提示卡构建器（静态函数 Callable），避免内部类反查外部
-	## `class_name`——这个脚本没有全局类名，`Xxx.build_tooltip_card` 取不到。
-	var tooltip_builder: Callable
-
-	func _make_custom_tooltip(for_text: String) -> Object:
-		if tooltip_builder.is_valid():
-			return tooltip_builder.call(for_text)
-		return null
-
-
-## 两个键的提示卡都由这一处刷新，保证它们指向同一份权威文本。
-func _apply_tooltip(control: Control, text: String) -> void:
-	if control == null:
+func _sync_preview_pointer() -> void:
+	if not is_visible_in_tree():
 		return
-	var trimmed := text.strip_edges()
-	control.tooltip_text = trimmed
-	# 没有内容时彻底摘掉提示，避免空卡片从按钮边缘冒出来。
-	control.mouse_default_cursor_shape = Control.CURSOR_ARROW if trimmed.is_empty() \
-		else Control.CURSOR_POINTING_HAND
+	var hovered := get_viewport().gui_get_hovered_control()
+	var inside := hovered != null and (hovered == self or is_ancestor_of(hovered))
+	preview_changed.emit(inside, hovered == _demolish)
+
+
+func preview_data(demolition: bool) -> Dictionary:
+	if not demolition:
+		return _entry.get("hover", {})
+	if not _demolish.visible:
+		return {}
+	var data: Dictionary = _entry.get("demolish_hover", {}).duplicate()
+	if not data.is_empty() and confirm_pending():
+		data["status_text"] = "待确认"
+	return data
 
 
 func _ready() -> void:
 	add_child(_primary)
 	add_child(_demolish)
-	mouse_entered.connect(_set_hovered.bind(true))
-	mouse_exited.connect(_set_hovered.bind(false))
+	mouse_entered.connect(_on_pointer_changed.bind(true))
+	mouse_exited.connect(_on_pointer_changed.bind(false))
 	resized.connect(_sync_layout)
 	_sync_layout()
 
@@ -231,6 +195,7 @@ func _process(_delta: float) -> void:
 	if _confirm_until_msec > 0 and now >= _confirm_until_msec:
 		_cancel_confirm()
 		_sync_action()
+		_sync_preview_pointer.call_deferred()
 		queue_redraw()
 	if _notice.is_empty():
 		if _confirm_until_msec <= 0:
@@ -308,11 +273,6 @@ func _sync_action() -> void:
 	_primary.visible = primary != "none"
 	_primary.disabled = _busy or blocked
 	_primary.text = String(_entry.get("action_label", ""))
-	# 整行与主键共用同一份提示卡文本：玩家指着建筑名、指着成本段、指着按钮，
-	# 看到的都该是同一份完整清单（需求：提示卡必须列全建材与维护）。
-	var tooltip := String(_entry.get("tooltip", ""))
-	_apply_tooltip(self, tooltip)
-	_apply_tooltip(_primary, tooltip)
 	if _primary.visible:
 		_primary.focus_mode = Control.FOCUS_ALL
 	else:
@@ -325,9 +285,6 @@ func _sync_action() -> void:
 	_demolish.text = "确认拆除" if _confirm_until_msec > 0 else "拆除"
 	_demolish.focus_mode = Control.FOCUS_ALL if _demolish.visible \
 		else Control.FOCUS_NONE
-	_apply_tooltip(_demolish,
-		"拆掉这一行已建成的建筑，不退还建材。再按一次确认。"
-		if _demolish.visible else "")
 	if not demo_ok:
 		_cancel_confirm()
 	queue_redraw()
@@ -347,6 +304,7 @@ func _on_demolish_pressed() -> void:
 		_confirm_until_msec = Time.get_ticks_msec() + int(CONFIRM_SECONDS * 1000.0)
 		set_process(true)
 		_sync_action()
+		_sync_preview_pointer.call_deferred()
 		queue_redraw()
 		return
 	_cancel_confirm()

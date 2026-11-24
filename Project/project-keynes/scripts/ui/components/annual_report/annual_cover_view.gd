@@ -223,7 +223,7 @@ func _apply_model() -> void:
 		return
 	var available: bool = not _model.is_empty() and bool(_model.get("available", false))
 	var complete: bool = bool(_model.get("complete", false))
-	_kicker.text = "第 %d 年" % int(_model.get("year", 1))
+	_kicker.text = "%d年" % int(_model.get("year", 1))
 	_country.text = String(_model.get("country_name", "本国"))
 	_country.tooltip_text = _country.text
 	_grade.text = String(_model.get("grade", "—"))

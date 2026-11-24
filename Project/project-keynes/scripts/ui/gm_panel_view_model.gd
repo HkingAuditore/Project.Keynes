@@ -184,7 +184,7 @@ static func _format_overview(data: Dictionary) -> Array:
 			{"label": "地图", "value": "%s × %s · %s 格" % [world.get("width", 0), world.get("height", 0), world.get("cells", 0)]},
 		]},
 		{"title": "时间", "rows": [
-			{"label": "日期", "value": "第%s年 %s月%s日" % [clock.get("year", 0), clock.get("month", 0), clock.get("day", 0)]},
+			{"label": "日期", "value": "%s年%s月%s日" % [clock.get("year", 0), clock.get("month", 0), clock.get("day", 0)]},
 			{"label": "游戏日", "value": str(clock.get("day_index", -1))},
 			{"label": "状态", "value": "暂停" if bool(clock.get("paused", false)) else "运行中"},
 			{"label": "速度", "value": "%sx" % clock.get("speed", 0)},

@@ -1,5 +1,6 @@
 extends RefCounted
 
+const Recipes = preload("res://scripts/ui/cell_inspector/construction_recipes.gd")
 const BuildingDossier = preload("res://scripts/ui/cell_inspector/building_dossier.gd")
 
 const FamilyWorkspaceProjection = preload("res://scripts/ui/family_workspace_projection.gd")
@@ -923,6 +924,8 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 	var type_names: PackedStringArray = snapshot.get("building_type_display_names", PackedStringArray())
 	var group_types: PackedInt32Array = snapshot.get("group_type_ids", PackedInt32Array())
 	var owner_signatures: PackedInt32Array = snapshot.get("owner_signature_ids", PackedInt32Array())
+	var signature_professions: PackedInt32Array = snapshot.get("signature_profession_ids", PackedInt32Array())
+	var profession_ids: PackedStringArray = snapshot.get("profession_stable_ids", PackedStringArray())
 	var group_counts: PackedInt64Array = snapshot.get("group_counts", PackedInt64Array())
 	var owner_capacity: PackedInt64Array = snapshot.get("owner_capacity", PackedInt64Array())
 	var owner_required_by_group: PackedInt64Array = snapshot.get("owner_required", PackedInt64Array())
@@ -1023,8 +1026,14 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 		var owner_job_value = "%d / %d" % [owner_actual, owner_required]
 		if owner_required == 0 and owner_physical_capacity > 0:
 			owner_job_value += "（物理容量 %d）" % owner_physical_capacity
+		var signature := owner_signatures[i] if i < owner_signatures.size() else -1
+		var owner_profession := signature_professions[signature] \
+			if signature >= 0 and signature < signature_professions.size() else -1
+		var owner_icon := IconCatalog.profession_semantic(profession_ids[owner_profession]) \
+			if owner_profession >= 0 and owner_profession < profession_ids.size() else &"family.metric.wealth"
 		var job_rows = [
-			{"id": "owner_job", "name": "业主 · %s" % h._owner_profession_name(snapshot, int(owner_signatures[i]) if i < owner_signatures.size() else -1), "value": owner_job_value, "ratio": float(owner_actual) / float(owner_required) if owner_required > 0 else 0.0},
+			{"id": "owner_job", "name": "业主 · %s" % h._owner_profession_name(snapshot, signature), "icon": owner_icon,
+				"value": owner_job_value, "ratio": float(owner_actual) / float(owner_required) if owner_required > 0 else 0.0},
 		]
 		if role_offsets.size() == group_types.size() + 1:
 			for role in range(role_offsets[i], role_offsets[i + 1]):
@@ -1033,9 +1042,12 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 				var role_value = "%d / %d" % [filled, required]
 				if required == 0 and (is_loss_suspended or not is_available):
 					role_value += "（岗位已释放）"
+				var profession := role_professions[role] if role < role_professions.size() else -1
 				job_rows.append({
 					"id": "job_%d" % role,
-					"name": "雇员 · %s" % h._profession_name(snapshot, int(role_professions[role]) if role < role_professions.size() else -1),
+					"name": "雇员 · %s" % h._profession_name(snapshot, profession),
+					"icon": IconCatalog.profession_semantic(profession_ids[profession]) \
+						if profession >= 0 and profession < profession_ids.size() else &"population.profession.worker",
 					"value": role_value,
 					"ratio": float(filled) / float(required) if required > 0 else 0.0,
 				})
@@ -1167,9 +1179,9 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 			var status_parts: Array[String] = ["到岗 %d/%d" % [staffing_actual, staffing_required]]
 			if owner_open > 0:
 				status_parts.append("缺业主 %d" % owner_open)
-			status_parts.append("产能 %.0f%%" % actual_percent)
+			status_parts.append("开工 %.0f%%" % actual_percent)
 			if has_outputs and planned_percent < 99.5:
-				status_parts.append("限产 %.0f%%" % planned_percent)
+				status_parts.append("计划 %.0f%%" % planned_percent)
 			state_label = " · ".join(status_parts)
 		var pending_state = int(pending_operating_states[i]) \
 			if i < pending_operating_states.size() else 255
@@ -1233,6 +1245,7 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 			"accent": state_accent if show_state_summary else (UITokens.GOOD if profit > 0 else (UITokens.RISK if profit < 0 else UITokens.TEXT_MUTED)),
 			"icon": h._building_icon(building_id, snapshot, type_idx), "job_rows": job_rows,
 			"production_rows": production_rows, "finance": finance, "visible": true,
+			"construction_requirements": Recipes.construction_requirements(host, snapshot, type_idx),
 		})
 		total_profit += profit
 		if show_state_summary:
