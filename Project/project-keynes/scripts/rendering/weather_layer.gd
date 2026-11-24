@@ -320,7 +320,8 @@ func _process(delta: float) -> void:
 				if _wx_lut_last_usec > 0:
 					var _gap: float = float(_upd - _wx_lut_last_usec)
 					if _gap > 1000.0 and _gap < 5000000.0:
-						_wx_commit_interval_usec = lerpf(_wx_commit_interval_usec, _gap, 0.3)  # IIR 自适应
+						var _adapt: float = 0.75 if _gap < _wx_commit_interval_usec else 0.30
+						_wx_commit_interval_usec = lerpf(_wx_commit_interval_usec, _gap, _adapt)  # IIR 自适应（加速时快收敛，防 lerp 未走完就重置跳变）
 				_wx_lut_last_usec = _upd
 				_wx_lut_t0_usec = _now_us
 			var _wlerp: float = 1.0

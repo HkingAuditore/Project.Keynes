@@ -321,8 +321,8 @@ float cloud_density_soft(vec2 p, float coverage, float seed) {
 	int q = effective_weather_quality();
 	float t = world_time;
 
-	float cloud_mask = smoothstep(0.025, 0.18, coverage);
-	float amount = smoothstep(0.04, 0.3, coverage);
+	float cloud_mask = smoothstep(0.11, 0.34, coverage);
+	float amount = smoothstep(0.12, 0.54, coverage);
 
 #if defined(PK_MOBILE_ANY)
 	float low_pulse = 0.92 + 0.08 * sin(t * 0.09 + seed * 1.7);
@@ -332,7 +332,7 @@ float cloud_density_soft(vec2 p, float coverage, float seed) {
 	// Classic fBM cloud stack:
 	// 1) low-frequency fBM gives continuous cloud texture;
 	// 2) domain warp breaks circular/noisy repetition;
-	// 3) billow/detail fBM adds puffy internal contrast;
+	// 3) detail fBM adds puffy internal contrast (不折叠零线，避免露出细丝/Y形纹路);
 	// 4) coverage remap controls how much texture survives.
 	vec2 warp = vec2(0.0);
 #if !defined(PK_MOBILE_HIGH_SLIM)
@@ -349,20 +349,19 @@ float cloud_density_soft(vec2 p, float coverage, float seed) {
 	int body_oct = 3;
 	float body_noise = cloud_fbm_evolve(base_p, body_oct, t * 0.16);
 	float detail_noise = cloud_fbm_evolve(base_p * 2.35 + vec2(11.7, 4.2), 2, t * 0.34);
-	float billow = 1.0 - abs(detail_noise * 2.0 - 1.0);
 	float fine_noise = (q >= 2)
 		? cloud_fbm_evolve(base_p * 5.10 + vec2(-21.3, 15.8), 1, t * 0.58)
 		: detail_noise;
-	float shape = clamp(body_noise * 0.68 + billow * 0.20 + fine_noise * 0.12, 0.0, 1.0);
+	float shape = clamp(body_noise * 0.68 + detail_noise * 0.22 + fine_noise * 0.10, 0.0, 1.0);
 
-	// coverage=1 时保留连续 fBM 纹理，不再用高阈值把云挖成孤岛；
-	// coverage 较低时才提高 cutoff，形成云边界退缩。
-	float coverage_cut = mix(0.66, 0.26, amount);
+	// Perlin fBM 实际落在 [0.35, 0.65]；cutoff 放在 [0.57, 0.34] 内，
+	// 才能由噪声本身雕出蓬松云团与晴空缝隙（低于 0.30 会把云变成实心平片、露出网格边）。
+	float coverage_cut = mix(0.57, 0.34, amount);
 	float density = clamp((shape - coverage_cut) / max(1.0 - coverage_cut, 0.001), 0.0, 1.0);
-	float soft_texture = smoothstep(0.05, 0.88, density);
-	float cloud_core = smoothstep(0.66, 1.00, density);
-	float texture_cloud = clamp(soft_texture * 0.82 + cloud_core * 0.08, 0.0, 1.0);
-	float opacity = mix(0.38, 0.82, amount);
+	float soft_texture = smoothstep(0.04, 0.78, density);
+	float cloud_core = smoothstep(0.55, 1.00, density);
+	float texture_cloud = clamp(soft_texture * 0.84 + cloud_core * 0.12, 0.0, 1.0);
+	float opacity = mix(0.38, 0.84, amount);
 	return clamp(texture_cloud * cloud_mask * opacity, 0.0, 1.0);
 #endif
 #endif
@@ -406,10 +405,10 @@ vec2 cumulus_advect(vec2 wp, vec2 axis, float phase) {
 }
 
 float cloud_density_alpha(float density) {
-	// 可见度与遮挡度解耦：薄云更早显形，厚云不再把 alpha 顶满挡住地块。
-	float soft = smoothstep(0.020, 0.56, density);
-	float core = smoothstep(0.54, 1.00, density);
-	return clamp(pow(soft, 0.90) * 0.54 + core * 0.16, 0.0, 0.70);
+	// 可见度与遮挡度解耦：薄云缘柔和渐隐，厚云不再把 alpha 顶满挡住地块。
+	float soft = smoothstep(0.02, 0.58, density);
+	float core = smoothstep(0.48, 1.00, density);
+	return clamp(soft * 0.56 + core * 0.16, 0.0, 0.72);
 }
 
 // billboard 白云着色：以亮白为主，迎太阳侧更亮、背光侧 / 厚核略压暗形成体积感，薄边银边。
@@ -923,9 +922,9 @@ FrontField sample_field_weather(vec2 wp) {
 	}
 #endif
 	float precip_amount = intensity_amount;
-	float visual_cloud_amount = clamp((cloud_amount + 0.6 * vapor_amount), 0.0, 1.0);
-	// 云层以 weather_cloud + weather_vapor 为基础。2026-06-29：水汽先进入可视云量，
-	// 显示端要让湿润区的层云/薄积云可见，避免只在降水核心处看见云。
+	// 保留平滑扩散的水汽场（0.45*vapor，比原 0.6 略降）作为空间软缓冲，避免纯 weather_cloud 的阶跃跳变印出六边形轮廓；
+	// 真正的晴/多云起显门槛由 cloud_density_soft 的 cloud_mask / amount / coverage_cut 控制。
+	float visual_cloud_amount = clamp(cloud_amount + 0.45 * vapor_amount, 0.0, 1.0);
 	float cloud_linear = clamp(visual_cloud_amount / 0.8, 0.0, 1.0);
 	float cloud_shaped = smoothstep(0.05, 0.8, visual_cloud_amount);
 	float cloud_cover = clamp(mix(cloud_linear, cloud_shaped, 0.44) * precip_cloud_bias(precip_amount), 0.0, 1.0);
@@ -1071,8 +1070,9 @@ FrontField sample_field_weather(vec2 world_pos) {
 	int wt_dom = clamp(int(c_dom.r * 255.0 + 0.5), 0, MAX_WEATHER_TYPES - 1);
 
 	float precip_amount = intensity_amount;
-	float visual_cloud_amount = clamp((cloud_amount + 0.6 * vapor_amount), 0.0, 1.0);
-	// 云层以 weather_cloud + weather_vapor 为基础（2026-06-29：水汽先进可视云量）。
+	// 保留平滑扩散的水汽场（0.45*vapor，比原 0.6 略降）作为空间软缓冲，避免纯 weather_cloud 的阶跃跳变印出六边形轮廓；
+	// 真正的晴/多云起显门槛由 cloud_density_soft 的 cloud_mask / amount / coverage_cut 控制。
+	float visual_cloud_amount = clamp(cloud_amount + 0.45 * vapor_amount, 0.0, 1.0);
 	float cloud_linear = clamp(visual_cloud_amount / 0.8, 0.0, 1.0);
 	float cloud_shaped = smoothstep(0.05, 0.8, visual_cloud_amount);
 	float cloud_cover = clamp(mix(cloud_linear, cloud_shaped, 0.44) * precip_cloud_bias(precip_amount), 0.0, 1.0);
@@ -1093,7 +1093,7 @@ FrontField sample_field_weather(vec2 world_pos) {
 	// 这里改成三格 class.biome 的 w_raw 混合。门控与旧路径完全一致（q>=2 且 w.cloud>0.05，
 	// 即 fog_intensity > 0.001），而且低/中档根本没编译低雾 ⇒ 这 3 次读取一般被整段跳过。
 #if !defined(PK_WEATHER_LOW) && !defined(PK_WEATHER_MID)
-	if (effective_weather_quality() >= 2 && best.cloud > 0.05) {
+	if (effective_weather_quality() >= 2 && best.cloud > 0.10) {
 		best.mountain_w = clamp(w.x * wx_biome_mountain_weight(t.c0, g)
 				+ w.y * wx_biome_mountain_weight(t.c1, g)
 				+ w.z * wx_biome_mountain_weight(t.c2, g), 0.0, 1.0);
@@ -1139,7 +1139,7 @@ void fragment() {
 #endif
 
 	// 低雾仅高档启用；无雾时跳过山地采样。移动/Web 使用中心格近似。
-	float fog_intensity = (q_weather >= 2 && w.cloud > 0.05) ? w.cloud * 0.65 : 0.0;
+	float fog_intensity = (q_weather >= 2 && w.cloud > 0.10) ? smoothstep(0.10, 0.65, w.cloud) * 0.65 : 0.0;
 	float mountain_w = 0.0;
 #ifdef PK_CELL_FIELD
 	// 场函数路径：三格 class.biome 的 w_raw 混合已在 sample_field_weather 里算好
@@ -1194,7 +1194,7 @@ void fragment() {
 	vec2 cirrus_axis = w.axis;
 
 	// 高云强度：只随云量出现，不按天气类型开关。
-	float cirrus_intensity = w.cloud * 0.48;
+	float cirrus_intensity = smoothstep(0.10, 0.70, w.cloud) * 0.48;
 	float cirrus = 0.0;
 #ifndef PK_WEATHER_LOW
 	cirrus = (q_weather >= 1) ? sample_high_cloud(wp, cirrus_axis, cirrus_intensity) : 0.0;
@@ -1206,8 +1206,8 @@ void fragment() {
 		0.92
 	);
 
-	// 中云（主云）强度：使用已按天气层级增强后的 w.cloud。
-	float cumulus_intensity = (w.cloud > 0.02) ? w.cloud : 0.0;
+	// 中云（主云）强度：直接由平滑后的 w.cloud 驱动，避免硬阶跃切出网格边。
+	float cumulus_intensity = w.cloud;
 	CloudLayerSample cumulus_layer = sample_cumulus_layer(wp, cumulus_axis, cumulus_intensity);
 	float cumulus = cumulus_layer.density;
 
@@ -1270,7 +1270,7 @@ void fragment() {
 		float cloud_core = smoothstep(0.38, 0.92, cumulus_layer.density);
 		float cloud_edge_soft = 1.0 - smoothstep(0.18, 0.58, cumulus_layer.density);
 		// 强云区不再把整格底色压成灰片；只让云纹理本身更厚、更少银边。
-		float dense_cell = smoothstep(0.14, 0.32, w.cloud);
+		float dense_cell = smoothstep(0.32, 0.72, w.cloud);
 		float dense_core = clamp(dense_cell * (0.35 + 0.65 * cloud_core), 0.0, 1.0);
 		vec3 main_base = mix(vec3(0.97, 0.98, 1.00), vec3(0.55, 0.62, 0.72), ed.pixel_night);
 		main_base = mix(main_base, vec3(0.82, 0.86, 0.92), dense_core * 0.28);
@@ -1293,10 +1293,13 @@ void fragment() {
 		// 都落在相近的 alpha。这里把天气场的 cloud 强度重新带回显示端：
 		// 弱云保持轻薄，强云获得更高密度增益；WeatherProfile 的 overlay_base_alpha
 		// 作为类型级的薄雾/暴雨底幕，只在确实有云时生效，避免 clear 铺底。
-		float cloud_strength = smoothstep(0.03, 0.72, w.cloud);
-		float cloud_alpha_gain = mix(0.58, 1.30, cloud_strength);
+		float cloud_strength = smoothstep(0.06, 0.78, w.cloud);
+		float cloud_alpha_gain = mix(0.46, 1.28, cloud_strength);
+		// profile_alpha 必须受云噪声密度调制，绝不能在无云噪声处直接铺出平直的三角多边形底幕。
 		float profile_alpha = clamp(w.alpha
-			* smoothstep(0.02, 0.36, w.cloud) * 0.26 * weather_strength, 0.0, 0.26);
+			* smoothstep(0.10, 0.60, w.cloud)
+			* smoothstep(0.02, 0.45, cumulus_layer.density)
+			* 0.16 * weather_strength, 0.0, 0.16);
 		float alpha = clamp(profile_alpha
 			+ cloud_density_alpha(cumulus_layer.density)
 				* cloud_alpha_gain * mix(1.0, 1.06, dense_core)

@@ -78,16 +78,16 @@ float wx_min_cloud_shape(vec2 p, float seed) {
 // （coverage_cut / density / soft_texture / cloud_core / texture_cloud / opacity 全照抄），
 // 只把 shape 的来源换成 wx_min_cloud_shape。
 float cloud_density_soft_min(vec2 p, float coverage, float seed) {
-	float cloud_mask = smoothstep(0.025, 0.18, coverage);
-	float amount = smoothstep(0.04, 0.3, coverage);
+	float cloud_mask = smoothstep(0.11, 0.34, coverage);
+	float amount = smoothstep(0.12, 0.54, coverage);
 	float shape = wx_min_cloud_shape(p, seed);
-	// coverage=1 时保留连续纹理；coverage 低时提高 cutoff 让云边界退缩（同桌面语义）。
-	float coverage_cut = mix(0.66, 0.26, amount);
+	// cutoff 落在噪声值域 [0.35, 0.65] 内，由噪声雕出蓬松云团与晴空缝隙（同桌面语义）。
+	float coverage_cut = mix(0.57, 0.34, amount);
 	float density = clamp((shape - coverage_cut) / max(1.0 - coverage_cut, 0.001), 0.0, 1.0);
-	float soft_texture = smoothstep(0.05, 0.88, density);
-	float cloud_core = smoothstep(0.66, 1.00, density);
-	float texture_cloud = clamp(soft_texture * 0.82 + cloud_core * 0.08, 0.0, 1.0);
-	float opacity = mix(0.38, 0.82, amount);
+	float soft_texture = smoothstep(0.04, 0.78, density);
+	float cloud_core = smoothstep(0.55, 1.00, density);
+	float texture_cloud = clamp(soft_texture * 0.84 + cloud_core * 0.12, 0.0, 1.0);
+	float opacity = mix(0.38, 0.84, amount);
 	return clamp(texture_cloud * cloud_mask * opacity, 0.0, 1.0);
 }
 

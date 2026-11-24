@@ -28,7 +28,7 @@ const CLOUD_SHADOW_DYNAMIC_DETAIL_GAIN := 0.32
 const CLOUD_SHADOW_DYNAMIC_WARP_GAIN := 0.80
 const CLOUD_SHADOW_EDGE_SOFTNESS := 1.10
 const CLOUD_SHADOW_WIND_INFLUENCE := 0.22
-const CLOUD_SHADOW_MASK_BIAS := 0.10
+const CLOUD_SHADOW_MASK_BIAS := 0.18
 ## [cloud-tiling 2026-11-18] 每个世界 wrap 周期里铺几遍噪声纹理（整数）。
 ## 1 = 云团直径 3~5 格；2 = 减半，云块更多更碎。必须整数，否则接缝错半格。
 const CLOUD_SHADOW_TILE_REPEAT := 1.0
@@ -75,7 +75,7 @@ var _last_night_visibility := -1.0
 var _strength_high := CLOUD_SHADOW_STRENGTH_HIGH
 var _strength_mid := CLOUD_SHADOW_STRENGTH_MID
 var _strength_low := CLOUD_SHADOW_STRENGTH_LOW
-var _coverage_gain := 1.25
+var _coverage_gain := 1.10
 var _motion_speed := CLOUD_SHADOW_MOTION_SPEED
 var _uv_scroll_gain := CLOUD_SHADOW_UV_SCROLL_GAIN
 var _shape_contrast := CLOUD_SHADOW_SHAPE_CONTRAST
@@ -149,7 +149,7 @@ static func interpolated_cloud_amount(previous_cloud: float, previous_vapor: flo
 		current_cloud: float, current_vapor: float, lerp_weight: float) -> float:
 	var cloud := lerpf(previous_cloud, current_cloud, clampf(lerp_weight, 0.0, 1.0))
 	var vapor := lerpf(previous_vapor, current_vapor, clampf(lerp_weight, 0.0, 1.0))
-	return clampf(cloud + 0.6 * vapor, 0.0, 1.0)
+	return clampf(cloud + 0.45 * vapor, 0.0, 1.0)
 
 
 static func has_valid_weather_source(texture: Texture2D, dims: Vector2i) -> bool:

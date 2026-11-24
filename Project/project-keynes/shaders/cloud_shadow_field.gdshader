@@ -313,7 +313,8 @@ void fragment() {
 	// 不随 cell mesh 或局部 UV 重置。
 	vec2 world_pos = world_origin + mask_uv * world_size;
 	vec4 weather = weather_at(mask_uv);
-	float coverage = clamp(weather.b + 0.6 * weather.a, 0.0, 1.0);
+	// 与 weather_overlay.gdshader 同口径：保留平滑水汽缓冲并抬高起影门槛。
+	float coverage = clamp(weather.b + 0.45 * weather.a, 0.0, 1.0);
 	float cloud_shadow = 0.0;
 	if (coverage > 0.001) {
 		// LUT 云量只定义云影可以出现的范围；形状和运动来自独立噪声场。
