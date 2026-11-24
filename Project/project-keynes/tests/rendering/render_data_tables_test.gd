@@ -1,23 +1,28 @@
 extends SceneTree
 
 const Table = preload("res://scripts/rendering/render_data_table.gd")
+const WaterRippleChecks = preload("res://tests/rendering/water_ripple_lattice_checks.gd")
+var _checks := 0
 var _failures := 0
 
 func _initialize() -> void:
 	_run.call_deferred()
 
 func _run() -> void:
-	if RenderingServer.get_rendering_device() == null:
-		print("SKIP numerical table readbacks require a graphical rendering device")
-		quit()
-		return
 	if not root.is_node_ready():
 		await root.ready
 	await process_frame
-	await _weather()
-	await _lattices()
-	await _fog_quality_changes()
-	print("Render data tables: %d failure(s)" % _failures)
+	var can_read_pixels := RenderingServer.get_rendering_device() != null
+	await WaterRippleChecks.run(self, _expect, can_read_pixels)
+	if can_read_pixels:
+		await _weather()
+		await _lattices()
+		await _fog_quality_changes()
+	else:
+		print("SKIP numerical table readbacks require a graphical rendering device")
+		if OS.get_cmdline_user_args().has("--require-draw"):
+			_expect(false, "graphical rendering device required")
+	print("Render data tables: %d checks, %d failures" % [_checks, _failures])
 	quit(int(_failures != 0))
 
 func _read(view: SubViewport) -> Image:
@@ -26,6 +31,7 @@ func _read(view: SubViewport) -> Image:
 	return view.get_texture().get_image()
 
 func _expect(ok: bool, label: String) -> void:
+	_checks += 1
 	if not ok:
 		push_error(label)
 		_failures += 1

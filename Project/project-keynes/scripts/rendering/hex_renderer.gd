@@ -890,8 +890,7 @@ var _shader_mat: ShaderMaterial
 var _sky_background: Node
 ## 拆分绘制使用独立水面节点与材质，由 _apply_uniforms() 调用 _sync_water_quad() 管理。
 var _water_quad: MeshInstance2D
-var _ripple_table: SubViewport
-var _ripple_cycles := Vector4(-1.0, -1.0, -1.0, -1.0)
+var _ripple_table: RendererShaderWater.WaterRippleLattice
 var _water_mat: ShaderMaterial
 ## 记录当前水面材质前缀。贴图布局或分档变更时据此判断是否重编。
 var _water_variant_prefix: String = ""

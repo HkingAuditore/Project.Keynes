@@ -3,6 +3,66 @@
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
 
+## 水波查找表只重画变化页（#62，2026-11-23）
+
+改前基线 `14235fef2` 的水波表代码与票据基准 `5b69be27c` 一致。正式场景在每帧推进
+显示时间后调用 `RendererShaderWater.sync_ripple_lattice`。第一页用 `cycles.xy` 与种子 71，
+第二页用 `cycles.zw` 与种子 133，第三页用固定种子 211 和 307。旧入口对四个周期一起
+做比较，任一分量变化就让 `RenderDataTable` 请求整张 256×768 纹理重画。
+[刷新入口](../../Project/project-keynes/scripts/rendering/renderer_shader_water.gd#L526)
+· [三页输入](../../Project/project-keynes/shaders/water_ripple_lattice.gdshader#L6)
+
+非 Compatibility 的独立桌面水面绑定这张表，包括桌面低档。水面细节为 0 时跳过波浪取样。
+原生 Android/iOS 的中、高着色器档绑定，自动和低档省略。正式中档波浪取第一页和固定页，
+高档波浪也取第二页。Web 普通档、Web PC High、Compatibility 和合并陆水路径省略这张表。
+#54 的 Mac 记录与 #59 的 iPhone 16e 记录使用移动低档，#59 省略的是整层水面。
+[纹理声明](../../Project/project-keynes/shaders/include/water.gdshaderinc#L283)
+· [取样档位](../../Project/project-keynes/shaders/include/water.gdshaderinc#L459)
+· [手机档位](../../Project/project-keynes/scripts/game/player_game.gd#L471)
+
+在 Godot 4.6.3 无窗口环境驱动实际同步入口，流动速度用正式场景的 `2.28`，初次填完后
+按 1/60 秒步进 3,600 次。下表记录待画的矩形和各页的提交次数。首次创建和重挂入每次各画
+三页。固定时间 `0 → 4.3 → 5.0 → 6.4 → 8.5 → 12.7` 覆盖首次、仅第二页、不变、
+仅第一页、仅第二页和两页同变。原始逐次记录为 `/private/tmp/keynes-62.4yUYDpOv/` 下的
+`baseline-replay.log` 和 `candidate-replay.log`。
+
+| 60 秒内的刷新帧 | 帧数 | 改前矩形 | 修改后矩形 |
+| --- | ---: | --- | --- |
+| 仅第一页变 | 5 | 256×768 | 第一页 256×256 |
+| 仅第二页变 | 10 | 256×768 | 第二页 256×256 |
+| 两页同变 | 4 | 256×768 | 顶部 256×512 |
+| 均未变 | 3,581 | 跳过 | 跳过 |
+| 各页提交次数 | | 19 / 19 / 19 | 9 / 14 / 0 |
+| 提交矩形覆盖像素数 | | 3,735,552 | 1,507,328 |
+
+局部更新保留一个画布、一张纹理和每次刷新最多一次矩形绘制。同帧的请求合并后由同一
+绘制提交。GPU 有可能仍要加载和写回整张纹理，净收益须在真实绘制中测量。
+[Godot 清除和按需更新规则](https://docs.godotengine.org/en/4.6/classes/class_subviewport.html#enumerations)
+
+`render_data_tables_test.gd` 无窗口检查覆盖正式绑定入口、不同周期组的矩形、同帧合批、
+切档重建和 100%→75%→100%，36 项通过。`fog_cell_field_test.gd`、`terrain_render_scale_test.gd`
+和 `web_water_pass_node_test.gd` 通过。有图形后端时，以整表绘制逐页比较全部像素，并用
+会变色的测试纹理检查实际绘制范围。使用 `-- --require-draw` 要求执行图形回读。
+
+`water_ripple_coast_capture.gd` 复用 #54 的正式场景入口和 #59 的海岸路线。种子 20260718、
+60×40、四国，镜头 1.75× 从 `(1059.36377, 924)` 向右移动 320。固定日历并关闭迷雾以露出
+海岸，显示时间由正式渲染器以 1× 推进，60 个显示秒走完路线。
+
+```sh
+godot --path Project/project-keynes --windowed --rendering-method mobile \
+  --script res://tests/rendering/water_ripple_coast_capture.gd
+```
+
+默认高档，添加 `-- --medium` 选中档。脚本参数 `--check-pixels` 在同一海岸镜头对照
+三次换周期前后画面并检查水面确实取样。用同一脚本在改前和改后轮流采样，文件记录实际
+绘制尺寸、同步设置、逐帧周期、
+提交矩形、绘制次数、应用绘制回调间隔和带 CPU 时间戳的子视口计时。Metal 的 GPU 时间和
+真实屏幕间隔需以 Game Performance 跟踪对齐进程及帧。区分首次、单页、双页和无刷新，对比
+各轮样本数、中位数、P95 和波动，子视口 CPU 绘制开销单列。
+
+本环境的 macOS 图形服务无法启动 Godot 窗口，桌面自动化未获 Godot 授权，CoreDeviceService
+无法完成初始化。逐页图形回读、海岸画面、真实 GPU 时间和屏幕呈现间隔待验，因此尚无净收益结论。
+
 ## 跨天气发布复用风场（#61，2026-11-23，已撤回）
 
 改前以合入 #60 的 `7a9fa7373` 为基线。正式玩家场景用种子 `20260718`、60×40、
