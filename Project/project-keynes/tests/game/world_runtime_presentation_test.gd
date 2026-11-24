@@ -45,9 +45,9 @@ class OverlayRenderer extends RefCounted:
 	var filters: Array = []
 	func set_resource_visual_filter(value: String) -> void: filters.append(value)
 
-class OverlayLayer extends RefCounted:
-	var hidden := 0
-	func hide_animated() -> void: hidden += 1
+class OverlayLayer extends DataOverlayLayer:
+	var hide_calls := 0
+	func hide_animated(_duration: float = 0.12) -> void: hide_calls += 1
 
 class ProcessRequests extends RefCounted:
 	var calls: Array = []
@@ -79,7 +79,7 @@ func _compare_overlay() -> void:
 		_check("overlay ordered diagnostics", previous.map_overlay_diagnostics() == current.map_overlay_diagnostics())
 		_check("overlay renderer filter order", renderers[0].filters == renderers[1].filters)
 		_check("overlay process request order", processes[0].calls == processes[1].calls)
-		_check("overlay hide count", layers[0].hidden == layers[1].hidden)
+		_check("overlay hide count", layers[0].hide_calls == layers[1].hide_calls)
 	for duration in [0.0, 1.0, 10.0, 100.0]:
 		previous._map_overlay_last_bake_ms = duration
 		current._map_overlay_last_bake_ms = duration
@@ -89,6 +89,8 @@ func _compare_overlay() -> void:
 	_check("overlay clear", previous.map_overlay_diagnostics() == current.map_overlay_diagnostics())
 	current.release_resources()
 	_check("overlay releases references", current._renderer == null and current._map_overlay_layer == null and not current._process_request.is_valid() and current._map_overlay_tex == null)
+	for layer in layers:
+		layer.free()
 
 func _init() -> void:
 	_compare_overlay()
