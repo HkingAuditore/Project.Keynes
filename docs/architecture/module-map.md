@@ -131,6 +131,11 @@ terrain baker 调用共用发布接口；这些数据仅供显示，不拥有模
 回归入口：`tests/rendering/cloud_weather_quality_test.gd`。手机执行方式与逐日对照见
 `Project/project-keynes/tests/runtime/mobile_runtime_worker_test.gd`。
 
+海拔和风向专题图的刷新由 `scripts/game/world_runtime_overlay.gd` 管理。
+`gdext/src/map_overlay_input_publication.cpp` 登记已安装的显示列和内容标记，供到期时核对。
+贴图生成与统计归 `scripts/rendering/data_overlay_baker.gd`，定向用例见
+`tests/world/map_overlay_cell_lut_test.gd`。
+
 玩家画质预设与自定义选项保存在 `scripts/game/game_settings_service.gd`，档位解析在
 `scripts/game/graphics_quality_settings.gd`。主菜单和暂停菜单共用
 `scenes/ui/graphics_quality_options.tscn`。应用到地图和显示层的入口在

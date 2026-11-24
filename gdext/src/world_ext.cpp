@@ -5,6 +5,7 @@
 #include "cell_program_eligibility.h"
 
 #include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
+#include "map_overlay_input_publication.h"
 #include "resource_visual_publication.h"
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
 #include "parallel_dispatcher.h"       // Phase C.3a — 并行分发 helper（统一 5 个手写 _thread）
@@ -710,6 +711,7 @@ bool DCWorldExt::bind_map_data(Object *map_data) {
     }
 
     _bound = (bound_count > 0);
+    if (_bound) pk::bind_map_overlay_input_reader(_map_data);
     if (_bound && _runtime_host) _runtime_host->reset_day_tail_for_world_change();
     UtilityFunctions::print("[DCWorldExt] bind_map_data: ", bound_count,
                             " components bound (auto-registered=", auto_registered,
@@ -963,6 +965,8 @@ void DCWorldExt::_flush_slot_to_map(int comp_id, bool notify_resources) {
                         for (int idx = 0; idx < cell_limit && !_pending_visual_dirty_dense; ++idx) mark_changed(idx);
                     }
                     _map_data->set(prop_name, s.arr_f32);
+                    if (std::strcmp(BIND_TABLE[i].property_name, "elevation_arr") == 0)
+                        pk::publish_map_overlay_elevation(_map_data);
                     break;
                 }
                 case SlotDType::I32: {

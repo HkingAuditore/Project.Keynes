@@ -35,12 +35,11 @@ var _cells: Dictionary = {}
 #   - _neighbor_indices.size() == _cell_array.size() * 6
 #   - _neighbor_indices[i*6 + dir] == -1 表示该方向没有邻居（地图边缘）
 #   - 顺序与 HexUtils.CUBE_DIRECTIONS 一致：0=E, 1=NE, 2=NW, 3=W, 4=SW, 5=SE
-#   - regenerate 路径：MapData 实例本身被丢弃重建，无需手动失效；冷路径
-#     （生成阶段、refresh_seasonal）继续使用 get_neighbors(cell)，不依赖索引
 var _cell_array: Array[HexCell] = []
 var _cell_index: Dictionary = {}            # HexCell → int (idx)
 var _neighbor_indices: PackedInt32Array = PackedInt32Array()
 var _indices_built: bool = false
+var cell_index_revision: int = 0            # Display LUTs are addressed by cell index.
 
 # ─── Climate-Weather 2ms Budget Plan — Phase A.1：SoA 字段镜像 ───────────
 # 25 个平行 PackedArray，长度恒等于 _cell_array.size()。所有热路径子段（climate
@@ -385,6 +384,7 @@ func _build_indices() -> void:
 		cell.index = i
 	_build_neighbor_indices(0,n)
 	_indices_built = true
+	cell_index_revision += 1
 
 
 func _build_neighbor_indices(begin: int, end: int) -> void:
@@ -433,17 +433,17 @@ func build_indices_cooperative(frame_gate = null,
 			start = Time.get_ticks_usec()
 	if generated_neighbors.size() == n * 6:
 		_neighbor_indices = generated_neighbors
-		_indices_built = true
-		return
-	_neighbor_indices.resize(n*6)
-	for begin in range(0,n,16):
-		_build_neighbor_indices(begin,mini(begin+16,n))
-		if tree != null and Time.get_ticks_usec()-start >= UITokens.LOADING_MAIN_SLICE_USEC:
-			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
-			if frame_gate != null and frame_gate.canceled:
-				return
-			start = Time.get_ticks_usec()
+	else:
+		_neighbor_indices.resize(n*6)
+		for begin in range(0,n,16):
+			_build_neighbor_indices(begin,mini(begin+16,n))
+			if tree != null and Time.get_ticks_usec()-start >= UITokens.LOADING_MAIN_SLICE_USEC:
+				await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+				if frame_gate != null and frame_gate.canceled:
+					return
+				start = Time.get_ticks_usec()
 	_indices_built = true
+	cell_index_revision += 1
 
 ## 索引是否已构建（fast-tick 调用前断言用）。
 func has_indices() -> bool:
