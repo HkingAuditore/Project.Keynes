@@ -143,6 +143,8 @@ elif platform == "android":
     output_path = addons_bin + "android/libdots_ext{}{}".format(
         env["suffix"], env["SHLIBSUFFIX"]
     )
+elif platform == "ios":
+    output_path = addons_bin + "ios/libdots_ext{}.a".format(env["suffix"])
 elif platform == "web":
     # godot-cpp/tools/web.py 把 SHLIBSUFFIX 设成 ".wasm" 并加 -sSIDE_MODULE=1；
     # threads=no 时 env["suffix"] 会自带 ".nothreads"，与 .gdextension 里
@@ -165,6 +167,9 @@ if platform == "android":
 
 # Expose object nodes directly as link inputs so the incremental build graph
 # includes every source and compiler setting at the object boundary.
-objects = env.SharedObject(sources)
-library = env.SharedLibrary(output_path, source=objects)
+if platform == "ios":
+    library = env.StaticLibrary(output_path, source=env.StaticObject(sources))
+else:
+    objects = env.SharedObject(sources)
+    library = env.SharedLibrary(output_path, source=objects)
 Default(library)

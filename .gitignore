@@ -122,3 +122,5 @@ gdext/*.err.log
 
 # macOS dots_ext libraries are built locally.
 /Project/project-keynes/addons/dots_ext/bin/macos/*.dylib
+
+/Project/project-keynes/addons/dots_ext/bin/ios/

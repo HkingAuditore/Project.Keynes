@@ -24,6 +24,11 @@ func _ready() -> void:
 	# 「菜单构建」分开：`boot` → `menu_ready` → `ready`（进世界）。
 	WebTelemetry.emit("boot", {"engine_msec": Time.get_ticks_msec()})
 	WebTelemetry.flush()
+	# Opt in from a desktop command line or a dedicated mobile export preset.
+	if get_tree().root.get_node("GameSettings").coast_pan_requested():
+		var probe := load("res://scripts/diagnostics/coast_pan.gd") as GDScript
+		get_tree().root.call_deferred("add_child", probe.new())
+
 	_attach_headless_runner("PK_GAME_SAVE_ROUNDTRIP_TEST",
 		"res://tests/game/game_save_roundtrip_test.gd")
 	# 存档回放复现入口。见 tests/headless_save_replay.gd 与
