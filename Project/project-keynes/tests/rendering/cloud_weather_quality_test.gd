@@ -23,6 +23,9 @@ func run() -> void:
 	world.weather_lut_prev_tex = texture(Color(0,1,0.4,0))
 	world.weather_lut_update_usec = 1000
 	var map := MapData.new(1, 1)
+	var cell := HexCell.new(0, 0)
+	cell.index = 0
+	map.set_cell(cell)
 	map.wind_x_arr = PackedFloat32Array([1.0])
 	map.wind_y_arr = PackedFloat32Array([0.0])
 	map.wind_speed_arr = PackedFloat32Array([1.0])
@@ -90,7 +93,11 @@ func run() -> void:
 	field._process(0.1)
 	check(weather._wind_lut_tex == first_wind, "unchanged weather does not upload wind again")
 	map.wind_x_arr[0] = -1.0
-	world.weather_lut_update_usec += 1
+	var baker := MapBaker.new()
+	baker._last_bake_map = map
+	var report := baker._publish_weather_lut_bytes(PackedByteArray([0, 255, 127, 0]), world, 1, 1)
+	check(report.get("weather_table_published", false), "the weather table publishes with shadows disabled")
+	map.wind_x_arr[0] = 1.0
 	field._process(0.1)
 	check(weather._wind_lut_tex != null and weather._wind_lut_tex != first_wind,
 		"wind changes continue publishing with cloud shadows disabled")
