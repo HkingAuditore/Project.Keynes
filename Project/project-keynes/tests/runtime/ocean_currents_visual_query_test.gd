@@ -1,6 +1,5 @@
 extends SceneTree
 
-const WorkerVisual = preload("res://scripts/simulation/ocean/ocean_currents_worker_visual.gd")
 const PIXEL_SIZE := Vector2i(3, 2)
 const SLICE_COUNT := 3
 
@@ -91,7 +90,7 @@ func _run() -> void:
 	DCFeatureFlags.set_ocean_current_visual(true)
 	_expect(_slice(0.75).done and _source.full_reads == 1 and _commits == 1
 		and _pixels(world) == _expected_pixels(1), "reopening in the same season keeps the displayed pixels")
-	var mobile := WorkerVisual.run_if_authoritative(_job, _context(1.25), Time.get_ticks_usec(), true)
+	var mobile := _slice(1.25, true)
 	_expect(mobile.done and _source.full_reads == 1 and _job._visual_round_id == 1,
 		"desktop probe exercises the mobile skip after the first completed draw")
 	DCFeatureFlags.set_ocean_current_visual(false)
@@ -107,6 +106,9 @@ func _run() -> void:
 	_check_source_switch()
 	_check_map_switch()
 	_check_authority_loss()
+	_check_idle_map_mismatch(false)
+	_check_idle_map_mismatch(true)
+	_check_reused_baker()
 	print("ocean currents visual query: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 
@@ -192,6 +194,45 @@ func _check_authority_loss() -> void:
 		and _pixels(_job.world) == _expected_pixels(-1), "regaining authority starts with its new commit")
 
 
+func _check_idle_map_mismatch(is_mobile: bool) -> void:
+	var displayed := _pixels(_job.world)
+	var reads := _source.full_reads
+	var commits := _commits
+	var direction := -1 if is_mobile else 1
+	var key := "cell_count" if is_mobile else "map_instance_id"
+	_source.publish(_job.map, 8 if is_mobile else 7, float(direction))
+	var valid_info := _source.info.duplicate()
+	_source.info[key] = 0
+	_expect(_slice(0.25, is_mobile).raster_fallback_reason == "physics_visual_map_mismatch"
+		and _source.full_reads == reads and _commits == commits and _pixels(_job.world) == displayed,
+		"a %s mismatch after a completed draw keeps the last published pixels without reading fields" % key)
+	_source.info = valid_info
+	_expect(_slice(0.25, is_mobile).stage_name == "ocean_pixel_slice"
+		and _raster_to_pending(0.25, is_mobile) and _commit(0.25, is_mobile)
+		and _source.full_reads == reads + 1 and _commits == commits + 1
+		and _pixels(_job.world) == _expected_pixels(direction),
+		"the valid commit redraws in the same season after a %s mismatch" % key)
+
+
+func _check_reused_baker() -> void:
+	var map := _job.map
+	var world := _make_world(map)
+	var cell := map.get_cell(0, 0)
+	world.pixel_to_cell_lookup.fill(cell)
+	var baker := _job.baker
+	_job = OceanCurrentsJob.new(baker, map, world, _job.cfg, 10.0, 30, SLICE_COUNT)
+	_source.publish(map, 9, 1.0)
+	for key in ["wind_x", "ocean_current_x", "upwelling"]:
+		var values: PackedFloat32Array = _source.fields[key]
+		values[map.index_of(cell)] = -1.0
+		_source.fields[key] = values
+	_job.data_core_world_ext = _source
+	var reads := _source.full_reads
+	_expect(_slice(0.25).stage_name == "ocean_pixel_slice" and _raster_to_pending(0.25) and _commit(0.25)
+		and _source.full_reads == reads + 1 and _pixels(world) == _expected_pixels(-1),
+		"a new job sharing the baker uses the new world's pixel lookup at the same size")
+
+
 func _make_map() -> MapData:
 	var map := MapData.new(2, 1)
 	for q in map.width:
@@ -225,19 +266,22 @@ func _context(phase: float) -> SusTickContext:
 	return SusTickContext.make(_tick, _tick, phase, 1.0, &"day_changed")
 
 
-func _slice(phase: float) -> Dictionary:
-	return _job.run_slice(_context(phase))
+func _slice(phase: float, simulate_mobile: bool = false) -> Dictionary:
+	var ctx := _context(phase)
+	if simulate_mobile:
+		return _job._run_worker_visual(ctx, Time.get_ticks_usec(), true)
+	return _job.run_slice(ctx)
 
 
-func _raster_to_pending(phase: float) -> bool:
+func _raster_to_pending(phase: float, simulate_mobile: bool = false) -> bool:
 	for _index in range(1, SLICE_COUNT):
-		if not _slice(phase).get("raster_used_cpp", false):
+		if not _slice(phase, simulate_mobile).get("raster_used_cpp", false):
 			return false
 	return _job._visual_pending_commit
 
 
-func _commit(phase: float) -> bool:
-	return _slice(phase).stage_name == "ocean_pixel_commit_deferred"
+func _commit(phase: float, simulate_mobile: bool = false) -> bool:
+	return _slice(phase, simulate_mobile).stage_name == "ocean_pixel_commit_deferred"
 
 
 func _pixels(world: WorldData) -> Array:
