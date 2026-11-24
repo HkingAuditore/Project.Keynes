@@ -337,7 +337,7 @@ bool physics_prepass(int64_t day, const RuntimeEnvironmentSnapshot &in,
         s.wind_speed_out = s.wind_speed;
         if (k.wind_traj_table_enabled || w.momentum_active) { rebuild_traj(); ++s.wind_traj_generation; }
         else { s.wind_traj_valid = false; s.wind_traj_generation = 0; }
-        s.last_wind_day = day;
+        s.note_wind_solve(day);
     }
     if (daily_due) { s.last_daily_day = day; ++s.daily_due_seq; }
     if (ocean_due) {

@@ -16,6 +16,7 @@ extends Node2D
 
 const SHADER_PATH: String = "res://shaders/data_overlay.gdshader"
 
+var cell_lut_layout_revision: int = 0
 var _mesh_inst: MeshInstance2D
 var _shader_mat: ShaderMaterial
 var _bounds: Rect2 = Rect2()
@@ -120,6 +121,7 @@ func set_data_texture(tex: Texture2D) -> void:
 ## Configures the player-facing indirect backend. The atlas is static for the
 ## world lifetime; only overlay_lut is subsequently updated.
 func configure_cell_lut(map_index_atlas: Texture2D, lut_dims: Vector2i) -> void:
+	cell_lut_layout_revision += 1
 	_ensure_nodes()
 	if _shader_mat == null:
 		return
@@ -183,6 +185,10 @@ func set_cell_lut_texture(tex: Texture2D) -> void:
 	)
 	_has_valid_texture = tex != null
 	_update_visibility()
+
+func has_cell_lut_texture(tex: Texture2D) -> bool:
+	return tex != null and _has_valid_texture and _shader_mat != null \
+		and is_same(_shader_mat.get_shader_parameter("overlay_lut"), tex)
 
 func show_mode_animated(mode: int, duration: float = 0.15) -> void:
 	if _transition != null and _transition.is_valid():

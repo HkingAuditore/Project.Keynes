@@ -1,5 +1,6 @@
 #include "runtime_climate_physics.h"
 
+#include <atomic>
 #include <cmath>
 #include <cstring>
 
@@ -23,6 +24,14 @@ constexpr PhysicsLane saved_physics_lanes[] = {
 constexpr size_t kPhysicsLanesV1 = 15;
 constexpr size_t kPhysicsLanesV2 = sizeof(saved_physics_lanes) / sizeof(saved_physics_lanes[0]);
 constexpr uint32_t kPhysicsFlagTtaSeeded = 8u;
+}
+
+void RuntimeClimatePhysicsState::note_wind_solve(int64_t day) {
+    // The date can repeat after a restore or on another authority. The id
+    // distinguishes those solves without scanning the wind or affecting it.
+    static std::atomic<int64_t> next_id{1};
+    last_wind_day = day;
+    wind_display_solve_id = next_id.fetch_add(1, std::memory_order_relaxed);
 }
 
 bool RuntimeClimatePhysicsState::validate_values(std::string &error) const {
@@ -138,6 +147,7 @@ void copy_committed_physics_fields(const RuntimeClimatePhysicsState &source,
     out.last_daily_day = source.last_daily_day;
     out.last_slp_day = source.last_slp_day;
     out.last_wind_day = source.last_wind_day;
+    out.wind_display_solve_id = source.wind_display_solve_id;
     out.last_ocean_day = source.last_ocean_day;
     out.daily_due_seq = source.daily_due_seq;
     out.synoptic_tick = source.synoptic_tick;

@@ -531,6 +531,8 @@ struct RuntimeClimatePhysicsState {
     int64_t  committed_day = -1;
     uint64_t input_generation = 0;
     int64_t  last_daily_day = -1, last_slp_day = -1, last_wind_day = -1, last_ocean_day = -1;
+    int64_t  wind_display_solve_id = 0; // Presentation only, never saved or hashed.
+    void note_wind_solve(int64_t day);
     uint64_t daily_due_seq = 0;
     uint64_t cyclone_total_injected = 0, cyclone_total_replaced = 0, cyclone_total_decayed = 0;
 
@@ -648,6 +650,7 @@ struct RuntimeClimatePhysicsState {
         ocean_psi_prev.assign(n, 0.0f);
         initialized = false;
         committed_day = last_daily_day = last_slp_day = last_wind_day = last_ocean_day = -1;
+        wind_display_solve_id = 0;
         input_generation = daily_due_seq = 0;
         cyclone_total_injected = cyclone_total_replaced = cyclone_total_decayed = 0;
         psi_tau_x.clear(); psi_tau_y.clear(); psi_ny.clear(); psi_ls.clear();

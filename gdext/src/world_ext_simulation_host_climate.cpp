@@ -12,6 +12,7 @@
 #include "economy_graph_kernels.h"
 #include "effect_runtime.h"
 #include "ideology_runtime.h"
+#include "map_overlay_input_publication.h"
 #include "metric_mask_tests.h"
 #include "runtime_switch_registry.h"
 #include "world_ext_simulation_host_internal.h"
@@ -589,11 +590,14 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
         touched_slots.push_back(String(slot_name));
         ++applied_fields;
     };
+    bool wind_written = false;
     if (apply_physics) {
         apply_extra("slp", "cell_slp", physics->slp);
+        const int before_wind = applied_fields;
         apply_extra("wind_x", "cell_wind_x", physics->wind_x);
         apply_extra("wind_y", "cell_wind_y", physics->wind_y);
         apply_extra("wind_speed", "cell_wind_speed", physics->wind_speed);
+        wind_written = applied_fields == before_wind + 3;
         apply_extra("ocean_current_x", "cell_ocean_current_x", physics->ocean_current_x);
         apply_extra("ocean_current_y", "cell_ocean_current_y", physics->ocean_current_y);
         apply_extra("ocean_psi", "cell_ocean_psi", physics->ocean_psi);
@@ -705,6 +709,8 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     if (has_ring) _runtime_host->release_climate_writeback(slot);
 
     flush_slots_to_map_keys(touched_slots);
+    publish_map_overlay_wind(_map_data, wind_written ? physics->wind_display_solve_id : 0,
+        wind_written ? physics->last_wind_day : -1);
     _climate_physics_committed = apply_physics ? std::move(physics) : nullptr;
     _climate_physics_map_id = _map_data->get_instance_id();
     // B8 诊断（一次性）：确认天气场在 writeback 之后是否真的进了 MapData。用它

@@ -108,7 +108,11 @@ func _run() -> void:
 	runtime.mark_map_overlay_dirty(&"test_c")
 	_expect("dirty events merge", int(runtime.map_overlay_diagnostics().get(
 		"merged_dirty_count", 0)) >= 2)
-	await _await_real_msec(120)
+	# process_frame runs before the host. A long frame can cross the wall-clock
+	# wait before the host gets a frame where the request is due.
+	var refresh_interval := runtime._map_overlay_refresh_interval_msec()
+	runtime._map_overlay_last_refresh_msec = Time.get_ticks_msec() - refresh_interval
+	await process_frame
 	var refresh_delta := int(runtime.map_overlay_diagnostics().get(
 		"refresh_count", 0)) - refresh_before
 	_expect("merged dirty avoids per-event refresh fanout",
@@ -235,9 +239,3 @@ func _expect(label: String, condition: bool) -> void:
 	else:
 		_failures += 1
 		push_error("  [FAIL] %s" % label)
-
-
-func _await_real_msec(duration_msec: int) -> void:
-	var started := Time.get_ticks_msec()
-	while Time.get_ticks_msec() - started < duration_msec:
-		await process_frame
