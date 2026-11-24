@@ -3,6 +3,110 @@
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
 
+## 按帧率推迟地图更新（#63，2026-11-24）
+
+### 改前取证
+
+基线 `0f32d0072` 通过 GameFlow 打开正式玩家窗口。Apple M2、Godot 4.6.3 / Metal，
+1600×960、高画质、开垂直同步、固定地图中心镜头，种子 `20260718`、60×40、四国、50×。
+各档覆盖前 180 日。在已领取第 40 日至第 55 日前，探针每帧额外占用一个生效档的预算。
+
+| 档位 | 实际结算日 | 绘制间隔样本 | 绘制间隔 P95（范围） | 天/秒 | 地图更新/秒 | 落后游戏日中位数（范围） |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 30 | 25–74 | 27 | 42.3 ms（25.7–43.0） | 51.70 | 27.94 | 1.5（0–3） |
+| 60 | 27–75 | 35 | 29.3 ms（25.8–30.9） | 50.15 | 37.19 | 1（0–2） |
+| 自适应 | 25–75 | 37 | 27.1 ms（25.7–27.3） | 49.96 | 35.75 | 1（0–2） |
+
+分开计时 `MapRuntimeBridge.poll_runtime_commit()`、气候与视野写入、
+`publish_worker_climate_visuals()` 的地块和天气图准备，以及
+`CellLutUpload._process()` 的提交。绘制间隔来自 `frame_post_draw`。
+领取的中位耗时为 0.009–0.013 ms，贴图准备和提交为 1.55–1.70 ms。
+所以降频范围选地块和天气贴图。领取推进后台的八日快进放行窗口，每帧继续照常领取。
+三档第 1–180 日的逐日业务摘要与回执一致。另跑的无窗口记录从第 1 日出现差异，
+配对验收按同档同窗口比较。采集跨过 #65 启动，各档系统负载不同。
+
+逐帧、逐日、后台耗时、系统负载、实际命令与汇总见本机
+`~/.keynes-factory/evidence/issue-63-window.atXH6A/fixed-1600/summary.json` 及同目录日志。
+桌面会话可直接以 1600×960 启动 `tests/game/player_scene_handoff_probe.gd`。
+
+```sh
+sample_dir=$(mktemp -d /tmp/keynes-63-window.XXXXXX)
+for fps in 30 60 adaptive; do
+  sample="$sample_dir/baseline-$fps"
+  PK_SAVE_DIR="$sample.saves" PK_RUNTIME_WATERFALL_CSV="$sample.waterfall.csv" \
+    godot --path Project/project-keynes --windowed --resolution 1600x960 \
+    --log-file "$sample.engine.log" --script res://tests/game/player_scene_handoff_probe.gd -- \
+    --fps="$fps" --speed=50 --through=180 --answer-story --require-rendered \
+    --overload --frames="$sample.jsonl" > "$sample.log" 2>&1
+done
+```
+
+### 改后验证
+
+理念回执的回归在 `ideology_draw_flow_test.gd` 复现。改前通过第 2 日抽卡和第 4 日重抽的拒绝回执及
+提示检查，首次改后四处失败。`runtime_narrative_scenario.gd` 会断开自动展示剧情的
+`PlayerController._on_simulation_committed()`，首次改动把 `IdeologyFacade.drain_receipts()` 放进了该回调。
+第 1 日缺少民意的拒绝走边界回执，所以该项仍通过。普通理念回执现在由领取日记录的代码直接交付。
+同局重启执行器时，原生启动流程可把发布编号归零。按旧编号接收会丢弃接续日期的地图更新。
+`simulation_presentation_coalescing_test.gd` 用第 31 日的编号 90 接第 32 日的编号 1 复现。
+按本局已显示和待显示日期判断后，保留两批变格并显示第 32 日。换局及读档仍清空上一局待显示内容。
+
+改前窗口的三档记录均未满足「忙帧继续领取并暂缓贴图」的判据。以 `9ddb12734` 为改前版本，
+同一正式玩家场景在无窗口条件下跑了相同命令记录。1× 的前 8 日、50× 的前 180 日，
+改前改后的逐日业务摘要及有序回执一致。三条预定命令分别在第 2、2、5 日按序结算，
+剧情在第 20、80、141 日等待，答复分别在第 21、81、142 日结算。
+
+在无窗口玩家场景中用 `--simulate-frames` 触发帧预算判断。补测中 30、60、自适应档分别有
+6、12、11 帧继续领取并暂缓地图，三档都在第 55 日追上。三档前 180 日的业务摘要及回执
+仍与同条件的改前记录一致。合并测试验证仅在较早批次变化的格子、分类、整图标记和最新生态
+过渡数据，还验证视野更新优先、恢复显示频率和换局清理。窗口行为探针另外检查忙时切档、拖动、
+缩放、顶栏点击，以及实际贴图读回与第一帧揭雾。
+补测逐帧、逐日数据和命令见 `/private/tmp/keynes-63-verify.nm8ULe/headless-pair/summary.json`。
+
+剧情暂停和答复、年报第 365 日保存续跑通过。普通和表外模块的确定性检查分别通过三轮。
+补测日志保存在 `/private/tmp/keynes-63-verify.nm8ULe/`。设置切换、天气表和迷雾表用例通过，
+无窗口天气表用例跳过两项图形回读。
+负载检查原命令被 `ps` 读取权限阻断。补测只替换系统负载记录，保留原有七进程实测负载的验证、
+业务比较和存档续跑断言。三项均通过，证据在 `/private/tmp/keynes-63-verify.nm8ULe/load-observed/summary.json`。
+
+剧情暂停策略测试在常规运行通过，在并发负载下和改前版本都复现同一条断言失败。
+`submit_narrative_choice_request()` 受理后唤醒后台，测试随即调用 `capture_narrative()`，
+可能赶在 `service_narrative_requests()` 写入之前。两次失败的回执都给出第 3 日，
+读取到的等待列表为空，策略仍在第 3 日应用。改前复现见
+`/private/tmp/keynes-issue63.zOmKne/popup-baseline-pressure/test.log`。
+
+地图覆盖层冒烟用例在第 0 日偶发读到零次刷新。用同一种子在改前注入长帧，复现了同一断言。
+用例在下一帧执行宿主处理前完成固定 120 ms 的计时并读数，当时刷新尚未运行。
+诊断日志为 `/private/tmp/keynes-issue63.zOmKne/overlay-baseline-early-sample.log`。
+本轮地图覆盖层用例和完整无窗口回归均通过。已导入的临时副本上，`run_regression_checks.py --roundtrip`
+共通过 128 项检查，包括正式存读档往返。引擎在编辑器导入时报告 macOS 系统证书读取错误，
+导入关卡未通过。运行和导入日志分别是 `/private/tmp/keynes-63-verify.nm8ULe/regression-isolated.log`
+和 `/private/tmp/keynes-63-verify.nm8ULe/isolated-import.log`。
+
+改后窗口复测待完成。桌面采集在启动 Godot 时得到 LaunchServices `-10827`，没有生成绘制样本。
+直接启动停在 macOS 窗口服务连接阶段，记录见 `/private/tmp/keynes-issue63.zOmKne/first.log`。
+续跑的 LaunchServices 调用和退出状态见 `/private/tmp/keynes-63-verify.nm8ULe/launch-probe.run.json`。
+既有基线不能替代同版本配对样本，改后实际绘制间隔、后台天/秒、地图更新频率、落后游戏日
+和各档绘制瓶颈待测。用两份已导入的同基线项目，安装相应的本地扩展，复制相同的
+`player_scene_handoff_probe.gd`、`player_scene_handoff_timings.gd` 和
+`player_scene_display_checks.gd`。本机已准备以下两份项目。
+
+```sh
+baseline_copy=/private/tmp/keynes-issue63.zOmKne/baseline
+candidate_copy=/private/tmp/keynes-63-verify.nm8ULe/candidate
+sample_dir=$(mktemp -d /tmp/keynes-63-pairs.XXXXXX)
+python3 tools/perf/run_rendered_player_handoff.py "$baseline_copy" "$candidate_copy" \
+  --macos-app /Applications/Godot.app --fps 30 --fps 60 --fps adaptive --output "$sample_dir/alternating"
+python3 tools/perf/run_rendered_player_handoff.py "$baseline_copy" "$candidate_copy" \
+  --macos-app /Applications/Godot.app --fps 30 --fps 60 --fps adaptive \
+  --overload --expect-pacing --output "$sample_dir/overload"
+```
+
+单独验证交互和贴图读回，在上面的窗口探针命令中使用改后项目，并在 `--fps=60`
+的过载轮加 `--exercise-display`。两条配对命令各档轮流运行三次，保留逐帧、逐日、
+提交耗时和实际设置。汇总报告每轮实际绘制间隔 P95、样本数和范围，以及同一范围内的
+后台天/秒、地图更新/秒和延后游戏日数。
+
 ## 分域洋流绘制（#65，2026-11-24）
 
 `MapRuntimeBridge` 注册洋流系统。分域调度经 `MapGenerator.sus_tick_daily()` 和

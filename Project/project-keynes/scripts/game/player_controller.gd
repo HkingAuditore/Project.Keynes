@@ -748,8 +748,6 @@ func _connect_runtime() -> void:
 func _on_simulation_view_updated(_from_day: int, to_day: int, _generation: int) -> void:
 	if _runtime_host == null or _world_clock == null:
 		return
-	if _ideology_facade != null:
-		_ideology_facade.drain_receipts()
 	_sync_time_ui()
 	if _ui_manager != null and _selected_cell != null:
 		_ui_manager.refresh_selected_daily_lines(false, to_day)

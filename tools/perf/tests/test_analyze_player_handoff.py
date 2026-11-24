@@ -4,7 +4,9 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from tools.perf.analyze_player_handoff import summarize
-from tools.perf.run_rendered_player_handoff import Recording, compare_recordings, load_recording
+from tools.perf.run_rendered_player_handoff import (
+    Recording, check_display_pacing, compare_recordings, load_recording,
+)
 
 
 def recording(committed):
@@ -16,6 +18,13 @@ def recording(committed):
          "visual_ms": index * 0.5, "ui_us": index * 50}
         for index, day in enumerate(committed)
     ]
+
+
+def display_frame(**overrides):
+    return {"draw_lag_days": [0], "view_updates": 1, "effective_max_fps": 60,
+            "overload_us": 0, "received_batches": 1, "receive_us": 120,
+            "climate_install_us": 600, "vision_install_us": 100, "cell_refresh_us": 500,
+            "cell_encode_us": 230, "staged_publish_us": 1300, "immediate_texture_us": 0} | overrides
 
 
 class HandoffWindowTest(unittest.TestCase):
@@ -64,6 +73,29 @@ class HandoffWindowTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "fewer than two completed draws"):
             summarize(recording([4, 5, 6, 7, 8, 9, 10]), self.daily, 5, 9, require_rendered=True)
 
+    def test_map_metrics_use_only_the_matched_draw_window(self):
+        frames = recording([4, 5, 6, 7, 8, 9, 10])
+        for frame in frames:
+            frame.update(display_frame(draw_times=[frame["usec"] - 100]))
+        frames[1].update(draw_lag_days=[20], receive_us=12_000, view_updates=3)
+        frames[2].update(draw_lag_days=[2], receive_us=210, view_updates=0, overload_us=30_000)
+        result = summarize(frames, self.daily, 5, 9, require_rendered=True)
+
+        self.assertEqual(result["display_updates"], 3)
+        self.assertEqual(result["display_updates_per_s"], 750)
+        self.assertEqual(result["overload_frames"], 1)
+        self.assertEqual(result["draw_timing"]["range_ms"], [1, 1])
+        self.assertEqual(result["draw_display_lag_days"], {"samples": 4, "median": 0, "range": [0, 2]})
+        self.assertEqual(result["step_timings"]["receive_us"],
+                         {"samples": 4, "median_ms": 0.12, "p95_ms": 0.21, "range_ms": [0.12, 0.21]})
+        self.assertEqual(result["step_timings"]["staged_publish_us"]["median_ms"], 1.3)
+
+    def test_map_metrics_require_age_for_each_draw(self):
+        frames = [row | display_frame(draw_times=[row["usec"] - 100]) for row in recording([4, 5, 6, 7, 8, 9])]
+        frames[3]["draw_lag_days"] = []
+        with self.assertRaisesRegex(ValueError, "each completed draw must have a display age"):
+            summarize(frames, self.daily, 5, 9, require_rendered=True)
+
 
 class RenderedHandoffComparisonTest(unittest.TestCase):
     config = {"display": "macOS", "driver": "metal", "viewport_size": "(1600, 960)", "speed": 50}
@@ -96,6 +128,15 @@ class RenderedHandoffComparisonTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "actual player settings differ: viewport_size"):
             compare_recordings(baseline, resized, [(5, 9)])
 
+    def test_pair_refuses_a_trace_running_at_the_wrong_cap(self):
+        baseline = self.sample([4, 5, 6, 7, 8, 9, 10])
+        baseline.config = self.config | {"fps_mode": "30"}
+        for frame in baseline.frames:
+            frame.update(display_frame(draw_lag_days=[0] * len(frame.get("draw_times", []))))
+            frame.setdefault("draw_times", [])
+        with self.assertRaisesRegex(ValueError, "wrong frame limit"):
+            compare_recordings(baseline, baseline, [(5, 9)])
+
     def test_pair_reports_draw_and_wait_timing_at_shared_boundaries(self):
         baseline = self.sample([4, 5, 6, 6, 7, 8, 9, 10])
         candidate = self.sample([4, 6, 6, 7, 8, 10])
@@ -109,6 +150,36 @@ class RenderedHandoffComparisonTest(unittest.TestCase):
             self.assertEqual(window[side]["draw_p95_ms"], 1.0)
         self.assertEqual(window["baseline"]["observed_waits"]["calendar_wait"], {"count": 1, "max_ms": 1.0})
         self.assertEqual(window["candidate"]["observed_waits"]["calendar_wait"], {"count": 0, "max_ms": 0.0})
+
+
+class DisplayPacingTraceTest(unittest.TestCase):
+    def setUp(self):
+        self.frames = [
+            display_frame(consumed=39, presented=39),
+            display_frame(consumed=42, presented=39, view_updates=0, cell_refresh_us=0,
+                          staged_publish_us=0, overload_us=17_000),
+            display_frame(consumed=46, presented=46, overload_us=17_000),
+            display_frame(consumed=57, presented=57),
+        ]
+
+    def test_receives_during_overload_merges_and_recovers(self):
+        check_display_pacing(self.frames)
+
+    def test_receiving_less_often_is_not_display_pacing(self):
+        self.frames[1]["consumed"] = 39
+        self.frames[1]["received_batches"] = 0
+        with self.assertRaisesRegex(ValueError, "no overloaded frame received days"):
+            check_display_pacing(self.frames)
+
+    def test_applying_the_held_batch_separately_is_not_coalescing(self):
+        self.frames[2]["presented"] = 42
+        with self.assertRaisesRegex(ValueError, "never merged"):
+            check_display_pacing(self.frames)
+
+    def test_publishing_a_map_behind_the_receipts_is_not_recovery(self):
+        self.frames[-1]["presented"] = 46
+        with self.assertRaisesRegex(ValueError, "did not catch up"):
+            check_display_pacing(self.frames)
 
 
 if __name__ == "__main__":

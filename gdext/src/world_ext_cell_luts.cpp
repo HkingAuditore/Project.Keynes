@@ -1,6 +1,5 @@
 #include "world_ext.h"
 #include "world_ext_internal.h"
-#include "runtime_day_tail.h"
 #include "world_ext_internal_cell_luts.h"
 
 #include <godot_cpp/core/builtin_ptrcall.hpp>
@@ -299,9 +298,10 @@ godot::Dictionary DCWorldExt::encode_cell_luts(godot::Dictionary opts) {
     uint8_t * const __restrict PV_VEG = st->lut_prev_veg.ptrw();
     uint8_t * const __restrict PV_VIT = st->lut_prev_vit.ptrw();
     uint8_t * const __restrict TR = st->lut_transition_age.ptrw();
-    const auto &tail = _runtime_display_commit.day_tail;
-    const auto *model = tail && tail->cell_luts.transition_age.size() == size_t(n_cells)
-        && bool(opts.get("runtime_frame", false)) ? &tail->cell_luts : nullptr;
+    const Dictionary frame = opts.get("cell_lut_frame", Dictionary());
+    const PackedByteArray transition_ages = frame.get("transition_age", PackedByteArray());
+    const PackedByteArray previous_vitalities = frame.get("previous_vitality", PackedByteArray());
+    const bool frame_valid = transition_ages.size() == n_cells && previous_vitalities.size() == n_cells;
     const bool eff_cache_valid = cache_valid_opt && lut_state_ok;
 
     uint8_t * const __restrict ENUM = st->lut_enum_data.ptrw();
@@ -384,9 +384,9 @@ godot::Dictionary DCWorldExt::encode_cell_luts(godot::Dictionary opts) {
         const int cur_vit_byte = pk_q01_byte(double(VIT[ci]));
         int transition_age;
         int prev_vit_byte;
-        if (model) {
-            transition_age = model->transition_age[ci];
-            prev_vit_byte = model->previous_vitality[ci];
+        if (frame_valid) {
+            transition_age = transition_ages[ci];
+            prev_vit_byte = previous_vitalities[ci];
         } else if (eff_cache_valid) {
             const int prev_veg = int(PV_VEG[ci]);
             prev_vit_byte = int(PV_VIT[ci]);

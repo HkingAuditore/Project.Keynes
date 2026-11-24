@@ -396,6 +396,8 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 			_restore_clock_mode(was_paused, previous_speed, generation)
 			_busy = false
 			return _result(false, "save_vision_writeback_failed", "视野未能写入地图，已取消保存。")
+		if not _runtime_host._vision_dirty_indices.is_empty():
+			_runtime_host._service_worker_map_presentation(Time.get_ticks_usec())
 		if not bool(resources.get("ok", false)) or not bool(species.get("ok", false)):
 			_restore_clock_mode(was_paused, previous_speed, generation)
 			_busy = false

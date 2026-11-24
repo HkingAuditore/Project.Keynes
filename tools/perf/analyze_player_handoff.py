@@ -49,6 +49,38 @@ def p95_ms(intervals):
     return sorted(intervals)[math.ceil(0.95 * len(intervals)) - 1] / 1000
 
 
+def timing_stats(values):
+    if not values:
+        return {"samples": 0, "median_ms": None, "p95_ms": None, "range_ms": None}
+    return {"samples": len(values), "median_ms": median(values) / 1000,
+            "p95_ms": p95_ms(values), "range_ms": [min(values) / 1000, max(values) / 1000]}
+
+
+def display_stats(sample, draw_intervals):
+    measured = sample[1:]
+    lag = []
+    for row in measured:
+        if len(row["draw_lag_days"]) != len(row["draw_times"]):
+            raise ValueError("each completed draw must have a display age")
+        lag.extend(row["draw_lag_days"])
+    steps = ("receive_us", "climate_install_us", "vision_install_us", "cell_refresh_us", "cell_encode_us",
+             "staged_publish_us", "immediate_texture_us")
+    elapsed_us = sample[-1]["usec"] - sample[0]["usec"]
+    updates = sum(row["view_updates"] for row in measured)
+    return {
+        "effective_max_fps": sorted({row["effective_max_fps"] for row in measured}),
+        "overload_frames": sum(row["overload_us"] > 0 for row in measured),
+        "received_batches": sum(row["received_batches"] for row in measured),
+        "display_updates": updates,
+        "display_updates_per_s": round(updates * 1_000_000 / elapsed_us, 3),
+        "draw_timing": timing_stats(draw_intervals),
+        "draw_display_lag_days": {"samples": len(lag), "median": median(lag),
+                                  "range": [min(lag), max(lag)]} if lag else None,
+        "step_timings": {key: timing_stats([row[key] for row in measured if row[key] > 0])
+                         for key in steps},
+    }
+
+
 def summarize(frames, daily, first_day, last_day, *, require_rendered=False):
     if first_day >= last_day or any(day not in daily for day in range(first_day, last_day + 1)):
         raise ValueError(f"missing contiguous daily records for {first_day} through {last_day}")
@@ -76,7 +108,7 @@ def summarize(frames, daily, first_day, last_day, *, require_rendered=False):
 
     consume = [row["consume_us"] for before, row in pairwise(sample)
                if row["consumed"] > before["consumed"]]
-    return {"first_day": first_day, "last_day": last_day,
+    result = {"first_day": first_day, "last_day": last_day,
             "days_per_s": round((last_day - first_day) * 1_000_000 / elapsed, 3),
             "frames": len(values), "frame_p95_ms": p95_ms(values),
             "draw_intervals": len(draw_intervals),
@@ -88,6 +120,9 @@ def summarize(frames, daily, first_day, last_day, *, require_rendered=False):
             "consume_median_ms": median(consume) / 1000 if consume else 0,
             "visual_apply_median_ms": round(positive_median("visual_ms"), 3),
             "ui_median_ms": positive_median("ui_us") / 1000}
+    if "view_updates" in sample[0]:
+        result.update(display_stats(sample, draw_intervals))
+    return result
 
 
 def main():

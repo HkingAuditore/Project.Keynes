@@ -20,26 +20,61 @@ var _presented_day := -1
 var _pending_from_day := -1
 var _pending_day := -1
 var _pending_generation := 0
+var _map_updates := preload("res://scripts/game/world_runtime_map_updates.gd").new()
 
-## Display can skip dates. Keep the first source date until the next frame,
+## Display can skip dates. Keep the first source date until the next application,
 ## independently from the notification sent for every settled day.
-func queue_worker_commit(from_day: int, day: int, generation: int) -> void:
-	if not needs_worker_view(generation):
+func queue_worker_commit(from_day: int, day: int, generation: int, visual_commit: Dictionary = {}) -> void:
+	# A restarted executor can publish a lower generation in the same world.
+	if day <= maxi(_presented_day, _pending_day):
 		return
 	if _pending_day < 0:
 		_pending_from_day = _presented_day if _presented_day >= 0 else from_day
 	_pending_day = day
 	_pending_generation = generation
-
-func needs_worker_view(generation: int) -> bool:
-	return generation > _pending_generation
+	_map_updates.queue(visual_commit)
 
 func publish_worker_view(publish: Callable) -> void:
-	if _pending_day < 0:
+	if _pending_day < 0 or _map_updates.has_pending():
 		return
 	_presented_day = _pending_day
 	_pending_day = -1
 	publish.call(_pending_from_day, _presented_day, _pending_generation)
+
+func begin_frame() -> void:
+	_map_updates.start_frame(Time.get_ticks_usec())
+
+func observe_draw() -> void:
+	_map_updates.observe_draw(Time.get_ticks_usec(), Engine.max_fps)
+
+func apply_pending_worker_map(host, vision_changed: bool) -> void:
+	if not _map_updates.has_pending():
+		return
+	var frame := Engine.get_process_frames()
+	var started := Time.get_ticks_usec()
+	if not vision_changed and not _map_updates.can_apply(frame, started, Engine.max_fps):
+		return
+	var update := _map_updates.collect(host._vision_dirty_indices)
+	# There is at most one worker upload now. Finish it here before the
+	# vision-dependent layers and weather interpolation read the new textures.
+	var result: Dictionary = host._generator.publish_worker_climate_visuals(false, update)
+	if result.get("lut_encode_path", "none") == "none":
+		return
+	host._vision_dirty_indices = PackedInt32Array()
+	if host._renderer != null:
+		host._renderer.set_season_phase(host._world_clock.season_phase_for_day(_pending_day))
+		host._renderer.set_climate_anomaly(host._world_clock.climate_anomaly)
+	host.mark_map_overlay_dirty(&"worker_committed")
+	var elapsed := Time.get_ticks_usec() - started
+	_map_updates.applied(frame, elapsed)
+	host._runtime_last_visual_apply_ms = float(elapsed) / 1000.0
+	host._sched_proc_visual_ms += host._runtime_last_visual_apply_ms
+	if host._dcp_on():
+		host._dcp_visual_ms = host._runtime_last_visual_apply_ms
+	if host._generator.has_method("record_runtime_visual_timings"):
+		host._generator.record_runtime_visual_timings(
+			host._runtime_last_ui_feedback_ms, host._runtime_last_visual_apply_ms,
+			host._runtime_last_gpu_upload_ms)
 
 func presented_worker_day() -> int:
 	return _presented_day
@@ -49,6 +84,7 @@ func reset_worker_views() -> void:
 	_pending_from_day = -1
 	_pending_day = -1
 	_pending_generation = 0
+	_map_updates.reset()
 
 func map_wrap_period_x() -> float:
 	return _wrap_period

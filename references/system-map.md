@@ -148,7 +148,8 @@ world_setup.tscn
   -> WorldClock advances the admission cursor
   -> background executor / inline executor runs the same daily plan
   -> atomic publication of a committed display batch
-  -> WorldRuntimeHost applies latest display and player-facing records
+  -> WorldRuntimeHost drains player-facing records every frame
+  -> WorldRuntimePresentation applies the latest map textures when the frame has room
 ```
 
 核心边界：

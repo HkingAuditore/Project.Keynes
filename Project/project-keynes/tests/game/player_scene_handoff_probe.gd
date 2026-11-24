@@ -6,14 +6,17 @@ const WIDTH := 60
 const HEIGHT := 40
 const SEED := 20260718
 const WATCHDOG_USEC := 5_000_000
-
-class TimedConsumer extends "res://scripts/game/world_runtime_daily_adapter_part3.gd":
-	var elapsed_usec := 0
-
-	func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) -> void:
-		var started := Time.get_ticks_usec()
-		super(host, report_override)
-		elapsed_usec += Time.get_ticks_usec() - started
+const GraphicsSettings = preload("res://scripts/game/graphics_quality_settings.gd")
+const FrameTimings = preload("res://tests/game/player_scene_handoff_timings.gd")
+const DisplayChecks = preload("res://tests/game/player_scene_display_checks.gd")
+const FRAME_LIMITS := {"30": 30, "60": 60, "adaptive": GraphicsSettings.ADAPTIVE_FPS}
+const OVERLOAD_FIRST_DAY := 40
+const OVERLOAD_END_DAY := 55
+const COMMAND_LOG := [
+	{"request_id": 630001, "producer_id": 2, "requested_day": 2, "domain": 1, "opcode": 1},
+	{"request_id": 630002, "producer_id": 2, "requested_day": 2, "domain": 1, "opcode": 1},
+	{"request_id": 630003, "producer_id": 2, "requested_day": 5, "domain": 1, "opcode": 1},
+]
 
 var _host: WorldRuntimeHost
 var _clock: WorldClock
@@ -22,7 +25,7 @@ var _controller: PlayerController
 var _camera: MapCamera
 var _camera_center: Vector2
 var _camera_zoom: Vector2
-var _consumer := TimedConsumer.new()
+var _timings := FrameTimings.new()
 var _admit_day: Callable
 var _request := -1
 var _admit_usec := 0
@@ -31,7 +34,14 @@ var _day_rows: Array = []
 var _frames: Array = []
 var _answers: Array[Dictionary] = []
 var _draw_times: Array[int] = []
+var _draw_lag_days: Array[int] = []
 var _draw_count := 0
+var _view_updates := 0
+var _overload := false
+var _overload_us := 0
+var _display_checks: DisplayChecks
+var _check_commands := false
+var _simulate_frames := false
 
 
 func _initialize() -> void:
@@ -48,8 +58,21 @@ func _run() -> void:
 	var foreign_count := int(args.get("--foreign-count", 3))
 	var answer_story := args.has("--answer-story")
 	var require_rendered := args.has("--require-rendered")
-	if not output.is_absolute_path() or speed not in [1.0, 50.0, 100.0] or target <= 0:
-		push_error("Pass --frames=<absolute path>, --speed=1|50|100 and --through=<day>")
+	var fps_mode := String(args.get("--fps", ""))
+	_overload = args.has("--overload")
+	_check_commands = args.has("--command-log")
+	_simulate_frames = args.has("--simulate-frames")
+	if not output.is_absolute_path() or speed not in [1.0, 50.0, 100.0] or target <= 0 \
+			or (args.has("--fps") and not FRAME_LIMITS.has(fps_mode)):
+		push_error("Pass --frames=<absolute path>, --speed=1|50|100, --through=<day> and optionally --fps=30|60|adaptive")
+		quit(1)
+		return
+	if _overload and (fps_mode.is_empty() or target < 75 or not answer_story):
+		push_error("--overload requires --fps, --through of at least 75 days and --answer-story")
+		quit(1)
+		return
+	if args.has("--exercise-display") and (not require_rendered or not _overload or fps_mode != "60"):
+		push_error("--exercise-display requires --require-rendered, --overload and --fps=60")
 		quit(1)
 		return
 	var driver := RenderingServer.get_current_rendering_driver_name()
@@ -58,11 +81,21 @@ func _run() -> void:
 		_record_start_failure(output, {"ok": false, "code": "rendered_backend_required", "driver": driver})
 		quit(1)
 		return
-	root.get_node("GameSettings").update({
+	if _simulate_frames and (rendered or not _overload):
+		push_error("--simulate-frames requires --headless and --overload")
+		quit(1)
+		return
+	var settings_service := root.get_node("GameSettings")
+	var settings_patch := {
 		"window_mode": "windowed", "resolution_width": 1600, "resolution_height": 960,
 		"render_quality": "high", "graphics_custom": false, "vsync": true,
 		"autosave_enabled": false, "ai_narrative_enabled": false, "event_pause_mask": 255,
-	}, false)
+	}
+	if not fps_mode.is_empty():
+		settings_patch.merge(GraphicsSettings.resolve(settings_patch, OS.has_feature("mobile")), true)
+		settings_patch.graphics_custom = true
+		settings_patch.frame_rate_limit = FRAME_LIMITS[fps_mode]
+	settings_service.update(settings_patch, false)
 	var config := NewGameConfig.new()
 	config.apply_land_layout(NewGameConfig.DEFAULT_LAND_LAYOUT)
 	config.base.map_width = WIDTH
@@ -95,20 +128,34 @@ func _run() -> void:
 		if callback.get_object() == _controller:
 			callback = _timed_ui.bind(callback)
 		_host.simulation_view_updated.connect(callback, int(connection.flags))
+	_host.simulation_view_updated.connect(_record_view)
 	_admit_day = _clock._runtime_calendar_admit
 	_clock._runtime_calendar_admit = _timed_admit
-	_host._daily_adapter._part3 = _consumer
+	_timings.attach(_host)
 	_host.simulation_day_records.connect(_record_days)
+	if args.has("--exercise-display"):
+		_display_checks = DisplayChecks.new()
+		_display_checks.setup(scene, settings_service)
+	if _check_commands:
+		for command: Dictionary in COMMAND_LOG:
+			var receipt: Dictionary = _generator.get_data_core_world_ext().submit_runtime_command(command)
+			if not receipt.get("ok", false) or receipt.get("effective_day") != command.requested_day:
+				_record_start_failure(output, {"code": "probe_command_admission_failed", "receipt": receipt})
+				await _host.close_world()
+				quit(1)
+				return
 	var start := _host._runtime_commit_day
-	var settings: Dictionary = root.get_node("GameSettings").values()
+	var graphics := GraphicsSettings.resolve(settings_service.values(), OS.has_feature("mobile"))
 	print("HANDOFF_CONFIG=", JSON.stringify({"width": _host.current_map().width,
 		"height": _host.current_map().height, "seed": _host.last_seed(),
 		"configured_countries": foreign_count + 1,
 		"speed": speed, "camera": str(_camera.position), "zoom": str(_camera.zoom),
 		"display": DisplayServer.get_name(), "window_size": str(DisplayServer.window_get_size()),
 		"viewport_size": str(root.get_visible_rect().size), "max_fps": Engine.max_fps,
-		"vsync": DisplayServer.window_get_vsync_mode(), "quality": settings.render_quality,
-		"renderer": RenderingServer.get_current_rendering_method(), "driver": driver, "start_day": start}))
+		"vsync": DisplayServer.window_get_vsync_mode(), "quality": graphics.render_quality,
+		"graphics": graphics, "fps_mode": fps_mode, "overload": _overload,
+		"renderer": RenderingServer.get_current_rendering_method(), "driver": driver, "start_day": start,
+		"command_log": COMMAND_LOG if _check_commands else []}))
 	if rendered:
 		RenderingServer.frame_post_draw.connect(_record_draw)
 	_host.execute_gm_command("time.speed", {"value": speed})
@@ -118,6 +165,10 @@ func _run() -> void:
 		RenderingServer.frame_post_draw.disconnect(_record_draw)
 	if require_rendered and _draw_count < 2 and condition in ["target", "player"]:
 		condition = "missing_rendered_frames"
+	if _check_commands and not _commands_settled():
+		condition = "probe_command_receipt_mismatch"
+	if _display_checks != null and condition == "target":
+		condition = _display_checks.result()
 	_clock.pause(true)
 	_clock._runtime_calendar_admit = _admit_day
 	for connection in _host.simulation_view_updated.get_connections():
@@ -217,7 +268,35 @@ func _record_days(records: Array) -> void:
 
 func _record_draw() -> void:
 	_draw_times.append(Time.get_ticks_usec())
+	var committed := int(_generator.get_runtime_control_state().get("simulation_committed_day", -1))
+	_draw_lag_days.append(maxi(0, committed - maxi(0, _host.presented_worker_day())))
 	_draw_count += 1
+	if _display_checks != null:
+		_display_checks.check_draw(_host.presented_worker_day())
+
+
+func _record_view(_from_day: int, _day: int, _generation: int) -> void:
+	_view_updates += 1
+
+
+func _commands_settled() -> bool:
+	var received: Array = []
+	for row: Dictionary in _day_rows:
+		for receipt: Dictionary in row.receipts:
+			if int(receipt.request_id) in [630001, 630002, 630003]:
+				received.append([int(receipt.request_id), int(receipt.effective_day), int(row.day)])
+	return received == [[630001, 2, 2], [630002, 2, 2], [630003, 5, 5]]
+
+
+func _apply_overload(consumed: int) -> void:
+	_overload_us = 0
+	if _overload and consumed >= OVERLOAD_FIRST_DAY and consumed < OVERLOAD_END_DAY and Engine.max_fps > 0:
+		# Occupy one full frame budget before the next gameplay _process callbacks.
+		var started := Time.get_ticks_usec()
+		var until := started + roundi(1_000_000.0 / Engine.max_fps)
+		while Time.get_ticks_usec() < until:
+			pass
+		_overload_us = Time.get_ticks_usec() - started
 
 
 func _capture(target: int, answer_story: bool) -> String:
@@ -227,6 +306,11 @@ func _capture(target: int, answer_story: bool) -> String:
 	var answered_offer := 0
 	while true:
 		await process_frame
+		if _simulate_frames:
+			# Exercise the budget in the real player loop without a display driver.
+			# No draw samples are recorded for this run.
+			_host._presentation.observe_draw()
+			_host._presentation.begin_frame()
 		var now := Time.get_ticks_usec()
 		var runtime := _generator.get_runtime_thread_report()
 		var control := _generator.get_runtime_control_state()
@@ -246,7 +330,10 @@ func _capture(target: int, answer_story: bool) -> String:
 			reason = "domain_wait"
 		elif state == "PAUSED" and committed >= _host._calendar_admitted_through:
 			reason = "calendar_wait"
-		_frames.append({"usec": now, "frame_usec": now - previous_frame, "draw_times": _draw_times,
+		var frame := {"usec": now, "frame_usec": now - previous_frame, "draw_times": _draw_times,
+			"draw_lag_days": _draw_lag_days, "view_updates": _view_updates,
+			"presented": _host.presented_worker_day(), "effective_max_fps": Engine.max_fps,
+			"overload_us": _overload_us,
 			"sample_usec": Time.get_ticks_usec() - now, "display": _clock.day_index(),
 			"requested": _request, "admitted": _host._calendar_admitted_through,
 			"committed": committed, "consumed": consumed, "state": state, "reason": reason,
@@ -259,14 +346,17 @@ func _capture(target: int, answer_story: bool) -> String:
 			"retry_us": runtime.get("worker_time_input_retry_wait_us", 0),
 			"environment_wait_us": runtime.get("worker_time_environment_wait_us", 0),
 			"execute_us": runtime.get("worker_time_execute_us", 0),
-			"admit_us": _admit_usec, "consume_us": _consumer.elapsed_usec, "ui_us": _ui_usec,
-			"visual_ms": _host._runtime_last_visual_apply_ms if consumed != previous_day else 0.0,
+			"admit_us": _admit_usec, "ui_us": _ui_usec,
+			"visual_ms": _host._runtime_last_visual_apply_ms if _view_updates > 0 else 0.0,
 			"writeback_ms": _host._runtime_climate_writeback_memcpy_ms + _host._runtime_climate_writeback_flush_ms,
-			"host_ms": _host._sched_proc_last_total_ms})
+			"host_ms": _host._sched_proc_last_total_ms}
+		frame.merge(_timings.take())
+		_frames.append(frame)
 		_draw_times = []
+		_draw_lag_days = []
+		_view_updates = 0
 		_request = -1
 		_admit_usec = 0
-		_consumer.elapsed_usec = 0
 		_ui_usec = 0
 		previous_frame = now
 		if consumed != previous_day:
@@ -274,7 +364,9 @@ func _capture(target: int, answer_story: bool) -> String:
 			last_progress = now
 		if reason in ["pause", "fault"]:
 			return reason
-		if reason != "player" and (_camera.position != _camera_center or _camera.zoom != _camera_zoom):
+		if _display_checks != null:
+			_display_checks.step(consumed)
+		elif reason != "player" and (_camera.position != _camera_center or _camera.zoom != _camera_zoom):
 			return "camera_moved"
 		if reason == "player" and consumed >= int(control.get("player_block_day", -1)):
 			if not answer_story or player_reason != "narrative_choice_required":
@@ -294,6 +386,7 @@ func _capture(target: int, answer_story: bool) -> String:
 			return "target"
 		if now - last_progress >= WATCHDOG_USEC:
 			return "unexplained_stall"
+		_apply_overload(consumed)
 	return "unreachable"
 
 

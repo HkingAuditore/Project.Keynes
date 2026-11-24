@@ -789,8 +789,12 @@ func _consume_modifier_worker_snapshot_if_authoritative() -> void:
 	_daily_adapter._consume_modifier_worker_snapshot_if_authoritative(self)
 func _consume_country_worker_read_view_if_authoritative() -> void:
 	_daily_adapter._consume_country_worker_read_view_if_authoritative(self)
-func _service_country_visual_refresh_budgeted(frame_started_usec: int) -> void:
-	_daily_adapter._service_country_visual_refresh_budgeted(self, frame_started_usec)
+func _service_worker_map_presentation(frame_started_usec: int) -> void:
+	var vision_changed := not _vision_dirty_indices.is_empty()
+	_presentation.apply_pending_worker_map(self, vision_changed)
+	var country_started_usec := Time.get_ticks_usec()
+	_daily_adapter._service_country_visual_refresh_budgeted(self, frame_started_usec, vision_changed)
+	_sched_proc_country_visual_ms += _sched_elapsed_ms(country_started_usec)
 func _consume_runtime_commit_if_ready(report_override: Dictionary = {}) -> void:
 	_daily_adapter._consume_runtime_commit_if_ready(self, report_override)
 func military_report() -> Dictionary:
@@ -1167,7 +1171,13 @@ func _on_baker_stage_progress(stage: String, fraction: float) -> void:
 	_generation_adapter._on_baker_stage_progress(self, stage, fraction)
 func _enter_tree() -> void:
 	_generation_adapter._enter_tree(self)
+	if DisplayServer.get_name() != "headless":
+		get_tree().process_frame.connect(_presentation.begin_frame)
+		RenderingServer.frame_post_draw.connect(_presentation.observe_draw)
 func _exit_tree() -> void:
+	if RenderingServer.frame_post_draw.is_connected(_presentation.observe_draw):
+		RenderingServer.frame_post_draw.disconnect(_presentation.observe_draw)
+		get_tree().process_frame.disconnect(_presentation.begin_frame)
 	_generation_adapter._exit_tree(self)
 var _loading_visual_usec := 0
 var _loading_visual_name := ""
