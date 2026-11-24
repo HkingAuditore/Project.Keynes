@@ -21,7 +21,7 @@ class NativeWorkflowTest(TempFactory):
     def setup_repo(self, mode):
         home = self.root / mode
         self.cfg["home"] = str(home)
-        self.repo = home / "work"
+        self.repo = home / ("work" if mode == "issue" else "pr-work")
         self.repo.mkdir(parents=True)
         self.libraries = self.cfg["checks"]["nativeBuildOutputs"]
         self.extra_binary = self.cfg["paths"]["trackedBinaries"][0] + "other.so"
@@ -68,14 +68,14 @@ class NativeWorkflowTest(TempFactory):
                     self.assertFalse((self.repo / library).exists())
                     if failure != stage:
                         self.write_file(self.repo, library, "old" if library == unchanged_library else "factory output")
-            elif args[0] == tools["godot"]:
+            elif args[0] == env["GODOT_BIN"]:
                 stage = checks.NATIVE_IMPORT
                 self.assertEqual(args[1:], c["nativeImport"])
                 self.assertEqual(cwd, str(self.repo))
             elif args[1] == c["nativeRuntimeCheck"]:
                 lib = args[args.index("--library") + 1]
                 stage = checks.runtime_name(lib)
-                self.assertEqual(args[args.index("--godot") + 1], tools["godot"])
+                self.assertEqual(args[args.index("--godot") + 1], env["GODOT_BIN"])
                 self.assertEqual((self.repo / lib).read_text(), "old" if lib == unchanged_library else "factory output")
             else:
                 stage = "regression"
@@ -86,6 +86,9 @@ class NativeWorkflowTest(TempFactory):
                     self.assertEqual((self.repo / self.libraries[0]).read_text(), "agent output")
                 if tamper or not native:
                     self.write_file(self.repo, self.libraries[0], "rewritten by regression")
+            self.assertEqual(env["KEYNES_FACTORY_REAL_GODOT"], tools["godot"])
+            self.assertEqual(Path(env["KEYNES_FACTORY_GODOT_HOME"]),
+                             self.repo / "Project/project-keynes/.godot/factory-home")
             stages.append(stage)
             failed = stage == failure
             path = Path(log)
@@ -107,7 +110,7 @@ class NativeWorkflowTest(TempFactory):
         with (patch("work.ensure"), patch("work.prepare", return_value=self.base),
               patch("checks.base_results", return_value=[]), patch("agent.codex", side_effect=agent_run),
               patch("checks.sh", side_effect=check_process), patch("work.commit", wraps=work.commit) as commit,
-              patch("work.push") as issue_push, patch("watch_prs.must") as pr_push):
+              patch("work.push") as push):
             if mode == "issue":
                 runner = Run(self.cfg, 7, dry=False)
                 runner.gh = gh
@@ -117,13 +120,11 @@ class NativeWorkflowTest(TempFactory):
                     runner.go(ISSUE)
                 runner.finish()
                 record_path = self.root / mode / "runs" / f"7-{runner.stamp}.json"
-                push = issue_push
             else:
                 watcher = Watcher(self.cfg, dry=False)
                 watcher.gh = gh
                 watcher.fix(pr, PrState(), [FINDING])
                 record_path = self.root / mode / "runs" / f"pr-7-{watcher.stamp}.json"
-                push = pr_push
         record = json.loads(record_path.read_text())
         return stages, prompts, record, gh, commit, push
 

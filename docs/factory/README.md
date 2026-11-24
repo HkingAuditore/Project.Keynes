@@ -1,6 +1,6 @@
 # 工厂
 
-工厂负责**更新冲突分支、修复评审问题和合并 PR**。fork（`hrhgit/Project.Keynes`）上的 PR 有合并冲突时，工厂先把目标分支合入 PR 分支。Qodo 评审完头部提交后，如果有阻塞项（action_required / remediation_recommended），工厂就让 Codex 在这个 PR 的分支上修，跑检查，没有新增失败才推送。推送后 Qodo 会评审新提交，工厂在后续轮询中合并满足条件的 PR。定时轮询处理完 PR 后，还会认领最早的一张可做工单（见下文 Issue 模式）。合到 fork 后，再由人向上游提 PR。
+工厂负责**更新冲突分支、修复评审问题和合并 PR**。fork（`hrhgit/Project.Keynes`）上的 PR 有合并冲突时，工厂先把目标分支合入 PR 分支。Qodo 评审完头部提交后，如果有阻塞项（action_required / remediation_recommended），工厂就让 Codex 在这个 PR 的分支上修，跑检查，没有新增失败才推送。推送后 Qodo 会评审新提交，工厂在后续轮询中合并满足条件的 PR。另一项定时任务独立认领最早的一张可做工单（见下文 Issue 模式）。合到 fork 后，再由人向上游提 PR。
 
 代码在 `tools/factory/`，配置在 `tools/factory/config.json`，Qodo 评审规则在 [qodo-rules.json](qodo-rules.json)，每条规则由什么强制见 [rule-coverage.md](rule-coverage.md)，人工纠正记录在 [corrections.md](corrections.md)。
 
@@ -60,7 +60,7 @@
 
 ## Issue 模式
 
-每次定时轮询在处理完 PR 后运行 `run.py --next`（`config.json` 的 `autoClaimIssues`，默认开）：按创建时间取最早一张打了 `ready-for-agent`、没有 `agent-working` / `agent-needs-help` / 跳过标签、且 `agent/issue-N` 分支上没有打开的 PR 的 issue，与 `run.py --issue N` 一样处理；锁被占用时这一轮不认领。认领时移除 `ready-for-agent`，所以一张工单只会被自动认领一次；结论不是 READY 时要人移除 `agent-needs-help` 并重新加 `ready-for-agent` 才会再跑。也可以手动运行 `run.py --issue N` 指定工单。已关闭或没有 `ready-for-agent` 的 issue 直接跳过（`--dry` 只看 G0，不受此限）。Issue 模式的分支名以 `agent/issue-` 开头（`config.json` 的 `issueBranchPrefix`），PR 轮询默认跳过这类 PR，避免两边同时修同一个 PR 或在结论出来前合并；没有标签就是安全状态，所以加标签失败、PR 查找失败都不会让轮询提前接手。结论为 READY 时工厂加 `factory-handoff`，交给 PR 轮询按合并条件处理；加不上就加 `agent-needs-help` 并在 PR 上说明由人补加。其他结论加 `agent-needs-help`，由人处理。`gh pr create` 之后查找 PR 失败时，`finish()` 再按分支找一次，找到就照样贴标签。Codex 在实现或修复期间退出失败或超时，当场停下，保存本地补丁并列出路径。
+Issue 定时任务独立运行 `run.py --next`（`config.json` 的 `autoClaimIssues`，默认开）：按创建时间取最早一张打了 `ready-for-agent`、没有 `agent-working` / `agent-needs-help` / 跳过标签、且 `agent/issue-N` 分支上没有打开的 PR 的 issue，与 `run.py --issue N` 一样处理；锁被占用时这一轮不认领。认领时移除 `ready-for-agent`，所以一张工单只会被自动认领一次；结论不是 READY 时要人移除 `agent-needs-help` 并重新加 `ready-for-agent` 才会再跑。也可以手动运行 `run.py --issue N` 指定工单。已关闭或没有 `ready-for-agent` 的 issue 直接跳过（`--dry` 只看 G0，不受此限）。Issue 模式的分支名以 `agent/issue-` 开头（`config.json` 的 `issueBranchPrefix`），PR 轮询默认跳过这类 PR，避免两边同时修同一个 PR 或在结论出来前合并；没有标签就是安全状态，所以加标签失败、PR 查找失败都不会让轮询提前接手。结论为 READY 时工厂加 `factory-handoff`，交给 PR 轮询按合并条件处理；加不上就加 `agent-needs-help` 并在 PR 上说明由人补加。其他结论加 `agent-needs-help`，由人处理。`gh pr create` 之后查找 PR 失败时，`finish()` 再按分支找一次，找到就照样贴标签。Codex 在实现或修复期间退出失败或超时，当场停下，保存本地补丁并列出路径。
 
 ```mermaid
 flowchart TD
@@ -115,15 +115,25 @@ python3 tools/factory/watch_prs.py --dry        # 只打印每个 PR 的决定�
 python3 tools/factory/watch_prs.py --pr 5       # 只看一个 PR
 python3 tools/factory/run.py --issue 12 --dry   # issue 模式：只跑 G0
 python3 tools/factory/run.py --issue 12         # issue 模式：处理一张指定工单
-tools/factory/install_poller.sh                 # 每 600 秒运行一次 watch_prs.py（launchd）
+tools/factory/install_poller.sh                 # 安装两项独立的 launchd 任务，各每 600 秒运行一次
 tools/factory/install_poller.sh --remove
 python3 tools/factory/sync_rules.py [--apply]   # 把 qodo-rules.json 里缺的规则建到 Qodo
 python3 -m unittest discover -s tools/factory/tests
 ```
 
-本机目录 `~/.keynes-factory/`：`runner/` 是轮询用的稀疏工作树，只检出 `tools/factory/` 和 `.github/`，固定在 fork/master。即使从 `runner/` 创建，agent 使用的 `work/` 也是完整工作树。每次准备会关闭主工作树和 `gdext/godot-cpp` 子模块已有的稀疏检出，重置主工作树并更新、清理子模块，保留忽略的 `.godot` 和 SCons 缓存，最后检查主工作树和子模块是否还有稀疏设置或缺失的跟踪文件。`runs/` 存每次运行的 JSON 记录；`logs/` 存检查和 Codex 的日志；`base-checks/` 按提交缓存通过项，下次重跑失败项和缺失项。
+Issue 开发和 PR 检查独立运行。Issue 任务领最早的一张可领工单，开发、验证并开 PR；PR 任务检查已交接的 PR，并持有 PR 锁逐个合并。两项任务可以重叠。它们只在更新共享的 Git 引用时短暂排队，合并前仍会重新核对 GitHub 上的 PR 和目标分支。旧版任务在途时会保留原来的工作目录，等它退出后才复用。
 
-安装轮询任务时，脚本把配置里的 `tools.python` 写进 launchd。更改路径后再运行一次安装脚本。手动运行 `poll.sh` 时，未设置 `KEYNES_FACTORY_PYTHON` 就使用 PATH 上的 `python3`。fork/master 尚无工厂目录时轮询正常退出，目录已存在但启动脚本缺失时则报错。
+| 本机路径 | Issue 开发 | PR 检查 |
+|---|---|---|
+| 程序目录 | `runner/` | `pr-runner/` |
+| 完整工作树 | `work/` | `pr-work/` |
+| 基线检查缓存 | `base-checks/` | `pr-base-checks/` |
+| 任务锁 | `issue.lock` | `pr.lock` |
+| 轮询日志 | `poll.log` | `poll-pr.log` |
+
+这些目录都在 `~/.keynes-factory/` 下。每份工作树保留自己的 Godot 导入缓存、Godot 用户数据和 SCons 编译文件。两边的检查日志与运行记录分别按任务保存在 `logs/` 和 `runs/`。PR 检查沿用 `prs/` 下的历史状态。
+
+默认安装会先从 fork 抓取 `master`，再检查该版本是否支持并行。安装脚本把 `tools.python` 写进两个 launchd 任务。配置改变后重新安装。两个程序目录默认从 `fork/master` 更新。也可用 `install_poller.sh --runner-ref <本地提交>` 部署本地版本。该提交进入 `fork/master` 后会自动跟随 `fork/master`。无参数运行 `poll.sh` 领 Issue，传 `--pr-lane` 检查 PR，传 `--pr 5` 或 `--dry` 则保持原有的 PR 模式。手动执行时，未配置 `KEYNES_FACTORY_PYTHON` 就使用 PATH 上的 `python3`。
 
 `sync_rules.py --apply` 创建缺失规则，有任何创建失败就返回非零。修改已有规则先用 `qodo rules update`，再更新 JSON。
 
