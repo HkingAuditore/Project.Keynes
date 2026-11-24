@@ -229,6 +229,10 @@ func refresh_country_visuals(host, reason: String) -> Dictionary:
 	out["vision"] = host._runtime_vision_result.duplicate(false)
 	var _cv_t3 = Time.get_ticks_usec()
 	if not host._vision_dirty_indices.is_empty():
+		# 视野脏格必须在这里喂给 `_republish_cell_luts()`：cell_table 的 aux 层
+		# （layer2.R = 雾 k，PW_CELL_FIELD 路径唯一的 k 来源）只有它能让 `class_indices`
+		# 并上这些格（cell_lut_baker.gd 的并集），否则 aux 永远停在初始 255 = 雾画不出来。
+		# 保持默认的增量编码：并集已精确覆盖变化格，不需要 force_full_encode 的全量重编。
 		out["lut"] = _republish_cell_luts(host, host._vision_dirty_indices)
 	host._vision_dirty_indices = PackedInt32Array()
 	host._runtime_vision_result.erase("newly_visible_cells")

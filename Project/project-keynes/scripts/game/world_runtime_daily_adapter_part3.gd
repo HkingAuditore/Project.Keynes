@@ -128,7 +128,11 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		var defer_cell_lut_upload := RendererWeatherState.can_defer_cell_lut_upload(
 				host._renderer, host._generator._baker, host._world_data)
 		host._generator.publish_worker_climate_visuals(defer_cell_lut_upload, commit)
-		host._vision_dirty_indices = PackedInt32Array()
+		# 不能在这里清 `_vision_dirty_indices`：它是 `refresh_country_visuals()`
+		# (world_runtime_visual_adapter.gd:231) 触发 `_republish_cell_luts()` 的唯一输入，
+		# 而 cell_table 第 2 层（PW_CELL_FIELD 路径的雾 k）只有它能重烘。气候脏格
+		# 与 vision 脏格不是同一集合，提前清空会让 aux 层永远停在初始 255（雾全透明）。
+		# 消费与清空都在 adapter:233，那里烘完才清。
 		if host._renderer != null:
 			host._renderer.set_season_phase(host._world_clock.season_phase_for_day(host._runtime_commit_day))
 			host._renderer.set_climate_anomaly(host._world_clock.climate_anomaly)
