@@ -8,20 +8,20 @@
 
 | Metric | Count |
 | --- | --- |
-| Invariants | 2733 |
+| Invariants | 2765 |
 | kind=fatal | 4 |
-| kind=rejection | 0 |
+| kind=rejection | 29 |
 | kind=backpressure | 0 |
-| kind=unknown | 2729 |
-| status=active | 2733 |
+| kind=unknown | 2732 |
+| status=active | 2765 |
 | status=retired | 0 |
 | entries with witness | 4 |
-| entries with playbook | 4 |
+| entries with playbook | 36 |
 | fatal entries missing required fields | 0 |
 
 ## Invariants by module
 
-### ECON (889)
+### ECON (895)
 
 | ID | reason | kind | stage | owner | status |
 | --- | --- | --- | --- | --- | --- |
@@ -914,8 +914,14 @@
 | INV-ECON-0887 | `fatal_context_witness_mismatch` | unknown | unclassified | economy.unassigned | active |
 | INV-ECON-0888 | `investment_carry_did_not_review_all_cells_with_incumbents` | unknown | unclassified | economy.unassigned | active |
 | INV-ECON-0889 | `investment_carry_erased_newly_due_cell` | unknown | unclassified | economy.unassigned | active |
+| INV-ECON-0890 | `colonization_duplicate_target` | rejection | colonization_command | economy.colonization | active |
+| INV-ECON-0891 | `economy_pending_structure_checkpoint_corrupt` | rejection | save_restore | economy.persistence | active |
+| INV-ECON-0892 | `family_trait_command_entry_invalid` | rejection | narrative_command | economy.narrative | active |
+| INV-ECON-0893 | `family_trait_command_strength_invalid` | rejection | narrative_command | economy.narrative | active |
+| INV-ECON-0894 | `save_building_maintenance_exception_invalid` | rejection | save_restore | economy.persistence | active |
+| INV-ECON-0895 | `save_market_signal_observation_size_invalid` | rejection | save_restore | economy.persistence | active |
 
-### CLIMATE (230)
+### CLIMATE (231)
 
 | ID | reason | kind | stage | owner | status |
 | --- | --- | --- | --- | --- | --- |
@@ -1149,8 +1155,9 @@
 | INV-CLIMATE-0228 | `wind_traj_still_wind_not_own_cell` | unknown | unclassified | climate.unassigned | active |
 | INV-CLIMATE-0229 | `wind_traj_weights_not_normalized` | unknown | unclassified | climate.unassigned | active |
 | INV-CLIMATE-0230 | `world_ext_not_bound` | unknown | unclassified | climate.unassigned | active |
+| INV-CLIMATE-0231 | `runtime_environment_owned_by_executor` | rejection | host_environment | native.host.environment | active |
 
-### COUNTRY (469)
+### COUNTRY (470)
 
 | ID | reason | kind | stage | owner | status |
 | --- | --- | --- | --- | --- | --- |
@@ -1623,8 +1630,9 @@
 | INV-COUNTRY-0467 | `subsidy_plan` | unknown | unclassified | country.unassigned | active |
 | INV-COUNTRY-0468 | `unarmed_planned` | unknown | unclassified | country.unassigned | active |
 | INV-COUNTRY-0469 | `weights_sum` | unknown | unclassified | country.unassigned | active |
+| INV-COUNTRY-0470 | `invalid_country_command_payload` | rejection | country_command_decode | country.pod_adapter | active |
 
-### MILITARY (113)
+### MILITARY (119)
 
 | ID | reason | kind | stage | owner | status |
 | --- | --- | --- | --- | --- | --- |
@@ -1741,8 +1749,14 @@
 | INV-MILITARY-0111 | `terrain_negative_dimensions` | unknown | unclassified | military.unassigned | active |
 | INV-MILITARY-0112 | `terrain_neighbors_size` | unknown | unclassified | military.unassigned | active |
 | INV-MILITARY-0113 | `terrain_size_mismatch` | unknown | unclassified | military.unassigned | active |
+| INV-MILITARY-0114 | `military_executor_unavailable` | rejection | military_command_queue | military.construction | active |
+| INV-MILITARY-0115 | `military_state_building_unmapped` | rejection | military_state_building_map | military.construction | active |
+| INV-MILITARY-0116 | `military_country_submit_rejected` | rejection | military_command_queue | military.country_commands | active |
+| INV-MILITARY-0117 | `military_terrain_checkpoint_size_invalid` | rejection | save_restore | military.terrain | active |
+| INV-MILITARY-0118 | `military_command_not_object` | rejection | military_command_decode | military.parse | active |
+| INV-MILITARY-0119 | `pkmi_bad_budget_envelope` | rejection | save_restore | military.save | active |
 
-### SAVE (121)
+### SAVE (127)
 
 | ID | reason | kind | stage | owner | status |
 | --- | --- | --- | --- | --- | --- |
@@ -1867,8 +1881,14 @@
 | INV-SAVE-0119 | `runtime_bundle_value_invalid` | unknown | unclassified | save.unassigned | active |
 | INV-SAVE-0120 | `runtime_bundle_version_incompatible` | unknown | unclassified | save.unassigned | active |
 | INV-SAVE-0121 | `runtime_restore_requires_stopped_worker` | unknown | unclassified | save.unassigned | active |
+| INV-SAVE-0122 | `effect_pod_family_claim_transaction_lost` | rejection | effect_pod_restore | effect.persistence | active |
+| INV-SAVE-0123 | `effect_pod_colonization_builtin_id_not_disjoint` | rejection | effect_pod_restore | effect.persistence | active |
+| INV-SAVE-0124 | `effect_pod_snapshot_dropped_colonization_builtin` | rejection | effect_pod_restore | effect.persistence | active |
+| INV-SAVE-0125 | `effect_pod_colonization_lookup_failed` | rejection | effect_pod_restore | effect.persistence | active |
+| INV-SAVE-0126 | `effect_pod_snapshot_dropped_colliding_colonization` | rejection | effect_pod_restore | effect.persistence | active |
+| INV-SAVE-0127 | `effect_pod_snapshot_colonization_remap_invalid` | rejection | effect_pod_restore | effect.persistence | active |
 
-### EFFECT (299)
+### EFFECT (305)
 
 | ID | reason | kind | stage | owner | status |
 | --- | --- | --- | --- | --- | --- |
@@ -2171,6 +2191,12 @@
 | INV-EFFECT-0297 | `view_generation_regressed` | unknown | unclassified | effect.unassigned | active |
 | INV-EFFECT-0298 | `view_inflight_accepted` | unknown | unclassified | effect.unassigned | active |
 | INV-EFFECT-0299 | `view_reset_failed` | unknown | unclassified | effect.unassigned | active |
+| INV-EFFECT-0300 | `effect_pod_snapshot_builtin_transaction_id_collision` | rejection | effect_pod_snapshot | effect.snapshot | active |
+| INV-EFFECT-0301 | `effect_pod_snapshot_ideology_transaction_id_collision` | rejection | effect_pod_snapshot | effect.snapshot | active |
+| INV-EFFECT-0302 | `narrative_effect_economy_unavailable` | rejection | narrative_stage | native.host.narrative | active |
+| INV-EFFECT-0303 | `effect_transport_stop_admitted_outside_day` | unknown | host_effect_test | native.host.effect_test | active |
+| INV-EFFECT-0304 | `effect_transport_stop_admitted_idle_executor` | unknown | host_effect_test | native.host.effect_test | active |
+| INV-EFFECT-0305 | `effect_transport_stop_lost_inflight_country_command` | unknown | host_effect_test | native.host.effect_test | active |
 
 ### TRIGGER (107)
 
@@ -2418,7 +2444,7 @@
 | INV-MODIFIER-0128 | `modifier_view_retry_failed` | unknown | unclassified | modifier.unassigned | active |
 | INV-MODIFIER-0129 | `technology_modifier_definition_unknown` | unknown | unclassified | modifier.unassigned | active |
 
-### CORE (376)
+### CORE (382)
 
 | ID | reason | kind | stage | owner | status |
 | --- | --- | --- | --- | --- | --- |
@@ -2798,6 +2824,12 @@
 | INV-CORE-0374 | `slp_fallback` | unknown | unclassified | core.unassigned | active |
 | INV-CORE-0375 | `upwelling_fallback` | unknown | unclassified | core.unassigned | active |
 | INV-CORE-0376 | `wind_fallback` | unknown | unclassified | core.unassigned | active |
+| INV-CORE-0377 | `runtime_environment_requires_stopped_executor` | rejection | host_environment | native.host.environment | active |
+| INV-CORE-0378 | `runtime_environment_seed_shape_invalid` | rejection | host_environment | native.host.environment | active |
+| INV-CORE-0379 | `climate_calendar_checkpoint_invalid` | rejection | save_restore | climate.calendar | active |
+| INV-CORE-0380 | `era_reward_modifier_definition_missing` | rejection | era_reward | native.host.era_reward | active |
+| INV-CORE-0381 | `era_reward_modifier_submit_failed` | rejection | era_reward | native.host.era_reward | active |
+| INV-CORE-0382 | `narrative_effect_economy_failed` | rejection | narrative_stage | native.host.narrative | active |
 
 ## Witness fields
 
@@ -2811,6 +2843,54 @@ Field name to POD type; the C++ witness struct carries exactly these members.
 | INV-SAVE-0001 | `save_family_expedition_person_invalid` | `family_handle:i64`, `signature:i32`, `active:i32`, `person_index:i32`, `serialized_person_count:i32`, `person_handle:i64`, `person_slot:i32`, `person_cohort_handle:i64`, `person_family_handle:i64` |
 
 ## Playbooks
+
+### INV-CLIMATE-0231 `runtime_environment_owned_by_executor`
+
+1. publish_environment refuses when _world_environment is set and execution_has_stopped() is false.
+2. This is an API-order guard, not a data error: stop the executor or use the executor's own environment path before publishing.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the host environment test.
+
+### INV-CORE-0377 `runtime_environment_requires_stopped_executor`
+
+1. initialize_world_environment refuses when !execution_has_stopped().
+2. Because the seed is moved in, publishing it mid-execution would tear the per-cell arrays the running stages read; stop the executor first.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the host environment test.
+
+### INV-CORE-0378 `runtime_environment_seed_shape_invalid`
+
+1. initialize_world_environment refuses when the seed's per-cell arrays (including military_base_landform) disagree with seed.cell_count.
+2. Compare the seed builder's cell count with the terrain the host already holds; a terrain resize without re-seeding produces this.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the host environment test.
+
+### INV-CORE-0379 `climate_calendar_checkpoint_invalid`
+
+1. initialize_world_environment refuses when _world_environment->restore_calendar on the pending bundle's climate_calendar_bytes returns false.
+2. Check the bundle's byte length against the calendar version the climate store expects; a bundle written by an older layout fails here rather than midway through the restore.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the climate restore test.
+
+### INV-CORE-0380 `era_reward_modifier_definition_missing`
+
+1. service_era_reward_requests refuses when the requested key hash is absent from _modifier_definition_id_by_key_hash.
+2. Compare the reward's modifier key with the definitions the modifier catalog published for this epoch.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the era reward test.
+
+### INV-CORE-0381 `era_reward_modifier_submit_failed`
+
+1. service_era_reward_requests sets this when error is still empty and enqueue_batch_at refuses the packet batch.
+2. Check the executor state and the batch size the reward produced; a batch built for a domain that is not accepting packets is the usual cause.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the era reward test.
+
+### INV-CORE-0382 `narrative_effect_economy_failed`
+
+1. stage_narrative sets this when the effect request completes with ok=false and an empty error.
+2. Reproduce the day and inspect the narrative effect return: an economy application that failed without a code is the usual cause.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the narrative effect test.
+
+### INV-COUNTRY-0470 `invalid_country_command_payload`
+
+1. decode_command refuses when the payload does not match the envelope, including command.opcode != envelope.opcode.
+2. Compare the sender's opcode with the envelope it stamped; a mismatch means two encoders disagree on the layout.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the country pod command test.
 
 ### INV-ECON-0040 `building_investment_capital_preflight_drift`
 
@@ -2836,6 +2916,121 @@ Field name to POD type; the C++ witness struct carries exactly these members.
 4. Re-run with the economy invariant probe fixture for that cell/type; do not relax the preflight or fall back to silently skipping the build.
 5. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the economy suite, keeping the flat construction_row keys.
 
+### INV-ECON-0890 `colonization_duplicate_target`
+
+1. apply_start_family_expedition refuses when _family_expedition_target_index already holds family_expedition_target_key(country, target).
+2. Check the caller for a UI retry or a re-entered day that resubmits the same expedition; the index releases on completion/cancel, so a stale entry means the previous expedition never released its target.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the colonization expedition test.
+
+### INV-ECON-0891 `economy_pending_structure_checkpoint_corrupt`
+
+1. EconomyAuthorityTransfer::restore_continuations refuses when structure_present is true but in.rows(pending, structural_fields) fails or in.cursor != in.size().
+2. Compare the writer and the reader field list for the pending structure section: one extra or missing field leaves the cursor short of the section end.
+3. A save written before structural_fields changed will trip this; re-save from a clean session rather than relaxing the check.
+4. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the continuation checkpoint round-trip test.
+
+### INV-ECON-0892 `family_trait_command_entry_invalid`
+
+1. resolve_family_trait_command refuses when families_store().valid_handle(handle, family) fails or day < 0.
+2. A family merged or extinguished earlier in the same day makes a queued trait command stale; re-issue it after the family commit instead of retrying the same handle.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the family trait narrative tests.
+
+### INV-ECON-0893 `family_trait_command_strength_invalid`
+
+1. resolve_family_trait_command refuses when strength is out of range for the trait id or (strength - minimum) % _family_trait_strength_step_q16[id] != 0.
+2. Read the trait catalog row for the requested id and compare minimum/step against the value the UI sent; the grid check is exact on purpose, so an off-grid value is a caller bug, not a rounding problem.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the family trait narrative tests.
+
+### INV-ECON-0894 `save_building_maintenance_exception_invalid`
+
+1. The reader refuses when row >= records or paid < 0 while decoding the maintenance exception block.
+2. Compare the block's declared record count with the building row count the same save declares; a mismatch means writer and reader disagree on the block layout.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the save round-trip test.
+
+### INV-ECON-0895 `save_market_signal_observation_size_invalid`
+
+1. The reader refuses when read_le(bytes, cursor, size) fails or size > values->size().
+2. A truncated save or a layout change without a version bump produces this; compare the declared count against the array length the section reserved.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the save round-trip test.
+
+### INV-EFFECT-0300 `effect_pod_snapshot_builtin_transaction_id_collision`
+
+1. The builder refuses when next_transaction_ids already contains row.transaction.id.
+2. Find the producer that reused a builtin id: colonization and ideology builtin transactions allocate from different bases, so a collision means one producer ignored its base.
+3. Confirm the remap path still emits the CLAIM/SETTLE pair for the remapped row before treating the collision as cosmetic.
+4. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect transaction id test.
+
+### INV-EFFECT-0301 `effect_pod_snapshot_ideology_transaction_id_collision`
+
+1. The builder refuses when the id is already present and incoming.plan_hash != row.transaction.plan_hash.
+2. Recompute plan_hash for the incoming transaction; a differing hash means two different plans were allocated the same id.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect transaction id test.
+
+### INV-EFFECT-0302 `narrative_effect_economy_unavailable`
+
+1. The narrative effect path refuses when _economy_production_runtime is null.
+2. Check the host wiring order: the economy production runtime has to be bound before the narrative stage runs, which is a bootstrap problem rather than a data problem.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the narrative effect test.
+
+### INV-EFFECT-0303 `effect_transport_stop_admitted_outside_day`
+
+1. This id is raised by the host effect self-test (fail("...")), not by production code: request_stop() followed by enqueue(packet) must be refused.
+2. If it fires, the stop gate is evaluated after admission; inspect the request_stop path in the effect transport rather than the test.
+3. Kind is unknown on purpose: a failing self-test assertion is not a runtime refusal, and promoting it to fatal would need an assert id this path does not have.
+4. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the host effect transport test.
+
+### INV-EFFECT-0304 `effect_transport_stop_admitted_idle_executor`
+
+1. Raised by the host effect self-test: request_stop() with no inflight day, then enqueue(packet), must be refused.
+2. If it fires, the idle-executor branch of the stop gate is missing; compare with the _worker_day_inflight branch of the same test.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the host effect transport test.
+
+### INV-EFFECT-0305 `effect_transport_stop_lost_inflight_country_command`
+
+1. Raised by the host effect self-test when stopping->enqueue(packet) returns false under AtomicCounterScope day(stopping->_worker_day_inflight).
+2. An in-flight day must keep admitting packets that already belong to it; if it drops them the country command loses its effect.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the host effect transport test.
+
+### INV-MILITARY-0114 `military_executor_unavailable`
+
+1. Read the refused batch row (caller_sequence, op, country, cell): this reason means the queue ran before the military executor was wired, not that the player's input was wrong.
+2. Inspect _economy_runtime, _runtime_host and country_state on the NativeMilitaryRuntime that produced the row; any of them null is the direct cause, and so is a missing worker frame while _runtime_host->military_executor_active() is true.
+3. Check the world-extension bootstrap order: the economy runtime has to be bound before the first military command batch of the day is queued.
+4. If the frame is only missing on some days while the wiring is complete, suspect the worker boundary handoff (frame publication vs command queue) rather than the wiring.
+5. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the military construction queue test.
+
+### INV-MILITARY-0115 `military_state_building_unmapped`
+
+1. Read the refused row: type is the requested economy building id and cell is the target cell. Preflight also returns this reason for a cell outside core().terrain().cell_count, so check the range before blaming the catalog.
+2. Look the type up in core().catalog().state_buildings: a missing row means the catalog does not define that state building, and a row with economy_building_id < 0 means the mapping to the economy building type was never filled in for that catalog entry.
+3. Fix the catalog data that fills economy_building_id, not the queue: queue_player_construction must not silently skip an unmapped state building.
+4. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the military state building catalog test.
+
+### INV-MILITARY-0116 `military_country_submit_rejected`
+
+1. submit_military_country_commands sets this when _runtime_host->enqueue_batch refuses the packet batch.
+2. Check the executor state the batch was built against (stopped/running) and the batch size limit.
+3. The Godot side receives the same code through the receipt dictionary (submitted.code/reason), so one id covers both surfaces.
+4. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the military receipt test.
+
+### INV-MILITARY-0117 `military_terrain_checkpoint_size_invalid`
+
+1. restore_terrain refuses when bytes.size() != cells * 5.
+2. Read the cell count from the same checkpoint header and multiply by the record size; a terrain resize without a save migration produces this.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the military terrain restore test.
+
+### INV-MILITARY-0118 `military_command_not_object`
+
+1. submit_military_commands sets the row error when batch[i] is not Variant::DICTIONARY.
+2. The other rows of the same batch still run, so read the whole receipt array: a single malformed element does not abort the batch.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the military command submit test.
+
+### INV-MILITARY-0119 `pkmi_bad_budget_envelope`
+
+1. The reader raises this at three points: section_remaining() < sizeof(uint32_t), n != policies.size() or section_remaining() != n*12, and budget_upkeep_bp outside [0,10000].
+2. Compare the writer's record size with the reader's 12-byte expectation and check the policy count the section header declares.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the PKMI budget save round-trip test.
+
 ### INV-SAVE-0001 `save_family_expedition_person_invalid`
 
 1. Read the restore rejection reason reported by set_restore_rejected_reason() together with the PKEC family-expedition section cursor: the person lane of one expedition payload was rejected.
@@ -2843,3 +3038,39 @@ Field name to POD type; the C++ witness struct carries exactly these members.
 3. Dump the save's person lane and the restored persons_store() rows for that handle: cohort_handle, family_handle, and the expedition family, then decide whether the lane is orphaned or the family attribution is wrong.
 4. Fix the producing side (who wrote a person into the expedition lane) or, when the lane is genuinely orphaned, drop it explicitly and count it; never zero the lane silently.
 5. Regression: PKEC save/restore round-trip test plus python tools/ci/check_fault_taxonomy.py --strict.
+
+### INV-SAVE-0122 `effect_pod_family_claim_transaction_lost`
+
+1. The restore path fails when a family claim candidate's transaction_status_pod(6) is already ACKED while the save still lists it pending.
+2. Compare the save's pending set with the replayed effect queue: an ack that ran without the save being rewritten produces exactly this pair of states.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect pod restore test.
+
+### INV-SAVE-0123 `effect_pod_colonization_builtin_id_not_disjoint`
+
+1. The restore path fails when colo_tx_id < BUILTIN_TRANSACTION_ID_BASE.
+2. Check the colonization allocator: it has to count up from the builtin base, not from zero.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect pod restore test.
+
+### INV-SAVE-0124 `effect_pod_snapshot_dropped_colonization_builtin`
+
+1. The path fails when the rebuilt candidate reports no pending family colonization transactions while the source still had them.
+2. Diff the pending set before and after the snapshot build for the same day.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect snapshot test.
+
+### INV-SAVE-0125 `effect_pod_colonization_lookup_failed`
+
+1. The path fails when transaction_index_for_id(colo_tx_id) returns a negative index.
+2. Confirm the id was inserted with the same base and that the queue was not rebuilt from a shorter list.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect pod restore test.
+
+### INV-SAVE-0126 `effect_pod_snapshot_dropped_colliding_colonization`
+
+1. The path fails when the colliding-colonization branch leaves the candidate without the pending family colonization transactions the source had.
+2. Trace the remapped id through the queue after the collision; a remap that writes the new id but forgets the pending row is the usual cause.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect snapshot test.
+
+### INV-SAVE-0127 `effect_pod_snapshot_colonization_remap_invalid`
+
+1. The path fails when _native_country_bound_transaction_ids.count(resolved_id) != 1.
+2. Check the remap table for a duplicate insert or for an entry written under the old id.
+3. Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect snapshot test.

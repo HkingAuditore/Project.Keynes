@@ -168,10 +168,19 @@ REASON_RE = re.compile(r"[a-z0-9_]+")
 ID_RE = re.compile(r"INV-([A-Z]+)-(\d{4,})")
 WHITELIST_PREFIXES = ("test_only_", "probe_")
 EXTRACTORS = (
-    ("error", re.compile(r'\berror\s*=\s*"([^"\\\n]*)"')),
+    # Only a literal that terminates the assignment is a complete reason.  A
+    # literal followed by `+` (or by the stringize `#macro_param`) is a prefix
+    # of a runtime-built reason such as "climate_section_version_mismatch_
+    # expected_" + to_string(abi); registering the prefix as if it were the
+    # whole reason creates a permanent false positive that can never match at
+    # runtime.  ERROR_CONCAT_RE below reports those instead of dropping them.
+    ("error", re.compile(r'\berror\s*=\s*"([^"\\\n]*)"(?=\s*;)')),
     ("fail", re.compile(r'\bfail\(\s*"([^"\\\n]*)"')),
     ("restore_reason", re.compile(r'set_restore_rejected_reason\(\s*"([^"\\\n]*)"')),
 )
+# Same match, but only where the error literal is NOT the whole right-hand
+# side: concatenation (`"a" + x`) and the preprocessor stringize (`"a" #id`).
+ERROR_CONCAT_RE = re.compile(r'\berror\s*=\s*"([^"\\\n]*)"(?=\s*[+#])')
 CPP_LITERAL = re.compile(r'"([^"\\\n]*)"')
 CPP_ID_LITERAL = re.compile(r"INV-([A-Z]+)-(\d{4,})")
 CPP_ID_IDENT = re.compile(r"INV_([A-Z]+)_(\d{4,})")
@@ -486,10 +495,19 @@ def scan_sources(root: Path) -> tuple:
         if path.is_file()
     )
     found: dict = {}
+    skipped: list = []
     for relative in files:
         text = read_text(root / relative)
         line_starts = [0]
         line_starts.extend(index + 1 for index, char in enumerate(text) if char == "\n")
+        # Report what the completeness rule drops, so a concatenated prefix can
+        # never disappear silently from the report.
+        for match in ERROR_CONCAT_RE.finditer(text):
+            reason = match.group(1)
+            if not is_reason_literal(reason):
+                continue
+            skipped.append((reason, relative,
+                            bisect.bisect_right(line_starts, match.start())))
         for pattern_name, regex in EXTRACTORS:
             for match in regex.finditer(text):
                 reason = match.group(1)
@@ -502,7 +520,7 @@ def scan_sources(root: Path) -> tuple:
         reason: [occurrences[key] for key in sorted(occurrences)]
         for reason, occurrences in found.items()
     }
-    return len(files), ordered
+    return len(files), ordered, sorted(skipped)
 
 
 def is_whitelisted(reason: str) -> bool:
@@ -919,7 +937,7 @@ def main(argv=None) -> int:
     status = 0
     try:
         ledger = load_ledger(root)
-        scanned_files, found = scan_sources(root)
+        scanned_files, found, skipped = scan_sources(root)
     except FatalFieldError as exc:
         # Same message shape and exit code as the fatal entry gate below, so a
         # fatal-field violation always reads the same way.
@@ -936,6 +954,18 @@ def main(argv=None) -> int:
         print(f"error: source file is not UTF-8: {exc}", file=sys.stderr)
         return 2
     report = build_report(scanned_files, found, ledger["invariants"])
+    if skipped:
+        # --json promises a machine-readable stdout, so the narration goes to
+        # stderr there; skipped prefixes are deliberately not ledger entries.
+        stream = sys.stderr if args.json else sys.stdout
+        counts: dict = {}
+        for reason, relative, line in skipped:
+            entry = counts.setdefault(reason, [0, relative, line])
+            entry[0] += 1
+        for reason in sorted(counts):
+            count, relative, line = counts[reason]
+            print(f"skipped: {reason} ({relative}:{line}, x{count}; "
+                  "literal is a prefix of a runtime-built reason)", file=stream)
 
     if args.bootstrap_missing:
         bootstrap_missing(root, ledger, report)

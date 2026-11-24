@@ -2763,6 +2763,22 @@
       "status": "active"
     },
     {
+      "id": "INV-CLIMATE-0231",
+      "reason": "runtime_environment_owned_by_executor",
+      "kind": "rejection",
+      "stage": "host_environment",
+      "invariant": "publish_environment never touches the world environment while the executor owns it and is still running",
+      "witness": {},
+      "owner": "native.host.environment",
+      "first_seen": null,
+      "playbook": [
+        "publish_environment refuses when _world_environment is set and execution_has_stopped() is false.",
+        "This is an API-order guard, not a data error: stop the executor or use the executor's own environment path before publishing.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the host environment test."
+      ],
+      "status": "active"
+    },
+    {
       "id": "INV-CORE-0001",
       "reason": "annual_commit_dedupe_failed",
       "kind": "unknown",
@@ -7272,6 +7288,102 @@
       "owner": "core.unassigned",
       "first_seen": null,
       "playbook": [],
+      "status": "active"
+    },
+    {
+      "id": "INV-CORE-0377",
+      "reason": "runtime_environment_requires_stopped_executor",
+      "kind": "rejection",
+      "stage": "host_environment",
+      "invariant": "initialize_world_environment runs only while the executor is stopped",
+      "witness": {},
+      "owner": "native.host.environment",
+      "first_seen": null,
+      "playbook": [
+        "initialize_world_environment refuses when !execution_has_stopped().",
+        "Because the seed is moved in, publishing it mid-execution would tear the per-cell arrays the running stages read; stop the executor first.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the host environment test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-CORE-0378",
+      "reason": "runtime_environment_seed_shape_invalid",
+      "kind": "rejection",
+      "stage": "host_environment",
+      "invariant": "every per-cell array in the environment seed carries exactly cell_count entries",
+      "witness": {},
+      "owner": "native.host.environment",
+      "first_seen": null,
+      "playbook": [
+        "initialize_world_environment refuses when the seed's per-cell arrays (including military_base_landform) disagree with seed.cell_count.",
+        "Compare the seed builder's cell count with the terrain the host already holds; a terrain resize without re-seeding produces this.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the host environment test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-CORE-0379",
+      "reason": "climate_calendar_checkpoint_invalid",
+      "kind": "rejection",
+      "stage": "save_restore",
+      "invariant": "a climate calendar checkpoint in a restore bundle decodes and applies completely",
+      "witness": {},
+      "owner": "climate.calendar",
+      "first_seen": null,
+      "playbook": [
+        "initialize_world_environment refuses when _world_environment->restore_calendar on the pending bundle's climate_calendar_bytes returns false.",
+        "Check the bundle's byte length against the calendar version the climate store expects; a bundle written by an older layout fails here rather than midway through the restore.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the climate restore test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-CORE-0380",
+      "reason": "era_reward_modifier_definition_missing",
+      "kind": "rejection",
+      "stage": "era_reward",
+      "invariant": "every era reward modifier key hash resolves to a definition loaded in _modifier_definition_id_by_key_hash",
+      "witness": {},
+      "owner": "native.host.era_reward",
+      "first_seen": null,
+      "playbook": [
+        "service_era_reward_requests refuses when the requested key hash is absent from _modifier_definition_id_by_key_hash.",
+        "Compare the reward's modifier key with the definitions the modifier catalog published for this epoch.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the era reward test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-CORE-0381",
+      "reason": "era_reward_modifier_submit_failed",
+      "kind": "rejection",
+      "stage": "era_reward",
+      "invariant": "an era reward modifier batch is accepted by enqueue_batch_at on the day it was built",
+      "witness": {},
+      "owner": "native.host.era_reward",
+      "first_seen": null,
+      "playbook": [
+        "service_era_reward_requests sets this when error is still empty and enqueue_batch_at refuses the packet batch.",
+        "Check the executor state and the batch size the reward produced; a batch built for a domain that is not accepting packets is the usual cause.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the era reward test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-CORE-0382",
+      "reason": "narrative_effect_economy_failed",
+      "kind": "rejection",
+      "stage": "narrative_stage",
+      "invariant": "a completed narrative effect that reports not-ok carries a reason; the stage supplies this id rather than finishing silently",
+      "witness": {},
+      "owner": "native.host.narrative",
+      "first_seen": null,
+      "playbook": [
+        "stage_narrative sets this when the effect request completes with ok=false and an empty error.",
+        "Reproduce the day and inspect the narrative effect return: an economy application that failed without a code is the usual cause.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the narrative effect test."
+      ],
       "status": "active"
     },
     {
@@ -12900,6 +13012,22 @@
       "owner": "country.unassigned",
       "first_seen": null,
       "playbook": [],
+      "status": "active"
+    },
+    {
+      "id": "INV-COUNTRY-0470",
+      "reason": "invalid_country_command_payload",
+      "kind": "rejection",
+      "stage": "country_command_decode",
+      "invariant": "a decoded country command matches its envelope (opcode and payload shape) before it enters the plan",
+      "witness": {},
+      "owner": "country.pod_adapter",
+      "first_seen": null,
+      "playbook": [
+        "decode_command refuses when the payload does not match the envelope, including command.opcode != envelope.opcode.",
+        "Compare the sender's opcode with the envelope it stamped; a mismatch means two encoders disagree on the layout.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the country pod command test."
+      ],
       "status": "active"
     },
     {
@@ -23640,6 +23768,103 @@
       "status": "active"
     },
     {
+      "id": "INV-ECON-0890",
+      "reason": "colonization_duplicate_target",
+      "kind": "rejection",
+      "stage": "colonization_command",
+      "invariant": "a family expedition target key (country, target) is pending at most once; a second start for the same target is refused instead of double-booking the destination",
+      "witness": {},
+      "owner": "economy.colonization",
+      "first_seen": null,
+      "playbook": [
+        "apply_start_family_expedition refuses when _family_expedition_target_index already holds family_expedition_target_key(country, target).",
+        "Check the caller for a UI retry or a re-entered day that resubmits the same expedition; the index releases on completion/cancel, so a stale entry means the previous expedition never released its target.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the colonization expedition test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-ECON-0891",
+      "reason": "economy_pending_structure_checkpoint_corrupt",
+      "kind": "rejection",
+      "stage": "save_restore",
+      "invariant": "a continuation checkpoint that declares a pending structure section carries exactly structural_fields rows and a fully consumed cursor",
+      "witness": {},
+      "owner": "economy.persistence",
+      "first_seen": null,
+      "playbook": [
+        "EconomyAuthorityTransfer::restore_continuations refuses when structure_present is true but in.rows(pending, structural_fields) fails or in.cursor != in.size().",
+        "Compare the writer and the reader field list for the pending structure section: one extra or missing field leaves the cursor short of the section end.",
+        "A save written before structural_fields changed will trip this; re-save from a clean session rather than relaxing the check.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the continuation checkpoint round-trip test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-ECON-0892",
+      "reason": "family_trait_command_entry_invalid",
+      "kind": "rejection",
+      "stage": "narrative_command",
+      "invariant": "a family trait command names a live family handle and a non-negative day before its strength is validated",
+      "witness": {},
+      "owner": "economy.narrative",
+      "first_seen": null,
+      "playbook": [
+        "resolve_family_trait_command refuses when families_store().valid_handle(handle, family) fails or day < 0.",
+        "A family merged or extinguished earlier in the same day makes a queued trait command stale; re-issue it after the family commit instead of retrying the same handle.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the family trait narrative tests."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-ECON-0893",
+      "reason": "family_trait_command_strength_invalid",
+      "kind": "rejection",
+      "stage": "narrative_command",
+      "invariant": "a family trait command strength lies within the catalog range and lands exactly on the trait's strength step grid",
+      "witness": {},
+      "owner": "economy.narrative",
+      "first_seen": null,
+      "playbook": [
+        "resolve_family_trait_command refuses when strength is out of range for the trait id or (strength - minimum) % _family_trait_strength_step_q16[id] != 0.",
+        "Read the trait catalog row for the requested id and compare minimum/step against the value the UI sent; the grid check is exact on purpose, so an off-grid value is a caller bug, not a rounding problem.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the family trait narrative tests."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-ECON-0894",
+      "reason": "save_building_maintenance_exception_invalid",
+      "kind": "rejection",
+      "stage": "save_restore",
+      "invariant": "every building maintenance exception record in a save names an existing row and a non-negative paid amount",
+      "witness": {},
+      "owner": "economy.persistence",
+      "first_seen": null,
+      "playbook": [
+        "The reader refuses when row >= records or paid < 0 while decoding the maintenance exception block.",
+        "Compare the block's declared record count with the building row count the same save declares; a mismatch means writer and reader disagree on the block layout.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the save round-trip test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-ECON-0895",
+      "reason": "save_market_signal_observation_size_invalid",
+      "kind": "rejection",
+      "stage": "save_restore",
+      "invariant": "a market signal observation block's declared element count never exceeds the value array the same section reserved",
+      "witness": {},
+      "owner": "economy.persistence",
+      "first_seen": null,
+      "playbook": [
+        "The reader refuses when read_le(bytes, cursor, size) fails or size > values->size().",
+        "A truncated save or a layout change without a version bump produces this; compare the declared count against the array length the section reserved.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the save round-trip test."
+      ],
+      "status": "active"
+    },
+    {
       "id": "INV-EFFECT-0001",
       "reason": "canal_effect_shape_invalid",
       "kind": "unknown",
@@ -27228,6 +27453,104 @@
       "status": "active"
     },
     {
+      "id": "INV-EFFECT-0300",
+      "reason": "effect_pod_snapshot_builtin_transaction_id_collision",
+      "kind": "rejection",
+      "stage": "effect_pod_snapshot",
+      "invariant": "a builtin transaction id appears at most once when the effect snapshot is built; a repeat is remapped, never silently dropped",
+      "witness": {},
+      "owner": "effect.snapshot",
+      "first_seen": null,
+      "playbook": [
+        "The builder refuses when next_transaction_ids already contains row.transaction.id.",
+        "Find the producer that reused a builtin id: colonization and ideology builtin transactions allocate from different bases, so a collision means one producer ignored its base.",
+        "Confirm the remap path still emits the CLAIM/SETTLE pair for the remapped row before treating the collision as cosmetic.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect transaction id test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-EFFECT-0301",
+      "reason": "effect_pod_snapshot_ideology_transaction_id_collision",
+      "kind": "rejection",
+      "stage": "effect_pod_snapshot",
+      "invariant": "an incoming ideology transaction that reuses an existing id carries the same plan_hash; a different plan is a collision, not a duplicate",
+      "witness": {},
+      "owner": "effect.snapshot",
+      "first_seen": null,
+      "playbook": [
+        "The builder refuses when the id is already present and incoming.plan_hash != row.transaction.plan_hash.",
+        "Recompute plan_hash for the incoming transaction; a differing hash means two different plans were allocated the same id.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect transaction id test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-EFFECT-0302",
+      "reason": "narrative_effect_economy_unavailable",
+      "kind": "rejection",
+      "stage": "narrative_stage",
+      "invariant": "applying a narrative economy effect requires a bound _economy_production_runtime",
+      "witness": {},
+      "owner": "native.host.narrative",
+      "first_seen": null,
+      "playbook": [
+        "The narrative effect path refuses when _economy_production_runtime is null.",
+        "Check the host wiring order: the economy production runtime has to be bound before the narrative stage runs, which is a bootstrap problem rather than a data problem.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the narrative effect test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-EFFECT-0303",
+      "reason": "effect_transport_stop_admitted_outside_day",
+      "kind": "unknown",
+      "stage": "host_effect_test",
+      "invariant": "the effect transport refuses a packet once a stop was requested outside the day boundary",
+      "witness": {},
+      "owner": "native.host.effect_test",
+      "first_seen": null,
+      "playbook": [
+        "This id is raised by the host effect self-test (fail(\"...\")), not by production code: request_stop() followed by enqueue(packet) must be refused.",
+        "If it fires, the stop gate is evaluated after admission; inspect the request_stop path in the effect transport rather than the test.",
+        "Kind is unknown on purpose: a failing self-test assertion is not a runtime refusal, and promoting it to fatal would need an assert id this path does not have.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the host effect transport test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-EFFECT-0304",
+      "reason": "effect_transport_stop_admitted_idle_executor",
+      "kind": "unknown",
+      "stage": "host_effect_test",
+      "invariant": "the effect transport refuses a packet after a stop request while no day is in flight",
+      "witness": {},
+      "owner": "native.host.effect_test",
+      "first_seen": null,
+      "playbook": [
+        "Raised by the host effect self-test: request_stop() with no inflight day, then enqueue(packet), must be refused.",
+        "If it fires, the idle-executor branch of the stop gate is missing; compare with the _worker_day_inflight branch of the same test.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the host effect transport test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-EFFECT-0305",
+      "reason": "effect_transport_stop_lost_inflight_country_command",
+      "kind": "unknown",
+      "stage": "host_effect_test",
+      "invariant": "a packet admitted while a country command is in flight survives the stop and is not dropped",
+      "witness": {},
+      "owner": "native.host.effect_test",
+      "first_seen": null,
+      "playbook": [
+        "Raised by the host effect self-test when stopping->enqueue(packet) returns false under AtomicCounterScope day(stopping->_worker_day_inflight).",
+        "An in-flight day must keep admitting packets that already belong to it; if it drops them the country command loses its effect.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the host effect transport test."
+      ],
+      "status": "active"
+    },
+    {
       "id": "INV-MILITARY-0001",
       "reason": "catalog_too_many_units",
       "kind": "unknown",
@@ -28581,6 +28904,106 @@
       "owner": "military.unassigned",
       "first_seen": null,
       "playbook": [],
+      "status": "active"
+    },
+    {
+      "id": "INV-MILITARY-0114",
+      "reason": "military_executor_unavailable",
+      "kind": "rejection",
+      "stage": "military_command_queue",
+      "invariant": "queuing a military command never dereferences a missing dependency: a null economy runtime / runtime host / country state, or a missing worker frame while the executor is active, refuses the row with this reason instead",
+      "witness": {},
+      "owner": "military.construction",
+      "first_seen": null,
+      "playbook": [
+        "Read the refused batch row (caller_sequence, op, country, cell): this reason means the queue ran before the military executor was wired, not that the player's input was wrong.",
+        "Inspect _economy_runtime, _runtime_host and country_state on the NativeMilitaryRuntime that produced the row; any of them null is the direct cause, and so is a missing worker frame while _runtime_host->military_executor_active() is true.",
+        "Check the world-extension bootstrap order: the economy runtime has to be bound before the first military command batch of the day is queued.",
+        "If the frame is only missing on some days while the wiring is complete, suspect the worker boundary handoff (frame publication vs command queue) rather than the wiring.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the military construction queue test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-MILITARY-0115",
+      "reason": "military_state_building_unmapped",
+      "kind": "rejection",
+      "stage": "military_state_building_map",
+      "invariant": "every MilitaryStateBuilding row carries a non-negative economy_building_id, and every requested state-building type resolves to a catalog row on an in-range cell",
+      "witness": {},
+      "owner": "military.construction",
+      "first_seen": null,
+      "playbook": [
+        "Read the refused row: type is the requested economy building id and cell is the target cell. Preflight also returns this reason for a cell outside core().terrain().cell_count, so check the range before blaming the catalog.",
+        "Look the type up in core().catalog().state_buildings: a missing row means the catalog does not define that state building, and a row with economy_building_id < 0 means the mapping to the economy building type was never filled in for that catalog entry.",
+        "Fix the catalog data that fills economy_building_id, not the queue: queue_player_construction must not silently skip an unmapped state building.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the military state building catalog test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-MILITARY-0116",
+      "reason": "military_country_submit_rejected",
+      "kind": "rejection",
+      "stage": "military_command_queue",
+      "invariant": "a country-bound military command batch is either enqueued whole or reported back with this reason",
+      "witness": {},
+      "owner": "military.country_commands",
+      "first_seen": null,
+      "playbook": [
+        "submit_military_country_commands sets this when _runtime_host->enqueue_batch refuses the packet batch.",
+        "Check the executor state the batch was built against (stopped/running) and the batch size limit.",
+        "The Godot side receives the same code through the receipt dictionary (submitted.code/reason), so one id covers both surfaces.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the military receipt test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-MILITARY-0117",
+      "reason": "military_terrain_checkpoint_size_invalid",
+      "kind": "rejection",
+      "stage": "save_restore",
+      "invariant": "a military terrain checkpoint holds exactly 5 bytes per terrain cell",
+      "witness": {},
+      "owner": "military.terrain",
+      "first_seen": null,
+      "playbook": [
+        "restore_terrain refuses when bytes.size() != cells * 5.",
+        "Read the cell count from the same checkpoint header and multiply by the record size; a terrain resize without a save migration produces this.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the military terrain restore test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-MILITARY-0118",
+      "reason": "military_command_not_object",
+      "kind": "rejection",
+      "stage": "military_command_decode",
+      "invariant": "every element of a submitted military command batch is a Dictionary",
+      "witness": {},
+      "owner": "military.parse",
+      "first_seen": null,
+      "playbook": [
+        "submit_military_commands sets the row error when batch[i] is not Variant::DICTIONARY.",
+        "The other rows of the same batch still run, so read the whole receipt array: a single malformed element does not abort the batch.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the military command submit test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-MILITARY-0119",
+      "reason": "pkmi_bad_budget_envelope",
+      "kind": "rejection",
+      "stage": "save_restore",
+      "invariant": "a PKMI budget policy section declares a consistent row count, exactly n*12 payload bytes, and upkeep bp within [0,10000]",
+      "witness": {},
+      "owner": "military.save",
+      "first_seen": null,
+      "playbook": [
+        "The reader raises this at three points: section_remaining() < sizeof(uint32_t), n != policies.size() or section_remaining() != n*12, and budget_upkeep_bp outside [0,10000].",
+        "Compare the writer's record size with the reader's 12-byte expectation and check the policy count the section header declares.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the PKMI budget save round-trip test."
+      ],
       "status": "active"
     },
     {
@@ -31597,6 +32020,102 @@
       "owner": "save.unassigned",
       "first_seen": null,
       "playbook": [],
+      "status": "active"
+    },
+    {
+      "id": "INV-SAVE-0122",
+      "reason": "effect_pod_family_claim_transaction_lost",
+      "kind": "rejection",
+      "stage": "effect_pod_restore",
+      "invariant": "a family claim transaction the save lists as pending is still present and not ACKED when the snapshot is rebuilt",
+      "witness": {},
+      "owner": "effect.persistence",
+      "first_seen": null,
+      "playbook": [
+        "The restore path fails when a family claim candidate's transaction_status_pod(6) is already ACKED while the save still lists it pending.",
+        "Compare the save's pending set with the replayed effect queue: an ack that ran without the save being rewritten produces exactly this pair of states.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect pod restore test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-SAVE-0123",
+      "reason": "effect_pod_colonization_builtin_id_not_disjoint",
+      "kind": "rejection",
+      "stage": "effect_pod_restore",
+      "invariant": "colonization transaction ids stay below BUILTIN_TRANSACTION_ID_BASE so the builtin id range stays disjoint",
+      "witness": {},
+      "owner": "effect.persistence",
+      "first_seen": null,
+      "playbook": [
+        "The restore path fails when colo_tx_id < BUILTIN_TRANSACTION_ID_BASE.",
+        "Check the colonization allocator: it has to count up from the builtin base, not from zero.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect pod restore test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-SAVE-0124",
+      "reason": "effect_pod_snapshot_dropped_colonization_builtin",
+      "kind": "rejection",
+      "stage": "effect_pod_restore",
+      "invariant": "building or restoring the effect snapshot never loses a pending family colonization transaction",
+      "witness": {},
+      "owner": "effect.persistence",
+      "first_seen": null,
+      "playbook": [
+        "The path fails when the rebuilt candidate reports no pending family colonization transactions while the source still had them.",
+        "Diff the pending set before and after the snapshot build for the same day.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect snapshot test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-SAVE-0125",
+      "reason": "effect_pod_colonization_lookup_failed",
+      "kind": "rejection",
+      "stage": "effect_pod_restore",
+      "invariant": "every pending colonization transaction id resolves to an index in the candidate queue",
+      "witness": {},
+      "owner": "effect.persistence",
+      "first_seen": null,
+      "playbook": [
+        "The path fails when transaction_index_for_id(colo_tx_id) returns a negative index.",
+        "Confirm the id was inserted with the same base and that the queue was not rebuilt from a shorter list.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect pod restore test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-SAVE-0126",
+      "reason": "effect_pod_snapshot_dropped_colliding_colonization",
+      "kind": "rejection",
+      "stage": "effect_pod_restore",
+      "invariant": "the collision-remap path ends with as many pending colonization transactions as it started with",
+      "witness": {},
+      "owner": "effect.persistence",
+      "first_seen": null,
+      "playbook": [
+        "The path fails when the colliding-colonization branch leaves the candidate without the pending family colonization transactions the source had.",
+        "Trace the remapped id through the queue after the collision; a remap that writes the new id but forgets the pending row is the usual cause.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect snapshot test."
+      ],
+      "status": "active"
+    },
+    {
+      "id": "INV-SAVE-0127",
+      "reason": "effect_pod_snapshot_colonization_remap_invalid",
+      "kind": "rejection",
+      "stage": "effect_pod_restore",
+      "invariant": "a remapped colonization transaction id is registered exactly once in _native_country_bound_transaction_ids",
+      "witness": {},
+      "owner": "effect.persistence",
+      "first_seen": null,
+      "playbook": [
+        "The path fails when _native_country_bound_transaction_ids.count(resolved_id) != 1.",
+        "Check the remap table for a duplicate insert or for an entry written under the old id.",
+        "Regression: python tools/ci/check_fault_taxonomy.py --strict plus the effect snapshot test."
+      ],
       "status": "active"
     },
     {
