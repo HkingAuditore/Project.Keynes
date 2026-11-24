@@ -26,6 +26,16 @@ func _init() -> void:
 		print("=== family colonization caravan colonists: %d failures ===" % _failures)
 		quit(0 if _failures == 0 else 1)
 		return
+	if OS.get_cmdline_user_args().has("--transit-person-only"):
+		var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
+		_expect("economy catalog compiles", bool(compiled.get("ok", false)))
+		if bool(compiled.get("ok", false)):
+			var catalog := compiled.duplicate(true)
+			catalog.erase("ok")
+			_run_transit_notable_person_roundtrip(catalog)
+		print("=== family colonization transit person: %d failures ===" % _failures)
+		quit(0 if _failures == 0 else 1)
+		return
 	if OS.get_cmdline_user_args().has("--soft-tools-only"):
 		var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
 		_expect("economy catalog compiles", bool(compiled.get("ok", false)))
@@ -103,6 +113,7 @@ func _run() -> void:
 		return
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
+	_run_transit_notable_person_roundtrip(catalog.duplicate(true))
 	_run_worker_local_market_procurement(catalog.duplicate(true))
 	_run_employed_expedition_departure(catalog.duplicate(true))
 	var fixture := _make_fixture(catalog, 260810)
@@ -2162,6 +2173,136 @@ func _run_caravan_colonists(catalog: Dictionary) -> void:
 	if dest_total != caravan_people or int(dest_families.get("total", 0)) != 0:
 		print("caravan_landing dest=", dest_total, " families=", dest_families,
 			" sent=", caravan_people, " report=", report)
+
+
+func _transit_person_handles(ext: Object, family_handle: int) -> Array:
+	# `family_notable_people` reports cell -1 for a person that left the cohort
+	# lane, which is exactly the in-transit signature PERSON_COMMIT must respect.
+	var page: Dictionary = ext.get_family_notable_people(family_handle, 0, 64)
+	var handles: PackedInt64Array = page.get("person_handles",
+		PackedInt64Array())
+	var cells: PackedInt32Array = page.get("cell_indices", PackedInt32Array())
+	var out := []
+	for index in range(handles.size()):
+		if index < cells.size() and int(cells[index]) < 0:
+			out.append(int(handles[index]))
+	return out
+
+
+func _test_topology() -> Array:
+	var neighbors := PackedInt32Array()
+	neighbors.resize(18)
+	neighbors.fill(-1)
+	neighbors[0] = 1
+	neighbors[9] = 0
+	neighbors[6] = 2
+	neighbors[15] = 1
+	var passable := PackedByteArray()
+	var costs := PackedInt32Array()
+	passable.resize(256)
+	costs.resize(256)
+	passable[2] = 1
+	costs[2] = 2
+	return [neighbors, PackedByteArray([2, 2, 2]), passable, costs]
+
+
+func _run_transit_notable_person_roundtrip(catalog: Dictionary) -> void:
+	# Player report 2026-11-19: every load of a 12k-day save died with
+	# `save_family_expedition_person_invalid` (ecp2_restore_failed). A notable
+	# person that departs with a family expedition loses its cohort lane on
+	# purpose, so PERSON_COMMIT retired it on the next day, the payload kept a
+	# dead handle, and PKEC then wrote a save that no restore accepted.
+	var fixture := _make_fixture(catalog, 260900, 1000000, {},
+		PackedStringArray(), 1, 1000000000000)
+	var ext: Object = fixture.get("ext")
+	if ext == null:
+		return
+	var country_handle := int(fixture.country_handle)
+	if country_handle == 0:
+		return
+	var families: Dictionary = ext.get_family_cell_snapshot(0, 0, 64)
+	_expect("transit fixture has one founder family",
+		int(families.get("total", 0)) == 1)
+	if int(families.get("total", 0)) != 1:
+		return
+	var family_handle := int((families.family_handles as PackedInt64Array)[0])
+	var family_population := int(ext.get_family_snapshot(family_handle).population)
+	var quotes: Dictionary = ext.get_family_colonization_quotes(
+		country_handle, 2, family_handle, 0, 0, 64)
+	_expect("transit fixture quotes the neighbour cell",
+		int(quotes.get("total", 0)) == 1)
+	if int(quotes.get("total", 0)) != 1:
+		return
+	var token := int((quotes.quote_tokens as PackedInt64Array)[0])
+	var maximum := int((quotes.maximum_populations as PackedInt64Array)[0])
+	var request := mini(maximum, family_population - 1)
+	var started: Dictionary = ext.start_family_colonization(country_handle,
+		family_handle, 0, 2, request, token, 0, 1)
+	_expect("transit expedition departs with the household",
+		bool(started.get("ok", false)) and request > 0)
+	if not bool(started.get("ok", false)):
+		return
+	var expedition_handle := int(started.get("expedition_handle", 0))
+	var transit_before := _transit_person_handles(ext, family_handle)
+	_expect("a notable person travels with the expedition payload",
+		not transit_before.is_empty())
+	if transit_before.is_empty():
+		var notable_now: Dictionary = ext.get_family_notable_people(
+			family_handle, 0, 64)
+		print("transit depart family=%d max=%d request=%d notable=%d"
+			% [family_population, maximum, request,
+				(notable_now.get("person_handles", PackedInt64Array())
+					as PackedInt64Array).size()])
+		return
+	var day_report := _run_day(ext, 1)
+	_expect("the transit day commits without a fatal",
+		bool(day_report.get("done", false))
+		and not bool(day_report.get("fatal", false)))
+	# The person has no cohort lane while travelling, so the family's notable list
+	# and the detail snapshot must both still resolve them (cell -1 + in_transit)
+	# instead of dropping the row.
+	var transit_after := _transit_person_handles(ext, family_handle)
+	var all_survived := transit_after.size() == transit_before.size()
+	var snapshot_ok := true
+	for handle in transit_before:
+		if not transit_after.has(handle):
+			all_survived = false
+		var snapshot: Dictionary = ext.get_notable_person_snapshot(handle)
+		if not bool(snapshot.get("ok", false)) \
+				or int(snapshot.get("cell_idx", 0)) != -1 \
+				or not bool(snapshot.get("in_transit", false)):
+			snapshot_ok = false
+	_expect("in-transit notable people survive PERSON_COMMIT",
+		all_survived
+		and _has_expedition(ext, country_handle, expedition_handle))
+	_expect("the travelling person keeps its payload lane",
+		transit_after.size() == transit_before.size())
+	_expect("the detail snapshot reports travelling people as in-transit",
+		snapshot_ok)
+	var saved_country := _save_country(ext)
+	var saved := _save_economy(ext)
+	var restored_fixture := _make_fixture(catalog.duplicate(true), 260900,
+		1000000, {}, PackedStringArray(), 1, 0, {}, false, 0, true)
+	var restored: Object = restored_fixture.get("ext")
+	if restored == null:
+		return
+	var restored_country := _restore_country(restored,
+		saved_country.get("chunks", []))
+	var restored_result := {}
+	if bool(restored_country.get("ok", false)):
+		restored_result = restored.configure_economy(
+			catalog.duplicate(true), restored_fixture.profile, 3, 260900)
+	if bool(restored_result.get("ok", false)):
+		var topology := _test_topology()
+		restored.capture_economy_trade_topology(topology[0], topology[1],
+			topology[2], topology[3], 1)
+		restored_result = _restore_economy(restored, saved.get("chunks", []))
+	if not bool(restored_result.get("ok", false)):
+		print("transit restore=", restored_result)
+	_expect("PKEC restores a payload that carries in-transit notable people",
+		bool(restored_result.get("ok", false))
+		and int(restored_result.get("dropped_transit_persons", -1)) == 0
+		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 
 
 func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,

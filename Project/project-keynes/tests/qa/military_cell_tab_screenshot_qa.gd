@@ -16,7 +16,6 @@ const THEME := "res://assets/themes/player_session_theme.tres"
 const OUTPUT := "res://tmp/military_cell_tab_qa"
 const PARCHMENT := Color(0.93, 0.87, 0.73, 1.0)
 ## 页宽 = 右侧面板宽 − 目录列 − 分栏间距；这两个值取自 1280×720 与 1920×1080。
-const PAGE_WIDTHS := [424.0, 604.0]
 const PAGE_HEIGHT := 360.0
 ## 首帧生长 0.32s + 值补间 0.18s，截图前等它们落定。
 const SETTLE_SECONDS := 0.55
@@ -30,16 +29,16 @@ func _init() -> void:
 
 func _run() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUTPUT))
-	DisplayServer.window_set_size(Vector2i(1920, 1080))
-	root.size = Vector2i(1920, 1080)
-	for width in PAGE_WIDTHS:
-		await _run_width(int(width))
-	await _run_width(424, "building")
-	await _run_width(424, "start")
+	await _run_width(424, "default", Vector2i(1280, 720))
+	await _run_width(604, "default", Vector2i(1680, 720))
+	await _run_width(424, "building", Vector2i(1280, 720))
+	await _run_width(424, "start", Vector2i(930, 558))
 	_finish()
 
 
-func _run_width(width: int, state: String = "default") -> void:
+func _run_width(width: int, state: String, viewport: Vector2i) -> void:
+	DisplayServer.window_set_size(viewport)
+	root.size = viewport
 	var backdrop := ColorRect.new()
 	backdrop.color = PARCHMENT
 	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -50,17 +49,24 @@ func _run_width(width: int, state: String = "default") -> void:
 	frame.theme_type_variation = &"PKArchivePage"
 	frame.clip_contents = true
 	frame.custom_minimum_size = Vector2(width, PAGE_HEIGHT)
-	frame.size = Vector2(width, PAGE_HEIGHT)
-	frame.position = Vector2(40.0, 40.0)
 	backdrop.add_child(frame)
+	frame.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	frame.offset_left = -width - 24.0
+	frame.offset_right = -24.0
+	frame.offset_top = 44.0
+	frame.offset_bottom = 44.0 + PAGE_HEIGHT
 	await process_frame
 	var ledger := (load(SCENE) as PackedScene).instantiate() as Control
 	frame.add_child(ledger)
+	ledger.set_preview_boundary(frame)
 	await process_frame
 	var min_width := ledger.get_combined_minimum_size().x
 	if min_width > float(width):
 		_failures.append("ledger needs %.0f px but the column is %d px" % [min_width, width])
-	ledger.set_model(_model(state))
+	var model := _model(state)
+	var index := 1 if state == "building" else 0
+	model.buildings[index]["hover"] = _hover_payload(state)
+	ledger.set_model(model)
 	await _settle()
 	# 真实面板里台账是 VBox 的子节点、按内容高度排布，所以截图框也收到内容高度，
 	# 否则会看到一大片空白纸（只在 QA 里出现的假象）。
@@ -73,9 +79,75 @@ func _run_width(width: int, state: String = "default") -> void:
 	print("[military-cell-qa] %s %d: size=%s min=%s" % [
 		state, width, str(ledger.size), str(min_width)])
 	await _capture("%s_%d" % [state, width])
+
+	var row: Control = ledger.building_rows()[index]
+	var target: Control = row.action_button() if row.action_button().visible else row
+	_move_pointer(target.get_global_rect().get_center())
+	await _settle()
+	var card: BuildingHoverCard = ledger._building_hover
+	if not card.visible:
+		_failures.append("hover did not open for %s at %d px" % [state, width])
+	elif card.get_global_rect().intersects(frame.get_global_rect()):
+		_failures.append("hover covered the inspector for %s at %d px" % [state, width])
+	elif not root.get_visible_rect().encloses(card.get_global_rect()):
+		_failures.append("hover left the viewport for %s at %d px" % [state, width])
+	await _capture("hover_%s_%d" % [state, width])
+	_move_pointer(Vector2(12.0, 12.0))
+	await process_frame
+	if card.visible:
+		_failures.append("hover remained open after leaving for %s at %d px" % [state, width])
 	ledger.queue_free()
 	backdrop.queue_free()
 	await process_frame
+
+
+func _move_pointer(point: Vector2) -> void:
+	root.warp_mouse(point)
+	var event := InputEventMouseMotion.new()
+	event.position = point
+	event.global_position = point
+	root.push_input(event, true)
+
+
+func _hover_payload(state: String) -> Dictionary:
+	if state == "building":
+		return {
+			"name": "石砌城墙", "icon": &"military.building.stone_wall", "role_label": "城防",
+			"status_text": "在建", "status_tone": "neutral", "days": 18, "days_label": "剩余工期",
+			"preview": _preview("守备加成", "+60%", &"military.building.fortification", "0.15"),
+		}
+	if state == "start":
+		return {
+			"name": "战士营地", "icon": &"military.building.tribal_lodge", "role_label": "兵营",
+			"status_text": "受阻", "reason_text": "建材不足",
+			"cash_required": 949800, "cash_text": "94.98", "days": 10,
+			"material_status": [
+				{"name": "原木", "icon": &"good.logs", "text": "20 单位", "detail": "全部市购"},
+				{"name": "草皮块", "icon": &"good.turf_block", "text": "10 单位", "detail": "全部市购",
+					"missing": true, "missing_text": "4"},
+			],
+			"preview": _preview("驻军名额", "+4 人", &"military.banner", "0.02"),
+		}
+	var preview := _preview("驻军名额", "+25 人", &"military.banner", "0.45")
+	preview.upkeep.push_front({"name": "当前日维护费", "icon": &"metric.treasury", "text": "0.3 金币/日"})
+	return {
+		"name": "戍卫营", "icon": &"military.building.palisade_barracks", "role_label": "兵营",
+		"status_text": "可再建", "eligible": true, "cash_required": 7500000, "cash_text": "750", "days": 30,
+		"material_status": [
+			{"name": "原木", "icon": &"good.logs", "text": "30 单位", "detail": "国库 18，需市购 12"},
+			{"name": "砖块", "icon": &"good.bricks", "text": "40 单位", "detail": "国库供料"},
+			{"name": "熟铁", "icon": &"good.wrought_iron", "text": "5 单位", "detail": "全部市购"},
+		],
+		"preview": preview,
+	}
+
+
+func _preview(label: String, value: String, icon: StringName, upkeep: String) -> Dictionary:
+	return {
+		"outputs_title": "建成收益",
+		"outputs": [{"name": label, "icon": icon, "text": value}],
+		"upkeep": [{"name": "建成后日维护费", "icon": &"metric.treasury", "text": "%s 金币/日" % upkeep}],
+	}
 
 
 func _settle() -> void:
@@ -170,10 +242,10 @@ func _start_model() -> Dictionary:
 		"buildings": [
 			{"role": "barracks", "label": "兵营", "icon": "military.building.tribal_lodge",
 				"name": "战士营地", "count": 0, "effect": "兵额 +4", "action": "build",
-				"primary_action": "build", "action_label": "建造", "target": 0,
+				"primary_action": "none", "action_label": "建造", "target": 0,
 				"can_demolish": false, "demolish_target": -1, "pending_days": -1,
 				"materials_text": "木材 20 · 草皮 10",
-				"cost_days_text": "10 日", "cost_reason": "",
+				"cost_days_text": "10 日", "cost_reason": "建材不足",
 				"tooltip": "战士营地\n效果：兵额 +4\n"
 					+ "建材：木材 20（国库 20）\n"
 					+ "建材：草皮 10（国库 10）\n"

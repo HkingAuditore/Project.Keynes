@@ -19,6 +19,10 @@ extends RefCounted
 const REPO_TMP_RELATIVE := "..\\..\\tmp"
 const DIAGNOSTICS_DIR := "user://diagnostics"
 
+## `.pkinc` 事故包生产者。必须 preload 而不是等调用方注入：fatal 现场只有一次
+## 落盘机会，不能再依赖"外部有没有把模块接上"。
+const IncidentBundle = preload("res://scripts/game/incident_bundle.gd")
+
 ## 经济守恒三项在 epoch 半开时没有意义。C++ 侧已经把它们清零并给出
 ## audit_incomplete，这里保留键名是为了让旧的分析脚本不至于 KeyError。
 const ECONOMY_CONSERVATION_KEYS := [
@@ -109,6 +113,14 @@ const RUNTIME_THREAD_KEYS := [
 ## 抓一次现场。generator 可以为 null（世界还没就绪时也要能落盘）。
 static func capture(reason: String, generator, clock,
 		extra: Dictionary = {}) -> Dictionary:
+	return _capture_with_report(reason, generator, clock, extra)[0]
+
+
+## capture() 的内部形态：除了 payload，还把**原始** economy report 交回去。
+## get_economy_report() 会复制整份诊断（很重），而 economy fatal 的观察点后面
+## 还要拿同一份 report 喂 incident_bundle 写 .pkinc —— 整条链路只取一次。
+static func _capture_with_report(reason: String, generator, clock,
+		extra: Dictionary = {}) -> Array:
 	var payload := {
 		"reason": reason,
 		"captured_at": Time.get_datetime_string_from_system(),
@@ -116,6 +128,9 @@ static func capture(reason: String, generator, clock,
 			"debug_build": OS.is_debug_build(),
 			"headless": DisplayServer.get_name() == "headless",
 			"process_frames": Engine.get_process_frames(),
+			# 构建标识：这条 fatal 是哪一版二进制产生的。C++ 侧由 PK_BUILD_ID
+			# 注入，未注入时留空即可 —— 取证路径上不允许 push_error。
+			"build_id": "",
 		},
 	}
 	if not extra.is_empty():
@@ -127,8 +142,9 @@ static func capture(reason: String, generator, clock,
 			"speed_multiplier": clock.speed_multiplier,
 		}
 	if generator == null:
-		return payload
+		return [payload, {}]
 	var economy := _report(generator, "get_economy_report")
+	payload["engine"]["build_id"] = String(economy.get("build_id", ""))
 	payload["economy"] = _pick(economy, ECONOMY_SCENE_KEYS)
 	payload["economy_conservation"] = _pick(economy, ECONOMY_CONSERVATION_KEYS)
 	payload["country"] = _pick(_report(generator, "get_country_report"),
@@ -137,7 +153,7 @@ static func capture(reason: String, generator, clock,
 	# 决定了跨域 fast path 走不走 —— 没有它就无法判断一次边界拒绝是否合理。
 	payload["runtime_thread"] = _pick(
 		_report(generator, "get_runtime_thread_report"), RUNTIME_THREAD_KEYS)
-	return payload
+	return [payload, economy]
 
 
 ## 落盘并打印单行标记。返回 tmp 下那份的绝对路径（失败时返回空串）。
@@ -173,13 +189,75 @@ static func dump(payload: Dictionary, tag: String) -> String:
 
 static func capture_and_dump(reason: String, generator, clock, tag: String,
 		extra: Dictionary = {}) -> String:
-	var payload := capture(reason, generator, clock, extra)
+	var captured := _capture_with_report(reason, generator, clock, extra)
+	var payload: Dictionary = captured[0]
+	var economy_report: Dictionary = captured[1]
 	if tag == "economy_fatal":
-		payload["economic_snapshots"] = _dump_economic_snapshots(generator,
-			payload, tag)
+		# 全量快照按需（R4-7）：40 MB 的 PKEC 现场玩家发不出来，`.pkinc` 才是
+		# 能发出来的那一份。历史上每来一次 fatal 就写一份全量，tmp/ 里堆到
+		# 131 份 / 1.07 GB 而没有任何一份被打开过。默认只写 `.pkinc`；
+		# 要全量就显式 PK_FORENSICS_FULL=1，或由调用方传 extra.full_snapshot
+		# （GM 面板手动导出走这条路）。跳过的占位保留键名，免得下游 KeyError。
+		if _full_snapshot_enabled(extra):
+			payload["economic_snapshots"] = _dump_economic_snapshots(generator,
+				payload, tag)
+		else:
+			payload["economic_snapshots"] = {
+				"skipped": true,
+				"reason": "full_snapshot_disabled",
+				"enable": "%s=1" % FULL_SNAPSHOT_ENV,
+			}
+		payload["incident_bundle"] = _write_incident_bundle(reason, generator,
+			clock, tag, payload, economy_report)
 	if _should_print_economy_trace(tag):
 		_print_economy_trace(payload, tag)
 	return dump(payload, tag)
+
+
+## 全量快照的显式开关（见 capture_and_dump 里的说明）。
+const FULL_SNAPSHOT_ENV := "PK_FORENSICS_FULL"
+
+
+## 是否写全量 PKEC/PKCN 现场：环境变量优先，其次是调用方显式请求。
+static func _full_snapshot_enabled(extra: Dictionary) -> bool:
+	if extra is Dictionary and bool(extra.get("full_snapshot", false)):
+		return true
+	return OS.get_environment(FULL_SNAPSHOT_ENV) == "1"
+
+
+## economy fatal 之后追加写 `.pkinc` 事故包。
+## 复用 _capture_with_report 已经取到的 economy report，不再第二次调用
+## get_economy_report()；cell 切片由 incident_bundle 通过 facade 自行采集。
+static func _write_incident_bundle(reason: String, generator, clock, tag: String,
+		payload: Dictionary, economy_report: Dictionary) -> Dictionary:
+	var context := {
+		"generator": generator,
+		"economy_report": economy_report,
+		"reason": reason,
+		"kind": "fatal",
+		"captured_at": String(payload.get("captured_at", "")),
+		"producer": "runtime_forensics.gd",
+	}
+	if clock != null:
+		context["day"] = clock.day_index()
+	var source: Dictionary = payload.get("context", {}) \
+		if payload.get("context") is Dictionary else {}
+	# 世界尺寸/种子只有 host 侧知道（MapGenerator 不暴露地图），调用方通过
+	# extra["world"] 传进来；其余事件字段按需透传。
+	for key in ["world", "hashes", "witness", "cell", "type_id", "assert_id",
+			"force_injected", "commands"]:
+		if source.has(key):
+			context[key] = source[key]
+	var result: Dictionary = IncidentBundle.write(context)
+	print("[runtime-forensics/%s/incident-bundle] ok=%s bytes=%s truncated=%s path=%s reason=%s" % [
+		tag,
+		str(result.get("ok", false)),
+		str(result.get("bytes", 0)),
+		JSON.stringify(result.get("truncated", [])),
+		String(result.get("path", "")),
+		String(result.get("reason", "")),
+	])
+	return result
 
 
 static func _should_print_economy_trace(tag: String) -> bool:
@@ -306,11 +384,20 @@ static func _dump_economic_snapshots(generator, payload: Dictionary,
 	result["epoch_active"] = epoch_active
 	result["snapshot_boundary"] = "half_open_epoch" if epoch_active else "committed_boundary"
 	result["forensics_only"] = true
-	result["restore_eligible"] = false
 	result["files"]["country.pkcn"] = _write_native_save_stream(
 		country, root.path_join("country.pkcn"), 4 * 1024 * 1024)
 	result["files"]["economy.pkec"] = _write_native_save_stream(
 		economy, root.path_join("economy.pkec"), 4 * 1024 * 1024)
+	# 可恢复性不能硬编码 false：C++ 只有在 begin_forensics_save 真的返回了
+	# generation/state_hash 时才敢说"这份快照能加载回去"。两份都声明可恢复，
+	# 整组才算可恢复；C++ 还没给出时如实落 false/0，但键必须存在。
+	var country_file: Dictionary = result["files"].get("country.pkcn", {})
+	var economy_file: Dictionary = result["files"].get("economy.pkec", {})
+	result["restore_eligible"] = bool(country_file.get("restore_eligible", false)) \
+		and bool(economy_file.get("restore_eligible", false))
+	result["native_generation"] = int(economy_file.get("native_generation", 0))
+	result["native_state_hash"] = int(economy_file.get("native_state_hash", 0))
+	result["native_schema_version"] = int(economy_file.get("native_schema_version", 0))
 	var manifest := FileAccess.open(root.path_join("manifest.json"), FileAccess.WRITE)
 	if manifest != null:
 		manifest.store_string(JSON.stringify({
@@ -321,7 +408,10 @@ static func _dump_economic_snapshots(generator, payload: Dictionary,
 			"epoch_active": epoch_active,
 			"snapshot_boundary": result["snapshot_boundary"],
 			"forensics_only": true,
-			"restore_eligible": false,
+			"restore_eligible": result["restore_eligible"],
+			"native_generation": result["native_generation"],
+			"native_state_hash": result["native_state_hash"],
+			"native_schema_version": result["native_schema_version"],
 		}, "\t"))
 		manifest.close()
 	else:
@@ -358,7 +448,10 @@ static func _write_native_save_stream(facade, path: String,
 		"bytes": bytes_written, "reason": String(ended.get("reason", "")),
 		"native_schema_version": int(begun.get("schema_version", 0)),
 		"native_state_hash": int(begun.get("state_hash", 0)),
-		"native_generation": int(begun.get("generation", 0))}
+		"native_generation": int(begun.get("generation", 0)),
+		# begin/end 任一侧给出 restore_eligible 都算数；C++ 还没实现时如实 false。
+		"restore_eligible": bool(begun.get("restore_eligible",
+			ended.get("restore_eligible", false)))}
 
 
 static func _report(generator, method: String) -> Dictionary:

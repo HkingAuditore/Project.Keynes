@@ -135,6 +135,46 @@ func _execute() -> void:
 		String(missing_result.get("reason", "")) == "ecp2_stratum_mobilization_section_missing")
 	_check("missing section rejection preserves all rows and whole state",
 		_saved_payload(warm) == expected and int(warm.get_economy_state_hash()) == before_bad_hash)
+	_test_paid_response(source, profession)
+
+func _test_paid_response(ext: Object, profession: int) -> void:
+	var country: Dictionary = ext.get_country_cell_summary(0)
+	var owner := int(country.get("country_handle", 0))
+	var population: Dictionary = ext.get_population_cell_snapshot(0)
+	var handles: PackedInt64Array = population.get("handles", PackedInt64Array())
+	if not _check("paid response has a country and resident cohort", owner != 0 and not handles.is_empty()):
+		return
+	var trace: Dictionary = ext.set_economy_trace_filter({"cells": PackedInt32Array([0])})
+	_check("response settlement trace is enabled", bool(trace.get("ok", false)))
+	var deposit: Dictionary = ext.submit_economy_commands(_single_command(9, 1, handles[0], 0, 0, 10000, owner))
+	if not _check("test treasury funding accepted", bool(deposit.get("ok", false))):
+		return
+	var choice := {"cell": 0, "profession": profession, "stage": 2, "action": 0,
+		"owner_handle": owner, "success": true, "cash": 4000,
+		"cohort_handle": 0, "effective_day": 1, "sequence": 10}
+	var result: Dictionary = ext.resolve_player_mobilization(choice)
+	_check("successful concession lowers mobilization stage and queues the promised cash",
+		bool(result.get("ok", false)) and result.get("stage") == 1 and result.get("queued_cash") == 4000)
+	var duplicate: Dictionary = ext.resolve_player_mobilization(choice)
+	_check("a repeated response at the old stage cannot pay twice",
+		duplicate.get("code") == "mobilization_choice_stale")
+	var queued: Dictionary = ext.capture_economy_ecp2(0)
+	if not _check("save captures the response before the payment settles", bool(queued.get("ok", false))):
+		return
+	var restored: Dictionary = ext.restore_economy_ecp2(queued.bytes)
+	if not _check("the unsettled payment survives restoring the save", bool(restored.get("ok", false))):
+		return
+	var committed := _run_day(ext, 1)
+	_check("response commits with a balanced ledger", bool(committed.get("done", false))
+		and not bool(committed.get("fatal", false)) and int(committed.get("money_error", 1)) == 0)
+	var kinds: Dictionary = ext.get_economy_event_schema().get("kinds", {})
+	var page: Dictionary = ext.poll_economy_events({"kind": kinds.get("COMMAND_SETTLED", 0), "cell": 0})
+	var matched := 0
+	for i in range(int(page.get("count", 0))):
+		if page.subject_id[i] == 10 and page.subject_i0[i] == 1 and page.value1[i] == 4000 \
+				and page.value2[i] == 4000 and page.value3[i] == owner and page.commit_day[i] == 1:
+			matched += 1
+	_check("the payment reaches the remaining local cohort exactly once", matched == 1)
 
 func _check(label: String, ok: bool) -> bool:
 	_expect(label, ok)
