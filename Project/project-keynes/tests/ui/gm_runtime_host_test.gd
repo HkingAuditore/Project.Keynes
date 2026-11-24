@@ -63,7 +63,7 @@ func _run() -> void:
 		if String(command.get("id", "")) == "diagnostics.dump_atlas_river_probe":
 			river_probe_command_found = true
 	_expect(fog_toggle_found, "fog toggle capability", failures)
-	_expect(not suppress_popups_toggle_found, "the old all-popup GM toggle is retired", failures)
+	_expect(suppress_popups_toggle_found, "popup suppression toggle capability", failures)
 	_expect(hide_all_ui_toggle_found, "hide all UI toggle capability", failures)
 	_expect(click_claim_toggle_found, "click claim toggle capability", failures)
 	_expect(atlas_toggle_found, "dynamic atlas toggle capability", failures)
@@ -85,6 +85,19 @@ func _run() -> void:
 	options.configure(0x5aa5)
 	_expect(options.value() == 0x5aa5, "event settings retain independent choice and notice switches", failures)
 	options.free()
+	var suppress_on := host.set_gm_toggle("ui.suppress_popups", true)
+	var suppress_state: Dictionary = host.get_gm_toggle_state("ui.suppress_popups")
+	_expect(bool(suppress_on.get("ok", false)) and bool(suppress_state.get("enabled", false)),
+		"popup suppression GM toggle readback", failures)
+	var suppress_off := host.set_gm_toggle("ui.suppress_popups", false)
+	_expect(bool(suppress_off.get("ok", false))
+		and not bool(host.get_gm_toggle_state("ui.suppress_popups").get("enabled", true)),
+		"popup suppression GM toggle restores", failures)
+	var controller := PlayerController.new()
+	root.add_child(controller)
+	controller.set_popups_suppressed(true)
+	controller.set_popups_suppressed(false)
+	controller.free()
 	var hide_all_on := host.set_gm_toggle("ui.hide_all_except_gm", true)
 	var hide_all_state: Dictionary = host.get_gm_toggle_state("ui.hide_all_except_gm")
 	_expect(bool(hide_all_on.get("ok", false)) and bool(hide_all_state.get("enabled", false)),

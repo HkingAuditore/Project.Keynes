@@ -320,8 +320,10 @@ func _on_gm_runtime_toggle_changed(toggle_id: String, enabled: bool) -> void:
 func _on_player_confirmation_updated(view: Dictionary) -> void:
 	if _ui_manager != null:
 		# Required responses still need a visible surface while GM hides the HUD.
+		var gm_suppressed: bool = _runtime_host != null and bool(
+			_runtime_host.get_gm_toggle_state("ui.suppress_popups").get("enabled", false))
 		if _ui_manager.has_method("set_popups_suppressed"):
-			_ui_manager.set_popups_suppressed(bool(view.hide_popups))
+			_ui_manager.set_popups_suppressed(bool(view.hide_popups) or gm_suppressed)
 		_ui_manager.set_all_ui_suppressed(bool(view.hide_popups) and String(view.reason).is_empty())
 
 

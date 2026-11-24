@@ -338,6 +338,7 @@ var _gm_sequence: int = 1
 var _gm_territory_requests := {}
 var _gm_territory_publication := 0
 var _gm_click_claim_territory_enabled: bool = false
+var _gm_suppress_popups: bool = false
 ## GM UI 诊断开关：隐藏所有玩家界面，但保留 GM 面板本身可操作。
 var _player_confirmation_view: Dictionary = {}
 var _gm_tod_preview_enabled: bool = false

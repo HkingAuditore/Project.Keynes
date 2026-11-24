@@ -25,21 +25,26 @@ func set_popups_suppressed(host, enabled: bool) -> void:
 	if not enabled:
 		return
 	# 已经锁住时钟的提示在开关切换瞬间也必须释放。
-	if bool(host.get("_era_reward_locked")):
+	if host.get("_era_reward_locked") == true:
 		if host._ui_manager != null and host._ui_manager.has_method("close_era_reward_offer"):
 			host._ui_manager.close_era_reward_offer()
 		host.set("_era_reward_locked", false)
 		if host._world_clock != null:
-			host._world_clock.set_speed(host.get("_era_reward_previous_speed"))
-			host._world_clock.pause(not bool(host.get("_era_reward_resume_running")))
-	if bool(host.get("_family_founding_locked")):
+			var prev_era_speed = host.get("_era_reward_previous_speed")
+			if prev_era_speed is float or prev_era_speed is int:
+				host._world_clock.set_speed(float(prev_era_speed))
+			host._world_clock.pause(host.get("_era_reward_resume_running") != true)
+	if host.get("_family_founding_locked") == true:
 		if host._ui_manager != null and host._ui_manager.has_method("close_family_founding_offer"):
 			host._ui_manager.close_family_founding_offer()
 		host.set("_family_founding_locked", false)
 		if host._world_clock != null:
-			host._world_clock.set_speed(host.get("_family_founding_previous_speed"))
-			host._world_clock.pause(not bool(host.get("_family_founding_resume_running")))
-	if not String(host.get("_ideology_draw_phase")).is_empty() \
+			var prev_family_speed = host.get("_family_founding_previous_speed")
+			if prev_family_speed is float or prev_family_speed is int:
+				host._world_clock.set_speed(float(prev_family_speed))
+			host._world_clock.pause(host.get("_family_founding_resume_running") != true)
+	var ideology_phase = host.get("_ideology_draw_phase")
+	if ideology_phase is String and not ideology_phase.is_empty() \
 			and host.has_method("_finish_ideology_draw"):
 		host._finish_ideology_draw("popup_suppressed")
 

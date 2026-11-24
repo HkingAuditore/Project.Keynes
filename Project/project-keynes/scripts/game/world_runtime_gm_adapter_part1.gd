@@ -199,6 +199,7 @@ func get_gm_capabilities(host) -> Dictionary:
 		"commands": host._gm_command_specs(technologies, goods, buildings),
 		"toggles": [
 			{"id": "simulation.paused", "label": "暂停模拟", "group": "模拟"},
+			{"id": "ui.suppress_popups", "label": "屏蔽弹窗（跳过事件/年报暂停）", "group": "界面"},
 			{"id": "ui.hide_all_except_gm", "label": "关闭所有界面（保留 GM）", "group": "界面"},
 			{"id": "simulation.click_claim_territory", "label": "点击地块接管领土", "group": "模拟"},
 			{"id": "system.autosave", "label": "自动存档（每年）", "group": "系统"},
@@ -307,6 +308,8 @@ func get_gm_toggle_state(host, toggle_id: String) -> Dictionary:
 	match toggle_id:
 		"simulation.paused":
 			return {"ok": true, "enabled": host._world_clock.paused}
+		"ui.suppress_popups":
+			return {"ok": true, "enabled": host._gm_suppress_popups}
 		"ui.hide_all_except_gm":
 			return {"ok": true, "enabled": bool(host.player_confirmation_view().get("hide_popups", false))}
 		"simulation.click_claim_territory":
@@ -427,6 +430,8 @@ func get_gm_toggle_state(host, toggle_id: String) -> Dictionary:
 
 func set_gm_toggle(host, toggle_id: String, enabled: bool) -> Dictionary:
 	match toggle_id:
+		"ui.suppress_popups":
+			host._gm_suppress_popups = enabled
 		"ui.hide_all_except_gm":
 			var receipt: Dictionary = host.submit_player_confirmation("popup_policy", int(enabled))
 			if not bool(receipt.get("ok", false)):

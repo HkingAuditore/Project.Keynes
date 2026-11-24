@@ -202,6 +202,7 @@ func _try_present_impl() -> void:
 		return
 	if _popups_suppressed:
 		_clear_deferral()
+		_outcome_record = {}
 		var suppressed_offer := _resolve_active_offer()
 		if not suppressed_offer.is_empty():
 			var options: Array = suppressed_offer.get("options", [])
@@ -211,6 +212,8 @@ func _try_present_impl() -> void:
 						suppressed_offer.get("generation", 1))),
 					clampi(int(suppressed_offer.get("default_option_index", 0)), 0, options.size() - 1))
 				return
+		if _ui_manager != null and _ui_manager.has_method("close_narrative_event_offer"):
+			_ui_manager.close_narrative_event_offer()
 		if _locked:
 			_locked = false
 			_active_offer_id = 0
@@ -352,6 +355,9 @@ func _on_service_choice_resolved(record: Dictionary) -> void:
 	if _settling_offer_id == 0 or _settling_offer_id != int(record.get("offer_id", 0)):
 		return
 	_settling_offer_id = 0
+	if _popups_suppressed:
+		on_outcome_acknowledged()
+		return
 	if _ui_manager != null and _ui_manager.has_method("show_narrative_event_outcome"):
 		_outcome_record = record
 		try_present()
