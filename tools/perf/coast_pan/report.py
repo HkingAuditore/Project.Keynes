@@ -1,13 +1,11 @@
 """Summarize a coast-pan-v1 capture and compare it with a saved device baseline."""
 import argparse
-import hashlib
 import json
 import math
 from pathlib import Path
 import re
 import struct
 
-HERE = Path(__file__).resolve().parent
 PROTOCOL = "coast-pan-v1"
 
 
@@ -24,20 +22,9 @@ def stats(values):
 
 
 def load_capture(folder):
-    raw = [(folder / f"coast-{i}.json").read_bytes() for i in range(4)]
-    records = [json.loads(data) for data in raw]
     outcome = (folder / "outcome.txt").read_text().strip()
-    if outcome == "29 checks, 2 failures":
-        # Historical run checked VSync against two desktop expectations. Only those exact
-        # four original files may be replayed with the separately verified phone metadata.
-        reference = json.loads((HERE / "iphone-16e.json").read_text())
-        require([hashlib.sha256(data).hexdigest() for data in raw] == reference["arm_sha256"],
-                "this failed run is not the archived iPhone capture")
-        for r in records:
-            r.update(protocol=PROTOCOL, platform="iOS", model="iPhone 16e", build="release",
-                     screen_px=[2532, 1170], godot=reference["godot"])
-    else:
-        require(re.fullmatch(r"\d+ checks, 0 failures", outcome), "incomplete or failed benchmark")
+    require(re.fullmatch(r"[1-9]\d* checks, 0 failures", outcome), "incomplete or failed benchmark")
+    records = [json.loads((folder / f"coast-{i}.json").read_text()) for i in range(4)]
     fields = ("platform", "model", "adapter", "driver", "build", "screen_px", "window_px",
               "refresh_hz", "vsync", "engine_max_fps", "explored_land_water_fractions")
     for i, r in enumerate(records):
@@ -64,8 +51,13 @@ def load_capture(folder):
 
 def compare(current, previous):
     require(previous["protocol"] == current["protocol"], "different scenario version")
-    keys = set(current["conditions"]) | set(previous["conditions"])
-    different = [k for k in sorted(keys) if current["conditions"].get(k) != previous["conditions"].get(k)]
+    require(previous.get("kind") != "historical_diagnostic", "historical diagnostic cannot be used as a baseline")
+    identities = ("model", "godot")
+    require(all(r.get(k) for r in (current, previous) for k in identities), "missing device model or Godot version")
+    current_conditions = {**current["conditions"], **{k: current[k] for k in identities}}
+    previous_conditions = {**previous["conditions"], **{k: previous[k] for k in identities}}
+    keys = current_conditions.keys() | previous_conditions.keys()
+    different = [k for k in sorted(keys) if current_conditions.get(k) != previous_conditions.get(k)]
     if different:
         return {"comparable": False, "different_conditions": different, "reference": previous["measurements"]}
     changes = {}
@@ -83,8 +75,8 @@ def compare(current, previous):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("folder", type=Path)
-    p.add_argument("--device", required=True, help="stable device label, e.g. iphone-16e")
-    p.add_argument("--baseline", type=Path, default=HERE/"iphone-16e.json")
+    p.add_argument("--device", required=True, help="stable label for this test computer")
+    p.add_argument("--baseline", type=Path, help="optional passing capture previously written with --save")
     p.add_argument("--trace", type=Path, help="optional Apple Game Performance .trace")
     p.add_argument("--save", type=Path, help="write this run as a reusable baseline")
     args = p.parse_args()
@@ -97,9 +89,11 @@ def main():
             value for r in records[i::2] for value in r["raw_frame_interval_ms"]])}
     if args.trace:
         from apple_trace import matched_timings
-        for name, samples in matched_timings(args.trace, records).items():
+        timings, coverage = matched_timings(args.trace, records)
+        result["trace_coverage"] = coverage
+        for name, samples in timings.items():
             result["measurements"][name].update({k: stats(v) for k, v in samples.items()})
-    comparison = compare(result, json.loads(args.baseline.read_text()))
+    comparison = compare(result, json.loads(args.baseline.read_text())) if args.baseline else None
     if args.save:
         with args.save.open("x") as f:
             json.dump(result, f, indent=2)

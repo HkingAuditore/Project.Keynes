@@ -3,6 +3,11 @@ extends SceneTree
 const GraphicsQualitySettings := preload("res://scripts/game/graphics_quality_settings.gd")
 const GraphicsOptionsScene := preload("res://scenes/ui/graphics_quality_options.tscn")
 
+class BenchmarkSettings extends "res://scripts/game/game_settings_service.gd":
+	func coast_pan_requested() -> bool:
+		return true
+
+
 var _checks := 0
 var _failures := 0
 
@@ -40,6 +45,14 @@ func _run() -> void:
 		and int(cfg.get_value("settings", "ui_scale_percent", 0)) == 125 \
 		and is_equal_approx(float(cfg.get_value("settings", "master_volume", 0.0)), 0.35) \
 		and bool(cfg.get_value("settings", "master_muted", false)))
+
+	var original := FileAccess.get_file_as_bytes("user://settings.cfg")
+	var benchmark := BenchmarkSettings.new()
+	var benchmark_save := benchmark.save_settings()
+	_expect("benchmark has an in-memory profile and cannot persist over existing settings",
+		benchmark_save.ok and benchmark_save.code == "coast_pan_ephemeral"
+		and FileAccess.get_file_as_bytes("user://settings.cfg") == original)
+	benchmark.free()
 
 	service._settings = service.DEFAULTS.duplicate(true)
 	_expect("saved settings reload", bool(service.load_settings().get("ok", false)) \

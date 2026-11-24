@@ -126,6 +126,9 @@ func load_settings() -> Dictionary:
 
 
 func save_settings() -> Dictionary:
+	# The benchmark starts with its own profile and must never replace player preferences.
+	if coast_pan_requested():
+		return {"ok": true, "code": "coast_pan_ephemeral", "message": ""}
 	var cfg := ConfigFile.new()
 	for key in _settings:
 		cfg.set_value("settings", key, _settings[key])

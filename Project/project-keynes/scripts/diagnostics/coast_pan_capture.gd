@@ -4,34 +4,31 @@ const WARMUP_FRAMES := 60
 const SAMPLE_FRAMES := 240
 
 
-static func open_game(tree: SceneTree, config: NewGameConfig) -> PlayerGame:
+static func open_game(tree: SceneTree, config: NewGameConfig) -> Dictionary:
 	var flow := tree.root.get_node("GameFlow")
 	var started: Dictionary = flow.begin_new_game(config)
 	if not bool(started.ok):
-		push_error("Could not start the player scene: %s" % str(started))
-		return null
-	while not tree.current_scene is PlayerGame and flow._transition_active:
+		return {"error": "Could not start the player scene: %s" % str(started)}
+	while not tree.current_scene is PlayerGame and flow.player_scene_transition_active():
 		await tree.process_frame
 	var game := tree.current_scene as PlayerGame
 	if game == null:
-		push_error("The game flow did not open the player scene.")
-		return null
+		return {"error": "The game flow did not open the player scene."}
 	# Freeze the calendar before PlayerGame starts generation. The explored
 	# fixture can still admit its two explicit days through the runtime host.
 	game._world_clock.pause(true)
 	var host := game._runtime_host
 	if host.session_config().is_empty():
-		return null
+		return {"error": "Player runtime has no session configuration."}
 	while not host.is_runtime_ready_for_ticks() and host.last_world_generation_error.is_empty():
 		await tree.process_frame
 	if not host.is_runtime_ready_for_ticks():
-		push_error(host.last_world_generation_error_text())
-		return null
+		return {"error": "World generation failed: %s" % host.last_world_generation_error_text()}
 	var loading := game.get_node("UI/UIRoot/ModalLayer/WorldLoadingOverlay") as Control
 	while loading.visible:
 		await loading.visibility_changed
 	host.fit_camera()
-	return game
+	return {"game": game}
 
 
 static func _summary(values: Array) -> Dictionary:
@@ -73,19 +70,22 @@ static func _position_camera(camera: MapCamera, point: Vector2) -> void:
 	camera._emit_view_changed_if_needed()
 
 
-static func record_coast(game: PlayerGame, map: MapData, output: String) -> bool:
+static func record_coast(game: PlayerGame, map: MapData, output: String) -> String:
 	var renderer := game._renderer
 	var water := renderer._water_quad
 	var land := renderer._world_quad
 	var camera := game._camera
 	var window := game.get_tree().root
-	if renderer._mobile_quality_tier_define != "MOBILE_QUALITY_LOW" or game.visual_quality != 0 \
-			or water == null or land == null or water.mesh == null or land.mesh == null \
-			or water.get_viewport() != window or land.get_viewport() != window:
-		return false
+	if renderer._mobile_quality_tier_define != "MOBILE_QUALITY_LOW" or game.visual_quality != 0:
+		return "Expected the Mobile LOW shader and visual quality 0, got %s / %s." % [
+			renderer._mobile_quality_tier_define, game.visual_quality]
+	if water == null or land == null or water.mesh == null or land.mesh == null:
+		return "Coast sampling requires both land and water meshes."
+	if water.get_viewport() != window or land.get_viewport() != window:
+		return "Land and water must render directly into the benchmark window."
 	var layer := water.visibility_layer
 	if layer == 0:
-		return false
+		return "Water has no visible layer at the start of the benchmark."
 	var hex_size: float = renderer.hex_size
 	camera.restore_view_state(camera.position, 1.75)
 	var view: Rect2 = camera.current_world_view_rect()
@@ -97,12 +97,11 @@ static func record_coast(game: PlayerGame, map: MapData, output: String) -> bool
 		var center := left.lerp(right, t)
 		var share := _coast_fraction(map, Rect2(center - view.size / 2.0, view.size), hex_size)
 		if minf(share.x, share.y) < 0.15:
-			push_error("The fixed coast route no longer shows both explored land and water.")
-			return false
+			return "The fixed coast route no longer shows both explored land and water at %.2f." % t
 		fractions.append(share)
 	var base_day := game._world_clock.day_index()
 	if base_day != 3 or not is_equal_approx(camera.zoom.x, 1.75):
-		return false
+		return "Expected day 3 and zoom 1.75, got day %d and zoom %.3f." % [base_day, camera.zoom.x]
 	var base_zoom: float = camera.zoom.x
 	var base_window := window.size
 	for arm in range(4):
@@ -132,7 +131,7 @@ static func record_coast(game: PlayerGame, map: MapData, output: String) -> bool
 		var end := Time.get_unix_time_from_system()
 		var image := window.get_texture().get_image()
 		if image == null:
-			return false
+			return "Could not read the benchmark screenshot for arm %d." % arm
 		var screenshot := output.path_join("coast-%d.png" % arm)
 		var screenshot_ok := image.save_png(screenshot) == OK
 		var points: Array = []
@@ -159,12 +158,13 @@ static func record_coast(game: PlayerGame, map: MapData, output: String) -> bool
 		}
 		var data := FileAccess.open(output.path_join("coast-%d.json" % arm), FileAccess.WRITE)
 		if data == null:
-			return false
+			return "Could not write capture data for arm %d: %s." % [arm, error_string(FileAccess.get_open_error())]
 		data.store_string(JSON.stringify(report))
 		data.close()
 		print("[mobile-coast-draw] ", JSON.stringify({"arm":arm,"ok":report.ok,
 			"start_unix_s":start,"end_unix_s":end,"frame_interval_ms":report.frame_interval_ms,
 			"window_px":report.window_px,"day":report.day,"adapter":report.adapter,"driver":report.driver}))
 		if not report.ok:
-			return false
-	return true
+			return "Arm %d failed: route/settings valid=%s, screenshot saved=%s, size=%s, minimum draw calls=%s." % [
+				arm, valid, screenshot_ok, image.get_size(), draws.min()]
+	return ""

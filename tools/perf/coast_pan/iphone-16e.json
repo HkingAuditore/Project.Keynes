@@ -1,4 +1,5 @@
 {
+  "kind": "historical_diagnostic",
   "protocol": "coast-pan-v1",
   "source_commit": "0fae578384cd1805945d10259f3f7bcf24e1409e",
   "date": "2026-11-23",

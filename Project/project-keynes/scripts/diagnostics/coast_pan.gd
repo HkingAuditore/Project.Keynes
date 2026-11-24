@@ -1,6 +1,6 @@
 extends Node
 
-## coast-pan-v1: four identical passes through the original iPhone reference coastline.
+## coast-pan-v1: four passes along the same explored coast.
 const GraphicsQualitySettings = preload("res://scripts/game/graphics_quality_settings.gd")
 const DrawCapture = preload("res://scripts/diagnostics/coast_pan_capture.gd")
 const WebAutotest = preload("res://scripts/game/web_autotest.gd")
@@ -10,7 +10,7 @@ const SEED := 20260718
 const FOREIGN_COUNT := 3
 
 var _checks := 0
-var _failures := 0
+var _errors := PackedStringArray()
 
 
 func _ready() -> void:
@@ -22,9 +22,17 @@ func _run() -> void:
 		await get_tree().root.ready
 	await get_tree().process_frame
 	DisplayServer.screen_set_keep_on(true)
-	if DisplayServer.get_name() == "headless" or RenderingServer.get_current_rendering_method() != "mobile":
-		push_error("Coast pan requires a window and the Mobile renderer.")
-		get_tree().quit(1)
+	var folder := "user://coast-pan/%d-%d" % [int(Time.get_unix_time_from_system()), OS.get_process_id()]
+	var mkdir_error := DirAccess.make_dir_recursive_absolute(folder)
+	_check(mkdir_error == OK, "create results directory: %s" % error_string(mkdir_error))
+	if mkdir_error != OK:
+		_finish(folder)
+		return
+	var renderer_ready := DisplayServer.get_name() != "headless" \
+		and RenderingServer.get_current_rendering_method() == "mobile"
+	_check(renderer_ready, "Coast pan requires a window and the Mobile renderer.")
+	if not renderer_ready:
+		_finish(folder)
 		return
 	Engine.set_meta("pk_fog_off", false)
 	var settings := get_tree().root.get_node("GameSettings")
@@ -48,12 +56,17 @@ func _run() -> void:
 		"frame_rate_limit": 0,
 		"autosave_enabled": false,
 	}, false)
-	_check(applied.ok, "benchmark settings apply without saving")
+	_check(applied.ok, "benchmark settings apply without saving: %s" % applied.message)
+	if not applied.ok:
+		_finish(folder)
+		return
 	var config := WebAutotest.build_config({"seed": SEED, "width": MAP_SIZE.x, "height": MAP_SIZE.y})
 	config.country.foreign_count = FOREIGN_COUNT
-	var game := await DrawCapture.open_game(get_tree(), config)
+	var opened := await DrawCapture.open_game(get_tree(), config)
+	var game := opened.get("game") as PlayerGame
 	if game == null:
-		get_tree().quit(1)
+		_check(false, opened.error)
+		_finish(folder)
 		return
 	var clock := game._world_clock
 	var host := game._runtime_host
@@ -61,7 +74,7 @@ func _run() -> void:
 	var ready := map != null and host.is_runtime_ready_for_ticks()
 	_check(ready, "formal new game publishes the map and starts the executor")
 	if not ready:
-		get_tree().quit(1)
+		_finish(folder)
 		return
 	var countries: Dictionary[int, bool] = {}
 	for slot in map.country_slot_arr:
@@ -87,22 +100,28 @@ func _run() -> void:
 		and profile.weather_detail == 0 and not profile.cloud_shadow, "mobile low profile")
 	_check(Engine.max_fps == 0 and DisplayServer.window_get_vsync_mode() == DisplayServer.VSYNC_ENABLED,
 		"uncapped engine with display synchronization")
-	var folder := "user://coast-pan/%d-%d" % [int(Time.get_unix_time_from_system()), OS.get_process_id()]
-	_check(DirAccess.make_dir_recursive_absolute(folder) == OK, "create results directory")
-	if _failures == 0:
-		_check(await DrawCapture.record_coast(game, map, folder), "four complete coast passes")
+	if _errors.is_empty():
+		var capture_error := await DrawCapture.record_coast(game, map, folder)
+		_check(capture_error.is_empty(), capture_error)
 	var closed := await host.close_world()
 	_check(closed.ok, "formal session closes")
 	game.queue_free()
 	await get_tree().process_frame
+	UITokens.release_cached_fonts()
+	_finish(folder)
+
+
+func _finish(folder: String) -> void:
 	var status := FileAccess.open(folder.path_join("outcome.txt"), FileAccess.WRITE)
-	_check(status != null, "write capture outcome")
+	_check(status != null, "write capture outcome: %s" % error_string(FileAccess.get_open_error()))
 	if status != null:
-		status.store_line("%d checks, %d failures" % [_checks, _failures])
+		status.store_line("%d checks, %d failures" % [_checks, _errors.size()])
+		for reason in _errors:
+			status.store_line(reason)
 		status.close()
-	print("[coast-pan] %d failures; %s" % [_failures, ProjectSettings.globalize_path(folder)])
-	if not OS.has_feature("mobile") or _failures > 0:
-		get_tree().quit(int(_failures > 0))
+	print("[coast-pan] %d failures; %s" % [_errors.size(), ProjectSettings.globalize_path(folder)])
+	if not OS.has_feature("mobile") or not _errors.is_empty():
+		get_tree().quit(int(not _errors.is_empty()))
 
 
 func _prepare_explored_map(host: WorldRuntimeHost, map: MapData) -> void:
@@ -132,10 +151,13 @@ func _prepare_explored_map(host: WorldRuntimeHost, map: MapData) -> void:
 		_check(admitted == day, "executor admits exactly day %d at 1x" % day)
 		if admitted != day:
 			return
-		while host._runtime_commit_day < day and not host.is_runtime_fault_paused():
+		# Let the normal player-scene process receive the worker result and publish
+		# the updated map view before submitting the next day's commands.
+		while host.presented_worker_day() < day and not host.is_runtime_fault_paused():
 			await get_tree().process_frame
-		_check(host._runtime_commit_day == day, "executor publishes day %d" % day)
-		if host._runtime_commit_day != day:
+		var published := host.presented_worker_day()
+		_check(published == day, "expected the published map for day %d, got %d" % [day, published])
+		if published != day:
 			return
 	_check(map.country_slot_arr == opening_owners, "exploration restores the opening borders")
 	_check(map.visible_arr == opening_visible, "temporary sight returns to the opening extent")
@@ -152,5 +174,5 @@ func _count_remembered_land(map: MapData) -> int:
 func _check(ok: bool, description: String) -> void:
 	_checks += 1
 	if not ok:
-		_failures += 1
+		_errors.append(description)
 		push_error(description)
