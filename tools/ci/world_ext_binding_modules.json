@@ -33,7 +33,8 @@
     "economy": [
       "world_ext_economy.cpp",
       "world_ext_economy_resources.cpp",
-      "world_ext_economy_topology.cpp"
+      "world_ext_economy_topology.cpp",
+      "world_ext_economy_replay.cpp"
     ],
     "country": [
       "world_ext_country.cpp",

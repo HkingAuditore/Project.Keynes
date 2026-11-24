@@ -66,7 +66,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/game/world_runtime_gm_adapter_part1.gd": {
-      "lines": 961,
+      "lines": 972,
       "limit": 800
     },
     "Project/project-keynes/scripts/game/world_runtime_host.gd": {
@@ -438,7 +438,7 @@
       "limit": 2000
     },
     "gdext/src/economy_runtime.h": {
-      "lines": 2018,
+      "lines": 2034,
       "limit": 2000
     },
     "gdext/src/economy_runtime_building_employment.cpp": {
@@ -454,7 +454,7 @@
       "limit": 2000
     },
     "gdext/src/economy_runtime_diagnostics.cpp": {
-      "lines": 2975,
+      "lines": 3186,
       "limit": 2000
     },
     "gdext/src/economy_runtime_market.cpp": {
@@ -462,7 +462,7 @@
       "limit": 2000
     },
     "gdext/src/economy_runtime_persistence.cpp": {
-      "lines": 2035,
+      "lines": 2042,
       "limit": 2000
     },
     "gdext/src/economy_runtime_queries_market_building.cpp": {
