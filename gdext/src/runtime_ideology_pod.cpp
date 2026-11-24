@@ -302,15 +302,21 @@ bool RuntimeIdeologyPodAuthority::validate_inputs(
         country.country_research_signals.size() != static_cast<size_t>(country.country_count) * country.research_signal_words) {
         error = "ideology_country_snapshot_shape_invalid"; return false;
     }
-    const size_t lanes = static_cast<size_t>(country.country_count) * _catalog.class_count;
+    // Country commits before Ideology. Its new slots have no rows in the
+    // previous Economy commit. Validate the source's own shape and identities.
+    const uint32_t measured_countries = opinion.country_count;
+    const size_t lanes = static_cast<size_t>(measured_countries) * _catalog.class_count;
     // Revision 0 stays REJECTED. It was briefly relaxed for the A1 day-binding
     // experiment ("no opinion for this day" handed over as revision 0), but that
     // binding is not landed (05 §2.6) and the rejection is a real invariant:
     // `ideology_self_test_revision_rejection_failed` asserts it.
     if (opinion.revision == 0 || opinion.class_hash != _catalog.class_hash ||
-        opinion.class_count != _catalog.class_count || opinion.country_count != country.country_count ||
-        opinion.country_handles.size() != country.country_count ||
-        opinion.country_generations.size() != country.country_count ||
+        opinion.class_count != _catalog.class_count || measured_countries == 0 ||
+        measured_countries > country.country_count ||
+        (measured_countries < country.country_count &&
+         opinion.committed_day >= country.committed_day) ||
+        opinion.country_handles.size() != measured_countries ||
+        opinion.country_generations.size() != measured_countries ||
         opinion.population.size() != lanes || opinion.funds.size() != lanes ||
         opinion.owner_employed.size() != lanes || opinion.satisfaction_weighted.size() != lanes ||
         opinion.satisfaction_q16.size() != lanes) {
@@ -322,13 +328,13 @@ bool RuntimeIdeologyPodAuthority::validate_inputs(
         (opinion.incidence_channel_count == 0
              ? (!opinion.class_incidence_q16.empty() ||
                 (!opinion.incidence_measured.empty() &&
-                 opinion.incidence_measured.size() != country.country_count))
-             : (opinion.incidence_measured.size() != country.country_count ||
+                 opinion.incidence_measured.size() != measured_countries))
+             : (opinion.incidence_measured.size() != measured_countries ||
                 opinion.class_incidence_q16.size() !=
                     lanes * static_cast<size_t>(opinion.incidence_channel_count)))) {
         error = "ideology_opinion_snapshot_shape_invalid"; return false;
     }
-    for (uint32_t slot = 0; slot < country.country_count; ++slot) {
+    for (uint32_t slot = 0; slot < measured_countries; ++slot) {
         if (opinion.country_generations[slot] != country.country_generation[slot] ||
             opinion.country_handles[slot] != country_handle(country, slot)) {
             error = "ideology_country_generation_mismatch"; return false;
@@ -974,7 +980,8 @@ bool RuntimeIdeologyPodAuthority::draw_offer(
 void RuntimeIdeologyPodAuthority::accrue_points(
         RuntimeIdeologyPodSnapshot &state,
         const RuntimeIdeologyOpinionSnapshot &opinion, int64_t day) const {
-    const size_t countries = state.countries.size();
+    // Wait for the first real row before initializing a new country's baseline.
+    const size_t countries = opinion.country_count;
     if (opinion.country_population.size() != countries ||
         opinion.country_buildings_installed.size() != countries ||
         opinion.country_trade_base_value.size() != countries) return;
