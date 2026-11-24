@@ -613,6 +613,14 @@ OwnedState 已应用的 ADD_STOCK / REMOVE_STOCK 命令，在经济侧接回结�
 
 正式执行器在一个日计划内交付 Trigger、Effect、Ideology 等跨域请求，完成后生成已提交视图和显示批次。前台取结果并转发玩家输入。分域推进和旧输入探针仅供诊断。
 
+分域洋流任务先从 `get_climate_physics_commit_info()` 取得已安装快照的地图标识、格数、日期和版本。
+需要开始一轮绘制时才调用 `get_climate_physics_read_view()`，核对两次读取的提交身份，再校验绘制所需数组。
+风场和洋流切片沿用同一份数组，最后一片之后才统一提交。`OceanCurrentsJob` 管理绘制轮次，
+`MapBaker` 管理这份数组、待提交的像素和地图的像素索引。换图或更换来源时丢弃未提交的像素。
+快照的地图或格数不匹配时保留上一次显示，恢复匹配后可在同一季重画。版本或数组的开画校验失败时，
+保留已显示的结果和季节刷新位置。验证入口是
+`tests/runtime/ocean_currents_visual_query_test.gd`。
+
 ## 资源视觉的变化通知与逐帧工作
 
 `MapData.resource_visual_inputs_changed(flags, cells)` 在数据数组安装后发布；空 `cells` 表示整图。`BANDS=1` 对应资源储量、生物占领和适生区，`CLIMATE=2` 对应温度、湿度、积雪和活力记忆，`GEOMETRY=4` 对应水陆和海拔。原生 slot→MapData 发布统一经过 `resource_visual_publication.h`；原生及脚本视野只通知新可见格，生成/GM 的生物占领发布也通知。通知只入队，接收者在下一帧读取完整批次，不在发布调用中采样。

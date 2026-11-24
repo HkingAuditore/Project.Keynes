@@ -646,18 +646,7 @@ static func commit_ocean_buffers(baker: MapBaker, world: WorldData, update_textu
 		# F6 切到 ocean_current_debug 后会显式调 rebake_upwelling_tex_for_debug。
 		# 这里不再调 _encode_upwelling_tex（省 ~10-15ms GPU 上传 + 编码）。
 	var t_commit := Time.get_ticks_msec() - t
-	# 清空 pending（下一轮重新分配，避免残留半旧数据）
-	baker._pending_currents_buf = PackedByteArray()
-	baker._pending_upwelling_buf = PackedByteArray()
-	baker._pending_upwelling_mask = PackedByteArray()
-	baker._pending_upwelling_row_built = PackedByteArray()
-	baker._pending_size = Vector2i.ZERO
-	baker._pending_phys_solved_phase = NAN
-	baker._pending_psi_state = null
-	baker._pending_wind_buf = PackedByteArray()
-	# Phys Solve Sliced：commit 收尾 → 求解状态机一并复位，下一轮从 SLP 起步。
-	baker._phys_stage = baker._PHYS_STAGE_NONE
-	baker._phys_psi_iters_done = 0
+	_clear_pending_ocean_buffers(baker)
 	return { "commit_ms": t_commit }
 
 ## 方案 0：F6 切到 ocean_current_debug=true 时调用一次，按需 lazy build upwelling_tex。
@@ -701,6 +690,14 @@ static func rebake_upwelling_tex_for_debug(baker: MapBaker, world: WorldData) ->
 ## 丢弃所有 pending 缓冲（地图重生成 / SUS reset_all_progress 调用）。
 
 static func discard_ocean_buffers(baker: MapBaker) -> void:
+	_clear_pending_ocean_buffers(baker)
+	# L: vector atlas 缓存随 reset 失效；下一次 commit 会重新整张拼出来。
+	baker._vector_atlas_data = PackedByteArray()
+	baker._vector_atlas_data_size = Vector2i.ZERO
+
+
+static func _clear_pending_ocean_buffers(baker: MapBaker) -> void:
+	baker._runtime_physics_visual_view = {}
 	baker._pending_currents_buf = PackedByteArray()
 	baker._pending_upwelling_buf = PackedByteArray()
 	baker._pending_upwelling_mask = PackedByteArray()
@@ -709,10 +706,7 @@ static func discard_ocean_buffers(baker: MapBaker) -> void:
 	baker._pending_phys_solved_phase = NAN
 	baker._pending_psi_state = null
 	baker._pending_wind_buf = PackedByteArray()
-	# L: vector atlas 缓存随 reset 失效；下一次 commit 会重新整张拼出来。
-	baker._vector_atlas_data = PackedByteArray()
-	baker._vector_atlas_data_size = Vector2i.ZERO
-	# Phys Solve Sliced：丢弃时也复位状态机，避免下一轮在错误阶段恢复。
+	# 下一轮从 SLP 起步。
 	baker._phys_stage = baker._PHYS_STAGE_NONE
 	baker._phys_psi_iters_done = 0
 

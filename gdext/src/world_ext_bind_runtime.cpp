@@ -88,6 +88,8 @@ void DCWorldExt::_bind_runtime_methods() {
                          &DCWorldExt::climate_main_thread_suppressed);
     ClassDB::bind_method(D_METHOD("climate_physics_authoritative"),
                          &DCWorldExt::climate_physics_authoritative);
+    ClassDB::bind_method(D_METHOD("get_climate_physics_commit_info"),
+                         &DCWorldExt::get_climate_physics_commit_info);
     ClassDB::bind_method(D_METHOD("get_climate_physics_read_view"),
                          &DCWorldExt::get_climate_physics_read_view);
     ClassDB::bind_method(

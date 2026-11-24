@@ -1629,7 +1629,7 @@ func _rasterize_upwelling_slice_from_hex(world: WorldData, dst: PackedByteArray,
 		s: int, e: int) -> void:
 	return PhysicalSolveBakerScript._rasterize_upwelling_slice_from_hex(self, world, dst, s, e)
 var _ocean_pixel_to_cell_idx: PackedInt32Array = PackedInt32Array()
-var _ocean_pixel_cache_size: Vector2i = Vector2i.ZERO
+var _ocean_pixel_cache_key: Array = []
 func _ensure_ocean_pixel_to_cell_index(map: MapData, world: WorldData) -> void:
 	return PhysicalSolveBakerScript._ensure_ocean_pixel_to_cell_index(self, map, world)
 func run_ocean_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapConfig,

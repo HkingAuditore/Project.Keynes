@@ -23,6 +23,7 @@ class_name OceanCurrentsJob
 const MapBakerScript = preload("res://scripts/rendering/map_baker.gd")
 const SusJobScript = preload("res://scripts/simulation/sus/sus_job.gd")
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
+const WorkerVisual = preload("res://scripts/simulation/ocean/ocean_currents_worker_visual.gd")
 
 const _DEFER_AFTER_CLIMATE_SLICE_MS: float = 1.0
 const _MAX_CLIMATE_DEFER_STREAK: int = 1
@@ -36,6 +37,7 @@ const _PIXEL_MIN_QUOTA: int = 512
 # 没碰到下限，但保留余量给 quota=20 等更激进的 slice_count 配置。
 const _PIXEL_MAX_QUOTA: int = 65536
 const _NO_DAILY_WIND_TICK: int = -2147483648
+const _NO_VISUAL_PHASE: int = -9999
 
 # External references — wired up by MapGenerator at registration time.
 var baker: MapBakerScript = null
@@ -96,10 +98,10 @@ var _visual_enqueued_tick: int = _NO_DAILY_WIND_TICK
 
 # Event-driven pixel rebake gate（2026-05-15 新增）：
 #   每日只跑 hex 求解（per-cell 数据），像素 buffer 只在 season_phase 跨整数时
-#   重 bake 一次。_phase_int_seen = -9999 视作"从未跑过"，第一次 round 强制 rebake。
+#   重 bake 一次。_NO_VISUAL_PHASE 表示下一轮必须重画。
 #   _need_pixel_this_round 在 round 起点决定：true → 走完整 raster + commit；
 #   false → 求解完成立即 round_done，跳过 stage 7 (WIND_RASTER) 与 pixel slices。
-var _phase_int_seen: int = -9999
+var _phase_int_seen: int = _NO_VISUAL_PHASE
 var _need_pixel_this_round: bool = false
 var _climate_defer_streak: int = 0
 var _last_pixel_quota: int = _PIXEL_MAX_QUOTA
@@ -138,7 +140,8 @@ var _daily_wind_rt_diag_count: int = 0
 # SLP 还是 wind，确保两段都能被刷新——不能再用 day_index 奇偶，因为 wind_period_ticks>1
 # 时 due 的 tick 会固定落在同一奇偶日，导致某一段永远不跑、对应场冻结。
 var _daily_wind_due_seq: int = 0
-var _worker_physics_active: bool = false
+var _worker_visual_source_id: int = 0
+var _worker_visual_target: Array = []
 
 
 func _init(p_baker: MapBakerScript, p_map: MapData, p_world: WorldData,
@@ -265,29 +268,15 @@ func _visual_lag_ticks(ctx: SusTickContext) -> int:
 
 func reset_progress() -> void:
 	super.reset_progress()
-	_next_pixel_idx = 0
-	_total_pixels = 0
-	_round_active = false
 	_phys_solve_done = false
-	_pending_commit = false
 	_phys_round_active = false
 	_phys_phase_locked = 0.0
 	_phys_need_visual = false
 	_phys_run_ocean_this_round = true
 	_physical_round_id = 0
 	_last_physical_complete_tick = _NO_DAILY_WIND_TICK
-	_visual_round_active = false
-	_visual_phase_locked = 0.0
-	_visual_next_pixel_idx = 0
-	_visual_total_pixels = 0
-	_visual_pending_commit = false
 	_visual_round_id = 0
-	_visual_enqueued_tick = _NO_DAILY_WIND_TICK
-	# 重置事件驱动门 — 下一次 round 会因 _phase_int_seen=-9999 而强制 rebake，
-	# 保证场景重载/换地图后第一帧像素 buffer 正确。
-	_phase_int_seen = -9999
-	_need_pixel_this_round = false
-	_run_ocean_this_round = true
+	_phase_int_seen = _NO_VISUAL_PHASE
 	_climate_defer_streak = 0
 	_last_pixel_quota = _PIXEL_MAX_QUOTA
 	_last_pixel_slice_ms = 0.0
@@ -303,8 +292,9 @@ func reset_progress() -> void:
 	_last_daily_wind_report = {}
 	_daily_wind_rt_diag_count = 0
 	_daily_wind_due_seq = 0
-	_worker_physics_active = false
-	_sync_legacy_round_state()
+	_worker_visual_source_id = 0
+	_worker_visual_target.clear()
+	_drop_visual_round()
 	if data_core_world_ext != null:
 		_native_ocean_state = data_core_world_ext.reset_native_ocean_physical_state("ocean_job_reset")
 	if baker != null and baker.has_method("discard_ocean_buffers"):
@@ -708,7 +698,7 @@ func _run_daily_wind_prepass(ctx: SusTickContext) -> Dictionary:
 func _should_run_ocean_this_round(ctx: SusTickContext) -> bool:
 	if baker == null or not baker._use_physical_circulation(cfg):
 		return true
-	if _phase_int_seen == -9999:
+	if _phase_int_seen == _NO_VISUAL_PHASE:
 		return true
 	return (ctx.tick_index % max(1, ocean_period_ticks)) == 0
 
@@ -742,7 +732,7 @@ func _begin_physical_round(ctx: SusTickContext, daily_report: Dictionary) -> Dic
 	var phase_int: int = int(floor(_phys_phase_locked))
 	if baker._use_physical_circulation(cfg):
 		_phys_need_visual = _phys_run_ocean_this_round \
-				and (_phase_int_seen == -9999 or phase_int != _phase_int_seen)
+				and (_phase_int_seen == _NO_VISUAL_PHASE or phase_int != _phase_int_seen)
 		if _phys_run_ocean_this_round:
 			_phase_int_seen = phase_int
 	else:
@@ -756,7 +746,7 @@ func _begin_physical_round(ctx: SusTickContext, daily_report: Dictionary) -> Dic
 	#   纹理避免 NaN），后续物理 solve 继续运行（authority 保留在 cell_ocean_*）
 	#   但视觉层不再 rebake → primitives 7096 → 1644，non_sus 22ms → 8ms。
 	# 桌面端不动。
-	if _phys_need_visual and OS.has_feature("mobile") and _phase_int_seen != -9999 \
+	if _phys_need_visual and OS.has_feature("mobile") and _phase_int_seen != _NO_VISUAL_PHASE \
 			and _visual_round_id > 0:
 		_phys_need_visual = false
 	# [ocean-visual-skip 2026-06-16] ocean_current_visual 开关关 → 永不做逐像素视觉
@@ -1049,7 +1039,7 @@ func _run_visual_slice(ctx: SusTickContext, t_start_us: int) -> Dictionary:
 					raster_fallback_reason = "cpp_non_progress start=%d end=%d pixels=%d requested=%d..%d" % [
 						cpp_sub_s, cpp_sub_e, raster_pixels, sub_s, sub_e,
 					]
-	if not used_cpp_raster and _worker_physics_active:
+	if not used_cpp_raster and _worker_visual_source_id != 0:
 		# 不能把同一提交态的 raster 失败悄悄换成读取实时 HexCell 的另一代数据。
 		return _record_phys_diag(ctx, {
 			"done": false, "work_done": 0,
@@ -1127,6 +1117,71 @@ func _run_visual_slice(ctx: SusTickContext, t_start_us: int) -> Dictionary:
 	return _record_phys_diag(ctx, pixel_report, done)
 
 
+func _discard_worker_visual_round() -> void:
+	_phase_int_seen = _NO_VISUAL_PHASE
+	_drop_visual_round()
+	baker.discard_ocean_buffers()
+
+
+func _worker_visual_report(ctx: SusTickContext, started: int, commit: Dictionary,
+		visual_error: String = "") -> Dictionary:
+	var elapsed_ms := (Time.get_ticks_usec() - started) / 1000.0
+	return _record_phys_diag(ctx, WorkerVisual.report(commit, elapsed_ms, visual_error), true)
+
+
+func _run_worker_visual(ctx: SusTickContext, started: int, is_mobile: bool) -> Dictionary:
+	var source: Object = data_core_world_ext
+	var commit: Dictionary = source.get_climate_physics_commit_info() if source != null else {}
+	if not bool(commit.get("authoritative", false)):
+		if _worker_visual_source_id != 0:
+			_worker_visual_source_id = 0
+			_last_daily_wind_tick = _NO_DAILY_WIND_TICK
+			_daily_wind_due_seq = 0
+			_discard_worker_visual_round()
+		return {}
+	var map_id := map.get_instance_id()
+	var size := world.derived_size
+	var target := [map_id, world.get_instance_id(), baker.get_instance_id(), size]
+	var source_id := source.get_instance_id()
+	if _worker_visual_source_id != source_id or _worker_visual_target != target:
+		_discard_worker_visual_round()
+		_worker_visual_source_id = source_id
+		_worker_visual_target = target
+	_phys_round_active = false
+	_phys_solve_done = true
+
+	if not WorkerVisual.matches_map(commit, map_id, map.soa_size(), size):
+		if _visual_round_active:
+			_discard_worker_visual_round()
+		else:
+			_phase_int_seen = _NO_VISUAL_PHASE
+		return _worker_visual_report(ctx, started, commit, "physics_visual_map_mismatch")
+
+	# Keep the fields selected at the start through all slices and the upload.
+	if _visual_round_active:
+		return _run_visual_slice(ctx, started)
+
+	var phase := _current_phase(ctx)
+	var phase_int := int(floor(phase))
+	# Invalidated draws are due on mobile, too.
+	var due := _phase_int_seen == _NO_VISUAL_PHASE or (not is_mobile and phase_int != _phase_int_seen)
+	if not due or not DCFeatureFlags.ocean_current_visual_active():
+		return _worker_visual_report(ctx, started, commit)
+	if not WorkerVisual.commit_ready(commit):
+		return _worker_visual_report(ctx, started, commit, "physics_visual_commit_invalid")
+
+	var view: Dictionary = source.get_climate_physics_read_view()
+	if not WorkerVisual.same_commit(view, commit) or not baker.begin_runtime_physics_visual(map, world, view, phase):
+		return _worker_visual_report(ctx, started, commit, "physics_visual_view_invalid")
+	var wind := baker.run_wind_field_rasterize_full(map, world, cfg)
+	if bool(wind.get("fallback", true)):
+		_discard_worker_visual_round()
+		return _worker_visual_report(ctx, started, commit, str(wind.get("reason", "wind_raster_failed")))
+	_phase_int_seen = phase_int
+	_enqueue_visual_round(ctx, phase)
+	return _run_visual_slice(ctx, started)
+
+
 func run_slice(ctx: SusTickContext) -> Dictionary:
 	var t_start_us: int = Time.get_ticks_usec()
 	if baker == null or world == null or map == null:
@@ -1138,55 +1193,9 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			"path": "missing_refs",
 		}, true)
 
-	# 物理 grant 必须来自已提交且已写回的快照；未授权时使用下面的输入源。
-	var physics_granted: bool = data_core_world_ext != null \
-			and bool(data_core_world_ext.climate_physics_authoritative())
-	if physics_granted:
-		var view: Dictionary = data_core_world_ext.get_climate_physics_read_view()
-		if bool(view.get("ready", false)) and int(view.get("cell_count", 0)) == map.soa_size():
-			if not _worker_physics_active:
-				# 丢弃半轮 CPU 像素，不销毁已显示的纹理；下一轮固定到同一提交代。
-				_drop_visual_round()
-				_phase_int_seen = -9999
-			_worker_physics_active = true
-			_phys_round_active = false
-			_phys_solve_done = true
-			var phase: float = _current_phase(ctx)
-			var phase_int: int = int(floor(phase))
-			var need_visual: bool = _phase_int_seen == -9999 or phase_int != _phase_int_seen
-			need_visual = need_visual and DCFeatureFlags.ocean_current_visual_active()
-			if OS.has_feature("mobile") and _visual_round_id > 0:
-				need_visual = false
-			var visual_error: String = ""
-			if need_visual and not _visual_round_active:
-				if baker.begin_runtime_physics_visual(map, world, view, phase):
-					var wind_raster: Dictionary = baker.run_wind_field_rasterize_full(map, world, cfg)
-					if not bool(wind_raster.get("fallback", true)):
-						_phase_int_seen = phase_int
-						_enqueue_visual_round(ctx, phase)
-					else:
-						visual_error = str(wind_raster.get("reason", "wind_raster_failed"))
-				else:
-					visual_error = "physics_visual_view_invalid"
-			if _visual_round_active or _visual_pending_commit:
-				return _run_visual_slice(ctx, t_start_us)
-			return _record_phys_diag(ctx, {
-				"done": true, "work_done": 0, "progress_ratio": 1.0,
-				"elapsed_ms": (Time.get_ticks_usec() - t_start_us) / 1000.0,
-				"stage_name": "worker_physics_committed", "path": "worker_snapshot",
-				"committed_day": view.get("committed_day", -1),
-				"input_generation": view.get("input_generation", 0),
-				"physics_authoritative": true,
-				"raster_fallback_reason": visual_error,
-			}, true)
-	if _worker_physics_active:
-		_worker_physics_active = false
-		_last_daily_wind_tick = _NO_DAILY_WIND_TICK
-		_daily_wind_due_seq = 0
-		# 不提交跨 owner 的半轮像素；保留当前 GPU 纹理，等待主线程重新完成一轮。
-		_drop_visual_round()
-		_phase_int_seen = -9999
-		baker._runtime_physics_visual_view = {}
+	var worker_report := _run_worker_visual(ctx, t_start_us, OS.has_feature("mobile"))
+	if not worker_report.is_empty():
+		return worker_report
 	var slow_due: bool = _slow_slice_policy_allows(ctx)
 	var daily_report: Dictionary = {}
 	if _daily_wind_due(ctx):
@@ -1267,15 +1276,6 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	}
 	return _record_phys_diag(ctx, wait_report, true)
 
-
-func __run_slice_legacy_unused(_ctx: SusTickContext) -> Dictionary:
-	return {
-		"done": true,
-		"work_done": 0,
-		"elapsed_ms": 0.0,
-		"stage_name": "legacy_disabled",
-		"path": "legacy_disabled",
-	}
 
 func _baker_phys_stage_id() -> int:
 	if baker != null and "_phys_stage" in baker:
