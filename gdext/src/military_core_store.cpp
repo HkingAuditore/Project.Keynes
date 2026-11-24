@@ -804,7 +804,6 @@ int64_t MilitaryCore::country_soldiers(int32_t slot) const {
 }
 
 int32_t MilitaryCore::posts_for_cell(int32_t cell, int32_t country_slot) const {
-    (void)country_slot;
     if (cell < 0 || cell >= _terrain.cell_count) return 0;
     size_t lo = 0, hi = _cell_states.size();
     while (lo < hi) {
@@ -818,6 +817,17 @@ int32_t MilitaryCore::posts_for_cell(int32_t cell, int32_t country_slot) const {
         const int32_t count = st.barracks_count[tier];
         if (count <= 0) continue;
         posts += (int64_t)count * (int64_t)barracks_capacity_for_tier(_catalog, tier);
+    }
+    // B1: barracks capacity scales the summed posts. `MSTAT_BARRACKS_CAPACITY`
+    // is q16 with a 1.0 base (military_core.h), so the multiply divides by the
+    // same constant the stat is expressed in: at 65536 the result is bit-equal
+    // to the unscaled sum (no rounding), and both war_bands and standing_army
+    // cards reach this one read point.
+    if (country_slot >= 0) {
+        posts = mul_div(posts,
+            static_cast<int64_t>(stat_q16(_last_digest, country_slot,
+                MSTAT_BARRACKS_CAPACITY)),
+            MILITARY_Q16);
     }
     if (posts > (int64_t)MILITARY_MAX_ARMIES * 256) posts = (int64_t)MILITARY_MAX_ARMIES * 256;
     return (int32_t)posts;

@@ -25,7 +25,7 @@
 | GAMEPLAY_EFFECT | Host 解码、去重，排入 Events/Ideology 命令 | 无双算 |
 | ECONOMY | StageOps 调度 `NativeEconomyRuntime` 的真实计算；POD_ACTIVE 时绑定 OwnedState | 默认 ACTIVE_ONLY；显式 ACTIVE_WITH_PARITY 才跑影子 |
 | EVENTS | RuntimeEventsAuthority 写事件日志与消费者游标 | 沿用 `events_probe_enabled`，名称含 probe 但用于生产 |
-| VISUAL | Host 记录变化类别，随日提交发布；Godot 接收当前已提交的显示数据 | 无双算 |
+| VISUAL | Host 产生刷新意图，`publish_day` 排序去重；实际显示归 Godot | 无双算 |
 | COMMIT | 记完成位，检查请求域全部完成，由外层发布 | 无双算 |
 
 政治体制不增加新的每日域。`NativeCountryRuntime` 保存 `regime_id` 与
@@ -35,7 +35,7 @@ Economy 原生门控，UI 隐藏入口只负责展示体验。
 
 非直观的地方：
 
-- 正式宿主在 `world_runtime_generation_adapter.gd` 启动完整的 `0xFFF` 原生执行器。经济镜像完整且到达空闲边界后切换到 OwnedState，继续执行同一套计算。
+- 默认请求 `0xFFF` 来自 `world_runtime_host.gd`；Host 的 auto POD 默认 false，正式 PlayerGame 明确设为 true，镜像完整且空闲边界满足后才切换。经济是“原计算实现 + 可切换的数据承载”，不是两份公式二选一。
 - 模块表之前有气候实际提交，之后有 Events 补调用、覆盖检查和日故障点。这不是全域原子提交，COMMIT 完成位也不证明每个域都推进了业务状态。
 - Ideology 的日内续跑门闩由 `DCWorldExt.ideology_needs_daily_continuation(day)` 提供；`map_generator.gd` 和 `IdeologyRuntimeSystem` 在旧版扩展缺少该绑定时探测回退，分别使用 runtime graph 的硬 pending 和当前 slice 的 `done`，避免保存边界因 DLL 与脚本不同步而中止。
 
@@ -47,89 +47,33 @@ Economy 新增稀疏的 per-(地块 × 职业) 组织度表（`StratumMobilizati
 - Country：PKCN v16 新增每国 `capital_cell`；bootstrap 包可选 `capital_cells`，缺省回退首块领地；`CREATE_COUNTRY` 把首都设为新格。首都格的组织度封顶在示威（stage 3），不会走独立。
 - Military：每日 ration 发布时顺带 sparse 推送 per-cell 驻军人数到 Economy 的 `_cell_garrison_heads`；割地路径的 `transfer_garrison_owner(from<0)` 修复为"该格全部驻军 lot"。
 - 查询：`get_cell_mobilization_snapshot` / `get_country_mobilization_summary`；GDScript 见 `economy_facade.gd`。
-- M2 玩家链：`get_mobilization_odds` / `apply_mobilization_result`；原生 `RuntimeNarrative` 投递四阶事件、按 `chain_salt` 掷骰、处理让步成本和独立队列；地块档案新增「民情」页签，地图告警层新增第 9 个组织度图标，顶栏新增「离心 N」纸签（stage 3+4 计数）。AI 阶段在 native epoch 更新里自动决议（有驻军镇压、否则无视），不依赖时钟暂停。
+- M2 玩家链：`get_mobilization_odds` / `apply_mobilization_result`；`scripts/politics/stratum_unrest_service.gd` 投递四阶事件、按 `chain_salt` 掷骰、付让步成本并处理独立队列；地块档案新增「民情」页签，地图告警层新增第 9 个组织度图标，顶栏新增「离心 N」纸签（stage 3+4 计数）。AI 阶段在 native epoch 更新里自动决议（有驻军镇压、否则无视），不依赖时钟暂停。
 - 军事：`MCMD_WAR_DECLARE_FORCED = 43`（跳过攻方必须有兵）与 `MCMD_GARRISON_TRANSFER_CELL = 44`（清 controller、驻军随城转移）；独立后由原主权国强制宣战。
 - 已验证：`country_capital_test.gd` 16/0、`satisfaction_runtime_test.gd` 58/0（含 9 项组织度/概率/结算）、`military_native_binding_test.gd` 自测 PASS（含割地转移与强制宣战）、`narrative_event_runtime_test.gd` 71/0、`stratum_unrest_service_test.gd` 7/0；地块档案与地图层 parse PASS。
 - 未实现：无（长跑平衡校准可作为后续平衡工作）。黄金 v4/v2/v3 与外部位移 v5 已按 5 次捕获更新并通过：`golden_day_hash_test` 176/0、`golden_external_advancers_test` 338/0。详见 [stratum-mobilization.md](../cpp-dots-runtime/stratum-mobilization.md)。
 
-## 放行、命令与发布
-
-桌面、Android 和有线程的 Web 默认由后台原生执行器推进。无线程 Web 调用同一张
-原生日计划，在调用线程上完成结算。开局和恢复时，前台交付一次配置、地理和存档数据。
-从首日开始，后台完成每日输入、计算、跨域交接和提交，无需前台确认日尾。
-
-- **放行**。时钟按倍速和经过的现实时间给出允许结算到的日期。1× 时最多超前已提交日
-  一日，后台可以在玩家查看当前日时计算下一日。高速时允许一次放行多日，并把尚未显示的工作区间限制在八日内。到达放行日期、
-  明确暂停、进入存档安全边界，或遇到待答复事项时，执行器在日界停住。
-- **命令**。后台受理时立即取请求日、已封口日加一和已提交日加一的最大值，在回执里
-  返回生效日。未受理的命令回执带原因。已排队的命令在生效日接受领土、科技和资源等规则检查，失败时发布结果。1× 下下一日若已封口，当前发出的命令最早在再下一日生效。
-  同一份带生效日的命令日志在不同帧率和负载下逐日复现。外部命令按批发布，执行器按游标取走；
-  封口、取收件和制作存档无需持有前台的受理锁。科技面板按终态的发布序号翻页，用请求编号关联结果。
-  开拓在生效日复核当日路线、占用和人口，时代晋升在当日国家结算后、经济开始前处理采购请求。
-  同日军费修改依序合并，超过 100% 的一条在结算时拒绝。
-- **发布**。后台按日发布轻量记录，并保留最新的显示帧。主线程每帧一次取走全部可用日记录，
-  用同批最新数据画图，保留逐日回执、账本和通知的顺序。资源、地块分类和过渡列按变格合并。
-  视野跟随发布帧刷新。季节历史保留为整份只读数据，面板选中地块时才切出该格。
-  无线程 Web 逐帧读取待处理的建筑显示地块，沿用同一套原生实例规划和区块上传。
-- **等答复**。年报、时代奖励、剧情、家族扶持和理念候选都由执行器在提交边界判定和发布。
-  同时待答时依次处理时代奖励、剧情及其外部输入、年报、家族扶持、理念。处理一项后可以在
-  同一日继续等另一项。前台按发布原因开窗、转发答复和显示回执。年报状态和详情来自发布记录，
-  确认失败保留待处理项。年报界面挂载或弹窗层恢复显示时，前台打开待展示的年报，玩家关窗后才转发确认。
-  在途 AI 请求在读档会话绑定后交给请求客户端，回包仍按原定日结算。
-- **候选**。GM 隐藏弹窗是有生效日的会话命令。生效后，玩家地块的家族候选保留并允许继续推进。
-  理念抽取与重抽按实际受理日结算。手动暂停时，执行器自行放行到该命令的日期，候选发布后停住。
-  关闭理念候选发送一次对应代际的确认，候选及手动暂停状态保留。0× 与手动暂停停止日历放行，
-  待答命令仍可按其受理日结算。家族和理念候选保存在各自
-  的原生存档段。关闭过的理念代际、待生效设置与命令所需的放行随 PKSR 保存。
-- **剧情设置**。默认选项停住，通知继续。设置分别控制八个类别的选项与通知，共十六项，
-  选择类不停时由后台自动选择。设置是有生效日的会话命令并随剧情存档。时代大典只控制演出，
-  时代奖励的待答状态由执行器处理。
-- **外部 AI**。后台在请求日取样并发布请求。普通 AI 回复固定在请求后第 90 日处理，
-  普通请求之间至少相隔 60 日。预约后续在落地日前 90 日发出，预约时不足 90 日则当天发出。
-  后续按原定日落地，预约独立于普通请求的间隔。可同时保存数条在途请求。前台发送 HTTP 并回送结果
-  或作废。关掉本局 AI 后停止新请求，已发请求照原日期处理。后台在落地日根据目录和
-  当日余额复核资格、货物和效果额度，该日缺回复时停在上一提交日。已发出的请求和已收的
-  回复随剧情存档，有待回的请求按原内容和日期继续。全局 AI 偏好和本局已生效的设置各自保存。
-
-验证范围见 [feature-status.md](feature-status.md)。
-
-执行器打包变格、账目、通知历史和回执。前台每帧取一个批次，先安装该日的产值，再切换显示日期。
+Android/iOS 与桌面现在默认使用同一 native worker 执行十二域日计划，取消手机默认
+同步执行整日的特殊分支；时钟仍由会话持有的 `RuntimeClockBinding` 在执行器启动后
+同步并持续通知。主线程的输入采集、显示回灌及下表列出的日尾工作仍在原处。诊断时
+`PK_MOBILE_NATIVE_WORKER=0` 或 `PK_NATIVE_DAILY_INLINE=1` 可选已有 inline 路径。
+执行器及数据所有者没有新增，公式、日计划和保存格式不变；验证范围见 feature-status。
 
 ## 十二域以外的推进
 
-表外推进者登记在 `tools/ci/runtime_advancers.json` 并生成 `runtime_external_advancers.h`。
-整日执行器的阶段表在 `native_simulation_host.cpp`。
+登记在 `tools/ci/runtime_advancers.json`（生成 `runtime_external_advancers.h`），登记不拥有调度权。
 
-| 推进者 | 位置与交接 |
-| --- | --- |
-| 资源恢复、物种 | 执行器持有储量、恢复日期和种群列，当日计算并发布 |
-| 军务 | 执行器读 Country、Economy、Modifier 及上一日探索，提交军务命令、事实和口粮 |
-| 视野 | 执行器合并当日探索轨迹，计算视野与迷雾，提交物种和视野观察 |
-| 理念与跨域效果 | 执行器完成规则交接和理念逐格加成，直接送给经济及军务 |
-| 季节刷新 | 执行器按固定日历完成慢层，保留历史并准备次日天气和地形 |
-| 家族、人物 | 在经济 FAMILY_COMMIT 和 PERSON_COMMIT 内运行 |
-| 剧情、动荡 | 执行器判断事件、处理选项与后续效果，前台渲染发布记录并转发输入 |
-| 显示交付 | 主线程合批安装已提交的气候、资源、物种、军务与视野副本，组织界面与绘制 |
+| 推进者 | 线程 | 读写与交接 |
+| --- | --- | --- |
+| military | 主线程 | 每帧追赶已提交日期，`facade.run_daily` 同步运行；读 Country/Economy 已提交数据，写军事实体，后续意图走 D+1。后台 worker 在主线程报告第 D 天日尾完成（`mark_runtime_day_tail_done`）后才开始 D+1，Climate 授权前不等 |
+| natural_resource_recovery | 主线程 | 追赶已提交日期，写资源 slot 与 MapData；与经济自身消耗资源是两个入口；与 military 同受日尾闸门约束 |
+| family / person | 执行线程 | 在经济 FAMILY_COMMIT / PERSON_COMMIT 内运行，没有独立日域 |
+| vision | 主线程 | 读地形/领地/研究信号与已提交的玩家部队位置，写可见性，并提交 Country 观察意图；部队使用低于城市的移动视野预算 |
+| visual_delivery | 主线程 | 消费已发布的脏类别补丁，写显示与 MapData |
+| climate_writeback | 主线程 | 只消费已提交的 Climate 快照写回 slot/MapData |
 
-年度气候沿用环境输入的采样日期，第 364 份输入采样第 365 日。场景恢复可从 CLM2
-重建第一份用于显示的物理场。地图纹理在同一帧内合并，并在天气插值读取前提交。
+等上一日结果的输入重试会在同一帧先消费提交，再判断能否发送。天气输入的热赤道采样由后台对冻结的温度和位置计算。日提交直接发布物理场和可复用的风轨迹，主线程把它们写回地图。读档时可用 CLM2 中的物理数据重建首次回写。
 
-## 玩家命令与显示
-
-单格税、国库营造、官营建拆和驻军编成使用命令生效日的领土、科技与军事状态。单格税的
-领土拒绝只影响该条命令，同日其他命令继续结算。官营建造由一条命令检查军务排期和
-国库、市场承付能力。全部通过后，同日扣费、登记建筑和军务排期。拆除使用同一条受理
-路径，经济原生账本减座，军务随后读当日结果。回执包含拒绝原因及所属环节，界面据此显示。
-玩家的兵种份额修改按顺序合并到生效日的军务配置。军务预算随 PKMI 保存。
-行军、探路与区域控制的预览用于地图显示。按下确认后，执行器读取生效日的部队与地图，
-检查权限及路线，并按选中的中心与半径确定范围。
-
-开拓面板请求并显示已发布的报价。时代奖励身份、晋升目录、军务初值和玩家国家身份
-在开局或读档时交接一次。界面继续处理显示安装、时钟放行、HTTP 转发、弹窗交互和存档协调。
-
-正式宿主只启动完整的日计划。有线程的构建由后台运行，无线程 Web 每帧尝试运行同一执行器
-已放行的一日。SUS 与分域测试通过独立的诊断入口调用。年度湿度和植被历史在原生年界更新。
-目标规则见 [design.md](design.md#单一时间线与前后台分工)。
+军事、资源恢复、事件交付和命令封口仍在每日边界完成。地图天气和生态像素准备排在日尾放行之后。纹理上传在同一渲染帧内合并，并在天气插值读取之前提交。
 
 ## 跨模块交接
 
@@ -138,10 +82,8 @@ Economy 新增稀疏的 per-(地块 × 职业) 组织度表（`StratumMobilizati
 - **只读查询**：Economy 读 Country 的 27 种查询经 `CountryReadView`（借用所有者的只读函数表，不保证多次查询共享同一快照）。税率、科技、领土仍在 `capture_country_epoch` 用 `copy_economy_snapshot` 冻结。
 - **写入请求**：Economy→Country 的写全部走所有者端口（财政返还/预留/征收、采购、现金与物资转移、科研、国库支出）；`country_writes` 预算为 0，直接调用、别名、成员指针都不能重新引入。
 - **请求队列**：Host 通用命令、Country 命令、Economy 命令（含军事 24/30–34）、Trigger 命令共享 `runtime_resolve_contract.h` 的入队与顺序键；Effect→Modifier/Events、Ideology→Modifier 和同步 Effect 批次仍用各自既有协议。请求与保存位置的对照见 [module-boundaries.md](module-boundaries.md#请求与提交)。
-- **观察和告警**：执行器内生成的视野、物种科研观察独立按日交付给国家域，仍用同一顺序键。
-  模块等待的现实耗时用于诊断。明确的日结算错误带原因终止，延迟的有效回执仍可继续当天结算。
 - **冻结输入**：`runtime_freeze_contract.h` 的 `RuntimeFrozenInputVersion` 登记 session、day、generation、命令水位和 committed/in-flight；Climate、Country、Economy 已登记。Climate 仍在 day plan 之前完成输入捕获和提交。
-- **跨域读接口**。Ideology 读 Country 已提交结果，Country 向 Effect 查询身份和完成状态，Economy 与 Family 读 Effect、Modifier，Climate 读 Modifier 和 Economy。正式日计划中的 Military 通过 Country、Economy 的已提交接口读取数据，分域诊断仍可调用同步桥接。30 个域对的逐项处置在 `tools/ci/cross_domain_inventory.json`。
+- **未迁移的读边**：Ideology←Country（同一指针可发布 plan 预览）、Country←Effect 身份/完成查询（含已接受未安装的 upsert）、Economy/Family←Effect/Modifier、Military←Country/Economy（主线程 digest 与即时财政 helper 并存）、Climate←Modifier/Economy。30 个域对的逐项处置在 `tools/ci/cross_domain_inventory.json`。
 
 ## 软完成（仍保留的兼容债）
 
@@ -150,35 +92,30 @@ Economy 新增稀疏的 per-(地块 × 职业) 组织度表（`StratumMobilizati
 | Ideology 首个意见/国家快照未发布、未配置 | 保留首次装配兼容；不发伪 ACK，ready=false |
 | Trigger ACK barrier / retry / stale / rejected、未配置/未启动 | 保留列出的原策略，不制造新 ACK |
 | Effect 同日已提交重访 | 幂等重访；遇 drain/catchup 错误停车，不再宣布完成 |
-| Country/Economy peer 等待 | 等待期间保持当天的继续位置。墙钟只用于告警，收到有效回执后接着结算当天。 |
-| Modifier 上游未授权、SHADOW/OFF | 仅用于独立诊断与原生用例 |
+| Country/Economy peer 等待 | stall、continuation_pending 与超时故障保留；部分旧注释仍称 soft，实际已不完成 |
+| Modifier 上游未授权、SHADOW/OFF、Web 回退 | 按原授权策略保留 |
 
 Ideology 的 invalid/shape invalid 与任意 opinion 前缀已不再软完成。保留原因清单由 `check_resolve_apply.py` 核对，新增原因不能静默加入。
 
 ## 存档
 
-完整存档 PKSV 由 `game_save_coordinator.gd` 统一等待安全边界后保存；脚本侧 provider 登记在 `world_state_modules.gd`，C++ 段契约在 `tools/ci/cpp_save_section_contracts.json`。读取时沿用容器与各存档段的校验。新增的可选段缺失时使用空状态，数据损坏时报告诊断。
+完整存档 PKSV 由 `game_save_coordinator.gd` 统一等待安全边界后保存；脚本侧 provider 登记在 `world_state_modules.gd`，C++ 段契约在 `tools/ci/cpp_save_section_contracts.json`。开发期不兼容旧档：旧版本明确拒绝，不静默填默认值。
 
 后台与原生 inline 共用 `native_simulation_host_executor_boundary.cpp` 的保存服务：冻结已接收的命令，丢弃可重新生成的未来环境帧，构建 PKSR，并明确发布成功或失败。保存、停止和时钟控制通过 `runtime_control_wakeup.h` 在后台等待所用的锁内发布条件，防止检查条件与进入等待之间漏收通知。后台在日循环的空闲边界保存；inline 在 request/poll 时尝试取得同一把日边界锁，并安装相同的执行上下文。inline 的未完成日标记跨调用保留，整日提交后才清除，因此不能在两次续算调用之间捕获半完成状态。
 
 `_executor_pending_commands` 与未完成日的 `_executor_day_environment` 属于世界，由当前执行器独占访问。后台和 inline 共用待执行列表及冻结输入；停止不销毁它们。`native_simulation_host_lifecycle.cpp` 负责执行器启动：同一世界保持 ACTIVE 且授权范围不变时，只更换执行器，保留业务状态、日期、编号、确认结果、发布游标和日内继续位置；不重新初始化已提交的域。未完成日标记也随后台/inline 交接，不能在替换执行器后保存半日状态。
 
-新世界与重启分开：已启动过的 `DCWorldExt` 再 `configure_country` 时，先要求执行器确实退出，并在私有候选对象中验证配置；失败保留旧世界。成功后解除经济对旧 OwnedState 的借用，替换 Host 并重新连接适配层，Country 对象地址保持稳定，区分新旧世界的 session epoch 继续递增，新的 Host 回复协议编号也从旧值继续增加；同一世界重启则保持编号。`make_new_world_host` 在替换前重新验证并安装已配置的 Modifier、Effect、Trigger、Ideology 规则定义，以及 Modifier 稳定键到内部编号的映射；不复制旧实例、命令、确认记录、输入、意见、快照或读取进度。主线程的规则对象也清理旧实例和读取进度，使新世界从较小编号发布的结果可立即接收；同一世界重启不执行这项清理。Effect 与 Modifier 的状态清理分别集中在 `effect_runtime_lifecycle.cpp` 和 `modifier_runtime_lifecycle.cpp`。旧世界日期及授权证明不会进入新世界。读档则安装存档中的世界状态。未来命令及需要重试的命令不重新挤入实时入口。保存格式仍为 PKSR v5。待执行的通用命令超过 4096 条时明确拒绝保存，并保留现场全部命令。
-
-PKSR 的国家命令负载逐字段按固定字节顺序编码。执行器产生的待交付科研观察使用专用标记保存，
-读档后回到对应日期的观察列表。它们不占通用命令的 4096 条配额。
+新世界与重启分开：已启动过的 `DCWorldExt` 再 `configure_country` 时，先要求执行器确实退出，并在私有候选对象中验证配置；失败保留旧世界。成功后解除经济对旧 OwnedState 的借用，替换 Host 并重新连接适配层，Country 对象地址保持稳定，区分新旧世界的 session epoch 继续递增，新的 Host 回复协议编号也从旧值继续增加；同一世界重启则保持编号。`make_new_world_host` 在替换前重新验证并安装已配置的 Modifier、Effect、Trigger、Ideology 规则定义，以及 Modifier 稳定键到内部编号的映射；不复制旧实例、命令、确认记录、输入、意见、快照或读取进度。主线程的规则对象也清理旧实例和读取进度，使新世界从较小编号发布的结果可立即接收；同一世界重启不执行这项清理。Effect 与 Modifier 的状态清理分别集中在 `effect_runtime_lifecycle.cpp` 和 `modifier_runtime_lifecycle.cpp`。旧世界日期及授权证明不会进入新世界。读档则安装存档中的世界状态。未来命令及需要重试的命令不重新挤入实时入口。保存格式仍为 PKSR v5；待执行命令超过原有 4096 条容量时明确拒绝保存并保留现场全部命令。
 
 同一世界重新捕获 Country 输入时，已由原生运行时接管的国家状态取自最近一次已提交副本，不覆盖成冻结的旧同步副本；重复发布同一内容身份的目录不清除请求及确认记录。新的国家配置会经过上述新世界入口。CLOCK_WAIT 在等待锁内复查停止、保存、暂停和速度变化；通知早于实际等待也不会遗失。
 
-理念候选关闭由后台确认代次。确认成功且它解除当前理念阻塞时，若日历暂停，则通过 `advance_through` 放行下一日；关闭代次和有效的未来许可均由 `PLAYER_CONFIRMATION` 段保存和恢复。停止时，队列中仍未服务的已受理玩家确认会得到终结回执，`code` 和 `reason` 均为 `executor_stopped_before_player_confirmation_service`。停止检查在入队锁内再次执行，避免请求落在 worker 清理之后。
-
-正式保存入口按 `worker_day_inflight` 和 `inline_day_pending` 判断内联日界。内联执行在首次完整提交时关闭 Country/Economy 的旧同步写入口。同一世界显式重启时，`world_runtime_lifecycle.gd` 等执行器退出后才重新交接。`get_runtime_thread_report` 的 `executor_serial_only` 供诊断调用线程配置。
+正式保存入口按 `worker_day_inflight` 和 `inline_day_pending` 判断 inline 的真实日边界，不能把无后台线程更新的 RUNNING 状态当成仍在计算。inline 返回前同步首次提交授予的归属，关闭 Country/Economy 的旧同步写入口。正式策略重启由 `world_runtime_lifecycle.gd` 等待 `simulation_executor_exited` 后再捕获并启动，失败会传回设置入口。`get_runtime_thread_report` 提供 `executor_serial_only` 检查调用线程的并行配置。重复启动及 inline+SHADOW 冲突在修改执行方式、并行设置、绑定或消耗待恢复存档之前拒绝。
 
 复用对象读档时，已经验证的 PKSR 且旧执行器退出后，地图输入按待恢复存档的日期检查，独立暂存新输入；旧世界的日期与满队列不阻止这一步。启动用暂存输入重新建立队列，不读取旧队列的未来帧。没有待恢复存档或执行器仍运行时，原日期、递增编号和容量检查继续生效。
 
 | 域 | 段 / 版本 | provider | 恢复依赖 |
 | --- | --- | --- | --- |
-| climate | CLM2 v9 | environment | — |
+| climate | CLM2 v10 | environment | — |
 | country | PKCN v16 | country | environment |
 | military | PKMI v6 | country | country |
 | effect | PKEF v14 | rules | military |
@@ -200,9 +137,12 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
   section 23 保存玩家自动探路任务（任务行、选点、seen/visited/blocked、观察点、日期、返程）。
   trail、冻结 explored、fog 和派生索引不入档，恢复时重建。`military_for_each_lot_ordered`
   不能全局过滤 inactive 行，变更型查找依赖原链复用槽位。
-- PKSR5：待执行的命令、回执、原生交接游标、累计探索、物种分布及年度气候抽样状态。建筑情报留在 PKFG，画面时钟留在 `world_clock`。
-- 存档出包时一起编码 PKNR 和完整 PKMI。军务事件游标沿用 PKMI 的 MDJ1 尾段。
-- CLM2 v9：权威 extras 与天气初始化状态。
+- PKSR5：已接纳未执行的 Economy POD 命令与回执（EQC1）、Trigger 传输请求/ACK/发布游标与 Host 请求编号（TCQ1，主线程入口与日执行者两个游标）、军事事件转发进度（MDJ1）。
+- CLM2 v10：权威 extras 与天气初始化状态。v9 及更早的 payload 还带一份 365 天逐格温度环
+  （`cells × 365 × f32`），只被滚动写入和 `state_hash` 使用，玩法读的是 `temperature_365d_ema`；
+  v10 起不再落盘、也不再进 `state_hash`，读 v9 旧档时按旧布局读完并用冻结的 `state_hash_abi8` 复核。
+- 天气场辐合（`convergence`）只有「有符号净流入」一种实现：`wf_wind_convergence_idx_{xy,cached}` +
+  GDScript 镜像两份，**无运行时开关**（`PK_CLIMATE_CONVERGENCE_LEGACY` 已退役，2026-11-20 W9）。
 
 ## 哈希与验证范围
 

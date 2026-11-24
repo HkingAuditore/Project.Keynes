@@ -3110,8 +3110,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     group, _saturation_count);
                 projected_owner_income[g - first] = income;
                 const int64_t owner_target = group_owner_target[g - first];
-                if (type.kind != 2 && group.filled_owner < owner_target &&
-                    income > 0)
+                if ((type.kind != 2 || is_merchant_service_post(type)) &&
+                    group.filled_owner < owner_target && income > 0)
                     owner_job_targets.push_back(g);
                 continue;
             }
@@ -3119,7 +3119,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 group, _saturation_count);
             projected_owner_income[g - first] = income;
             const int64_t owner_target = group_owner_target[g - first];
-            if (type.kind != 2 && group.filled_owner < owner_target) {
+            if ((type.kind != 2 || is_merchant_service_post(type)) &&
+                group.filled_owner < owner_target) {
                 if (income > 0) owner_job_targets.push_back(g);
             }
             // Opportunity-gradient sources: any ACTIVE lot that still has an

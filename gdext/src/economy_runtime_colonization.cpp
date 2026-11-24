@@ -746,6 +746,14 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
             family_expedition_cargo().insert(family_expedition_cargo().end(),
                 cargo.begin(), cargo.end());
             family_expeditions_store().cargo_count.write_scalar(expedition, static_cast<uint32_t>(cargo.size()), market_mutation_sink());
+            // The line that was rejected earlier finally landed: drop the note so
+            // the panel stops reporting a refusal that no longer blocks anything.
+            const auto rejection =
+                _family_expedition_procurement_rejections.find(expedition);
+            if (rejection != _family_expedition_procurement_rejections.end() &&
+                rejection->second.good == good &&
+                rejection->second.cargo_flags == cargo_flags)
+                _family_expedition_procurement_rejections.erase(rejection);
             note_family_expedition_audit_invalidation();
         }
         error.clear();
@@ -909,6 +917,10 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
     const bool needs_complete_kit = kit.place_buildings != 0 &&
         party_people >= COLONIZATION_KIT_MIN_OWNER_SLOTS;
     const bool kit_incomplete = kit.kit_partial != 0 || kit.buildings.empty();
+    // The party exists from this point, so this epoch needs the colonization
+    // channel even though its budget freeze already ran. Restoring it here also
+    // keeps the fiscal page honest before the first purchase attempt.
+    ensure_epoch_colonization_budget(country);
     auto occupy_preparing = [&]() {
         family_expeditions_store().payload_count.write_scalar(expedition, 0, market_mutation_sink());
         family_expeditions_store().kit_building_count.write_scalar(expedition, 0, market_mutation_sink());
@@ -1153,13 +1165,26 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
         if (family_expeditions_store().state[expedition] == EXPEDITION_SETTLING) {
             const int64_t transaction_id =
                 family_expeditions_store().effect_transaction_id[expedition];
+            int64_t resolved_transaction_id = 0;
             const int32_t status = _effect_runtime == nullptr ? 0 :
-                _effect_runtime->transaction_status_pod(transaction_id);
+                _effect_runtime->family_colonization_transaction_status_pod(
+                    transaction_id,
+                    family_expeditions_store().stable_id[expedition],
+                    family_expeditions_store().generation[expedition],
+                    family_expeditions_store().idempotency_key[expedition],
+                    &resolved_transaction_id);
+            if (resolved_transaction_id != 0 &&
+                resolved_transaction_id != transaction_id) {
+                family_expeditions_store().effect_transaction_id.write_scalar(
+                    expedition, resolved_transaction_id, market_mutation_sink());
+            }
             if (status == EffectRuntime::REJECTED ||
                 status == EffectRuntime::RESYNC_REQUIRED) {
-                if (_effect_runtime != nullptr && transaction_id != 0)
+                const int64_t consume_id = resolved_transaction_id != 0
+                    ? resolved_transaction_id : transaction_id;
+                if (_effect_runtime != nullptr && consume_id != 0)
                     _effect_runtime->consume_rejected_transaction_pod(
-                        transaction_id,
+                        consume_id,
                         family_expeditions_store().stable_id[expedition]);
                 family_expeditions_store().effect_transaction_id.write_scalar(expedition, 0, market_mutation_sink());
                 family_expeditions_store().state.write_scalar(expedition, EXPEDITION_RETURNING, market_mutation_sink());
@@ -1173,13 +1198,55 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
                 append_colonization_receipt(expedition, 0,
                     family_expeditions_store().departure_day[expedition], day, 3,
                     "TARGET_LOST_RETURNING");
+            } else if (status == 0 && _effect_runtime != nullptr) {
+                // Builtin transaction is absent from EffectRuntime (for example
+                // in an older save whose colonization tx ID collided with a
+                // worker POD snapshot). Re-check ownership and re-enqueue
+                // idempotently so the expedition cannot park in SETTLING forever.
+                const int64_t owner = _country_runtime == nullptr ? 0 :
+                    country_reads().country_handle_for_cell(
+                        family_expeditions_store().target_cell[expedition]);
+                if (_country_runtime == nullptr ||
+                    (owner != 0 && owner != static_cast<int64_t>(
+                        family_expeditions_store().country_handle[expedition]))) {
+                    family_expeditions_store().effect_transaction_id.write_scalar(expedition, 0, market_mutation_sink());
+                    family_expeditions_store().state.write_scalar(expedition, EXPEDITION_RETURNING, market_mutation_sink());
+                    release_family_expedition_reservations(expedition);
+                    family_expeditions_store().due_day.write_scalar(expedition, day +
+                        std::max<int64_t>(1,
+                            (family_expeditions_store().route_cost[expedition] +
+                             family_expeditions_store().speed[expedition] - 1) /
+                            family_expeditions_store().speed[expedition]), market_mutation_sink());
+                    push_family_expedition_due(expedition);
+                    append_colonization_receipt(expedition, 0,
+                        family_expeditions_store().departure_day[expedition], day, 3,
+                        "TARGET_LOST_RETURNING");
+                } else {
+                    const uint64_t handle =
+                        family_expeditions_store().handle_for_index(expedition);
+                    int64_t re_transaction_id = 0;
+                    const bool claim_unowned = owner == 0;
+                    const int32_t population_reward =
+                        family_colonization_population_reward_amount(
+                            family_expeditions_store().family_handle[expedition]);
+                    if (!_effect_runtime->enqueue_family_colonization_pod(
+                            family_expeditions_store().stable_id[expedition], day,
+                            family_expeditions_store().stable_id[expedition],
+                            family_expeditions_store().country_handle[expedition],
+                            static_cast<uint32_t>(
+                                family_expeditions_store().country_handle[expedition] >> 32U),
+                            handle, family_expeditions_store().generation[expedition],
+                            family_expeditions_store().target_cell[expedition],
+                            family_expeditions_store().idempotency_key[expedition], error,
+                            &re_transaction_id, claim_unowned, population_reward))
+                        return false;
+                    family_expeditions_store().effect_transaction_id.write_scalar(
+                        expedition, re_transaction_id, market_mutation_sink());
+                    family_expeditions_store().due_day.write_scalar(
+                        expedition, day + 1, market_mutation_sink());
+                    push_family_expedition_due(expedition);
+                }
             } else {
-                // A worker-owned Effect transaction can be temporarily absent
-                // from the legacy status table while its Country CLAIM is
-                // being committed and published. Treat status==0 as pending;
-                // releasing the expedition here loses its population while
-                // the target remains unowned. The adapter/recovery path keeps
-                // the command alive and retries on the next due pulse.
                 family_expeditions_store().due_day.write_scalar(expedition, day + 1, market_mutation_sink());
                 push_family_expedition_due(expedition);
             }

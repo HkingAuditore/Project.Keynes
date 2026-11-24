@@ -104,10 +104,10 @@ const NON_TAX_OUTFLOW_FALLBACK_LABEL := "其他支出"
 const PRICE_INDICES: Array[Dictionary] = [
 	{"id": "cpi", "label": "CPI", "name": "消费者物价",
 		"q16_key": "consumer_price_index_q16", "valid_key": "consumer_price_index_valid",
-		"basis": "按家庭需求量加权，100 = 消费品的成本锚。"},
+		"basis": "100 = 消费品成本"},
 	{"id": "ppi", "label": "PPI", "name": "生产者物价",
 		"q16_key": "producer_price_index_q16", "valid_key": "producer_price_index_valid",
-		"basis": "按供给量加权，100 = 全部可售物资的成本锚。"},
+		"basis": "100 = 可售物资成本"},
 ]
 
 ## 与原生 consumption_living_standard_level() 的 0..6 台阶同序。
@@ -625,8 +625,8 @@ static func build_cashflow(fiscal: Dictionary) -> Dictionary:
 		"expense_text": _money_text(expense_total),
 		"net_text": ("+" if net >= 0.0 else "−") + _money_text(absf(net)),
 		"net_positive": net >= 0.0,
-		"day_text": ("第 %d 日 · 上次结算" % (day + 1)
-			if bool(fiscal.get("carried_forward", false)) else "第 %d 日" % (day + 1)) if day >= 0 else "",
+		"day_text": ("%s · 上次结算" % WorldClock.date_text_for_day(day)
+			if bool(fiscal.get("carried_forward", false)) else WorldClock.date_text_for_day(day)) if day >= 0 else "",
 		"detail_rows": rows,
 		"income_segments": _flow_segments(inflow_raw, UITokens.DOSSIER_VERDIGRIS),
 		"expense_segments": _flow_segments(outflow_raw, UITokens.DOSSIER_OXBLOOD),

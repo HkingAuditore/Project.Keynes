@@ -2,6 +2,8 @@
 
 先读 [current-state.md](current-state.md) 和 [design.md](design.md)，确定数据所有者、运行线程和真正的提交点；边界规则见 [module-boundaries.md](module-boundaries.md)。目标接口不是已有 API。
 
+建筑内容增删与同代重复审查遵循 [建筑差异化与精简](feature-guides.md#建筑差异化与精简)，包括产业链、科技许可、发展成就和加载快照的同步要求。
+
 ### 政治体制与国库建造权限
 
 政治入口的 canonical section id 是 `politics`，页面内保留 `regime` 与 `ideology` 两个
@@ -57,19 +59,6 @@ POD 与 checkpoint。政治目录内容身份必须与保存内容匹配；旧�
 5. 新独立日域会改 ABI（`RuntimeDomainId`），不能当普通表项加。
 6. 改 reads/writes 后同步模块描述符（`runtime_module_contracts.json`），跑 `check_module_contracts.py`；描述符是只读契约，不改调度顺序。新业务域要在 Freeze 入口登记 `RuntimeFrozenInputVersion`。
 
-## 每日结算与每帧显示
-
-逐日读取者接收 `WorldRuntimeHost.simulation_day_records`，同批的记录保留日序。
-`simulation_committed` 通知本次已消费的日期范围，`simulation_view_updated` 驱动最新显示。
-发布队列中的逐日记录和最新显示帧一起消费，让气候、国家、视野、资源和账本使用同一提交边界。
-显示更新按帧合并，资源及地块表用变格集合。业务命令、逐日计算和待答判定归执行器。
-
-时钟发布允许结算到的日期，1× 时最多放行到已提交日加一。日尾无需前台确认。
-命令受理时取请求日、已封口日加一和已提交日加一的最大值，立即回传实际生效日。
-读取、同步显示或打印诊断不得推进模拟。前台发送玩家选择和外部 AI 回执，后台在待答
-边界验证后继续。安全存档在已提交边界取数据。完整现状见
-[运行现状](current-state.md#放行命令与发布)。
-
 ## 跨域读取与请求
 
 - **新读边**：所有者提供返回独立副本的 `copy_committed_view()`，带 generation/day；消费端调用 `observe_committed_view()`，不保存 snapshot 引用，不读 plan，不把 plan preview 标成 committed。同步给 `check_committed_views.py` 加正例和直接/别名/成员指针绕行反例，并更新 `test_architecture_guards.py`。
@@ -86,7 +75,6 @@ POD 与 checkpoint。政治目录内容身份必须与保存内容匹配；旧�
 - 修改执行器保存或命令交接时，复用 `native_simulation_host_executor_boundary.cpp` 的共同服务与排序规则。inline 的保存处理也必须取得日边界锁，并检查跨调用的未完成日标记；不能仅以当前没有 C++ 调用正在执行来认定可保存。运行 `runtime_inline_save_restore_test.gd`，覆盖后台/inline 四种存读档组合、未来命令、一次性回执、重复保存、未完成日和保存失败。命令超出 PKSR 既定容量时要明确失败并保留全部命令，检查处理完命令后可再次保存，不能静默截断。
 - 正式 inline 保存还必须运行 `runtime_inline_coordinator_save_test.gd`，覆盖运行中/暂停时保存、读档后继续及经济状态比较。协调器按 `inline_day_pending` 和真实调用边界判断，不能要求 inline 的 RUNNING 自动变成 PAUSED。
 - 停止、保存及时钟控制条件统一经 `runtime_control_wakeup` 在等待锁内发布。`runtime_control_wakeup_test.cpp` 固定检查与等待之间的窗口；`runtime_executor_boundary_test.gd` 验证实际停止通知、四种执行器重启组合、入口及待执行命令、编号连续、一次性结算，以及启动拒绝后原会话可继续。待执行列表归世界，停止不能销毁，重启不能清空；重复或无效启动必须先拒绝再修改配置。
-- 玩家关闭理念候选且该代次解除当前理念阻塞时，后台还要放行已提交日的下一日；该推进许可与已关闭代次一同保存在 `PLAYER_CONFIRMATION` 段。停止时在队列锁内取出未服务的已受理确认，并发布 `executor_stopped_before_player_confirmation_service` 终结回执；入队也要在锁内复查停止状态，避免停止清理之后再塞入请求。`ideology_draw_flow_test.gd` 覆盖暂停日历关闭后自动提交下一日、存档后恢复候选关闭状态并继续，以及关闭/停止竞态回执；相关存档续跑须保留完整确认段。
 - CLOCK_WAIT 必须带停止、保存、暂停与速度变化的条件检查；仅把通知放在锁内仍不能保护无条件的计时等待。执行器测试覆盖单次控制通知、inline+SHADOW 拒绝后的存档恢复，以及未完成日跨后台/inline 替换后的冻结输入和保存阻止。
 - `runtime_world_lifecycle_test.gd` 区分同一世界重启与复用对象创建新世界，检查已提交国家状态、未领取确认、连续日期、新世界命令隔离及运行中拒绝重配；新世界身份编号必须递增，无效配置（包括后段校验失败）保留旧世界及其编号。正式 inline 用例还在保存恢复后重复应用策略，并逐项比较国家状态及下一日整份经济哈希。保留这些比较，不能只检查重启成功或名称未变。`runtime_world_rules_rebuild_test.gd` 另在后台和 inline 各覆盖三代新世界：规则在 Country 前配置、规则内容变化、直接复用定义、无效配置后旧世界续跑。检查实际 Effect 执行与 Modifier 数值、Trigger 输出及规则快照接收，并确认旧实例/事件没有混入；仅有日期推进或 ready=true 不算规则生效。
 - 相同 ACTIVE 授权范围的重启走 `native_simulation_host_lifecycle.cpp`，只替换执行器，世界状态与日内继续位置不重建。新世界由停止后的 `configure_country` 建立：先在私有候选中验证，成功后再配置原 Country 对象，保持地址稳定及 session epoch 递增。新 Host 从旧 Host 带入回复协议编号作为起点，首次启动再递增，不能让旧回复与新请求复用身份；同一世界重启保持原编号。替换前用 `make_new_world_host` 把当前已验证的 Modifier、Effect、Trigger、Ideology 规则定义及 Modifier 稳定键映射安装到私有候选中，任何失败都保留旧世界。规则定义与世界状态分开：不复制旧实例、请求、回执、输入、意见、快照或读取进度。替换成功时清理规则主线程对象中的旧世界状态，Effect/Modifier 的快照读取进度必须随状态清理重置，不能保留成新世界首份结果的拒收门槛。替换 Host 前必须解除经济对其 OwnedState 的借用，并重新连接 Country/Economy/Effect 适配层。重复捕获相同 Country 目录不能清掉终态确认；新世界和读档才更换相应记录。
@@ -126,7 +114,7 @@ POD 与 checkpoint。政治目录内容身份必须与保存内容匹配；旧�
 - 一组一组做：冻结参照、按成员比较签名与函数体词元（含字面量）、串行构建、与改动前临时候选逐字段对照（各重复三次）。静态缓存、`thread_local` 和有初始化副作用的辅助函数保持单一归属；无状态匿名辅助函数可以复制。
 - GDScript 拆分：公开方法和信号留在原文件做薄转发，职责搬到 `RefCounted` 协作者，纯转换用静态工具类，不用 `extends` 链。C++ 拆分：同一个类的成员定义分到多个 `.cpp`，不抽新运行时类；多处使用的匿名命名空间工具搬到 `*_internal.h`。
 - 新文件放进所属模块目录（以 `tools/ci/world_ext_binding_modules.json` 的 `script_dirs` 为准），新增 `world_ext_*.cpp` 登记到该清单，C++ 文件名保持模块前缀；不为清零跨模块计数制造循环 `preload`。不建第二个组合根或调度器，不按 opcode 或单个 pass 一文件，不把超长函数原样搬到另一个同样长的文件。
-- 原文件目标不超过 1700 行，新文件按各自门槛检查，不为新文件开超限豁免。已在基线内的文件只能保持原行数或缩短。多一行即报错，GitHub Actions 也会在 PR 上标注。`check_size_ratchet.py --write-baseline` 降低变短文件的记录，删除已回到门槛内或文件已移除的条目，并汇报降低和删除的条目数。已有条目增长或出现新的超限文件时，照常保存收紧结果，再报错并以非零状态退出。不靠删空行或解释当前逻辑的注释凑行数。剩余 3000 行以上的 C++ 文件改到哪个拆哪个。
+- 原文件目标不超过 1700 行，新文件不超过 2000 行，不为新文件开超限豁免；不靠删空行或解释当前逻辑的注释凑行数。超限文件变短后用 `check_size_ratchet.py` 写候选，确认只有变小的条目变化再收紧。剩余 3000 行以上的 C++ 文件改到哪个拆哪个。
 - 依赖基线只能用 `check_cpp_deps.py --write-baseline` 收紧；位移用 `--moves <json>`（“目标完整键 → 原文件”）。绝不手改；若总量或域对增加，说明有新债务，停下来处理。改文件名前确认不会改变域归属（见 `_family_` 规则）。
 - 跨域完整类型若因拆分需要聚合，只能放在私有实现 `.inc` 里并在基线登记来源。
 - GDScript 拆分给调用加 `host.` 前缀时，不能碰字符串字面量和注释。拆分后要与拆分前源码比对：带 `host.` 的字面量若在原文件里不存在、去掉前缀后存在，就是误改。还要检查 `Callable(self, …)` 和以方法名当值传递的地方，它们应该指向宿主，而不是适配器里多一个 `host` 参数的同名方法。
@@ -159,7 +147,7 @@ cd tools/ci && for g in check_size_ratchet.py check_cpp_deps.py check_cross_doma
 ~/.local/bin/scons -C gdext platform=macos target=template_release arch=arm64 dev_build=no -j8
 ```
 
-验证 macOS arm64 原生代码改动时，两种配置都要在本地重编。在 `Project/project-keynes` 生成的 dylib 由 Git 忽略。编辑器默认只加载 debug，不能据此判定 release 可用。运行 `check_macos_runtime_extension.py --godot … --library <程序库绝对路径> --log-dir <新>`，它在临时小项目中加载指定库，复用完整的 inline/后台存读档用例并核对 PKSR v5；不会改正式项目的扩展映射。
+交付已追踪的 macOS arm64 程序库时，两种配置都要重编。编辑器默认只加载 debug，不能据此判定 release 可用。运行 `check_macos_runtime_extension.py --godot … --library <程序库绝对路径> --log-dir <新>`，它在临时小项目中加载指定库，复用完整的 inline/后台存读档用例并核对 PKSR v5；不会改正式项目的扩展映射。
 
 | 检查 | 命令要点 | 何时必须跑 |
 |---|---|---|

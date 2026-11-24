@@ -55,11 +55,35 @@ PkHexTri pk_overlay_tri(vec2 wp_wrapped, PkHexGrid g, vec2 warp_world) {
 // ─────────────────────────────────────────────────────────────────────────
 // 迷雾：三格 k 的加权 + 可见度曲线
 // ─────────────────────────────────────────────────────────────────────────
-// k 是「知识度」类别量（0 = 从未探索，1 = 当前可见），三格用**锐化后的 w** 混合
-// （与地形同一条带宽上限，方案 §3.6）。三个 k 单独传进来而不是花 sampler 参数：
+// 保护格心应改变采样坐标，不能局部切换透明度权重：后者会在连续场上留下小斑点。
+// 扰动在原始格心平滑归零，边界保留原幅度。只有 ALU，无新增采样。
+PkHexTri pk_overlay_fog_tri(vec2 wp, PkHexGrid g, vec2 warp_world) {
+	PkHexTri center_tri = pk_overlay_tri(wp, g, vec2(0.0));
+	float warp_weight = 1.0 - smoothstep(0.0, PK_HEX_SQRT3, pk_hex_tri_gap(center_tri));
+	return pk_overlay_tri(wp, g, warp_world * warp_weight);
+}
+
+// fog 与 weather 共用连续权重；只有地图外 padding 沿用原有锐化过渡。
+vec3 pk_overlay_fog_weights(PkHexTri tri, PkHexGrid g, float band) {
+	// 极地 padding 不参与连续插值，否则全可见地图边缘也会被虚假的未知行染灰。
+	float min_row = float(min(tri.c0.y, min(tri.c1.y, tri.c2.y)));
+	float max_row = float(max(tri.c0.y, max(tri.c1.y, tri.c2.y)));
+	float interior = step(0.0, min_row) * (1.0 - step(float(g.map_h), max_row));
+	return mix(pk_hex_sharpen(tri.w_raw, band), tri.w_raw, interior);
+}
+
+// 三个 k 单独传进来而不是花 sampler 参数：
 // 本文件零 sampler，取样与缓存策略留给调用方。
 float pk_overlay_fog_k(vec3 w, float k0, float k1, float k2) {
 	return dot(w, vec3(k0, k1, k2));
+}
+
+// 复用原两次噪声形成云缘的大尺度凹凸，避免连续插值把轮廓抹成圆。
+// 深浓雾 k<=0.05 不动（保持 CPU 浓雾覆盖证明），全可见端也不动。
+float pk_overlay_fog_edge_k(float k, vec2 raw_warp, float amp_world) {
+	float edge = smoothstep(0.05, 0.25, k) * (1.0 - smoothstep(0.75, 0.95, k));
+	float relief = 0.32 * (raw_warp.x + raw_warp.y) / max(amp_world, 1e-4);
+	return clamp(k + relief * edge, 0.0, 1.0);
 }
 
 // 迷雾可见度（1 = 看得见这片区域，0 = 完全被云雾盖住）。

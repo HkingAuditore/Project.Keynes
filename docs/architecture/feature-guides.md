@@ -188,6 +188,11 @@ A12（叠加验证：真实地图河心落谷率，当前实测 0.83 未达 0.95
 `tests/ui/modern_economy_catalog_test.gd` 与 `tests/family/family_colonization_runtime_test.gd`，
 保留“仅有芦苇也能完成建材组”的替代回归。
 
+官营军事建筑在经济 `BuildingProfile` 声明建材组，国库报价和下单使用同一组候选与替代效率。
+战士营地、木栅兵营和夯土城垣解锁后，各建材组都可用原木支付。木栅兵营的木材槽可用原木以
+75% 效率替代。后续建筑沿用普通建筑的古典、工业和金属建材组，对应的电气设备和计算机仍是
+专用设备。军事目录的 `materials` 记录同一份基础配方的首选材料。
+
 建筑详情的亏损成因属于显示域：数据只读建筑已提交快照，不能在 UI 重新计算经营结果或写回
 经济状态。`last_revenue` 是营业税后的实收，`last_operating_cost` 是原料、工资应付与维护成本；
 营业税从 `last_business_tax_paid` 单独读取。图表展示时须将正营业税加回收入并计入总支出，
@@ -195,6 +200,12 @@ A12（叠加验证：真实地图河心落谷率，当前实测 0.83 未达 0.95
 亏损卡只在当前经营期确有负利润时渲染，停产状态只显示停产原因，不用零流量伪造亏损。
 验证入口为 `tests/building/building_inspector_state_test.gd`、`tests/ui/ui_scene_structure_test.gd`，
 以及 `tests/qa/cell_inspector_screenshot_qa.gd` 的建筑详情截图。
+
+营造目录逐项显示单栋报价的建材。国库供料、待市购量和市场缺口来自同一份报价。
+营造悬停卡先显示费用、工期与建材，产出、所需投入、岗位和可选增产使用目录结构化数据逐项显示。
+既有建筑详情展示目录中的单栋基础建材，实际下单以当前营造报价选定的建材及数量为准。
+实际开工率显示为百分比和满量程进度条，和岗位到岗人数、每栋实际产量分开呈现。
+基础产量来自目录，实际产量来自已发布的经营期流水。
 
 上游经济需求修复须运行
 `tests/building/building_runtime_test.gd -- --supply-chain-only`。
@@ -214,6 +225,16 @@ A12（叠加验证：真实地图河心落谷率，当前实测 0.83 未达 0.95
 若选定群体已无法提供足够的转职人口，或某笔建材款付不起，则在写入前保留能通过预检的前缀；
 实际提交的余额断言不放宽。
 
+预检是**快照证书**，写入读的是 live 状态，两者必须共用同一条现金规则
+（`gdext/src/economy_family_move_cash.h::cohort_move_cash()`）；不要再在预检里另写一套份额公式。
+写入前必须在 `investment_commit_portfolio` 内用 live 状态复算本腿转移，不满足就裁剪候选
+（`allocated_count = 0` + `_building_investment_capital_limited`），不能先写后断言。
+裁剪判据按分支写：抽空 sponsor 的分支只有 `carried < required_capital`；普通分支因为 backstop
+读的是**移动后**余额，`carried` 抵消，等价于 `funds_before < required_capital`——写成
+`funds_before < required - carried` 会留下 `required - carried <= funds_before < required` 的窗口，
+重新触发同一 fatal。回归入口 `tests/building/building_portfolio_funds_regression_test.gd`
+（含 top-up 窗口反例与无裁剪聚合守恒）。
+
 ## 建筑最近一次投资评估
 
 受阻原因、投资评分和回本天数按建筑组保留最近一次实际评估结果。新批次初始化、
@@ -226,6 +247,10 @@ A12（叠加验证：真实地图河心落谷率，当前实测 0.83 未达 0.95
 原生回归 `EconomyTargetSelectorTests::run_building_investment_review` 经
 `tests/ideology/ideology_target_selector_test.gd` 进入，覆盖批次和续算保留、跳过保留、
 重新评估替换、解除受阻及建筑清理后重建。
+
+启用投资评审分日执行时，旧批次中尚未评审的地块优先，当天到期的地块按原有顺序追加。
+同一地块在待审队列里仅保留一次。同一天的投资准备使用本次待审地块的成员关系，
+评估按队列顺序执行。跨日待审队列继续使用存档中的原有地块序列。
 
 ## 经济冻结输入与标签采样
 
@@ -316,7 +341,7 @@ pending；`ideology_worker_derived_pump_test.gd` 比较每格实际数值与主�
 真实数据来源；无生产运行时的纯 POD 用例仍读取自身状态。此诊断不推进或修改模拟。
 
 财政回执的 `terminal_requests` 是尚未消费的终态队列长度，不是累计完成次数。
-在保留的 Country 后台、Economy 同步兼容路径中，财政请求完成后先通过宿主应用
+Country 在后台、Economy 在主线程执行时，财政请求完成后必须先通过宿主应用
 Country 账目并发布不可变读视图，再确认消费回执；确认会同时删除请求与终态，
 不能让它早于国家落账。此路径沿用 `run_economy_slice_internal()` 持有的执行边界，
 不得从未持锁的入口直接调用。`economy_fiscal_reservation_continuation_test.gd`
@@ -325,8 +350,8 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
 
 ## 移动端帧预算与分块显示
 
-- 移动平台的后台选择与执行范围见 [运行现状](current-state.md#十二域以外的推进)。
-  `RuntimeClockBinding` 在启动后立即同步暂停和速度，后续订阅控制变化；
+- Android/iOS 默认由现有 native worker 执行十二域日计划，主线程负责输入和已提交
+  结果的显示。`RuntimeClockBinding` 在启动后立即同步暂停/速度，后续订阅控制变化；
   不用 UI 刷新或等待时长唤醒。`PK_MOBILE_NATIVE_WORKER=0` 显式诊断旧 inline 路径，
   `=1` 或未设置走后台；通用 `PK_NATIVE_DAILY_INLINE=1` 仍可显式选 inline。
   执行方式不能改变日序、输入、命令日期、存档边界或结果。验证：
@@ -360,10 +385,6 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
 
 ## 天气与光照 Shader
 
-- 贸易层沿用 `world_ready` 交付的地图数据刷新地形光照，清除地图时释放这份引用。
-  无窗口会话跳过地图渲染器的装配，天空光照和地平线设置更新时仍保留地形法线。
-  验证入口为 `tests/economy/trade_activity_runtime_integration_test.gd`。
-
 - 每个水面像素共用一次太阳方向来算主光和水面高光。夜色仍按原来的太阳高度计算，
   保留调试高度缩放的口径。每个陆地或水面像素的直射光和环境光共用一次云影取样，
   仍使用各自的遮蔽强度。
@@ -373,10 +394,6 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
   晕圈、投影短轴和完整摆动范围提前排除，但必须保留原来的位置、摆动、形状计算
   顺序。用 `tests/rendering/weather_curtain_culling_test.gd` 在真实图形环境逐像素
   对照未裁剪的 5×5 邻域；`-- --reference=<改前 shader 绝对路径>` 另对照完整改前效果。
-
-- 雨雪幕按当前天气类型的绘制标记及插值后的强度判断是否完全透明。雾和闪电按
-  各自的阈值跳过；雨雪在低强度时仍可能有可见贡献，保留原形状计算。两个项目的
-  雨雪 Shader 一起更新。高档水面的细碎闪光随屏幕上尺寸平滑淡出，保留较宽的反光。
 
 - 降雪散点归 weather_cell_curtain.gdshader：全格位置随机与独立摆动必须配合
   邻格补画，不能把随机偏移再次乘小系数缩回格心。查找坐标的旋转不应旋转
@@ -397,20 +414,6 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
   Shader 日/游戏年的比例在 HexRenderer 的 `shader_days_per_game_year` 调整，默认2，允许0和小数；renderer 经窄 Callable 配置 WorldClock，默认相位按累计年进度映射，跨年不重置小数比例。
   永昼最大时角和最低高度在 HexRenderer 的“永昼太阳”分组通过 `eternal_max_hour_angle_deg` / `eternal_min_elevation_deg` 调整（默认 70°/10°）；setter 统一换算弧度并推送各材质，初始化/重建时重放，不随日相位重复推送。
 
-## 电脑和手机画质设置
-
-- 主菜单与暂停菜单共用 `GraphicsQualityOptions`。预设位于
-  `graphics_quality_settings.gd`，单项修改从当前预设复制显示值并切到自定义。
-  `GameSettings` 保存预设及自定义选项到 `user://settings.cfg`，用同一份解析结果
-  应用帧率上限。地图贴图烘焙仍读取原预设，地图清晰度单独决定陆地/水面绘制尺寸。
-- 地图清晰度低于 100% 时，`terrain_render_scale.gd` 只缩放陆地和水面平面，
-  合成图放回地图原绘制位置。相机、选区、地图标记与界面继续使用主画布。切回
-  100% 归还两个平面；水面材质重建后也放入当前绘制目标。渲染验证使用
-  `tests/rendering/terrain_render_scale_test.gd`，检查图层顺序、缩放、平移和调整窗口。
-- 迷雾清晰度、天气表现、植被与点缀密度、水面、云影分别由各渲染层应用；
-  关闭云影仍保留天气云的风场输入。切档验证入口为
-  `tests/game/game_settings_service_test.gd` 和 `tests/rendering/cloud_weather_quality_test.gd`。
-
 ## 逐格弹射色 LUT
 
 - `MapBaker` 的颜色表、枯黄/积雪/备用色和水面枚举是唯一参数来源。原生 `encode_cell_luts` 的 `bounce_only` 请求只接收 enum/dyn 字节和这些值，不读取或写入模拟状态。
@@ -421,13 +424,13 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
 
 ## 时代晋升
 
-- 时代晋升规则统一放在 `EraAdvancementCatalog`：科技 60% 必达，人口/已落成建筑/本时代贸易三选二；经济门槛为目标时代基数加每地块要求。物资篮子按时代倍率放大，筹备基数与逐格量相加。`EraAdvancementService` 仅在开始时冻结物资订单，原生采购与 Country 原子消耗保持既有路径；条件投影运行 `tests/game/module_projection_boundaries_test.gd`，玩家界面运行 `tests/game/player_country_ui_smoke_test.gd`。已启动订单（含旧存档）沿用保存的冻结数量。
+- 时代晋升规则统一放在 `EraAdvancementCatalog`：科技 45% 必达（`TECH_COMPLETION_RATIO`，2026-11-19 由 60% 下调），人口/已落成建筑/本时代贸易三选二；经济门槛为目标时代基数加每地块要求。物资篮子按时代倍率放大，筹备基数与逐格量相加。`EraAdvancementService` 仅在开始时冻结物资订单，原生采购与 Country 原子消耗保持既有路径；条件投影运行 `tests/game/module_projection_boundaries_test.gd`，玩家界面运行 `tests/game/player_country_ui_smoke_test.gd`。已启动订单（含旧存档）沿用保存的冻结数量。
 
 ## 军事界面命令
 
-- 官营建造付款前先为当天应执行的兼容指令预留槽位。两条路径都可使用空槽和完工日为当天或更早的槽位。
-  兼容指令无可用槽位时保留现有订单，并记录 `military_construction_schedule_full`。
-  同日完工与两种建造并行的用例由 `tests/game/player_command_authority_test.gd` 覆盖。
+地块军事页和营造目录的军事分类共用建筑悬停卡。建材数量取经济报价，逐项缺口取同格市场库存。
+已开工项目显示快照发布的剩余工期。兵营的当前日维护费按现存各档座数汇总，建成后的读数使用目标档；
+城防和军校的升级预览使用目标档的日维护费。
 
 军事纯 C++ 热路径的行为约束见
 [`military-performance-redesign-20261114.md`](../plans/military-performance-redesign-20261114.md)：
@@ -473,28 +476,58 @@ Replay 使用、不跨调用存活，诊断计数在 Plan 后一次汇入报告�
 
 ## GM 屏蔽与叙事弹窗
 
-执行器按日读取阶层动员事实，发布事件并处理独立、宣战与驻军移交。叛乱状态和事实游标随
-`pknr` 保存。旧档缺少叛乱状态时，执行器从玩家领地的动员状态恢复当时需要处理的阶段。
+阶层动员事件由玩家控制器在每日提交后投递，使用动员事实的独立游标，并复用叙事弹窗和暂停流程。
+叛乱服务状态随 `pknr` 保存。旧档缺少这份状态时，首次提交后以当前玩家领地的动员快照补发仍需处理的阶段。
+叙事弹窗展示前生成各选项的真实后果，显示与选择共用同一组原生概率。让步和收买按实际报价计算
+资金加成，两种结果均安排国库向当地居民拨款。置之不理与弃城各只有一个确定结果，首都和仅余城市
+不可弃城。读档恢复的旧弹窗在呈现前补齐这些字段。经济接受选择后才写入叙事史册，拨款进入既有
+可存档的待结算命令队列，经济忙碌时保留选择。验证入口为 `tests/politics/stratum_unrest_service_test.gd`
+和 `tests/economy/economy_stratum_save_restore_test.gd`。
+
+城市独立经 `CREATE_COUNTRY` 生效。国家提交时为新国家追加全零的研究信号位图行和两个空证据区间。
+经济在同一天冻结国家快照，校验位图行数与国家槽位数一致。理念读取昨日提交的民意，民意可以只覆盖
+当前国家槽位表的前缀，须逐槽校验国家身份。新国家按理念初始规则建行，收到首份实际民意时建立积分基线。
+验证入口为 `tests/runtime/runtime_inline_coordinator_save_test.gd`。
 
 - GM 的 `ui.suppress_popups` 必须同时阻止事件/年报/时代奖励/家族创立/理念抽取流程进入暂停展示路径，并在运行时切换时清理已锁定弹窗；新增 UI 屏蔽开关应经 `gm_toggle_changed` 接入 PlayerGame，由 `GameUIManager` 保存并恢复层可见性，GM 面板保持可用。
 - 叙事自动选择/确认未取得弹窗暂停锁时不得恢复 `_was_paused` / `_previous_speed`：它们可能是默认值或上一事件的快照。`NarrativeEventFlow` 仅在持有 `locked` / `reopen_pending` 时登记恢复，`restore_pending` 消费一次；其他弹窗忙碌时延后释放。回归入口：`tests/game/narrative_popup_suppression_test.gd`，覆盖连续事件、手动暂停、倍速、运行中切换屏蔽、读档弹窗和故障锁。
 
-执行器负责入队、展示资格和年度额度。普通事件共用每格每年两次额度，等待全局
-弹窗间隔。已有的定时后续可以越过等待项且不消耗该额度。事件设置为八个类别，
-各有选项与通知两个停住位，共十六项。选择默认停住，通知默认继续。不停的选择由
-执行器下单，在生效日结算结果、效果和编年史。前台据已提交记录渲染与排版。
+叙事事件额度统一为每格每游戏年**一次**：周期抽样、事实触发、普通 AI 事件共用
+`NarrativeEventService` 的入队检查和展示检查。队列出队时丢弃当年已超额的普通事件，
+全局弹窗间隔未到则等待；定时后续事件可以越过等待项，且不消耗年度额度。
+AI 定时后续请求携带 `scheduled_followup`，生成结果重新进入定时队列，
+不得提前展示，也不得将普通 AI 预热结果当作定时后续豁免。
 
-AI 请求由脉冲、事实、状态探针或定时后续触发。执行器在请求日取样，固定落地日
-由请求携带，普通请求延迟为用户确定的 90 日。网络失败、超时或解析失败回送作废。
-发出新请求须距上一次至少 60 日，在途请求各自等待和落地。
-早到的回复随请求保存，按期复核，缺回复则在落地前的日界等待。有序请求和回复
-随 `pknr` 保存。恢复时按保存的请求内容续发，日期不动。状态探针的落地复核不满足
-时可保留到已有的 AI 事件池，池子和游标随档恢复。会话 AI 设置按日期下发，关闭后
-已经发出的请求照常结算。暂停菜单的全局 AI 表单从全局偏好读写，本局已生效值随档保存。
+- **弹窗静置**：玩家开着国家卷宗（科技 / 政治 / 经济(税收) / 军事 / 外交）、营造、家族档案、
+  军务档案、派遣、议和、史册、GM 面板或时代纸笺时，叙事弹窗不得展示，也不得替玩家关掉这些窗口。
+  `NarrativeEventFlow` 在静置那一刻自己 `pause(true)`（暂停快照也只在那时登记一次）并播一次
+  提示音，offer 留在服务的 `active_offer` 里不下线；窗口关闭后再展示，关闭弹窗时用同一份快照
+  恢复，不能把「静置暂停」当成玩家本来的状态记下来，否则关掉弹窗后时间再也不会走。玩家在静置
+  期间自己按继续，兜底重试不得再把他按回暂停。
+  窗口清单只在 `GameUIManager.is_player_workspace_open()` 里维护；新增窗口要同时在该清单和它的
+  关闭路径上接 `notify_workspace_closed()`（内部延后一帧重查——同一个输入回合里关旧窗、开新窗
+  不能把弹窗抢进来），流程另有 0.2 秒兜底重试，漏接只会晚一帧，不会卡死。
+  右侧地块档案与暂停菜单不算窗口：前者是选格后的常驻看板，后者本来就停了表。
+  回归入口：`tests/game/narrative_window_deferral_test.gd`、
+  `tests/game/player_country_ui_smoke_test.gd`（卷宗开着跑日的静态检查）。
 
-AI 叙事文本用处境与后果表达局势。温度使用占位符，`custom_label` 可以写效果幅度与时长。
-现金效果由执行器用有效地块与群体句柄提交守恒转账。回归见
-`tests/game/narrative_event_runtime_test.gd` 的剧情日界和寒潮援助用例。
+AI 事件有三个入口：脉冲预热、事实驱动（`GameplayEventBus` 白名单 `AI_FACT_HINTS`）
+和定时后续预取，共用 `ai_min_request_gap_days`（默认 60 日）节流与单条在途；概率按
+`situation_pressure_score()` 从基础值抬到上限。回执统一走
+`NarrativeEventService.accept_ai_generation()`：超过 `ai_max_staleness_days` 或读档后
+迟到一律丢弃，落地时重新采样地块上下文，避免文案与到达时的世界状态错位。
+状态探针（`NarrativeStateProbe`，首批粮食紧缺/民生不满/连旱）在条件维持 `dwell_days`
+后预取，回执复核失败则入 `_ai_event_pool`，等同一状态复现时出池；池子随 `pknr` 存读档。
+AI 叙事文本只写处境与后果，不写气温/价格/库存/人口/百分比/日期这类读数（prompt 明确约束；
+「三人」「三成」这类数量词照常写），validator 仅把温度读数改写成 `{temperature}` 占位符，不删句子；
+`custom_label` 例外，仍写幅度与时长。
+回归同上。
+
+叙事事件触发扫描保留居民汇总查询；`NarrativeEventService.choose_option` 执行选项时，
+须通过 `sample_cell_context(..., include_cohort_details=true)` 取得真实居民句柄，
+现金效果经 EconomyFacade 向原生经济/国家权威提交守恒转账，在后续结算边界生效。
+回归见 `tests/game/narrative_event_runtime_test.gd` 的寒潮 3% 国库援助用例；
+汇总快照没有 `handles/populations`，不能据此选择转账收款人。
 
 ## 家族派遣面板
 
@@ -509,6 +542,22 @@ AI 叙事文本用处境与后果表达局势。温度使用占位符，`custom_
 `tests/country/colonization_planner_context_test.gd`、`colonization_workbench_ui_test.gd`
 及 `tests/family/family_colonization_runtime_test.gd -- --population-shrink-only`。
 旧套件基线限制见 current-state；机制契约见家族开拓运行时文档。
+
+工作区开着时地图左键归派发界面独占，这条对**所有页签**成立：`handle_map_cell` 不论当前停在
+「开拓」还是「派遣进展」都必须消费这次点选，进展页先切回派发列表再按原有步骤规则解释
+（`_show_quotes()` 后走 `map_stage()`），不得直接 `return false`。`game_ui_manager.show_cell_panel`
+会把被面板接管的点击整口吞掉，返回 false 不会退回普通 Inspector，玩家看到的只是「点新目的地
+毫无反应」。派遣/取消成功后 `set_command_result` 会自动切到「派遣进展」，旧实现只在该页吞掉
+点击，于是连续派遣只有第一支成功（2026-11-21 玩家上报）。回归用
+`tests/country/colonization_multi_dispatch_ui_test.gd`（目的地入口、排队结算回执、顶栏全国列表
+三条路径各派两支）与 `tests/family/family_colonization_multi_dispatch_test.gd`（原生侧两个不同
+目标各建一支队、同目标仍按设计返回 `colonization_duplicate_target`）。
+
+在途载荷里的人不是孤儿：`cohort_handle == 0` 且登记在 `family_expedition_person_handles()`
+中的要人由载荷持有，`PERSON_COMMIT` 不得按「cohort 无效」退场；任何权威真的要退场时必须走
+`retire_person`，由它在释放 slot 前摘掉载荷引用并修正后续 `person_begin`。回归用
+`family_colonization_runtime_test.gd -- --transit-person-only`；死句柄进存档会让整份 PKEC
+读档失败（`save_family_expedition_person_invalid`），不允许再以「加校验拒存档」应对。
 
 ## 国库收支展示
 
@@ -529,6 +578,34 @@ collect 将同额加回国库，不能因回执非零就登记 Economy `explicit
 epoch 的 mint/burn；先判断 opening snapshot 是否已包含该变化。回归运行
 `tests/economy/military_deferred_cash_conservation_test.gd`，同时验证真实待回执行恢复、
 防重、后续经济结算与三项守恒；只观察军事回执成功不足以证明账目正确。
+
+## 军事预算份额与季节地形重推
+
+国库页的三条预算份额（`budget_share_bp` / `budget_wage_bp` / `budget_upkeep_bp`）按需求 9.3 是
+transient，不进 PKMI（`military_core_save.cpp` 的 `write_policies` 只写 `procurement_share_bp`，
+restore 按默认值重建 policy 行）。所以 `MilitaryFacade.set_terrain()` 不得对整份军事状态无条件做
+`encode_military_state()` → `restore_military_state()` 往返：那一圈会把玩家调好的档位打回默认
+（总份额 0、通道 60%/20%），而季节 cover 重推每季都走一次，玩家看到的就是「过几个 tick 自己归零」。
+原生只在 shape 或邻居表变化时才 `reset_state()`（`military_core.cpp` 的 same_topology 分支），
+同拓扑推送原地换数组、policy 原位保留；facade 必须按同一条规则判断，只对真换拓扑的推送做快照
+恢复，同拓扑路径如实把 `state_preserved` 报成 true，读档类重推仍由
+`PlayerController._repush_military_budget()` 兜底。回归运行
+`tests/military/military_budget_terrain_refresh_test.gd`（带原生 same-topology 控制组）。
+
+## 科技详情栏效果优先级
+
+详情卡的 `DetailBlock` 顺序固定为：摘要 →【掌握后效果】→ 进度条 → 事实条（时代/领域/研究成本/
+路线）→【研究条件】→ 前置 → 后继 → 应用 → 按钮。效果块必须排在进度条、事实条和条件区之前：
+后期科技的条件区能顶到十几行（时代门槛 + 每条前置 + 每条研究路线），效果被推到滚动之外就是
+玩家说的「压在后面」。摘要行保留作「一眼扫完」的合并行，但它和逐条效果必须走
+`technology_network_presentation` 同一个格式化口径（`modifier_delta_fraction`：认 `operation`
+乘算、`_bp` 基点量纲、`_add` 绝对加量），详情卡不许自己再写一份 `value * 100`——那样会与摘要行
+自相矛盾（例如地主「+40000%」、训练时长「+90%」）。定向回归
+`tests/technology/technology_detail_card_effect_priority_test.gd` 与
+`tests/technology/technology_effect_text_units_test.gd`。
+
+科技卡片从公开目录读取按结构化效果生成的摘要。摘要和详情共用中文名称解析，商品、建筑、职业
+和资源名称取自内容目录，地理产出效果同时标明适用地理与产业。
 
 ## 科技前置
 
@@ -579,9 +656,15 @@ OwnedState 已应用的 ADD_STOCK / REMOVE_STOCK 命令，在经济侧接回结�
 不能在清空当轮计数后丢失。`economy_runtime_command_audit_tests.cpp` 使用真实命令应用与
 结果接回路径检查闲置期、活动期、限量移除、下一轮与恢复后的派生状态。
 
-## 整日发布与分域诊断
+## 主线程服务完成与工作线程唤醒
 
-正式执行器在一个日计划内交付 Trigger、Effect、Ideology 等跨域请求，完成后生成已提交视图和显示批次。前台取结果并转发玩家输入。分域推进和旧输入探针仅供诊断。
+`complete_main_boundary_service` 清除自身请求位时持有工作线程等待使用的
+`_control_mutex`，释放锁后通知。原子位操作不能替代这一互斥约束：完成操作若插进
+“检查条件”与“进入等待”之间，通知会丢失。Trigger 和 Ideology 各清自己的位，重复完成
+无副作用。Trigger 的界面侧队列为空且没有延期交付时，轮询不用抢经济日锁。资源、军事和
+Trigger 收尾都完成后，主线程先用原请求日期重试已排队的 Ideology 刷新，再确认当天收尾。
+正常帧继续服务尚未完成的请求。架构检查抽取生产唤醒方法验证线程交错，收尾重试由
+`tests/runtime/ideology_day_continuation_test.gd` 验证。
 
 ## 资源视觉的变化通知与逐帧工作
 
@@ -659,12 +742,10 @@ FamilyTrait / Modifier / Effect 资源在可让帧工作开始前用 `duplicate_
 同一资源实例被修改后必须重新编译。默认输入与显式覆盖各有独立身份，不能仅凭实例编号
 或参数为空就把不同内容视为相同。缓存仅保存成功结果，每个消费者拿到独立 Dictionary。
 
-Effect 源 Resource 在协作构建时也使用私有副本。目录构建完成后才调用原生安装接口。
-Effect 每次等待结束都检查本次请求是否取消。取消时返回 `null`，由调用方读取
-`context.canceled` 并回收上下文。目录校验失败时仍由 `_reject()` 记录具体原因。
+Effect 源 Resource 在协作构建时也使用私有副本。目录构建完成后才调用原生安装接口；
 同步调用方仍使用原公开 API。`loading_catalog_cooperative_test.gd` 比较同步/协作全部
 目录列、Effect 扩展与显示文字，并覆盖调用方修改返回值、同实例覆盖输入修改、
-开始前取消与中途取消。有线程时大型理念资源由加载线程准备，无线程 Web 按依赖分帧加载并保留已加载资源，
+开始前取消与中途取消。大型理念源资源通过 ResourceLoader 自带的异步加载入口准备，
 由请求上下文保留引用，避免同一请求多次解析；不在自建线程里访问共享资源或运行时。
 取消时不等待文件读取。`loading_resource_request.gd` 在引擎报告完成后取走结果并释放请求，
 其临时待回收表只持加载请求，不持生成器、世界或取消闸门。暖快照六个文件也走同一回收
@@ -676,9 +757,7 @@ Effect 每次等待结束都检查本次请求是否取消。取消时返回 `nu
 
 原生密集地图在生成时已算出六个方向的邻接格，脚本按原有地图顺序绑定编号时可直接使用这批数据。作者地图及读档仍经通用索引入口。分块地形的下一次原生烘焙可以在上一块上传后立即开始；主线程每帧最多上传一块，上传前检查取消和地图代数。
 
-## 运行时诊断字段与兼容路径抑制门
-
-抑制门用于停掉已有同步路径。正式后台模拟的新功能直接接入后台。
+## 运行时诊断字段与主线程抑制门（2026-11-16）
 
 - 诊断字段必须写入。只声明 + 导出、从不赋值的计数器比没有更坏：它把「这一步没跑」伪装成事实（`cell_layer_collect_count/_rows/_ideas` 就这样误导过一轮排查）。新增诊断要么在产生它的那一步写，要么不要导出。
 - 主线程域门只认 `domain_main_thread_suppressed()`。外部读 `main_thread_suppressed_domain_mask` / `authority_window_domain_mask`（启动回复、`get_runtime_thread_report()`、`thread_report`、perf snapshot）；`authoritative_domain_mask` 只回答「worker 已证明拥有哪些域」，不能回答「主线程是否该跑」。请求了却拿不到的域会静默永久丢失，`authority_window_blocker` 是它的名字。
@@ -701,27 +780,31 @@ Effect 每次等待结束都检查本次请求是否取消。取消时返回 `nu
 - 开局两种国家创建路径均把开局国家放在第一个稳定槽位，吞并也不重排槽位。
   PKCN16 已保存这个顺序；冷启动恢复和只读副本安装须从它重建 `starting_country_slot`，
   配置及重置须清除旧值。不能依靠曾经执行过 bootstrap 的旧对象残留内存。
-- 正式整日路径的季节慢层按固定日历在执行器内到期，周期为 30 日时在第 31、61 日
-  等提交。它使用 CLM2 的继续状态并准备次日环境。显式分域对照仍保留输入采集入口。
+- Climate ACTIVE 的普通慢层刷新由输入采集按固定游戏日期触发，周期30日时为31、61……日。
+  `SeasonRefreshSystem.run_due_round_for_capture` 复用 CLM2 已保存的完成边界，采用时钟的
+  `输入日+1` 约定；同日重试不能重算。调度器探测次数、帧预算和冷启动不能改变到期日。
+  刷新完整完成后才采集环境；非 worker 与显式 legacy-signal 对照路径仍沿用原入口。
 - 一致性验收逐日比较正式周期下全部模块、完整经济状态、收支和命令实际效果；
   冷启动恢复至少跨过规划/投资及气候慢层边界，不能只测保存后的第一天或终值。
 
 ## 季节输入日期与经济恢复周期
 
-玩家场景在显示开局加载画面时冻结日历，正式开局从第 0 天开始。后台按环境输入
-日期计算下一日天气，年度气候随机状态沿用存档。资源、物种和地理状态按提交日更新。
-执行器在发布前构建累计账本、通知历史、逐日回执和变格。前台一次取走批次并合并地图显示。
+玩家场景在显示开局加载画面时冻结日历，正式开局从第 0 天开始。后台计算第 D 天的天气时，气温和海冰的经过天数、天气季节和慢层刷新统一使用该份输入的日历日期。普通时钟、重试、提前准备和年报补发都要先取得 D−1 日已经写回地图的气候状态。新世界按实际地图种子生成年度气候变化，读档从保存的随机状态继续。
 
-无画面会话在 100 倍及以上快进时缩短前台休眠间隔，暂停、降速和结束会话时复原。
-测速按实际提交的连续游戏日计时，逐日校验另跑。分域诊断仍可按
-`worker_time_environment_wait_us` 和 `worker_time_input_retry_wait_us` 查看外部输入
-等待和日内重试。整日模式无需外部补发每日天气或前台确认日尾。
+后台负责整日结算时，音乐和剧情在当天提交后读取事件。每个订阅者都能读取同一份已完成的事件记录，按各自读到的编号确认进度。读取期间其他日期可以继续发布，已借出的记录须保留到最后一个读者用完。
+
+自动时钟按帧继续当天未算完的物种更新。手动按日推进时，同一次调用须用原日期和输入完成全部地块，再允许提交下一天，确保地图物种分布和国家获得科研线索的日期一致。
+
+无画面会话在 100 倍及以上快进时缩短主线程休眠间隔，以便及时处理每日结果。暂停、降速和结束会话时释放这项设置。测速按实际提交的连续游戏日计时，逐日校验另跑，避免把校验本身的开销算入快进速度。
+
+待发送的输入保留原日期。帧处理先接收已提交结果，再重试该输入。原生宿主用等待方的锁发布输入队列和日期，避免后台错过唤醒。`worker_time_input_wait_us` 保留原来的合计，环境输入为空、输入已到后的日尾等待、日内输入重试分别记在 `worker_time_environment_wait_us`、`worker_time_main_tail_wait_us` 和 `worker_time_input_retry_wait_us`。输入和日尾同时未准备好时，先记作环境输入等待。
 
 后台气候的海域编号和海岸缓存按邻接及海陆分类判断是否有效。同类地形互换仍用实际地形运行气候计算；读档与依赖变化时可重建。经济储量的已提交副本按发布游标检查发生写入的数据页，独立维护其他读取游标，仍按原字节顺序生成存档和校验值。
 
 完整后台会话的地图显示每个模拟日更新生态过渡与当前和上一份天气像素。渲染器把同一帧的数据合成一次纹理发布，并在天气插值更新之前完成。帧内未上传的数据属于当前显示世界，规则与事件仍在每日提交时接收。
 
-执行器以模拟日准备下一份气候输入；CLM2 的季节完成日期沿用日历日期。因此模拟输入第 31 日对应日历第 32 日。提前准备输入时，
+`WorldClock.day_changed(d)` 的普通输入采集使用 `d-1`；CLM2 的季节完成日期保持
+WorldClock 日期。因此输入31对应完成日期32，并非两个日期基准。提前准备输入时，
 植被重复计算的判断必须使用该输入的日期，不能读可能领先或落后的显示时钟。
 跨调用完成的季节轮也必须保存同一个输入日期；未完成时阻止发布，后续继续同一天，
 不能跳到下一个输入日消费旧字段。4096只是单次调用已有切片上限，不是失败次数上限；
@@ -750,13 +833,26 @@ Country `preserve_effective_days` 表示逐条保留提供的日期，并不让�
 
 比较性能时固定镜头、动画时间、分辨率和各项画质。把水波换周期、天气发布和云雾更新计入帧时间。主要回归入口为 `tests/rendering/render_data_tables_test.gd`、`tests/world/fog_cell_field_test.gd` 和 `tests/world/vegetation_pixel_normal_render_test.gd`。
 
+## 贴图导入形态与运行时读取
+
+导出包只带**导入产物**，不带已导入文件的源文本，而且 `export_presets.cfg` 的
+`include_filter` 对已导入文件无效（实测：给 `shaders/compute/*.glsl` 加了过滤器，导出日志里
+仍然只有 `.glsl.import`，源文件没进包）。所以：
+
+- 运行时读 `res://…` 文本前，先确认该扩展名没有 importer。`.json` / `.txt` / `.gdshader`
+  这类没有 importer 的文件会按原样打包；`.glsl` 有 glsl importer（产出 `RDShaderFile`），
+  源文本不打包。
+- 计算着色器走 `load()` 拿导入后的 `RDShaderFile.get_spirv()`；需要现场编译时才回退到
+  `FileAccess.get_file_as_string`（仅编辑器/未导入环境可用）。现实现见
+  `scripts/rendering/visual_tile_horizon_baker.gd::_create_shader_bundle`。
+- 纸贴图集按 VRAM 压缩导入（`compress/mode=1`），任何 `Image.convert/resize/blend_rect`
+  之前必须 `is_compressed() → decompress()`，否则 release 下图层被静默丢弃。现实现见
+  `scripts/ui/icon_catalog.gd::_paper_building_texture`。
+- 用 `MultiMesh` 打包 instance buffer 的临时对象也必须先赋 `.mesh` 再设 `instance_count`，
+  否则引擎每次都报 `multimesh->mesh.is_null()`。现实现见
+  `scripts/rendering/shrub/chunk_refresh.gd` 的 GDScript fallback 路径。
+
 ## 电脑和手机画质设置
-
-手机「自动」在正式地图静止时上限为 30 帧，按下、拖动、缩放和惯性移动时为 60 帧。玩家也可在自定义设置选同一模式。固定帧率和跟随屏幕继续按玩家选择执行。帧率由 GameSettings 统一应用，退出玩家场景时解除静止上限。
-
-迷雾为 50% 或 75% 清晰度时，固定镜头复用上一张雾图，每秒更新 15 次。镜头移动、缩放、雾层改尺寸、重新显示或视野贴图发布时，在下一次绘制之前刷新。100% 迷雾直接画到屏幕。年度报告桌面和加载页只有在实际覆盖整个窗口且完全不透明时才隐藏地图。淡出和安全区留边都需要继续画地图。
-
-原生 Metal/Vulkan 的分离陆地材质在镜头停稳后复用地貌底色、细纹、法线和粗糙度。连续移动期间直接绘制。静态地块重新发布、换图、绘制尺寸或变换改变时，先画当前输入，再生成可复用的画面。光照、积雪和河流仍使用当前帧。缓存跟随陆地所在视口的颜色空间，兼容和 Web 路径沿用直接绘制。实绘回归入口为 `tests/rendering/land_base_cache_test.gd`，设置切换由 `tests/game/game_settings_service_test.gd` 覆盖。
 
 - 主菜单与暂停菜单共用 `GraphicsQualityOptions`。预设位于
   `graphics_quality_settings.gd`，单项修改从当前预设复制显示值并切到自定义。
@@ -771,6 +867,296 @@ Country `preserve_effective_days` 表示逐条保留提供的日期，并不让�
   关闭云影仍保留天气云的风场输入。切档验证入口为
   `tests/game/game_settings_service_test.gd` 和 `tests/rendering/cloud_weather_quality_test.gd`。
 
+- 画质/省电开关只能关**动画与强度**，不能关**静态数据**。`has_flow_tex` 是静态河网的总闸
+  （height 贴图 B 通道 = 河流 SDF；`scals.g = has_flow_tex ? height.b : 0`），只能由
+  `RendererMaterialPublish.flow_channel_ready()` 按「height 就绪 + flow_buffer 覆盖全图」
+  判定；`DCFeatureFlags.water_flowmap_enabled()`（移动端默认关）只允许影响流速蠕动与海洋
+  环流漂移。同类开关接入共享通道前，先确认该通道的**所有消费者**只是装饰动画。回归入口：
+  `tests/rendering/terrain_river_flow_gate_test.gd`。
+
 - 雨雪幕按当前天气类型的绘制标记及插值后的强度判断是否完全透明。雾和闪电按
   各自的阈值跳过；雨雪在低强度时仍可能有可见贡献，保留原形状计算。两个项目的
   雨雪 Shader 一起更新。高档水面的细碎闪光随屏幕上尺寸平滑淡出，保留较宽的反光。
+
+## 玩家可见时间文案（2026-11-19）
+
+时间点与时长是两种口径，不要混用。
+
+- 时间点（结算日、完工日、抵达日、创立日、信号首次记录日、停战与冷却到期日、事件与史册日期）
+  一律走 `WorldClock.date_text_for_day(day, days_per_year)`；有时钟引用就传
+  `clock.days_per_year()`，没有时钟的 view model 与 AI 提示词按默认 365 天换算。输出固定为
+  `1年2月14日`；日索引是 0 起（第 0 日 = `1年1月1日`），不要把已加过 1 的显示日再传进去。
+- 顶栏、GM 面板、年鉴这类已经拿到年/月/日字段的地方直接格式化成 `%d年%d月%d日`，不要再各写
+  一套日索引换算；新增面板优先接 `WorldClock.date_text_for_day`。
+- 时长保留 `N 日`：已战、剩余、工期、近 N 日、可支撑 N 日、N 日后触发。为了去掉“第”把时长
+  改写成日期会读成错误的时间点；战争计数写成「已战 N 日」，不写「第 N 日」。
+- 事件弹窗与史册的 `date_text` 由 `scripts/narrative/narrative_calendar.gd` 转交 WorldClock；
+  无时钟路径也按默认年长换算，不再退回「第 N 日」。
+- 回归入口：`tests/ui/player_top_bar_fit_test.gd`（顶栏日期不裁字）、
+  `tests/ui/hud_status_card_test.gd` 与 `tests/economy/economy_dossier_view_model_test.gd`
+  （结算日文案）、`tests/game/narrative_event_runtime_test.gd`（事件日期）。
+
+## 近景地块告警与人口页
+
+地图批次和单格人口快照共用原生阶层满意度聚合，按本格各政治阶层的人数加权，
+以最低阶层的综合满意度判定告警。人口页可见时，地图同格的「阶层不满」取面板已呈现
+的 `class_discontent`，并显示该人口快照的本地结算日。退出人口页后，地图保留同格较新的
+阶层结果，直到收到更新代次的地图批次。地图批次按格拒绝回退，天气告警独立刷新。
+
+悬停和点选共用浮标命中与视野检查。PlayerController 以浮标归属选格，议和、军令和军务
+拾取优先级沿用正式会话。回归入口为 `cell_situation_snapshot_test.gd`、
+`cell_situation_layer_test.gd` 和 `cell_situation_worker_test.gd`。
+
+## 故障诊断基建（2026-11-19）
+
+改动任何 `fail()` / `error = "..."` / 诊断上报前，先读这一节。台账是唯一真相，
+代码是它的实现，不是反过来。
+
+- **新增或改名一个 error 字符串 = 先登记台账**。`gdext/src/**/*.cpp` 里任何
+  `error = "..."` / `fail("...")` / `set_restore_rejected_reason("...")` 都会被
+  `tools/ci/check_fault_taxonomy.py --strict` 扫到；未登记就红。补登记用
+  `--bootstrap-missing`（只增不改，先以 `kind=unknown` 入库），再人工补
+  `kind/stage/witness/playbook`，最后 `--write-doc` 重生成 `docs/runtime/invariants.md`。
+  **不要**靠放宽正则或加白名单前缀绕过。
+- `kind=fatal` 的条目必须在 `gdext/src/fault_taxonomy.h` 里有 assert_id 绑定，
+  `--check-cpp-ids` 会核。ID（`INV-<MODULE>-<NNNN>`）永不复用；合并断言时保留
+  `status=retired` 的墓碑。
+- `fatal_context_report()` 的 `witness` 只放 POD 标量，字段名与台账 `witness` schema
+  一一对应。既有扁平键（`investment_row` / `construction_row` / `investment_legs`）
+  是旧日志与旧 fixture 的契约，**只增不改**。
+- `.pkinc` 是诊断产物：不进 PKEC/PKSV、不参与状态哈希、不可当存档加载。
+  格式契约见 `docs/runtime/incident-bundle-schema.md`；生产者
+  `scripts/game/incident_bundle.gd` + `incident_cell_slice.gd`（拆两文件是因为单文件
+  会顶到 size ratchet 的 800 行上限），消费者 `tools/ci/inspect_incident.py` 与
+  `tests/runtime/incident_replay.gd`。
+- **现场里拿不到的字段如实记 `missing:`，不许造数**。当前如实记 missing 的有
+  `commands.structural/ledger`、`pending_construction` 的物料需求、`hashes.economy_state_hash`、
+  `hashes.ledger_hash`、`world.formal_start`。要给它们补数据，先在对应模块的 facade 上加
+  薄包装（不要在 `scripts/game` 直调别的模块的原生绑定，`check_script_native_access` 会拦）。
+- 全量 PKEC 现场**按需**：默认只写 `.pkinc`；要全量用 `PK_FORENSICS_FULL=1` 或调用方
+  传 `extra.full_snapshot=true`（GM 手动导出走这条）。别再把「每次 fatal 一份 40 MB」
+  写回默认路径。
+- 重放的 `reproduced` 判据是「同一 reason + witness 关键字段逐一相等」。被排除的字段
+  必须出现在 `uncompared` 里可审计；不许为了让自己绿而扩大排除列表。
+- 提交前核验：`.\tools\ci\verify.ps1 -Quick`（static，约 20 s）。它里面有两条 `known-red`
+  是本轮之前的既有漂移（`check_cpp_deps.py` / `check_size_ratchet.py`），`-Strict` 下才判失败；
+  新引入的失败不许塞进 known-red。
+- `tools/ci` 里读源码的脚本一律显式 `encoding="utf-8"`。中文 Windows 的 locale 默认是 GBK，
+  不写编码就会在 UTF-8 源码上抛 `UnicodeDecodeError`（`check_module_contracts.py` 与
+  `check_cpp_deps.py` 就是这么坏的，本轮已修）。
+- `kind=fatal` 是**有硬性条件的登记**：`witness` 非空且值只能是 i32/i64/f64/bool/str，
+  `playbook` ≥3 步且每步非空，`stage`/`owner` 非空；缺一项 `--strict` 就退出 1 并点名
+  （`INV-XXX-0001 (reason): 缺什么`）。无历史豁免、无白名单，2026-11-19 起对每一条新登记生效。
+- `--review` 是**审阅清单，不是门禁**：列出 `kind=unknown` 但名字像停机点的条目
+  （含 `_fatal`/`_drift`/`_mismatch`/`_violat`/`_rejected`/`_must`/`_invalid`），给首次出现的
+  `文件:行` 并按文件分组计数；它不参与 `--strict`、不改退出码。列表长是正常的，别为好看调窄。
+- **抓不到的限制（如实记账）**：`--bootstrap-missing` 只会写 `kind=unknown`，所以"该标 fatal
+  却标成 unknown"这条门禁看不见；也不做启发式猜测兜底——猜错会逼人瞎标，比诚实的 unknown 更贵。
+
+## 地图悬停展板与地名层（2026-11-20）
+
+改 `scripts/rendering/settlement_label_layer.gd`、`scripts/ui/cell_board*.gd`、
+`scenes/ui/cell_board.tscn`、`CellHoverCard` 或任何「悬停某格显示什么」的功能时看这节。
+
+- **指针语义只有一处**：`CellHoverCard` 的 `hover_cell_changed(cell_index)`（-1 = 无）是唯一
+  的悬停格广播源。它已经处理了指针静止、速度抑制、指针是否落在 UI 上、相机平移/缩放、
+  暂停、触摸、安全区与迷雾可见性。新增消费者只许订阅这条信号，不许自己再读
+  `get_mouse_position()` 或复判这六件事——两套判定一定会互相打脸（卡片退场、纸签还在）。
+- **停稳门槛分两级**：地名纸签跟着卡片走（130ms 静止）；左侧展板自己再加 300ms 停留，
+  因为展板要开两个原生 per-cell 快照。`CellHoverCard.SETTLE_MSEC` 与
+  `CellBoard.DWELL_MSEC` 的差值就是这两级。
+- **原生 read-view 是有限资源**：每个 `(query, cell)` 订阅占一条，上限 128 条、TTL 5s。
+  逐格 hover 都去查会把它打满，进而拖慢经济线程。所以：只对已定居格查、按 `cell:day`
+  缓存、未就绪时按 `pending` 重试而不是拿旧值冒充当日、展板只在停稳后查一次。
+  新增 per-cell 读数接入展板前先确认它在 read-view 里、并且能容忍 `ok=false / busy=true`。
+- **地名 LOD 的口径**：繁荣等级就是人口档（2 乡村 / 3 小镇 / 4 县城 / 5 城市 / 6 都市），
+  所以「远看只显示少数几个」与「远看只显示大城」是同一件事。缩放阈值四档被
+  `tests/country/settlement_label_layer_test.gd` 锁住；要改档位就同时改测试与本节。
+  首都通过 `set_player_capital_cell()` 豁免筛选，由
+  `world_runtime_visual_adapter._player_capital_cell()` 在视觉刷新时从
+  `country_facade.snapshot(handle)["capital_cell"]` 推一次，不进每帧路径。
+- **环向地图只画一份拷贝**：`nearest_display_world` 取最近拷贝后不要再叠加 ±period 的
+  第二份，否则接缝上会出现两枚同名纸签（曾真实出现）。
+- **展板内容不外溢**：纸片用 `PKPaperPopup`，内容放内层 `MarginContainer` 留出撕纸边的位置；
+  绝不用 `add_theme_stylebox_override("panel", ...)` 覆盖——那会把撕纸边顶成圆角纯色板。
+  表头写列名不写标题，空表整张纸片不渲染，行数按可用高度三段压缩（5 行 → 3 行 → 只留市价）。
+- **展板可覆盖左侧工具栏**：展板靠 HUD 左边缘放置，不沿用地图安全区的工具栏横向留白；
+  物资与阶层纸面宽 520、正文 18px，列宽与图标一起放大。垂直方向仍避开顶栏和底栏，
+  可用高度不足 650 时阶层压到三行，不足 510 时只留物资；不通过整体缩小文字适配。
+- **展板与图例工具栏互斥**：`game_ui/overlays.gd` 订阅展板实际 `visibility_changed`，
+  调用 `MapOverlayToolbar.set_board_obscured()`。展板入场时工具栏纸片用 `UIAnimation`
+  在 120ms 内淡出并立即禁用整棵子树的鼠标交互；展板 130ms 退场完成后才启动 180ms 恢复淡入。
+  减少动效时立即切换，快速重入取消旧退场，暂停期间动画仍完成。不改工具栏根节点的可见性，
+  避免覆盖派遣等工作区的显隐控制；保留当前分类和地图图层请求。
+  回归入口：`tests/ui/cell_board_toolbar_transition_test.gd` 与带渲染的
+  `tests/ui/cell_board_screenshot_qa.gd`。
+- **悬停物种**：`CellHoverViewModel` 经 `CellInspectorViewModel.local_species_badges()` 复用地理档案的
+  `bio_occupancy_bits_arr`、物种目录和玩家已完成科技识别规则，不把资源储量当成物种占据。
+  图标集中在 `IconCatalog` 的 `bio.*` 语义映射；缺少专用动物位图时复用动物图标并配物种名称。
+  卡片资源下方按图标与名称的自然宽度紧排全部已识别物种，放不下时换行，空集合整行隐藏；
+  槽位复用，卡片高度、阴影、
+  屏幕边缘翻转及展板避让随实际行数调整，不新增悬停查询或模拟写入。
+- **数据口径**：市价表的五类物资是「五个角色各挑一个还没被选走的物资」，不是「同一物资
+  重复五次」；未解锁物资（`good_technology_available == 0`）与本地尚无价格的物资不参与。
+  民情表的影响力 = `population + owner_employed × opinion_owner_influence_weight(2)
+  + funds / opinion_funds_per_influence(1000000)`，与理念系统同源；组织度按职业读，
+  缺失时留空轨道，不写 0%。
+
+## 物种出现保底（2026-11-20）
+
+每个 `bio.*` 物种默认仍按目录包络（气候、湿度、海拔、植被掩码、地貌标志、载体资源）播种。播种结果里
+`occupied=0` 的物种会走保底阶梯（`scripts/geography/map_generation/bio_occupancy_guarantee.gd`，
+在融合 boot pass 与逐段 bootstrap 两条生成路径后都会检查）：逐级放宽只对该物种生效的播种输入，并向
+原生 `run_bio_seed_pass` 重发请求，顺序固定为 ① 去掉植被掩码 ② 去掉地貌标志（河湖/湿地/高地/干旱等）
+③ 去掉载体资源 ④ 气候带放宽到 persist 容差内（温度/湿度 0.11、海拔 0.075，必须小于
+`gdext/src/world_ext_bio.cpp` 的 `kPersistClimateMargin = 0.12`）⑤ 气候全放开（`map_extremes`）。
+被放宽的物种同时把 `fill_keep` 收到 ≤0.08、`max_cost` 收到 ≤3，只留小片残存种群。
+小图上生态行会（食物/放牧/纤维/特产）仍可能把格位占满，此时最后一步 `manual_relict` 直接按
+“离该物种气候中心最近、且未达每格 3 物种上限”的陆地格补一格，只放宽行会互斥、不突破格位上限。
+
+保底残存格可能落在目录气候带外，而每日 pass 的 `persist_ok` 会按目录边界剔除植株。因此
+`_bio_occupancy_base_knobs()` 建缓存时调用 `realize_bounds()`：把每个物种的气候边界放宽到覆盖它
+**实际占领格**的气候值（纯函数于占领位集 + 地图气候数组，同存档在任何会话重算结果相同）。保底播种
+成功后作废 knobs 缓存并重置原生 configure，使生成当次与读档后的日推进使用同一份地图本地边界，
+读档前后逐日行为一致。日常推进的植被/地貌标志/载体仍用目录定义，扩散仍受原规则约束；阶梯只改播种
+请求，已播上的物种结果不变。
+
+日志新增 `[bio-occupancy]   relax <signal> level=<id>` 与
+`[bio-occupancy] guarantee attempts=N relaxed=N by_level={...} unplaceable=[...]`。
+`unplaceable` 只应出现在地图完全不含该物种气候带的极端世界（例如没有任何河流/湿地的全干旱图上的芦苇）；
+正常 earth_like 世界不应出现。
+
+回归：`tests/world/bio_coverage_guarantee_test.gd` 在 10×8（玩家可选最小尺寸）与 14×10 上断言
+每个物种至少一格、单格不超过三个物种、保底残存格连续三日 persist 后仍在、同 seed 两次生成逐字节一致；
+`tests/world/bio_guarantee_ladder_test.gd` 用假的 `run_seed` 回调覆盖“只放宽失败物种、原 knobs 不被污染、
+阶梯用尽时报告 unplaceable”的纯逻辑。
+
+## 天气场分类与降水频率（2026-11-20）
+
+围绕「降水极其频繁」的治理，天气场的四个环节改了口径并在生产 profile 里标定。
+改动的入口全部在 `gdext/src/runtime_climate_pass_math.h` / `runtime_climate_passes_weather.cpp`
+与 GDScript 镜像 `scripts/weather/{field_solver_physics,field_solver,feedback,weather_system}.gd`。
+
+### 1. `convergence` 是「有符号净流入」，不是「风向一致度」
+
+旧实现是半波整流均值 `mean_d max(0, cos(self→nb, wind_nb))`：六角格 6 个等间隔方向上
+它恒在 0.29–1.25，**与风场有没有辐合无关** —— 均匀流（零辐散）实测读 0.3333。
+证据与回归：`tests/world/weather_convergence_metric_test.gd`（均匀风必须读 0、辐合中心 1.0、辐散中心 0）。
+
+新口径（`wf_wind_convergence_net_idx_{xy,cached}`）：
+
+```
+w_d     = clamp(|v_nb| / 1.2, 0, 1.25)
+inflow  = Σ_d max(0,  cos_in_d) · w_d
+outflow = Σ_d max(0, -cos_in_d) · w_d
+conv    = clamp((inflow - outflow) / (inflow + outflow), 0, 1)
+```
+
+均匀流 ⇒ 0；辐合中心 ⇒ 1；辐散 ⇒ 钳 0。**没有引入 gain 系数**（`weather_convergence_gain`
+仍是 dead，别拿它当缩放）；分布整体左移：p50 0.376 → **0.016**、p90 0.537 → 0.458、p95 0.612 → 0.636。
+
+口径由 `PK_CLIMATE_CONVERGENCE_LEGACY` 选择：未设置 = net（生产默认）；`1` = 旧口径（仅诊断回退）。
+解析在 knob 构造处完成（`weather_convergence_metric_from_switch`），进 kernel 的只有
+`WeatherFieldKnobs.convergence_metric`，保证 slice / thread / native-daily 同口径。
+
+**四份镜像必须同步**：`wf_wind_convergence_net_idx_xy`、`wf_wind_convergence_net_idx_cached`、
+`field_solver_physics.gd::wind_convergence_for_cell`、`::wind_convergence_idx`。
+注意 GDScript 的 legacy 分支**刻意保留**了旧缺陷（没有 speed 权重），只有 net 分支与 C++ 对齐；
+这个镜像差异在退役 legacy 时消失。
+
+### 2. 六个消费者阈值按新分位标定
+
+net 的 p50 只有 0.016，旧阈值是按 0.376 的假基线定的 —— 不重标定会让「锋生门几乎永远关着、
+海面释放门永远为 0」，真实辐合完全传不出去。现行值：
+
+| 消费者 | 现值 | 依据 |
+|---|---|---|
+| `frontal_convergence = smoothstep(a,b,conv)` | **(0.02, 0.46)** | 新 p50 处闭合、p90 处全开 |
+| `drv_cv = (conv−c)/d`（海面释放门） | **(0.02, 0.44)** | (p50, p90−p50) |
+| `strat_drive += conv*k` | **0.70** | 保持旧 p90 处贡献 0.60×0.537/0.458 |
+| `river_forcing_proxy` / `up_forcing_proxy` | **0.76** | 同比归一 |
+| `dynamic_forcing = conv*0.65` | **0.76** | 同上 |
+| `wf_apply_frontal_convergence_boost_idx::CONVERGENCE_THRESHOLD` | **0.64** | 新 p95 |
+
+这些是**物理常数**，两种口径共用；W9 退役 legacy 后不存在混用问题。
+
+### 3. RAIN 判定是四项合取，不是单阈值
+
+旧实现 `precip > 0.040`（陆）/`0.032`（水）**无条件**通过，等于「下一点就报雨」。
+现在四项同时满足才算降水：
+
+```
+precip > gate && effective_cloud > mp_cloud_gate
+       && precip_cloud_mass > 0.35·mp_cloud_gate && vapor > mp_vapor_gate
+```
+
+- `gate`：`ClimateProfile.weather_precip_classify_gate_land/water`（生产 **0.095 / 0.076**，
+  取自新口径下陆地降水率的 p80）。改这个 profile 就能改行为，不用重编。
+- `mp_cloud_gate`：**0.18（水）/ 0.10（陆）**。原 0.22/0.12 是「弱分支」的门，变硬条件后需要下调，
+  否则 20% 可见云量的暖湿海面会被判无云（`weather_field_solver_test` 的 marine 用例就是这条）。
+- **STORM 与 MONSOON 也必须先过 `meaningful_precip`**。否则它们的判据（`precip>0.065/0.053` + 云门）
+  比 RAIN 更松，会出现「RAIN 2.6% / MONSOON 13.8%」的排序倒挂。
+
+分类口径用 `weather_target_type`（分类器原始输出）；`weather_type` 要过类型过渡状态机，
+headless 短窗口里会停在 prev，不能拿来当验收读数。
+
+### 4. 温度距平是分类输入，与 distribute 的温度扰动上限是两件事
+
+- `wx->temp_anomaly = cell_temp − cell_temp_30d`（`world_ext_simulation_host_save.cpp`）。
+  在此之前这条 lane 从未赋值 ⇒ 分类器距平恒 0 ⇒ DROUGHT/HEATWAVE 结构性不可达。
+- `weather_classify_anomaly_cap`（**0.12**）只钳分类输入；
+  `weather_temp_anomaly_cap`（**0.025**）是 distribute 阶段改温度幅度的上限。**不可互换**，
+  混用会把天气对温度的扰动放大 5 倍。
+
+### 5. 降水空间平滑与「面积 = 1/集中度」
+
+`weather_field_precip_spatial_smooth` 现在由 `ClimateProfile` 显式下发（此前 C++ 吃默认 0.30、
+GDScript 硬编码 0.30/0.09，两边从未同步）。生产保持 **0.30**。
+
+反直觉但已被实测确认：**在硬降水率门下，平滑会压缩降水面积**（0.30→24.76%、0→32.46%），
+因为它削峰摊薄、让更多格子跌回门下。不要用「关平滑」来降面积。
+
+面积不是自由参数：`area = mean_P / P̄_rainy = 1/conc`，且 `P̄_rainy ≤ soft_cap(0.16)` ⇒
+**`area ≥ mean_P / 0.16`**。任何面积目标都必须附 `ΣP / mean_P / P̄_rainy / conc / 下界` 五个数，
+单独一个百分比不构成验收（`tests/world/weather_frequency_probe.gd` 会判这三条自洽性）。
+
+另外：`soft_cap` 本身**在压缩总降水**，抬它会让雨更猛也更多（0.16→0.20 使陆地降水格 24.76%→30.80%），
+不是「同量水重新分配」。
+
+## 玩家 UI 文案精简
+
+- 状态标题已表达结论时，tooltip 不再附同义解释；干旱、洪泛只显示状态名。
+- 数值告警保留具体对象、程度及数据日期；禁用原因、后果、量程和图例语义必须保留。
+- 工具栏用短标题表达用途；风向/洋流保留颜色与强度映射，不重复“显示各地区当前……”；
+  军需路线、区域任务等范围含义写入标题。
+- 空资源不插入“自然资源”空节；未识别资源的科技限制仍显示。条件列表不再附“完成以下条件”引导。
+- 删除说明时同步收缩提示框、隐藏空注脚。地块告警按内容尺寸贴边定位，不保留固定 270px 宽度。
+- 年报复制全文使用展示单位；不附重复的原始整数账目和内部缩放因子。
+
+## 生物分布图标
+
+生物覆盖层的条目由 `ResearchSignalCatalog.BIO_OCCUPANCY_BY_ID` 定义，图标键直接保留 `bio.*` 物种身份；具体纸贴只在 `IconCatalog` 映射。已有作物图标复用商品纸贴，动物和蚕使用 `species_01.png` 的独立裁切。禁止将具体物种统一映射到作物、牲畜或植被类别图标。缺失映射须通过 `IconCatalog.has_icon()` 发出诊断。
+
+新增图集须在 `assets/icons/paper/manifest.json` 记录语义、裁切与参考图，以支持 `tools/art/build_paper_icon_atlases.py` 重建。回归入口为 `tests/ui/icon_catalog_audit_test.gd`，同时检查全部物种的覆盖、独立图标身份及像素重复。
+
+- 顶栏悬停卡须单独检查 `hud_status_view_model.gd`，不能只查经济总览。统计窗口已在页头、
+  净额标签中标明时，不再附“按最近 N 日折算”“多日结算不会堆在一天”等计算说明。
+  有效收支无需空态脚注，未发布快照的错误原因仍保留；价格指数保留成本基准，删除加权公式。
+
+## 战争迷雾的连续遮罩
+
+- `PK_CELL_FIELD` 迷雾显示用连续三格权重；坐标扰动在原始格心平滑归零以保护中心状态。禁止在格心附近局部切回锐化权重，这会在连续场上形成规则斑点。涉及极地 padding 的三角形仍沿用原有锐化，避免全可见地图边缘混入未知行。
+- 三角形、权重与边缘起伏分别在 `shaders/include/cell_field_overlays.gdshaderinc` 的 `pk_overlay_fog_tri`、`pk_overlay_fog_weights`、`pk_overlay_fog_edge_k` 定义，迷雾和天气门控共用。复用原两次噪声给过渡带增加凹凸，保留不规则云缘；`k<=0.05` 和全可见端不受影响，以维持遮挡证明。噪声频率由 `FogOfWarLayer.FOG_WARP_FREQ` 推送，默认 `0.010`；不新增噪声采样、纹理采样或绘制通道。
+- 保留原有扭曲长度上限与地形早退强制不透明约束；不改逐格玩法视野或存档。三格候选范围不变，既有浓雾裁剪的保守范围仍适用。
+- 回归：真实渲染运行 `tests/world/fog_cell_field_test.gd`、`tests/world/weather_overlay_field_test.gd`、`tests/rendering/fog_continuous_mask_test.gd`、`tests/rendering/render_data_tables_test.gd`；覆盖证明运行 `tests/rendering/terrain_draw_coverage_test.gd`。
+- 连续遮罩测试接受 `-- --baseline=<旧 shader 绝对路径> --output=<输出目录>`，在固定视野、时刻、画质和分辨率下输出前后图及 ABBA 顺序的 GPU 耗时；基线必须是修改前文件，不得从修改后的着色器构造弱化版替代。
+
+## 建筑差异化与精简
+
+- 同代独立建筑须提供实际原料、能源、地理或经营组织选择，或被真实系统消费的独立服务。不同名字、单纯放大岗位/配方/产量、工具品质门槛及产业链标注不能单独构成新功能。
+- 只有通用科技点产出的同代知识机构合并。研究效率、贸易速度、减灾等科技 Modifier 属于已完成科技，不能当成其解锁建筑的服务；删除建筑时保留有消费者的科技效果，移除只指向已删产业家族的空目标效果，不把专属大倍率叠到所有通用科研机构。
+- 地理条件必须在建筑条件字节码或本地自然资源列中实际执行，不能仅靠 `geography.*` 标签。水力设施须真实检查河流；纺织必须消费纤维，不能用土地资源直接生产布。多产品路线须比较副产物比例，不能把不同产品组合误判为单纯规模变化。
+- 删除的是作者目录中的独立类型，不是研究后自动退役旧建筑。保留的早期设施继续可建可营运。精简记录中的 `absorbed_by` 表示保留的玩法路线，不是旧存档建筑别名。
+- 删除前逐项核对 BuildingProfile 的同链前驱、GoodProfile 的生产许可、科技 expected/content/support bindings 和应用交汇、Modifier 家族目标、发展成就主体、Trigger selector 及开局规划。前驱应接回原有较早阶段，不可产生自环、跨链或同阶前驱。删除最后一个生产者时同步撤掉该科技对商品的生产许可；不伪造另一个建筑的直接解锁。
+- `data/technology/technology_network.json` 仍是科技唯一作者源；按当前存活资源同步受影响绑定，经 `tools/technology_tree/normalize_network.gd` 重建摘要。同步稳定 ID/内容清单并运行 `tools/prebake_loading_catalogs.gd`，不只删除 `.tres` 或修改 UI。目录身份变化沿用严格存档哈希拒绝，不静默套用新目录。
+- 每次增加或恢复建筑须通过 `tests/building/building_distinction_test.gd`（同代科研、配方/产品组合/岗位/地理去重、已删 ID、发展成就主体、保留科技效果），以及受影响的作物链、开局、建筑运行、每日确定性和目录加载回归。旧生成脚本不得绕过精简记录把已删类型重新加入目录。

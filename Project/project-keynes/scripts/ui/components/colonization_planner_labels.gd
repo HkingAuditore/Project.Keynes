@@ -2,7 +2,7 @@ extends RefCounted
 
 const ROUTE_BLOCKED_SHORT := "路线被水域或不可通行地形隔断，本国没有城市能连通此地。"
 
-const ROUTE_WATER_HINT := "跨水需要「河运」（湖泊）、「天文导航」（浅海）、「远洋航海」（远海）或「远洋船舶设计」（深海）。"
+const ROUTE_WATER_HINT := "跨水需要「河运」（湖泊）、「近海运兵」（浅海）、「天文导航」（远海）或「远洋船舶设计」（深海）。"
 
 static func _state_text(state: int) -> String:
 	return {1: "前往中", 2: "落地结算中", 3: "返程中", 4: "筹备中"}.get(state, "未知")
@@ -56,6 +56,8 @@ static func _reason_text(code: String) -> String:
 
 
 static func _procurement_reason_text(reason: String) -> String:
+	if reason.find("procurement_budget_exhausted") >= 0:
+		return "派遣储备额度今日已用尽，明天按新额度继续补买"
 	if reason.find("cash_insufficient") >= 0:
 		return "国库现金不足"
 	if reason.find("stock_insufficient") >= 0 or reason.find("goods_insufficient") >= 0 \
@@ -65,4 +67,4 @@ static func _procurement_reason_text(reason: String) -> String:
 		return "国家资产通道未开放"
 	if reason.find("merchant_missing") >= 0:
 		return "源地没有可收款的商人"
-	return reason
+	return "国库采购被拒绝（原因码 %s）" % reason

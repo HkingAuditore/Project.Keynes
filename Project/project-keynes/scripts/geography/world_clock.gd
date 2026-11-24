@@ -753,8 +753,28 @@ func calendar_date() -> Dictionary:
 ## 按任意日索引反推日历。事件弹窗按「发生日」显示年月日，
 ## 不能用 calendar_date()（那是「现在」）。
 func calendar_date_for_day(day_idx: int) -> Dictionary:
-	var dpy: int = days_per_year()
-	var day0: int = int(fposmod(float(day_idx), float(dpy)))
+	return calendar_for_day(day_idx, days_per_year())
+
+## 当前日（或指定日索引）的玩家日期文本，见 date_text_for_day()。
+func date_text(day_idx: int = -1) -> String:
+	return date_text_for_day(day_index() if day_idx < 0 else day_idx, days_per_year())
+
+# ─── 玩家可见日期文本 ─────────────────────────────────────────────────────
+# 全游戏只有这一处把「日索引」翻成玩家日期：`1年2月14日`。
+# 顶栏、卷宗、事件弹窗、行军预告都调它，不要再各自拼「第 N 日」「第 N 年」——
+# 日索引是模拟内部口径，玩家看的是年/月/日。
+# 没有时钟引用的界面（view model、AI 提示词）用 static 版本，按默认年长换算。
+
+## 日索引 → 玩家日期文本 `1年2月14日`。负数是「未就绪」哨兵，按第 0 日处理。
+static func date_text_for_day(day_idx: int, days_per_year: int = 365) -> String:
+	var cal := calendar_for_day(day_idx, days_per_year)
+	return "%d年%d月%d日" % [int(cal.year), int(cal.month), int(cal.day_of_month)]
+
+## 日索引 → 日历字段。year 是 1 起的玩家年号，其余按月长表换算。
+static func calendar_for_day(day_idx: int, days_per_year: int = 365) -> Dictionary:
+	var dpy: int = maxi(1, days_per_year)
+	var day: int = maxi(0, day_idx)
+	var day0: int = day % dpy
 	var display_days: int = 0
 	for ml_display in _MONTH_LENGTHS:
 		display_days += int(ml_display)
@@ -771,6 +791,7 @@ func calendar_date_for_day(day_idx: int) -> Dictionary:
 			break
 		day_rem -= ml
 	return {
+		"year": day / dpy + 1,
 		"month": month_idx + 1,
 		"month_name": _MONTH_NAMES_SHORT[month_idx],
 		"day_of_month": day_rem + 1,

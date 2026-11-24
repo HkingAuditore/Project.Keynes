@@ -31,8 +31,8 @@ const RUNTIME_GOOD_SINKS := {
 }
 const RUNTIME_TECHNOLOGY_CONSUMERS := {
 	"tech.river_transport": "domestic river and lake transport capability",
-	"tech.celestial_navigation": "domestic shallow-sea transport capability",
-	"tech.oceanic_navigation": "domestic open-ocean transport capability",
+	"tech.military.coastal_transport": "domestic shallow-sea transport capability",
+	"tech.celestial_navigation": "domestic open-ocean transport capability",
 	"tech.oceanic_ship_design": "domestic deep-ocean transport capability",
 }
 
@@ -200,9 +200,9 @@ func _audit_unlock_semantics(catalog: Dictionary, failures: Array) -> void:
 		"rainfed_wheat_plot": "agrarian", "rainfed_maize_field": "agrarian",
 		"upland_rice_plot": "agrarian", "wetland_rice_garden": "agrarian",
 		"maize_garden": "agrarian", "highland_tuber_plot": "agrarian",
-		"flax_collector": "agrarian", "spice_shade_garden": "agrarian",
+		"household_flax_plot": "agrarian", "spice_shade_garden": "agrarian",
 		"pastoral_camp": "stone", "creamery": "agrarian",
-		"wheat_farm": "agrarian", "rice_collector": "agrarian",
+		"bunded_rice_field": "kingdom", "sharecrop_paddy": "kingdom",
 		"tenant_rainfed_maize_field": "kingdom",
 		"tenant_rainfed_wheat_field": "kingdom", "tenant_paddy": "kingdom",
 		"guild_weaving_house": "agrarian", "cottage_weaving": "agrarian",
@@ -211,7 +211,7 @@ func _audit_unlock_semantics(catalog: Dictionary, failures: Array) -> void:
 		"wire_plant": "electrical", "basic_electrical_equipment_works": "electrical",
 		"scientific_instrument_works": "electrical",
 		"industrial_research_laboratory": "electrical",
-		"polytechnic_institute": "electrical", "nuclear_power_plant": "atomic",
+		"nuclear_power_plant": "atomic",
 	}
 	var building_ids: PackedStringArray = catalog.building_type_ids
 	var technology_eras: PackedStringArray = catalog.technology_era_ids
@@ -463,10 +463,19 @@ func _audit_same_era_duplicates(catalog: Dictionary, failures: Array) -> void:
 	var ids: PackedStringArray = catalog.building_type_ids
 	var groups := {}
 	for b in ids.size():
-		var key := [_building_era_id(catalog, b), catalog.building_owner_profession_ids[b]]
+		var key := [_building_era_id(catalog, b), catalog.building_owner_profession_ids[b],
+			catalog.building_state_roles[b]]
+		if int(catalog.building_state_roles[b]) != 0:
+			# State facilities provide capacity, defense or training rather than
+			# goods. Their wood/earth versus stone/metal capital routes matter.
+			var materials := []
+			for edge in range(catalog.building_construction_offsets[b],
+					catalog.building_construction_offsets[b + 1]):
+				materials.append(int(catalog.building_construction_good_ids[edge]))
+			materials.sort()
+			key.append(materials)
 		for column in [
 				["building_output_offsets", "building_output_good_ids"],
-				["building_dependency_tag_offsets", "building_dependency_tags"],
 				["building_resource_offsets", "building_production_resource_ids"],
 				["building_employee_offsets", "building_employee_profession_ids"]]:
 			var values := []
@@ -474,6 +483,26 @@ func _audit_same_era_duplicates(catalog: Dictionary, failures: Array) -> void:
 				values.append(str(catalog[column[1]][e]))
 			values.sort()
 			key.append(values)
+		# Dependency-tag offsets are indexed by dependency group, not by building.
+		# Compare the building's actual postfix geography and co-product mix.
+		var condition := []
+		for edge in range(catalog.building_condition_offsets[b],
+				catalog.building_condition_offsets[b + 1]):
+			condition.append([catalog.building_condition_opcodes[edge],
+				catalog.building_condition_signals[edge], catalog.building_condition_compares[edge],
+				catalog.building_condition_references[edge], catalog.building_condition_values[edge]])
+		key.append(condition)
+		key.append(catalog.building_production_climate_profile_indices[b])
+		var mix := []
+		var output_begin := int(catalog.building_output_offsets[b])
+		var output_end := int(catalog.building_output_offsets[b + 1])
+		if output_end - output_begin > 1:
+			var first_quantity := maxf(1.0, float(catalog.building_output_quantities[output_begin]))
+			for edge in range(output_begin, output_end):
+				mix.append("%d:%f" % [catalog.building_output_good_ids[edge],
+					float(catalog.building_output_quantities[edge]) / first_quantity])
+			mix.sort()
+		key.append(mix)
 		var inputs := []
 		for e in range(catalog.building_input_offsets[b], catalog.building_input_offsets[b + 1]):
 			if int(catalog.building_input_required_q16[e]) > 0:

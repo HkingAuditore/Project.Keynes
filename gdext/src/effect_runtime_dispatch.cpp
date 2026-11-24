@@ -318,6 +318,24 @@ Dictionary EffectRuntime::run_daily(int64_t day_index) {
             instance.dirty_epoch = 0;
             continue;
         }
+        // EVENT_ONCE (lifecycle 2) delivers one payout per instance generation.
+        // The ACK gate retires it, but a fire transaction that is rejected or
+        // reclaimed by compaction never reaches that gate and used to leave the
+        // row armed: the cadence then replayed the same command every day with a
+        // new fire_sequence (and therefore a new idempotency key), so nothing
+        // downstream could reject the duplicate. A row that already fired and has
+        // no live transaction left is retired here instead of being re-armed.
+        // See fire_family_event_once_effect: city_founder's "+220 people" paid
+        // out once per day for 75 days in the reported save.
+        if (definition.lifecycle == 2 && instance.fire_sequence > 0 &&
+            _pending_transactions_by_instance.find(instance.id) ==
+                _pending_transactions_by_instance.end()) {
+            instance.active = 0;
+            instance.schedule_token = 0;
+            instance.dirty_epoch = 0;
+            release_retired_instance_if_terminal(instance_index);
+            continue;
+        }
         if (definition.lifecycle == 1 && instance.expires_day >= 0 &&
             day_index >= instance.expires_day) {
             std::string expiry_error;

@@ -35,10 +35,10 @@ const CELL_FIELD_DEFINE = RendererShaderWaterScript.CELL_FIELD_DEFINE
 ## 迷雾锐化带宽（gap 单位）。约束 1：必须 < √3/2，默认 0.6（比地形的 0.84 宽 ⇒ 更柔）。
 ## 与 fog_of_war.gdshader 的 `fog_field_band` 默认值同值；运行期由本层推送覆盖。
 const FOG_FIELD_BAND := 0.6
-## 迷雾自己的可平铺低频扭曲。freq 与旧 `edge_warp` 那条 fog_tileable_scale(0.0042) 同值
-## （形态尺度不变）；amp 的单位是 **hex_size**（旧 edge_warp 用的是 hex 直径，见 shader 里
+## 迷雾自己的可平铺扭曲：提高频率打散长直边，仍只计算原有两次噪声。
+## amp 的单位是 **hex_size**（旧 edge_warp 用的是 hex 直径，见 shader 里
 ## 约束 2 的推导 —— 按长度 clamp 后幅度会变小，这是有意的视觉变化）。
-const FOG_WARP_FREQ := 0.0042
+const FOG_WARP_FREQ := 0.010
 const FOG_WARP_AMP := 0.55
 ## `fog_early_out_k` 在拿不到地形材质实参时的兜底（= uniforms.gdshaderinc:221 的默认值）。
 ## 正常路径永远读 host._shader_mat 上的**实际值**，不靠这个常数。

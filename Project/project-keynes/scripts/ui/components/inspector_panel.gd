@@ -1,6 +1,5 @@
 class_name InspectorPanel
 extends PanelContainer
-const InspectorTaxDrafts = preload("res://scripts/ui/components/inspector_tax_drafts.gd")
 
 const InspectorStructure = preload("res://scripts/ui/components/inspector_structure.gd")
 const InspectorCategoryPatch = preload("res://scripts/ui/components/inspector_category_patch.gd")
@@ -11,6 +10,7 @@ const FamilyListScene := preload("res://scenes/ui/family_list.tscn")
 const MarketListScene := preload("res://scenes/ui/market_list.tscn")
 const CohortListScene := preload("res://scenes/ui/cohort_list.tscn")
 const BuildingListScene := preload("res://scenes/ui/building_list.tscn")
+const TaxGroupMapScript := preload("res://scripts/country/tax_group_map.gd")
 const ConstructionEntryScene := preload("res://scenes/ui/construction_entry.tscn")
 const BadgeRowScene := preload("res://scenes/ui/badge_row.tscn")
 const FactGridScene := preload("res://scenes/ui/inspector_fact_grid.tscn")
@@ -34,12 +34,15 @@ const TITLE_FONT_MIN := 18
 const ROW_LIST_KEYS = InspectorStructure.ROW_LIST_KEYS
 
 signal close_requested()
+signal population_discontent_changed(cell_index: int, discontent: Dictionary)
 signal tab_data_requested(tab_id: String)
 signal object_details_requested(request: Dictionary)
 signal detail_visibility_changed(open: bool)
 signal family_colonization_requested(family_handle: int, source_cell: int)
 signal construction_page_requested(sector: String, search: String, sort: String, offset: int)
 signal construction_requested(request: Dictionary)
+## 折叠卡展开/收起：交给宿主切换视图模型的展开状态并重算本页。
+signal construction_fold_action_requested(action: Dictionary)
 signal colonization_requested(request: Dictionary)
 signal trade_orders_page_requested(offset: int)
 signal trade_order_locate_requested(cell_idx: int)
@@ -53,6 +56,7 @@ signal military_dossier_action_requested(action: StringName, payload: Dictionary
 signal military_dossier_army_selected(handle: int)
 
 var _model: Dictionary = {}
+var _presented_population_discontent: Dictionary = {}
 var _current_tab := "geography"
 var _tabs_signature_cache := ""
 var _cell_index := -1
@@ -193,11 +197,14 @@ func _ready() -> void:
 			construction_page_requested.emit(sector, search, sort, offset))
 	_construction_workspace.build_requested.connect(
 		func(request: Dictionary) -> void: construction_requested.emit(request))
+	_construction_workspace.fold_action_requested.connect(
+		func(action: Dictionary) -> void: construction_fold_action_requested.emit(action))
 	(_kpi_cards[_kpi_cards.size() - 1] as DossierKpiCard).show_divider = false
 	_chapter_nav.custom_minimum_size = Vector2(0.0, DossierChapterNav.HEIGHT)
 	_chapter_nav.chapter_selected.connect(_on_tab_selected)
 	resized.connect(_on_inspector_resized)
 	_inspector_root.resized.connect(_sync_kpi_density)
+	_inspector_root.visibility_changed.connect(_emit_population_discontent)
 	_title_label.resized.connect(_fit_title_font)
 	_sync_split_layout()
 
@@ -233,6 +240,7 @@ func set_model_for_selection(model: Dictionary) -> void:
 			_scroll.scroll_vertical = 0
 	_model = model
 	if _model.is_empty():
+		_publish_population_discontent({})
 		return
 	_apply_header(_model.get("header", {}), false)
 	if cell_changed and visible and is_inside_tree():
@@ -277,13 +285,7 @@ func apply_live_patch(patch: Dictionary) -> void:
 		_render_content(false)
 	else:
 		_apply_category_patch(category)
-
-
-func apply_published_gdp(data: Dictionary) -> void:
-	for card: DossierKpiCard in _kpi_cards:
-		if card.visible and card.metric_id == "kpi_gdp":
-			card.set_metric(data)
-			return
+		_publish_population_discontent(category)
 
 
 func set_tab_category(tab_id: String, category: Dictionary) -> void:
@@ -312,6 +314,7 @@ func reset_for_world() -> void:
 	_model.clear()
 	_cell_index = -1
 	_current_tab = "geography"
+	_publish_population_discontent({})
 	_scroll_by_tab.clear()
 	_pending_tax.clear()
 	_draft_tax.clear()
@@ -448,14 +451,50 @@ func _render_content(reset_scroll: bool) -> void:
 	_restore_tax_drafts()
 	if reset_scroll and _scroll != null:
 		_scroll.scroll_vertical = 0
+	_publish_population_discontent(data)
+
+
+func _publish_population_discontent(category: Dictionary) -> void:
+	_presented_population_discontent = category.get("class_discontent", {}) \
+		if _current_tab == "population" else {}
+	_emit_population_discontent()
+
+
+func _emit_population_discontent() -> void:
+	if _inspector_root != null and _inspector_root.is_visible_in_tree() \
+			and not _presented_population_discontent.is_empty():
+		population_discontent_changed.emit(_cell_index, _presented_population_discontent)
+	else:
+		population_discontent_changed.emit(-1, {})
 
 
 func _capture_tax_drafts() -> void:
-	InspectorTaxDrafts._capture_tax_drafts(_draft_tax, _tax_editors, _pending_tax)
+	_draft_tax.clear()
+	for key_value in _tax_editors.keys():
+		var key := String(key_value)
+		if _pending_tax.has(key):
+			continue
+		for editor_value in _tax_editors[key]:
+			var editor := editor_value as TaxLaneEditor
+			if editor == null or not editor.is_editing():
+				continue
+			_draft_tax[key] = editor.displayed_rate()
+			break
 
 
 func _restore_tax_drafts() -> void:
-	InspectorTaxDrafts._restore_tax_drafts(_draft_tax, _tax_editors, _pending_tax)
+	if _draft_tax.is_empty():
+		return
+	for key_value in _draft_tax.keys():
+		var key := String(key_value)
+		if _pending_tax.has(key):
+			continue
+		var rate := int(_draft_tax[key])
+		for editor_value in _tax_editors.get(key, []):
+			var editor := editor_value as TaxLaneEditor
+			if editor != null and not editor.is_pending():
+				editor.apply_draft(rate)
+	_draft_tax.clear()
 
 
 func _build_category_content(data: Dictionary) -> void:
@@ -544,6 +583,7 @@ func _build_military_ledger(host: Control, model: Dictionary) -> void:
 		return
 	var ledger := MilitaryCellLedgerScene.instantiate()
 	host.add_child(ledger)
+	ledger.set_preview_boundary(self)
 	ledger.action_requested.connect(func(request: Dictionary) -> void:
 		military_state_building_requested.emit(request))
 	ledger.army_create_requested.connect(func(request: Dictionary) -> void:
@@ -673,7 +713,15 @@ func _tax_summary(lanes: Array) -> String:
 
 
 func _restore_lane_pending(editor: TaxLaneEditor, lane: Dictionary) -> void:
-	InspectorTaxDrafts._restore_lane_pending(_pending_tax, _tax_key, editor, lane)
+	if editor == null:
+		return
+	var item_key := "default" if String(lane.get("scope", "item")) == "default" \
+		else String(lane.get("item_id", ""))
+	var key := _tax_key(String(lane.get("kind", "")), item_key)
+	if _pending_tax.has(key):
+		editor.mark_pending(
+			int(_pending_tax[key].get("rate", lane.get("base", 0))),
+			int(_pending_tax[key].get("mode", lane.get("mode", 0))))
 
 
 func _rebuild_tax_editor_registry() -> void:
@@ -729,6 +777,121 @@ func _register_tax_editor(editor: TaxLaneEditor) -> void:
 			"rate", editor.lane_data().get("base", 0))))
 
 
+## 税收面板可选的「整组调税」轴。四轴共用一套分组模块，顺序即面板下拉顺序。
+## 档位放第一：它是这次新加的生产方式轴，也是玩家最想「一条滑条管一档」的那条。
+const TAX_GROUP_AXES := [
+	{"mode": "maturity_rank", "label": "按生产档位", "hint": "同一生产方式档位的全国建筑"},
+	{"mode": "output_good", "label": "按产物", "hint": "产出同一件货的全国建筑"},
+	{"mode": "sector", "label": "按大类", "hint": "农业/采掘/制造/能源/知识/军事"},
+	{"mode": "staple_crop", "label": "按主粮农场", "hint": "全国主粮农场，其余按大类"},
+]
+
+
+func tax_group_axes() -> Array:
+	return TAX_GROUP_AXES
+
+
+## 把 catalog 列整理成税分组需要的形状。业主列只给 sector_owner/staple_crop 用，
+## 这里补占位保持长度匹配，避免其他轴因为缺列被拒。
+func _tax_group_columns() -> Dictionary:
+	if _player_controller == null or not _player_controller.has_method("get_economy_facade"):
+		return {}
+	var economy = _player_controller.get_economy_facade()
+	if economy == null or not economy.has_method("construction_type_columns"):
+		return {}
+	var columns: Dictionary = economy.construction_type_columns()
+	var building_ids: PackedStringArray = columns.get(
+		"building_type_ids", PackedStringArray())
+	if building_ids.is_empty():
+		return {}
+	var owners: PackedInt32Array = columns.get(
+		"building_owner_profession_ids", PackedInt32Array())
+	if owners.size() != building_ids.size():
+		owners = PackedInt32Array()
+		owners.resize(building_ids.size())
+		owners.fill(0)
+		columns["building_owner_profession_ids"] = owners
+		columns["profession_ids"] = PackedStringArray(["placeholder"])
+	return columns
+
+
+## 取 item_id 这座建筑在某个分组轴下所属的整组。
+## 返回 {ok, mode, group_id, label, item_ids, count, group_count}；失败返回 {}。
+func tax_group_ids_for(mode: String, item_id: String) -> Dictionary:
+	var columns := _tax_group_columns()
+	if columns.is_empty():
+		return {}
+	var building_ids: PackedStringArray = columns["building_type_ids"]
+	var building := building_ids.find(item_id)
+	if building < 0:
+		return {}
+	var grouped: Dictionary = TaxGroupMapScript.build(columns, mode)
+	if not bool(grouped.get("ok", false)):
+		return {}
+	var group_ids: PackedStringArray = grouped.get("group_ids", PackedStringArray())
+	var group_labels: PackedStringArray = grouped.get(
+		"group_labels", PackedStringArray())
+	var indices: PackedInt32Array = grouped.get(
+		"building_group_indices", PackedInt32Array())
+	if building >= indices.size():
+		return {}
+	var group := int(indices[building])
+	if group < 0 or group >= group_ids.size():
+		return {}
+	var out := PackedStringArray()
+	for member in TaxGroupMapScript.buildings_in_group(indices, group):
+		if member >= 0 and member < building_ids.size():
+			out.append(building_ids[member])
+	return {
+		"ok": true,
+		"mode": mode,
+		"group": group,
+		"group_id": String(group_ids[group]),
+		"label": String(group_labels[group]) if group < group_labels.size() else "",
+		"item_ids": out,
+		"count": out.size(),
+		"group_count": group_ids.size(),
+	}
+
+
+## 主粮农场税组的 item_id 列表（当前 50 座）。整组调税需要它，而分组判定
+## 与建造界面的折叠同源：首个产出货的类别是 starchy_staple。
+## catalog 从 economy facade 的 construction_type_columns 取，不新建数据通路。
+func staple_farm_tax_group_ids() -> PackedStringArray:
+	var columns := _tax_group_columns()
+	if columns.is_empty():
+		return PackedStringArray()
+	var building_ids: PackedStringArray = columns["building_type_ids"]
+	var grouped: Dictionary = TaxGroupMapScript.build(
+		columns, TaxGroupMapScript.MODE_STAPLE_CROP)
+	if not bool(grouped.get("ok", false)):
+		return PackedStringArray()
+	var group_ids: PackedStringArray = grouped.get("group_ids", PackedStringArray())
+	var group := group_ids.find(TaxGroupMapScript.STAPLE_GROUP_ID)
+	if group < 0:
+		return PackedStringArray()
+	var indices: PackedInt32Array = grouped.get(
+		"building_group_indices", PackedInt32Array())
+	var out := PackedStringArray()
+	for building in TaxGroupMapScript.buildings_in_group(indices, group):
+		if building >= 0 and building < building_ids.size():
+			out.append(building_ids[building])
+	return out
+
+
+## 整组调税：一次命令改动全国一组建筑（如全部主粮农场）的营业税。
+## 与单条 override 不同，这里走 country.tax.set_override_group：命令层把 N 条
+## SET_TAX_OVERRIDE 打成一个批次，内核整批准入，不会只生效一半。
+func request_tax_group_override(kind: int, item_ids: PackedStringArray,
+		rate_basis_points: int) -> void:
+	if _player_controller == null or item_ids.is_empty():
+		return
+	_player_controller.request_command(
+		&"country.tax.set_override_group",
+		{"kind": kind, "item_ids": item_ids,
+			"rate_basis_points": rate_basis_points})
+
+
 func _on_tax_override_requested(
 		scope: String,
 		kind: String,
@@ -754,7 +917,7 @@ func _on_tax_override_requested(
 	var result: Dictionary = _player_controller.request_command(command, args)
 	var key := _tax_key(kind, item_id if scope != "default" else "default")
 	if bool(result.get("ok", false)):
-		_mark_tax_pending(key, rate, result, "set", mode)
+		_mark_tax_pending(key, rate, "set", mode)
 	else:
 		_resolve_tax_editor_key(key)
 
@@ -777,16 +940,15 @@ func _on_tax_reset_requested(scope: String, kind: String, item_id: String) -> vo
 		var rate := 0
 		if not refs.is_empty():
 			rate = int((refs[0] as TaxLaneEditor).lane_data().get("default_rate", 0))
-		_mark_tax_pending(key, rate, result, "clear")
+		_mark_tax_pending(key, rate, "clear")
 	else:
 		_resolve_tax_editor_key(key)
 
 
-func _mark_tax_pending(key: String, rate: int, receipt: Dictionary, op: String,
+func _mark_tax_pending(key: String, rate: int, op: String = "set",
 		mode: int = 0) -> void:
 	_pending_tax[key] = {
-		"effective_day": int(receipt.get("effective_day", -1)),
-		"sequence": int(receipt.get("sequence", -1)),
+		"effective_day": int(_tax_context.get("current_day", -1)) + 1,
 		"policy_version": int(_tax_context.get("policy_version", -1)),
 		"rate": rate,
 		"mode": mode,
@@ -794,19 +956,6 @@ func _mark_tax_pending(key: String, rate: int, receipt: Dictionary, op: String,
 	}
 	for editor_value in _tax_editors.get(key, []):
 		(editor_value as TaxLaneEditor).mark_pending(rate, mode)
-
-
-func show_tax_rejection(result: Dictionary) -> void:
-	if int(result.get("cell", -1)) != _cell_index:
-		return
-	for key: String in _pending_tax.keys():
-		if int(_pending_tax[key].get("sequence", -1)) != int(result.get("sequence", -2)):
-			continue
-		_pending_tax.erase(key)
-		_resolve_tax_editor_key(key)
-		for editor: TaxLaneEditor in _tax_editors.get(key, []):
-			editor.show_rejection(String(result.get("message", "")))
-		return
 
 
 func _resolve_tax_pending(context: Dictionary, category: Dictionary = {}) -> void:

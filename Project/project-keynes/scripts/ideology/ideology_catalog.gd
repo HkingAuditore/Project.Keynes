@@ -1183,7 +1183,7 @@ func _present_effect_lines(modifier_catalog, card_id: String, level_index: int,
 	for effect in on_enter_effects:
 		if effect == null or not effect is EffectCommandScript:
 			continue
-		var on_enter := _present_on_enter_effect(effect)
+		var on_enter := _present_on_enter_effect(effect, modifier_catalog)
 		if not on_enter.is_empty():
 			_append_clean_line(on_enter_lines, on_enter)
 	for line in _present_rule_lines(card_id, level_index):
@@ -1250,9 +1250,18 @@ func _program_summary(definition_key: String) -> String:
 	return ""
 
 
-func _present_on_enter_effect(effect: Resource) -> String:
+func _present_on_enter_effect(effect: Resource, modifier_catalog = null) -> String:
 	if effect == null or not effect is EffectCommandScript:
 		return ""
+	if effect.action == 1 and effect.opcode == 1 and modifier_catalog != null \
+			and modifier_catalog.has_method("present_definition_for_ideology"):
+		var lines: PackedStringArray = modifier_catalog.present_definition_for_ideology(
+			effect.definition_key, int(effect.value_q16))
+		if not lines.is_empty():
+			var joined := "；".join(lines)
+			if int(effect.duration_days) > 0:
+				return "首次推行冲击（持续 %d 天）：%s" % [int(effect.duration_days), joined]
+			return "首次推行时：%s" % joined
 	# The only authored one-shot today is the native free-draw adapter. Keep the
 	# mapping explicit so a future on-enter write cannot silently acquire a
 	# player-facing promise the runtime does not implement.

@@ -2,12 +2,18 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <utility>
 
 namespace pk {
 using namespace godot;
 
 namespace {
+// 用户 11-23 口径（narrative_event_service.gd: MAX_STATE_PROBE_CELLS_PER_DAY = 2）：
+// 每模拟日最多 2 个格子做完整上下文采样，把 8~16 格分摊到多日，消掉每周单帧尖刺。
+// 与 runtime_narrative.cpp 的同名常量保持同值。
+constexpr int64_t MAX_STATE_PROBE_CELLS_PER_DAY = 2;
+
 bool owns(const NarrativeCountryView &country, int32_t cell) {
     return std::find(country.territory.begin(), country.territory.end(), cell) != country.territory.end();
 }
@@ -251,6 +257,16 @@ void RuntimeNarrative::poll_probes(const NarrativeDay &input) {
         if (row.cell >= 0 && cells.size() < 16 &&
             std::find(cells.begin(), cells.end(), row.cell) == cells.end())
             cells.push_back(row.cell);
+    }
+    // 每模拟日最多 MAX_STATE_PROBE_CELLS_PER_DAY 格。按 day 轮转起点，
+    // 多日下来每格都会被采到，不会因为固定取前两格而饿死后面的陆块。
+    if (static_cast<int64_t>(cells.size()) > MAX_STATE_PROBE_CELLS_PER_DAY) {
+        const size_t cap = static_cast<size_t>(MAX_STATE_PROBE_CELLS_PER_DAY);
+        const size_t offset = static_cast<size_t>(
+            input.day % static_cast<int64_t>(cells.size()));
+        std::rotate(cells.begin(),
+            cells.begin() + static_cast<std::ptrdiff_t>(offset), cells.end());
+        cells.resize(cap);
     }
     for (int32_t cell : cells) {
         const auto sample = input.sample(cell, true);

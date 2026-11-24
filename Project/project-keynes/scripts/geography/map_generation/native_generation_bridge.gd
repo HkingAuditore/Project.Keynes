@@ -1105,13 +1105,32 @@ func get_economy_perf_report() -> Dictionary:
 	# has no report to offer (it is intentionally policy-gated). Prefer the
 	# graph's compact native result, while retaining the legacy report for OFF /
 	# SHADOW and older DLLs that do not expose the graph accessor.
+	var graph_report: Dictionary = {}
 	if _generator._runtime_graph_active and _generator._data_core_world_ext is DCWorldExt:
-		var graph_report: Dictionary = _generator._data_core_world_ext.get_runtime_graph_last_economy_report()
-		if not graph_report.is_empty():
-			return graph_report
+		graph_report = _generator._data_core_world_ext.get_runtime_graph_last_economy_report()
+	# The graph capture freezes once the simulation worker owns the day loop.
+	# The direct probe accessor is read per sampled row, so it stays aligned
+	# with the committed day even when the graph no longer pulses.
+	var probe: Dictionary = get_economy_probe_report()
+	if not probe.is_empty():
+		var probe_day: int = int(probe.get("current_day", -1))
+		var graph_day: int = int(graph_report.get("current_day", -1))
+		if graph_report.is_empty() or probe_day >= graph_day:
+			return probe
+	if not graph_report.is_empty():
+		return graph_report
 	return _generator._economy_daily_job.last_perf_report() \
 		if _generator._economy_daily_job != null and _generator._economy_daily_job.has_method("last_perf_report") \
 		else {}
+
+
+func get_economy_probe_report() -> Dictionary:
+	if _generator._data_core_world_ext == null \
+			or not (_generator._data_core_world_ext is DCWorldExt):
+		return {}
+	if not _generator._data_core_world_ext.has_method("get_runtime_economy_probe_report"):
+		return {}
+	return _generator._data_core_world_ext.get_runtime_economy_probe_report()
 
 
 

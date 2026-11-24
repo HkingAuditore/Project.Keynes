@@ -79,6 +79,17 @@ layout_mode = 2
 autowrap_mode = 3
 theme_type_variation = &"PKDossierBody"
 
+[node name="EffectTitle" type="Label" parent="Column/Scroll/Body/DetailBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "掌握后效果"
+theme_type_variation = &"PKDossierKicker"
+
+[node name="Effects" parent="Column/Scroll/Body/DetailBlock" instance=ExtResource("5_insights")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
 [node name="Gauge" type="Control" parent="Column/Scroll/Body/DetailBlock"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 62)
@@ -101,17 +112,6 @@ text = "研究条件"
 theme_type_variation = &"PKDossierKicker"
 
 [node name="Conditions" parent="Column/Scroll/Body/DetailBlock" instance=ExtResource("5_insights")]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="EffectTitle" type="Label" parent="Column/Scroll/Body/DetailBlock"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "掌握后效果"
-theme_type_variation = &"PKDossierKicker"
-
-[node name="Effects" parent="Column/Scroll/Body/DetailBlock" instance=ExtResource("5_insights")]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3

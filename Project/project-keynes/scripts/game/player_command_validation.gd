@@ -14,6 +14,10 @@ const COMMAND_COUNTRY_TAX_SET_DEFAULT := &"country.tax.set_default"
 
 const COMMAND_COUNTRY_TAX_SET_OVERRIDE := &"country.tax.set_override"
 
+## 一次给一组建筑写同一个营业税税率（主粮农场那种整组调税）。
+## 走命令通道而不是让 UI 循环发 N 条，这样整批准入是同生共死的。
+const COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP := &"country.tax.set_override_group"
+
 const COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE := &"country.tax.clear_override"
 
 const COMMAND_CELL_TAX_SET_DEFAULT := &"country.tax.cell.set_default"
@@ -150,6 +154,7 @@ static func _validate_command_args(
 				if move_domain < 0 or move_domain >= 4 or position < 0:
 					return _result(false, "invalid_args", "研究队列位置无效。")
 		COMMAND_COUNTRY_TAX_SET_DEFAULT, COMMAND_COUNTRY_TAX_SET_OVERRIDE, \
+				COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP, \
 				COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE, COMMAND_CELL_TAX_SET_DEFAULT, \
 				COMMAND_CELL_TAX_CLEAR_DEFAULT, COMMAND_CELL_TAX_SET_OVERRIDE, \
 				COMMAND_CELL_TAX_CLEAR_OVERRIDE:
@@ -159,7 +164,8 @@ static func _validate_command_args(
 			if id == COMMAND_COUNTRY_TAX_SET_DEFAULT or \
 					id == COMMAND_CELL_TAX_SET_DEFAULT or \
 					id == COMMAND_CELL_TAX_SET_OVERRIDE or \
-					id == COMMAND_COUNTRY_TAX_SET_OVERRIDE:
+					id == COMMAND_COUNTRY_TAX_SET_OVERRIDE or \
+					id == COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP:
 				var mode := _tax_assessment_mode(args)
 				if mode != 0 and mode != 1:
 					return _result(false, "invalid_tax_mode", "计税模式无效。")
@@ -178,6 +184,16 @@ static func _validate_command_args(
 				var item_id := StringName(args.get("item_id", &""))
 				if item_id.is_empty() or not _tax_item_exists(facade, kind, item_id):
 					return _result(false, "invalid_tax_item", "税务细项目标无效。")
+			if id == COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP:
+				var group_ids: PackedStringArray = args.get(
+					"item_ids", PackedStringArray())
+				if group_ids.is_empty():
+					return _result(false, "invalid_tax_item", "整组调税缺少目标建筑。")
+				for candidate_id in group_ids:
+					if StringName(candidate_id).is_empty() or \
+							not _tax_item_exists(facade, kind, StringName(candidate_id)):
+						return _result(false, "invalid_tax_item",
+							"整组调税包含无效目标：%s" % candidate_id)
 		COMMAND_CONSTRUCTION_BUILD:
 			if StringName(args.get("building_id", &"")).is_empty():
 				return _result(false, "invalid_args", "缺少建筑标识。")
@@ -285,6 +301,18 @@ static func _validate_command_args(
 			var procurement_bp := int(args.get("bp", -1))
 			if procurement_bp < 0 or procurement_bp > 10000:
 				return _result(false, "invalid_args", "军需采购份额必须在 0–100% 之间。")
+		COMMAND_MILITARY_BUDGET:
+			# `-1` 是「本次不改」（沿用原生当前值），所以通道份额的合法区间是
+			# -1..10000；总份额不接受 -1：它要么启用信封，要么就是 0（关闭）。
+			var total_bp := int(args.get("total_bp", -1))
+			if total_bp < 0 or total_bp > 10000:
+				return _result(false, "invalid_args", "军事预算份额必须在 0–100% 之间。")
+			for key in ["wage_bp", "upkeep_bp", "procurement_bp"]:
+				if not args.has(key):
+					continue
+				var channel_bp := int(args[key])
+				if channel_bp < -1 or channel_bp > 10000:
+					return _result(false, "invalid_args", "军事通道份额必须在 0–100% 之间。")
 		COMMAND_MILITARY_ARMY_CREATE:
 			var cell := int(args.get("cell", -1))
 			var units = args.get("units", {})

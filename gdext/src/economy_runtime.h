@@ -636,6 +636,12 @@ public:
     bool has_pending_effect_commands() const;
     godot::Dictionary run_slice(const godot::Dictionary &ctx);
     godot::Dictionary run_slice_compact(const godot::Dictionary &ctx);
+    // Sparse-workset / continuation probe. Diagnostic only: pure reads of
+    // epoch-scoped counters, no settlement decision depends on it.
+    void write_workset_probe_report(godot::Dictionary &out) const;
+    godot::Dictionary probe_report() const;
+    void note_boundary_phase_ms(int32_t phase, double ms);
+    void note_probe_slice(const godot::Dictionary &slice_result);
     // Worker ACTIVE production: one compact ECONOMY_GRAPH slice on the existing
     // formula owner (no second formula set). Returns false on fatal/ledger error.
     // When non-null, *done is set from the slice result (epoch idle for the day).
@@ -1308,6 +1314,7 @@ public:
     // it only mutates the sparse row and never touches conserved ledgers.
     bool apply_mobilization_result(int32_t cell, int32_t profession,
                                    int32_t action, bool success);
+    godot::Dictionary resolve_player_mobilization(const godot::Dictionary &choice);
     // Convenience read used by the ration path and by diagnostics.
     int32_t military_ration_satisfaction_q16(int32_t cell) const {
         return cell >= 0 &&
@@ -1707,6 +1714,13 @@ private:
     void promote_person_for_family(int32_t family_index);
     void register_person_effect(int32_t person_index);
     void retire_person(int32_t person_index);
+    // An expedition payload detaches its people from the cohort lane on
+    // purpose (cohort_handle == 0). `person_in_expedition_transit` marks such a
+    // travelling person so PERSON_COMMIT does not retire them mid-voyage, and
+    // `drop_expedition_transit_person` keeps the payload lanes consistent when
+    // some other authority (family dissolution) does retire one.
+    bool person_in_expedition_transit(uint64_t person_handle) const;
+    void drop_expedition_transit_person(uint64_t person_handle);
     void record_person_demography(int32_t cohort_slot,
                                   int64_t population_before,
                                   int64_t deaths);
@@ -1760,6 +1774,14 @@ private:
 #include "economy_runtime_internal_change_tracking.h"
     void write_fiscal_continuation_report(godot::Dictionary &out) const;
     godot::Dictionary fatal_context_report() const;
+    // R1-7/R1-8: assert_id + typed witness for the reason last stopped on.
+    // Live in economy_runtime_fault_context.cpp; diagnostics only, never saved.
+    godot::String fatal_assert_id() const;
+    godot::Dictionary fatal_witness_report() const;
+    // R4-2: generation / state_hash / restore_eligible for begin_save()'s result.
+    // Lives in economy_runtime_fault_context.cpp so the persistence leaf does not
+    // grow for a diagnostics-only contract.
+    void write_save_identity_report(godot::Dictionary &out) const;
     int32_t locked_market_cycle_days() const;
     int32_t locked_slow_cycle_days() const;
     int32_t locked_plan_cycle_days() const;

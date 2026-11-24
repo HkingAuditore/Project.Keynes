@@ -271,7 +271,6 @@ bool read_sparse_weights(const Dictionary &knobs, const char *keys_key,
 
 // 矿点配额取决于陆块自身的规模，和生态保底的大陆门槛独立。
 constexpr int32_t kMinQuotaCells = 8;
-
 } // namespace
 
 godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary &knobs) {

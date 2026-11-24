@@ -100,8 +100,7 @@ func _refresh_cashflow(cashflow: Dictionary) -> void:
 	_kicker.text = "国库收支 · 日均" if rolling else "国库收支"
 	_day.text = String(cashflow.get("window_text", cashflow.get("day_text", ""))) \
 		if rolling else String(cashflow.get("day_text", ""))
-	_body.tooltip_text = ("最近 %d 日折算为日均；未结算日沿用上次结算。"
-		% int(cashflow.get("covered_days", 0))) if rolling else "显示最近一次结算的收支。"
+	_body.tooltip_text = ""
 	_income_bar.set_segments("收入 · 日均" if rolling else "收入",
 		cashflow.get("income_segments", []),
 		String(cashflow.get("income_text", "")), true)
@@ -155,7 +154,7 @@ func _refresh_per_capita(per_capita: Dictionary) -> void:
 func _refresh_living(living: Dictionary) -> void:
 	_living.set_level(float(living.get("level", NAN)), int(living.get("max", 6)),
 		String(living.get("name", "")))
-	_living.tooltip_text = "人口加权后的生活水平档位：0 赤贫 … 6 奢华"
+	_living.tooltip_text = "0 赤贫 … 6 奢华"
 
 
 # ── 物价 ────────────────────────────────────────────────────────────────

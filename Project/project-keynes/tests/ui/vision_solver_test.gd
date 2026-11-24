@@ -23,6 +23,7 @@ func _init() -> void:
 	_test_fog_state_and_disabled_path()
 	_test_native_vision_research_boundary()
 	_test_save_restore_resolves_pending_player_context()
+	_test_save_restore_without_start_cell_refuses_load()
 	print("vision solver: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 
@@ -145,20 +146,51 @@ func _test_native_vision_research_boundary() -> void:
 func _test_save_restore_resolves_pending_player_context() -> void:
 	var map := _make_map(LF.PLAIN, VEG.NONE)
 	var start_cell := _center_index(map)
-	map.country_slot_arr[start_cell] = 3
+	# 镜像故意给一个错值：现契约下 slot 由玩家 country_handle 的低 32 位推出
+	# （adapter `_resolve_player_country_slot`），不再回落读 `country_slot_arr[start_cell]`。
+	# 断言拿到 3 就同时证明了「用了存档 handle」和「没有读镜像」。
+	map.country_slot_arr[start_cell] = 7
 	var host := WorldRuntimeHost.new()
 	host._current_map = map
 	host._pending_load_bundle = {
 		"sections": {
 			"player_context": {
 				"start_cell": start_cell,
+				"player_country_handle": 3,
 			},
 		},
 	}
-	_expect("load resolves player slot from pending player_context before providers",
+	_expect("load resolves player slot from the saved handle before providers",
 		host._resolve_player_country_slot() == 3)
 	_expect("load enables fog from pending player_context before providers",
 		host._resolve_fog_of_war_enabled())
+	host.free()
+
+
+## 读档时起始格解析不出来（存档 player_context 缺 start_cell，且 host 还没入树、
+## 没有 GameFlow.session() 兜底）→ `_resolve_player_start_cell() == -1` →
+## `_fog_allowed()` 为 false → fog 被解析成 OFF。
+##
+## 这时「迷雾开着却绑不到玩家国家」的守卫必须照样拒读，否则就是静默读档成功、
+## 整图全亮、零命令零 flip。历史 bug：守卫条件是 `host._fog_of_war_enabled`，
+## 而它刚好被上一步解析成 false，整条守卫被跳过。守卫改判 `fog_of_war_enabled`
+## （玩家设置）后，这条路径必须稳定返回 `player_country_unbound`。
+func _test_save_restore_without_start_cell_refuses_load() -> void:
+	var map := _make_map(LF.PLAIN, VEG.NONE)
+	var host := WorldRuntimeHost.new()
+	host._current_map = map
+	host.fog_of_war_enabled = true
+	host._pending_load_bundle = {"sections": {"player_context": {}}}
+	_expect("unresolved player start cell is -1",
+		int(host._resolve_player_start_cell()) < 0)
+	_expect("fog setting stays on while resolved fog is off",
+		host.fog_of_war_enabled and not bool(host._resolve_fog_of_war_enabled()))
+	var finalized: Dictionary = host.finalize_save_restore_visuals()
+	var vision: Dictionary = finalized.get("vision", {})
+	_expect("load without a resolvable start cell is refused",
+		not bool(vision.get("ok", true)))
+	_expect("refusal reports player_country_unbound",
+		String(vision.get("code", "")) == "player_country_unbound")
 	host.free()
 
 

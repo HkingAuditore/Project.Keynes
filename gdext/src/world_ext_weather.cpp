@@ -336,6 +336,8 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
         ? float(knobs["weather_precip_classify_gate_land"]) : 0.040f;
     const float classify_gate_water = knobs.has("weather_precip_classify_gate_water")
         ? float(knobs["weather_precip_classify_gate_water"]) : 0.032f;
+    const float classify_anomaly_cap = knobs.has("weather_classify_anomaly_cap")
+        ? float(knobs["weather_classify_anomaly_cap"]) : 0.12f;
     float field_precip_spatial_smooth = knobs.has("field_precip_spatial_smooth")
                                             ? float(knobs["field_precip_spatial_smooth"]) : 0.30f;
     if (field_precip_spatial_smooth < 0.0f) field_precip_spatial_smooth = 0.0f;
@@ -739,6 +741,7 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     wfk.field_precip_spatial_smooth = field_precip_spatial_smooth;
     wfk.classify_gate_land = classify_gate_land;
     wfk.classify_gate_water = classify_gate_water;
+    wfk.classify_anomaly_cap = classify_anomaly_cap;
     wfk.field_cloud_inertia = field_cloud_inertia;
     wfk.field_wet_terrain_precip_damping = field_wet_terrain_precip_damping;
     wfk.field_lake_precip_damping = field_lake_precip_damping;

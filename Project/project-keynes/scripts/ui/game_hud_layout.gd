@@ -29,7 +29,6 @@ const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 var _panel_diag_printed: bool = false
 var _panel_right_limit: float = 0.0
 var _cell_board: CellBoard
-var _cell_hover_card: CellHoverCard
 var _colonization_panel: ColonizationPlannerPanel
 var _country_action_bar: CountryActionBar
 var _family_founding_dialog: FamilyFoundingDialog
@@ -120,24 +119,16 @@ func _layout_family_founding_dialog() -> void:
 ## 悬停展板贴 HUD 左边缘、顶栏下方，允许覆盖互斥使用的图例工具栏。
 ## 高度仍按地图安全区决定能放几张表。
 func _layout_cell_board() -> void:
-	if _cell_board == null or _viewport == null:
+	if _cell_board == null:
 		return
 	var safe := map_safe_area()
+	var available := maxf(safe.size.y - UITokens.SPACE_MD * 2.0, 0.0)
+	_cell_board.apply_available_height(available)
 	_cell_board.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_cell_board.offset_left = UITokens.SPACE_MD
 	_cell_board.offset_top = safe.position.y + UITokens.SPACE_MD
 	_cell_board.offset_right = _cell_board.offset_left + CellBoard.BOARD_WIDTH
-	var available := safe.size.y - UITokens.SPACE_MD * 2.0
-	if not CellHoverCard.fits_right_of(_cell_board.get_global_rect().end.x, safe):
-		available = 0.0
-	_cell_board.apply_available_height(available)
 	_cell_board.offset_bottom = _cell_board.offset_top + _cell_board.desired_height()
-	sync_board_avoidance()
-
-
-func sync_board_avoidance() -> void:
-	if _cell_hover_card != null and _cell_board != null:
-		_cell_hover_card.set_avoid_rect(_cell_board.get_global_rect() if _cell_board.visible else Rect2())
 
 
 func _layout_overlay_legend() -> void:

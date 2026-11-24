@@ -268,13 +268,15 @@ struct MilitaryCatalog {
     std::vector<int16_t> vegetation_rough, vegetation_def_q8, vegetation_supply_q8,
         vegetation_attrition_bp100;
     std::vector<int16_t> cover_flat, cover_supply_q8, cover_attrition_bp100;
-    // Naval transport gates (army-personnel contract 2 §2.2, design §7.4):
-    // indices into digest.country_unlock_bits, resolved by
-    // MilitaryCatalogCompiler from `tech.military.coastal_transport` /
-    // `tech.military.naval_transport`. -1 (or any unconfigured catalog) means
-    // "never granted", so water stays impassable exactly as before.
-    int32_t coastal_transport_bit = -1;   // runs of <= 3 consecutive water cells
-    int32_t ocean_transport_bit = -1;     // no run limit
+    // Water-crossing gates (army-personnel contract 2 §2.2, design §7.4):
+    // one bit per water tier, resolved by MilitaryCatalogCompiler from the four
+    // navigation technologies. A formation may enter a water cell whose tier is
+    // at or below the best unlocked tier; -1 (or any unconfigured catalog) means
+    // "never granted", so that tier stays impassable.
+    int32_t water_lake_bit = -1;      // tech.river_transport
+    int32_t water_shallow_bit = -1;   // tech.military.coastal_transport
+    int32_t water_far_bit = -1;       // tech.celestial_navigation
+    int32_t water_deep_bit = -1;      // tech.oceanic_ship_design
 };
 
 // ---------------------------------------------------------------- stores

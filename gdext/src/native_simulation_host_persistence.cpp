@@ -838,6 +838,12 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
             return false;
         }
     }
+    // The economy checkpoint may travel embedded in the bundle (writers before
+    // the ECP2 de-duplication) or as the PKSV `ecp2` section only (current
+    // writers). Both end up in parsed.economy_ecp2_bytes; the external form is
+    // already covered by the container section hash.
+    RuntimeEconomyEcp2State candidate_ecp2;
+    std::string economy_ecp2_restore_error;
     if ((parsed.section_mask & RUNTIME_SAVE_SECTION_ECONOMY_ECP2) != 0) {
         constexpr uint32_t ECONOMY_ECP2_SECTION_MARKER = 0x32504345u; // ECP2
         uint32_t economy_marker = 0;
@@ -871,8 +877,6 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
             error = "runtime_bundle_economy_ecp2_section_marker_invalid";
             return false;
         }
-        RuntimeEconomyEcp2State candidate_ecp2;
-        std::string economy_ecp2_restore_error;
         if (!decode_ecp2(parsed.economy_ecp2_bytes.data(),
                          parsed.economy_ecp2_bytes.size(), candidate_ecp2,
                          economy_ecp2_restore_error)) {
@@ -900,11 +904,27 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
             parsed.economy_ecp2_bytes.assign(external_ecp2, external_ecp2 + external_ecp2_size);
             if (recovered_truncated_ecp2) *recovered_truncated_ecp2 = true;
         }
-        if (!ecp2_has_required_domains(candidate_ecp2.authority_domain_mask,
-                                       ECP2_DOMAIN_CORE_AUTHORITY)) {
-            error = "runtime_bundle_economy_ecp2_core_domains_missing";
+    } else if (external_ecp2 != nullptr && external_ecp2_size > 0) {
+        if (external_ecp2_size < 4u ||
+            std::memcmp(external_ecp2, "ECP2", 4u) != 0) {
+            error = "runtime_bundle_economy_ecp2_section_marker_invalid";
             return false;
         }
+        if (!decode_ecp2(external_ecp2, external_ecp2_size, candidate_ecp2,
+                         economy_ecp2_restore_error)) {
+            error = economy_ecp2_restore_error.empty()
+                ? "runtime_bundle_economy_ecp2_restore_invalid"
+                : economy_ecp2_restore_error;
+            return false;
+        }
+        parsed.economy_ecp2_bytes.assign(external_ecp2,
+                                         external_ecp2 + external_ecp2_size);
+    }
+    if (!parsed.economy_ecp2_bytes.empty() &&
+        !ecp2_has_required_domains(candidate_ecp2.authority_domain_mask,
+                                   ECP2_DOMAIN_CORE_AUTHORITY)) {
+        error = "runtime_bundle_economy_ecp2_core_domains_missing";
+        return false;
     }
     // The optional Effect inbox follows the final authority section. Its
     // payload is already covered by the whole bundle checksum.
@@ -1229,21 +1249,13 @@ void NativeSimulationHost::build_save_bundle(
         }
         bundle->section_mask |= RUNTIME_SAVE_SECTION_IDEOLOGY;
     }
-    {
-        std::string economy_pod_save_error;
-        if (_economy_pod_authority.encode_ecp1(bundle->economy_pod_bytes,
-                                               economy_pod_save_error)) {
-            if (!bundle->economy_pod_bytes.empty())
-                bundle->section_mask |= RUNTIME_SAVE_SECTION_ECONOMY_POD;
-        }
-        // ECP1 is optional when the POD has never committed; encode failure
-        // with empty bytes is not a host fault.
-        if (!economy_pod_save_error.empty() &&
-            economy_pod_save_error != "economy_pod_ecp1_save_blocked") {
-            set_fault(economy_pod_save_error.c_str());
-            return;
-        }
-    }
+    // ECP1 is no longer written. Restore has been ECP2-only since the cutover
+    // (see NativeSimulationHost::apply_pending_restore: "ECP1 is never an
+    // authority restore path"), so every save carried a full second economy
+    // encoding that nothing read: 24.7 MiB raw / 0.30 MiB compressed on a
+    // 100x64 day-628 save, plus a full encode on the save critical path.
+    // RuntimeSaveBundle::economy_pod_bytes stays so ABI-9-era bundles still
+    // parse; only new writes stop producing it.
     if (_economy_ecp2_dual_write.load(std::memory_order_acquire) &&
         _economy_production_runtime != nullptr) {
         EconomyCostProbe economy_probe("save.ecp2", bundle->committed_day);
@@ -1281,7 +1293,13 @@ void NativeSimulationHost::build_save_bundle(
                 ecp2_encode_error.c_str());
             return;
         }
-        bundle->section_mask |= RUNTIME_SAVE_SECTION_ECONOMY_ECP2;
+        // The checkpoint is captured once and exported to the PKSV `ecp2`
+        // section (poll_runtime_save hands these bytes to the economy provider),
+        // but it is no longer embedded in the PKSR wire bytes: the container
+        // already stores the identical block, and restore prefers the external
+        // section. Keeping both cost 52.98 MiB raw / 1.12 MiB compressed per
+        // save for the same bytes. RUNTIME_SAVE_SECTION_ECONOMY_ECP2 therefore
+        // stays clear; the parser still accepts bundles that carry it.
     }
 
     if (_world_environment && _executor_military) {
@@ -1566,7 +1584,8 @@ void NativeSimulationHost::build_save_bundle(
         append_u64_le(economy_checksum);
     }
 
-    if (!bundle->economy_ecp2_bytes.empty()) {
+    if ((bundle->section_mask & RUNTIME_SAVE_SECTION_ECONOMY_ECP2) != 0 &&
+            !bundle->economy_ecp2_bytes.empty()) {
         constexpr uint32_t ECONOMY_ECP2_SECTION_MARKER = 0x32504345u; // ECP2
         append_u32_le(ECONOMY_ECP2_SECTION_MARKER);
         const uint32_t ecp2_section_size = static_cast<uint32_t>(

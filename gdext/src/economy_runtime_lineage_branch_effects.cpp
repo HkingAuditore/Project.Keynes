@@ -157,6 +157,30 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
     const int32_t market = group.cell >= 0 && group.cell < _cell_count.get()
         ? market_store().cell_to_market[group.cell] : -1;
     if (market < 0 || market >= market_store().market_count.get()) return quote;
+    // A merchant post sells no good, so every receipt term of the normal
+    // quote stays zero forever and the vacancy it leaves can never be ranked
+    // as a mobility target -- which also keeps the type pinned on
+    // INVESTMENT_REJECTION_ACTIVE_OWNER_VACANCY. Its owner quote is the
+    // market retail pool share instead, priced against the seats this group
+    // would add.
+    if (is_merchant_service_post(type)) {
+        const int64_t seats = std::max<int64_t>(1, saturating_mul(
+            std::max<int64_t>(1, group.count),
+            std::max<int64_t>(1, type.owner_slots_per_building), sat));
+        const int64_t per_owner_day = merchant_retail_owner_income_per_day(
+            group.cell, seats, seats, sat);
+        quote.owner_income_per_day = per_owner_day;
+        quote.disposable_survival_power_per_day = per_owner_day;
+        quote.cash_receipt = saturating_mul(per_owner_day, seats, sat);
+        quote.cash_revenue_per_day = quote.cash_receipt;
+        quote.economic_revenue_per_day = quote.cash_receipt;
+        quote.after_tax_revenue_per_day = quote.cash_receipt;
+        quote.profit_per_day = per_owner_day;
+        quote.utilization_q16 = Q16_ONE;
+        quote.executable_capacity_q16 = Q16_ONE;
+        quote.feasible = per_owner_day > 0;
+        return quote;
+    }
     const int32_t owner_slot = find_cohort_slot(
         group.cell, group.owner_signature_id);
     const bool has_owner_cohort = owner_slot >= 0 && owner_slot <

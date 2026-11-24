@@ -17,6 +17,26 @@ var _active_offer_generation: int = 0
 var _outcome_record: Dictionary = {}
 var _pending_image_request_offer_id: int = 0
 var _settling_offer_id: int = 0
+## GM「屏蔽弹窗」：切换后所有待展示事件走默认选项自动确认，不留锁着时钟的弹窗。
+var _popups_suppressed: bool = false
+
+## [popup-deferral 2026-11-20] 玩家正泡在自己的窗口里（科技 / 经济(税收) / 军事 / 政治 /
+## 外交国家卷宗，营造、家族档案、军务档案、派遣、议和、史册、GM 面板、时代纸笺）时，
+## 事件不再抢窗口。以前 show_narrative_event_offer 直接关掉国家面板，这就是
+## 「每次有事件都强行打断」的根因；现在改成静置：弹窗留到窗口关闭的那一刻
+## （各关闭路径回调 try_present / recheck_narrative_popup）。
+##
+## 提示音复用已烘焙的纸页揭示音：bank 与原生后端都没有专门的「待阅」音。
+## 停表由原生 event_pause_mask 负责（本代流程不再自己 pause/restore 时钟）。
+const DEFERRAL_CUE := &"ideology_reveal"
+## 兜底重试间隔：关闭路径少接一个入口就会变成「事件一直不弹」，
+## 静置期间按这个节拍自查一次 active_offer。
+const DEFERRAL_RETRY_SEC := 0.2
+
+var _deferred: bool = false
+var _deferred_offer_id: int = 0
+var _deferred_retry_token: int = 0
+var _deferred_retry_scheduled: bool = false
 
 
 func configure(controller, _runtime_host, _clock, ui_manager, service, ai_client = null) -> void:
@@ -58,12 +78,84 @@ func set_ai_client(ai_client) -> void:
 	_ai_client = ai_client
 
 
+func set_popups_suppressed(value: bool) -> void:
+	_popups_suppressed = value
+	if value and _controller != null and _controller is Node and (_controller as Node).is_inside_tree():
+		# 让当前事件也走自动选择/确认路径，避免开关切换后留下锁定的
+		# 事件弹窗并继续持有暂停状态。
+		(_controller as Node).call_deferred("sync_ui")
+
+
 func is_locked() -> bool:
 	return _locked
 
 
 func is_open() -> bool:
 	return _locked
+
+
+## 事件已就绪但玩家窗口还开着：弹窗等窗口关闭后再展示。
+func is_deferred() -> bool:
+	return _deferred
+
+
+func _workspace_blocks_popup() -> bool:
+	if _ui_manager == null or not _ui_manager.has_method("is_player_workspace_open"):
+		return false
+	return bool(_ui_manager.is_player_workspace_open())
+
+
+## 静置：offer 留在服务的 active_offer 里（不再继续出队），只在第一次挡下时响一声。
+func _hold_for_workspace(offer: Dictionary) -> void:
+	var offer_id := int(offer.get("offer_id", 0))
+	var newly_held := not _deferred or offer_id != _deferred_offer_id
+	_deferred = true
+	_deferred_offer_id = offer_id
+	if newly_held:
+		_play_deferral_cue()
+	_schedule_deferral_retry()
+
+
+func _clear_deferral() -> void:
+	if not _deferred and _deferred_offer_id == 0:
+		return
+	_deferred = false
+	_deferred_offer_id = 0
+	# 抬高令牌让在途重试自行退出。
+	_deferred_retry_token += 1
+	_deferred_retry_scheduled = false
+
+
+func _play_deferral_cue() -> void:
+	if _controller == null or not (_controller is Node):
+		return
+	var audio := (_controller as Node).get_node_or_null("/root/GameAudio")
+	if audio != null and audio.has_method("play_event_cue"):
+		audio.play_event_cue(DEFERRAL_CUE)
+
+
+func _schedule_deferral_retry() -> void:
+	if _deferred_retry_scheduled:
+		return
+	if _controller == null or not (_controller is Node) \
+			or not (_controller as Node).is_inside_tree():
+		return
+	var tree := (_controller as Node).get_tree()
+	if tree == null:
+		return
+	_deferred_retry_scheduled = true
+	_deferred_retry_token += 1
+	var token := _deferred_retry_token
+	tree.create_timer(DEFERRAL_RETRY_SEC).timeout.connect(func() -> void:
+		if token != _deferred_retry_token:
+			return
+		_deferred_retry_scheduled = false
+		if not _deferred:
+			return
+		try_present()
+		if _deferred:
+			_schedule_deferral_retry()
+	)
 
 
 func _busy() -> bool:
@@ -108,6 +200,23 @@ func try_present() -> void:
 func _try_present_impl() -> void:
 	if _service == null or _settling_offer_id != 0:
 		return
+	if _popups_suppressed:
+		_clear_deferral()
+		var suppressed_offer := _resolve_active_offer()
+		if not suppressed_offer.is_empty():
+			var options: Array = suppressed_offer.get("options", [])
+			if not options.is_empty():
+				on_option_chosen(int(suppressed_offer.get("offer_id", 0)),
+					int(suppressed_offer.get("offer_generation",
+						suppressed_offer.get("generation", 1))),
+					clampi(int(suppressed_offer.get("default_option_index", 0)), 0, options.size() - 1))
+				return
+		if _locked:
+			_locked = false
+			_active_offer_id = 0
+			_active_offer_generation = 0
+			offer_changed.emit({})
+		return
 	if _busy():
 		if _locked and _ui_manager != null and _ui_manager.has_method("close_narrative_event_offer"):
 			_ui_manager.close_narrative_event_offer()
@@ -120,6 +229,7 @@ func _try_present_impl() -> void:
 
 	var offer := _resolve_active_offer()
 	if offer.is_empty():
+		_clear_deferral()
 		if _locked:
 			if _ui_manager != null and _ui_manager.has_method("close_narrative_event_offer"):
 				_ui_manager.close_narrative_event_offer()
@@ -128,6 +238,13 @@ func _try_present_impl() -> void:
 			_active_offer_generation = 0
 			offer_changed.emit({})
 		return
+	# [popup-deferral 2026-11-20] 玩家正在读自己的窗口：不抢窗口，先静置。
+	# 这里不改锁、不动 offer，窗口关闭后由各关闭路径回调 try_present 接上。
+	if _workspace_blocks_popup():
+		_hold_for_workspace(offer)
+		return
+	if _deferred:
+		_clear_deferral()
 	var was_locked := _locked
 	_locked = true
 
@@ -209,6 +326,7 @@ func on_option_chosen(offer_id: int, offer_generation: int, option_index: int) -
 func on_outcome_acknowledged() -> void:
 	_outcome_record = {}
 	_pending_image_request_offer_id = 0
+	_clear_deferral()
 	if _ui_manager != null and _ui_manager.has_method("close_narrative_event_offer"):
 		_ui_manager.close_narrative_event_offer()
 	if _controller != null and _controller.has_method("clear_cell_highlights"):
@@ -246,6 +364,7 @@ func capture() -> Dictionary:
 
 
 func restore(state: Dictionary) -> void:
+	_clear_deferral()
 	_locked = false
 	_outcome_record = {}
 	_active_offer_id = 0

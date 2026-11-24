@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+weather_refresh_auto_stride_by_speed = false
 dynamic_visual_atlas_upload_stride = 4
 native_daily_sim_mode = 2
 native_runtime_graph_mode = 2

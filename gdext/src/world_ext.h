@@ -580,6 +580,9 @@ public:
     godot::Dictionary get_runtime_control_state() const;
     godot::Dictionary get_runtime_perf_snapshot(int detail_level = 0) const;
     godot::Dictionary get_runtime_graph_last_economy_report() const;
+    // Sparse-workset probe: scalar counters straight from the economy runtime.
+    // Diagnostic only; called once per recorded perf row, never per frame.
+    godot::Dictionary get_runtime_economy_probe_report() const;
     godot::Dictionary record_runtime_visual_timings(double ui_input_to_feedback_ms,
                                                     double visual_apply_ms,
                                                     double gpu_upload_ms);
@@ -1793,6 +1796,13 @@ public:
     godot::PackedInt32Array get_economy_live_cells();
     // ---- end Economy military hooks ----
     godot::Dictionary get_economy_report() const;
+    // R1-6: "which binary is this?" without requiring any runtime. A cold
+    // `DCWorldExt.new()` (no economy bootstrapped, no worker) must still answer,
+    // which is what the taxonomy test and a player bug report need.
+    godot::String get_build_id() const;
+    // The cold `get_economy_report()` shape, including build_id. Kept next to
+    // get_build_id() so the two "no runtime yet" answers cannot drift apart.
+    godot::Dictionary economy_unavailable_report() const;
     // Review §3: the effect-input digest buckets each metric by this quantum, so
     // sub-quantum drift stops re-signing every card. 0 keeps the old exact
     // behaviour, which is the default until the numbers are chosen.
@@ -1983,6 +1993,9 @@ public:
     godot::Dictionary get_economy_csv_recording_status() const;
     godot::Dictionary begin_economy_save(int chunk_bytes = 4 * 1024 * 1024);
     godot::Dictionary begin_economy_forensics_save(int chunk_bytes = 4 * 1024 * 1024);
+    // R3: replay a `.pkinc` incident bundle offline. Owns an isolated runtime, so
+    // it works without a loaded world and cannot touch the live economy.
+    godot::Dictionary economy_replay_incident(const godot::Dictionary &incident);
     godot::PackedByteArray read_economy_save_chunk(int max_bytes = 4 * 1024 * 1024);
     godot::Dictionary end_economy_save();
     godot::Dictionary capture_economy_ecp2(int flags = 0) const;
@@ -3625,6 +3638,12 @@ private:
     // A running worker re-takes the economy boundary right after each input
     // capture, so a deferred Economy effect adapter call is replayed by the
     // next capture that already holds the boundary.
+    // Country twins of the Economy adapters below: the same worker boundary
+    // applies, and a deferred call is retried by the next runtime-graph
+    // adapter pass (which runs every tick).
+    godot::Dictionary dispatch_effect_native_country_unlocked();
+    godot::Dictionary ack_effect_native_country_unlocked();
+    godot::Dictionary settle_orphaned_effect_native_country_acks_unlocked();
     godot::Dictionary dispatch_effect_native_economy_unlocked();
     godot::Dictionary ack_effect_native_economy_unlocked();
     uint64_t                                  _canal_topology_generation = 0;
@@ -3662,6 +3681,10 @@ private:
     // rebellion outcome to the sparse row. Never touches conserved ledgers.
     bool apply_mobilization_result(int cell_idx, int profession, int action,
                                    bool success);
+    // Player-facing "resolve the rebellion choice" entry. The row itself is
+    // applied by apply_mobilization_result above; this one owns the odds roll
+    // and the choice payload, so it must read through the economy boundary.
+    godot::Dictionary resolve_player_mobilization(const godot::Dictionary &choice);
     // ---- Military cell stats
     // Published per-country metrics (design §17.1 `country.at_war` /
     // `country.soldier_share_q16`), keyed by country handle and rebuilt from

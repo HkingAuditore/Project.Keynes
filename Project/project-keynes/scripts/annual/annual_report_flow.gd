@@ -15,6 +15,7 @@ var _catalogs: Dictionary = {}
 var _reopen_pending: bool = false
 var _viewed: Array[int] = []
 var _confirmation_error := ""
+var _popups_suppressed: bool = false
 func configure(controller, host, ui) -> void:
 	_controller = controller
 	_host = host
@@ -55,7 +56,25 @@ func _ensure_scribe() -> void:
 func is_open() -> bool:
 	return _open
 
+## GM「屏蔽弹窗」：清掉已排队/恢复中的年报，避免下一次 sync_ui 仍进入 _show()
+## 在「屏蔽弹窗」状态下把时钟暂停。
+func set_popups_suppressed(value: bool) -> void:
+	_popups_suppressed = value
+	if not value:
+		return
+	_queued = 0
+	_reopen_pending = false
+	if _open:
+		if _ui != null and _ui.has_method("is_annual_report_open") \
+				and _ui.is_annual_report_open() and _ui.has_method("close_annual_report"):
+			_ui.close_annual_report()
+		_open = false
+
 func queue_report(id: int) -> void:
+	if _popups_suppressed:
+		if _host != null and _host.has_method("mark_annual_report_presented"):
+			_host.mark_annual_report_presented(id)
+		return
 	# 纪事在「报告就绪」时预生成：从就绪到玩家开卷通常隔几秒以上，异步请求基本赶得上。
 	# 赶不上的话本次不显示，下次开卷自然就有——历史报告也一样命中缓存。
 	_prewarm_chronicle(id)
@@ -83,6 +102,8 @@ func _confirmation_reason() -> String:
 
 
 func try_present() -> void:
+	if _popups_suppressed:
+		return
 	if _host == null or _ui == null or _open:
 		return
 	if _ui.has_method("can_open_annual_report") and not _ui.can_open_annual_report():

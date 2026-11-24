@@ -644,6 +644,8 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
                 // 与生产 staged 路径一致。
                 k.use_next_outputs = true;
                 k.field_advect_steps = ki("field_advect_steps", 3);
+                k.classify_anomaly_cap =
+                    clamp_f(kf("weather_classify_anomaly_cap", 0.12f), 0.0f, 0.5f);
                 k.classify_gate_land = clamp_f(
                     kf("weather_precip_classify_gate_land", 0.040f), 0.0f, 0.5f);
                 k.classify_gate_water = clamp_f(
@@ -771,6 +773,14 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
                 // 守卫要求齐长的 13 条 lane（kernel:993 起）。少一条整段静默跳过，
                 // 而它与 distribute 共用 stage 11 的 bit，所以 stage-days 上看不出来。
                 wx->temp_read = snapshot.cell_temp;
+                // W6：分类温度距平 = temp − temp_30d。此前从未赋值 ⇒ TANO 恒 nullptr ⇒
+                // DROUGHT/HEATWAVE 不可达（计划 F13）。冷启动 30d 缺失时退回 0。
+                if (snapshot.cell_temp_30d.size() == cells) {
+                    wx->temp_anomaly.resize(cells);
+                    for (size_t i = 0; i < cells; ++i) {
+                        wx->temp_anomaly[i] = snapshot.cell_temp[i] - snapshot.cell_temp_30d[i];
+                    }
+                }
                 wx->moisture_read = snapshot.cell_moisture;
                 wx->air_anomaly = snapshot.cell_air_mass_temp_anomaly;
                 wx->wind_x = snapshot.cell_wind_x;

@@ -715,8 +715,8 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
             ? -1 : static_cast<int32_t>(it - _technology_ids.begin());
     };
     _water_tech_river = resolve_tech("tech.river_transport");
-    _water_tech_shallow = resolve_tech("tech.celestial_navigation");
-    _water_tech_far = resolve_tech("tech.oceanic_navigation");
+    _water_tech_shallow = resolve_tech("tech.military.coastal_transport");
+    _water_tech_far = resolve_tech("tech.celestial_navigation");
     _water_tech_deep = resolve_tech("tech.oceanic_ship_design");
     auto compile_technology_tags = [&](const std::vector<int32_t> &tag_offsets,
                                        const std::vector<std::string> &tags,

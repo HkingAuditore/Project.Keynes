@@ -820,7 +820,14 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
         const float effective_precip_floor = on_water ? 0.014f : 0.018f;
         if (precip < 0.003f) precip = 0.0f;
         const float provisional_cloud = dc_clampf(cloud_water * 1.10f + condensation * 0.25f, 0.0f, 1.0f);
-        const float temp_anom_i = (TANO != nullptr) ? TANO[i] : 0.0f;
+        // W6：分类器温度距平。W6 之前 TANO 在 native daily 路径恒为 nullptr（计划 F13），
+        // 所以 DROUGHT/HEATWAVE 两条分支结构性不可达；host 现在会填 lane，这里加钳制。
+        float temp_anom_i = (TANO != nullptr) ? TANO[i] : 0.0f;
+        {
+            const float cap = knobs.classify_anomaly_cap;
+            if (temp_anom_i > cap) temp_anom_i = cap;
+            else if (temp_anom_i < -cap) temp_anom_i = -cap;
+        }
         const float snow_cover_cls = (SNOWR != nullptr) ? SNOWR[i] : 0.0f;
         uint8_t pre_wt = wf_classify_field_weather_at(
             temp, vapor, provisional_cloud, cloud_water, precip, instability,

@@ -1,6 +1,5 @@
 class_name GameUIManager
 extends CanvasLayer
-const MilitaryActions = preload("res://scripts/ui/game_ui/military_actions.gd")
 
 const TouchMetrics = preload("res://scripts/ui/game_ui/touch_metrics.gd")
 
@@ -21,6 +20,7 @@ signal fit_requested()
 signal setup_requested()
 signal regenerate_requested()
 signal clear_selection_requested()
+signal population_discontent_changed(cell_index: int, discontent: Dictionary)
 signal map_overlay_requested(request: Dictionary)
 signal map_overlay_cleared()
 signal pause_menu_visibility_changed(open: bool)
@@ -34,7 +34,6 @@ signal annual_history_requested()
 signal annual_report_closed(report_id: int)
 signal annual_report_selected(report_id: int)
 signal annual_history_page_requested(offset: int)
-signal annual_report_workspace_available()
 signal narrative_event_option_selected(offer_id: int, offer_generation: int, option_index: int)
 signal narrative_event_outcome_acknowledged()
 signal narrative_chronicle_requested()
@@ -157,10 +156,11 @@ var _era_ceremony_parent: Control
 var _era_ceremony_index := -1
 var _era_ceremony_landed_name := ""
 var _era_celebrated_index := -1
+var _era_ceremony_resume_clock := false
 var _era_advancement_snapshot: Dictionary = {}
 var _family_founding_dialog: FamilyFoundingDialog
 var _gm_available := false
-var _era_ceremony_suppressed := false
+var _gm_popups_suppressed := false
 var _gm_all_ui_suppressed := false
 var _gm_saved_ui_visibility: Dictionary = {}
 var _debug_layer: Control
@@ -298,14 +298,10 @@ func _on_country_research_signal_discovered(_event: Dictionary) -> void:
 func _on_economy_event_batch_available(_meta: Dictionary) -> void:
 	_country_component.apply_economy_event_batch(self, _meta)
 
-func record_committed_day(day: int) -> void:
-	_country_component.record_committed_day(self, day)
 
-func record_committed_ledger(commit: Dictionary) -> void:
-	_country_component.record_committed_ledger(self, commit)
+func notify_committed_day() -> void:
+	_country_component.notify_committed_day(self)
 
-func refresh_committed_view() -> void:
-	_country_component.refresh_committed_view(self)
 
 func _on_ideology_runtime_settled(_result: Dictionary) -> void:
 	_country_component.apply_ideology_settled(self, _result)
@@ -320,11 +316,52 @@ func show_transient_message(text: String) -> void:
 
 
 func _on_military_state_building_requested(request: Dictionary) -> void:
-	MilitaryActions._on_military_state_building_requested(self, request)
+	if _player_controller == null:
+		return
+	var op := String(request.get("op", "state.build"))
+	var command_id: StringName = PlayerControllerScript.COMMAND_MILITARY_STATE_BUILD \
+		if op == "state.build" else PlayerControllerScript.COMMAND_MILITARY_STATE_DEMOLISH
+	var result: Dictionary = _player_controller.request_command(command_id, {
+		"cell": int(request.get("cell", -1)),
+		"building": int(request.get("building", -1)),
+	})
+	var ok := bool(result.get("ok", false))
+	var message := String(result.get("message", ""))
+	# 被拒时立刻解锁动作键，不然要等到下一次日推进才恢复——玩家会以为按钮坏了。
+	if not ok and _right_panel != null \
+			and _right_panel.has_method("release_military_ledger_busy"):
+		_right_panel.release_military_ledger_busy()
+	# 回执先写在地块档案那一行上（成功=已排队，失败=被拒的理由）；营造反馈条
+	# 只在营造窗口打开时可见，不能当作这一页的回音。
+	if _right_panel != null and _right_panel.has_method("set_military_ledger_feedback"):
+		_right_panel.set_military_ledger_feedback(message, ok)
+	if _right_panel != null and _right_panel.has_method("set_construction_feedback"):
+		_right_panel.set_construction_feedback(message, ok)
 
 
+## 地块军事台账把该格本国驻军整编为一支部队；兵种模板直接取自驻军 lots。
 func _on_military_army_create_requested(request: Dictionary) -> void:
-	MilitaryActions._on_military_army_create_requested(self, request)
+	if _player_controller == null:
+		if _right_panel != null:
+			_right_panel.set_military_army_feedback("玩家控制器尚未就绪。", false)
+			_right_panel.release_military_ledger_busy()
+		return
+	var result: Dictionary = _player_controller.request_command(
+		PlayerControllerScript.COMMAND_MILITARY_ARMY_CREATE, {
+			"cell": int(request.get("cell", -1)),
+			"units": request.get("units", {}),
+		})
+	var ok := bool(result.get("ok", false))
+	var message := String(result.get("message", ""))
+	if message.is_empty():
+		message = "命令已下达" if ok else "部队编成未能排队。"
+	if not ok and _right_panel != null \
+			and _right_panel.has_method("release_military_ledger_busy"):
+		_right_panel.release_military_ledger_busy()
+	if _right_panel != null and _right_panel.has_method("set_military_army_feedback"):
+		_right_panel.set_military_army_feedback(message, ok)
+	if ok:
+		_mark_country_panel_dirty(COUNTRY_DIRTY_MILITARY, "army_create")
 
 
 func _country_section_mask(section_id: String) -> int:
@@ -438,10 +475,8 @@ func is_gm_available() -> bool:
 	return _overlay_component.is_gm_available(self)
 
 
-func set_era_ceremony_suppressed(enabled: bool) -> void:
-	_era_ceremony_suppressed = enabled
-	if enabled and is_era_ceremony_playing():
-		_era_ceremony.skip()
+func set_popups_suppressed(enabled: bool) -> void:
+	_overlay_component.set_popups_suppressed(self, enabled)
 
 
 func set_all_ui_suppressed(enabled: bool) -> void:
@@ -584,7 +619,42 @@ func _on_military_dossier_timer() -> void:
 
 
 func _on_military_dossier_action_requested(action: StringName, payload: Dictionary) -> void:
-	MilitaryActions._on_military_dossier_action_requested(self, action, payload)
+	if _player_controller == null:
+		return
+	if action == &"locate" or action == &"locate_cell":
+		var cell := int(payload.get("cell", -1))
+		if cell < 0:
+			cell = int(payload.get("focus_cell", -1))
+		if cell >= 0 and _player_controller.has_method("focus_cell"):
+			_player_controller.call("focus_cell", cell)
+		return
+	var handle := int(payload.get("handle", 0))
+	if handle <= 0:
+		return
+	var result: Dictionary = {}
+	match action:
+		&"move", &"area", &"explore":
+			result = _player_controller.begin_military_arm_order(handle, String(action), 1)
+		&"cancel_order":
+			_player_controller.cancel_military_arm_order()
+			return
+		&"confirm_order":
+			result = _player_controller.confirm_military_arm_order()
+		&"radius":
+			_player_controller.set_military_arm_order_radius(int(payload.get("radius", 1)))
+			return
+		&"stop", &"stance":
+			_player_controller.cancel_military_arm_order()
+			var command := &"military.army.stop" if action == &"stop" else &"military.army.stance"
+			result = _player_controller.request_command(command,
+				{"army": handle, "stance": int(payload.get("stance", 0))})
+		_:
+			return
+	# 行军 / 区域控制成功也要给回执：否则确认键按下后档案毫无变化，玩家以为按钮坏了。
+	var accepted := bool(result.get("ok", false))
+	var fallback := "命令已下达。" if accepted else "命令未生效，请重试。"
+	_right_panel.set_military_dossier_feedback(
+		String(result.get("message", fallback)), accepted)
 
 
 func update_military_arm_order(state: Dictionary) -> void:
@@ -713,8 +783,8 @@ func _ensure_era_panel() -> void:
 
 
 func _start_era_ceremony(old_index: int, new_index: int, buffs: PackedStringArray) -> void:
-	if _era_ceremony_suppressed:
-		# GM 屏蔽事件时只同步时代基线，不播放大典。
+	if _gm_popups_suppressed:
+		# GM 屏蔽事件时只同步时代基线，不创建会暂停时钟的大典。
 		_era_celebrated_index = new_index
 		_era_ceremony_index = -1
 		return
@@ -750,6 +820,7 @@ func _start_era_ceremony(old_index: int, new_index: int, buffs: PackedStringArra
 		host.move_child(_era_ceremony, _pause_menu.get_index())
 	_era_ceremony.emblem_landed.connect(_on_era_ceremony_landed.bind(new_index))
 	_era_ceremony.finished.connect(_on_era_ceremony_finished)
+	_pause_clock_for_ceremony()
 	_era_ceremony.play({
 		"old_era_id": _era_indicator_view_model.era_id_for(old_index),
 		"new_era_id": new_id, "new_era_name": new_name,
@@ -788,9 +859,6 @@ func set_player_controller(controller) -> void:
 			_player_controller.command_settled.disconnect(old_settled)
 	_disconnect_era_advancement_signals()
 	_player_controller = controller
-	if _pause_menu != null:
-		_pause_menu.event_pause_reader = Callable(controller.narrative_service(), "event_pause_mask") \
-			if controller != null and controller.has_method("narrative_service") else Callable()
 	_connect_era_advancement_signals()
 	if _player_controller != null and _player_controller.has_signal("command_completed"):
 		var audio_callback := Callable(self, "_on_player_command_completed_audio")
@@ -859,6 +927,7 @@ func _bind_ui() -> void:
 	_right_panel = get_node("UIRoot/PanelLayer/RightPanel") as InspectorPanel
 	_right_panel.set_player_controller(_player_controller)
 	_right_panel.close_requested.connect(func() -> void: clear_selection_requested.emit())
+	_right_panel.population_discontent_changed.connect(population_discontent_changed.emit)
 	_right_panel.tab_data_requested.connect(_on_inspector_tab_data_requested)
 	_right_panel.visibility_changed.connect(_on_inspector_visibility_changed)
 	_right_panel.object_details_requested.connect(_on_object_details_requested)
@@ -868,6 +937,8 @@ func _bind_ui() -> void:
 		_on_family_colonization_requested)
 	_right_panel.construction_page_requested.connect(_on_construction_page_requested)
 	_right_panel.construction_requested.connect(_on_construction_requested)
+	_right_panel.construction_fold_action_requested.connect(
+		_on_construction_fold_action_requested)
 	_right_panel.colonization_requested.connect(_on_colonization_requested)
 	_right_panel.trade_orders_page_requested.connect(
 		_on_trade_orders_page_requested)
@@ -980,15 +1051,11 @@ func _bind_ui() -> void:
 
 	_loading_overlay = get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay
 
-	var modal_layer := get_node("UIRoot/ModalLayer") as Control
 	_annual_report_workspace = AnnualReportWorkspaceScene.instantiate()
-	modal_layer.add_child(_annual_report_workspace)
+	get_node("UIRoot/ModalLayer").add_child(_annual_report_workspace)
 	_annual_report_workspace.closed.connect(func(id: int) -> void: annual_report_closed.emit(id))
 	_annual_report_workspace.report_selected.connect(func(id: int) -> void: annual_report_selected.emit(id))
 	_annual_report_workspace.history_page_requested.connect(func(offset: int) -> void: annual_history_page_requested.emit(offset))
-	modal_layer.visibility_changed.connect(_announce_annual_report_workspace)
-	_annual_report_workspace.tree_entered.connect(_announce_annual_report_workspace)
-	_announce_annual_report_workspace()
 	_pause_menu = get_node("UIRoot/ModalLayer/PauseMenu") as PauseMenu
 	_pause_menu.visibility_requested.connect(
 		func(open: bool) -> void: pause_menu_visibility_changed.emit(open))
@@ -1149,6 +1216,8 @@ func _on_inspector_detail_visibility_changed(open: bool) -> void:
 		_pending_object_request.clear()
 		_military_dossier_context.clear()
 		_military_dossier_pending = false
+		# 营造 / 家族档案 / 军务档案都走这条关闭回路。
+		notify_workspace_closed()
 	_layout_right_panel()
 	_layout_overlay_legend()
 	_layout_country_action_bar()
@@ -1200,7 +1269,7 @@ func _layout_top_bar() -> void:
 ## 最后一个只靠 .tscn 烘焙 anchor+offset、却没有任何运行期重新结算的 HUD 节点。
 ## Web 上已经证明这类节点拿不到声明式布局：PlayerTopBar / RightPanel 之前就是同一
 ## 症状，后来靠运行期兜底修好；工具条漏在外面，于是它的 rect 落成默认的 (0,0)，
-## PrimaryPanel 被摆到屏幕左上角，正好盖住顶栏左侧的日历图标和"第N年"纸框
+## PrimaryPanel 被摆到屏幕左上角，正好盖住顶栏左侧的日历图标和日期纸框
 ## （截图里的"图标和日历重合"）。
 ##
 ## 这里和顶栏/详情面板走完全相同的路径：取实时值 → set_anchors_preset → 写
@@ -1321,6 +1390,10 @@ func _refresh_building_workspace(force: bool = false) -> void:
 
 func _on_construction_requested(request: Dictionary) -> void:
 	_country_component._on_construction_requested(self, request)
+
+
+func _on_construction_fold_action_requested(action: Dictionary) -> void:
+	_country_component._on_construction_fold_action_requested(self, action)
 
 func _open_colonization_target(target_cell: int, family_handle: int = 0,
 		source_cell: int = -1) -> void:
@@ -1514,6 +1587,12 @@ func _on_era_ceremony_finished() -> void:
 func _abort_era_ceremony() -> void:
 	_era_component._abort_era_ceremony(self)
 
+func _pause_clock_for_ceremony() -> void:
+	_era_component._pause_clock_for_ceremony(self)
+
+func _restore_clock_after_ceremony() -> void:
+	_era_component._restore_clock_after_ceremony(self)
+
 func _notify_era_promoted(model: Dictionary) -> void:
 	_era_component._notify_era_promoted(self, model)
 
@@ -1580,19 +1659,6 @@ func _set_local_gm_toggle(toggle_id: String, enabled: bool) -> Dictionary:
 func _on_runtime_gm_toggle_changed(toggle_id: String, enabled: bool) -> void:
 	_overlay_component._on_runtime_gm_toggle_changed(self, toggle_id, enabled)
 
-
-func can_open_annual_report() -> bool:
-	if not is_instance_valid(_annual_report_workspace) or not _annual_report_workspace.is_inside_tree():
-		return false
-	var modal_layer := _annual_report_workspace.get_parent() as Control
-	return modal_layer != null and modal_layer.is_visible_in_tree()
-
-
-func _announce_annual_report_workspace() -> void:
-	if can_open_annual_report():
-		annual_report_workspace_available.emit()
-
-
 func show_annual_report(model: Dictionary, ceremonial: bool) -> void:
 	_overlay_component.show_annual_report(self, model, ceremonial)
 
@@ -1604,6 +1670,18 @@ func is_annual_report_open() -> bool:
 
 func close_annual_report() -> void:
 	_overlay_component.close_annual_report(self)
+
+func annual_other_modal_open() -> bool:
+	return _overlay_component.annual_other_modal_open(self)
+
+## [popup-deferral 2026-11-20] 玩家正开着自己的窗口（国家卷宗 / 营造 / 家族档案 /
+## 军务档案 / 派遣 / 议和 / 史册 / GM / 时代纸笺）。叙事弹窗读它决定是否先静置。
+func is_player_workspace_open() -> bool:
+	return _overlay_component.is_player_workspace_open(self)
+
+## 上面那些窗口关掉后的回调入口，让静置的事件在同一时刻接上展示。
+func notify_workspace_closed() -> void:
+	_overlay_component.notify_workspace_closed(self)
 
 func show_narrative_event_offer(offer: Dictionary) -> void:
 	_overlay_component.show_narrative_event_offer(self, offer)

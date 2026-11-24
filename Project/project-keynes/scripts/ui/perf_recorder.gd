@@ -94,6 +94,51 @@ const FIXED_COLUMNS: Array = [
 	"workset_cells_planned",
 	"workset_cells_executed",
 	"duplicate_range_count",
+	# Deterministic per-committed-day economy POD hash: the before/after gate.
+	"runtime_graph_economy_pod_state_hash",
+	"runtime_graph_economy_pod_committed_day",
+	# Sparse-workset shape (N = market bucket rotation days), slice continuation
+	# and the boundary phase split. Diagnostic columns; filled only when the
+	# economy breakdown group is published (detail_mode=DETAIL).
+	"workset_market_cells_due",
+	"workset_building_cells",
+	"workset_plan_cells",
+	"workset_live_cells",
+	"workset_coverage_permille",
+	"workset_market_bucket",
+	"workset_market_cycle_days",
+	"workset_plan_cycle_days",
+	"workset_cells_per_slice",
+	"probe_slice_count",
+	"probe_slice_budget_hits",
+	"probe_slice_ms_max",
+	"probe_attempt_ms",
+	"probe_formula_ms",
+	"probe_publish_ms",
+	"probe_epoch_open_ms",
+	"probe_formula_loop_ms",
+	# Fixed-cost decomposition (per epoch, ms).
+	"probe_country_capture_ms",
+	"probe_workset_ms",
+	"probe_resource_lane_ms",
+	"probe_fiscal_open_ms",
+	"probe_fiscal_settlement_ms",
+	"probe_audit_ms",
+	"probe_household_market_ms",
+	"probe_investment_ms",
+	"probe_employment_ms",
+	"probe_production_ms",
+	"probe_trade_plan_ms",
+	"probe_mirror_capture_ms",
+	"probe_mirror_import_ms",
+	"probe_pod_publish_ms",
+	"probe_building_plan_ms",
+	"probe_price_ms",
+	"probe_publish_stage_ms",
+	"probe_trade_settle_ms",
+	"probe_trade_dispatch_ms",
+	"probe_family_commit_ms",
+	"probe_person_commit_ms",
 	"household_market_prepare_ms",
 	"household_market_worker_ms",
 	"household_market_merge_ms",
@@ -164,10 +209,15 @@ const FIXED_COLUMNS: Array = [
 	"sched_proc_country_visual_ms",
 	"sched_proc_commit_ms",
 	"sched_proc_resource_ms",
+	"sched_proc_military_ms",
 	"sched_proc_visual_ms",
 	"sched_proc_building_ms",
 	"sched_proc_overlay_ms",
 	"sched_proc_last_total_ms",
+	"commit_ui_ms",
+	"commit_narrative_ms",
+	"commit_music_ms",
+	"commit_progression_ms",
 	"country_read_full_snapshot_applied",
 	"country_read_applied_cells",
 	"country_read_territory_changed_cells",
@@ -257,6 +307,8 @@ const FIXED_COLUMNS: Array = [
 	"runtime_graph_simulation_committed_day",
 	"runtime_graph_simulation_generation",
 	"runtime_graph_simulation_time_debt_days",
+	"runtime_graph_last_visual_publish_at_us",
+	"runtime_graph_snapshot_staleness_ms",
 	"runtime_graph_ui_input_to_feedback_ms",
 	"runtime_graph_visual_apply_ms",
 	"runtime_graph_gpu_upload_ms",
@@ -268,6 +320,8 @@ const FIXED_COLUMNS: Array = [
 	"runtime_graph_stale_environment_rejected",
 	"runtime_graph_command_queue_depth",
 	"runtime_graph_receipt_queue_depth",
+	"runtime_graph_snapshot_publish_drop_count",
+	"runtime_graph_snapshot_publish_throttled_count",
 	"runtime_graph_worker_fault_count",
 	"runtime_graph_day_stage_count",
 	"runtime_graph_day_completed_stage_count",
@@ -315,7 +369,7 @@ const FIXED_COLUMNS: Array = [
 	"runtime_graph_country_pod_blocker",
 	# Cumulative worker-time counters: compare deltas across rows.
 	"runtime_graph_worker_time_execute_us", "runtime_graph_worker_time_input_wait_us",
-	"runtime_graph_worker_time_environment_wait_us",
+	"runtime_graph_worker_time_environment_wait_us", "runtime_graph_worker_time_main_tail_wait_us",
 	"runtime_graph_worker_time_input_retry_wait_us",
 	"runtime_graph_worker_time_clock_wait_us",
 	"runtime_graph_worker_time_save_build_us", "runtime_graph_worker_time_save_pause_us",
@@ -419,6 +473,10 @@ var _start_tick: int = 0
 var _hit_limit: bool = false
 var _detail_mode: String = "CORE"
 var _detail_period_days: int = 30
+# 采样间隔：每隔 N 个 fast tick 记一行（默认 1 = 每帧都记，与历史行为一致）。
+# 真机长跑（60~120 秒）用它把 CSV 体积和录制自身的 GDScript 开销压下来。
+var _sample_every: int = 1
+var _sample_counter: int = 0
 var _export_dir_override: String = ""
 var _export_name_override: String = ""
 
@@ -453,18 +511,21 @@ func configure_export(output_dir: String, csv_name: String = "") -> void:
 
 
 # 开始录制：清空缓冲。多次调用 start 等价于"丢弃旧录制重开"。
-func start(detail_mode: String = "CORE", detail_period_days: int = 30) -> void:
+func start(detail_mode: String = "CORE", detail_period_days: int = 30,
+		sample_every: int = 1) -> void:
 	_rows.clear()
 	_recording = true
 	_hit_limit = false
 	_detail_mode = "DETAIL" if detail_mode.to_upper() == "DETAIL" else "CORE"
 	_detail_period_days = maxi(1, detail_period_days)
+	_sample_every = maxi(1, sample_every)
+	_sample_counter = 0
 	if _main != null and _main.has_method("get_fast_tick_count"):
 		_start_tick = int(_main.get_fast_tick_count())
 	else:
 		_start_tick = 0
-	print("[perf-record] start (start_tick=%d mode=%s detail_period=%d)" % [
-		_start_tick, _detail_mode, _detail_period_days])
+	print("[perf-record] start (start_tick=%d mode=%s detail_period=%d sample_every=%d)" % [
+		_start_tick, _detail_mode, _detail_period_days, _sample_every])
 
 
 # 停止录制并导出。
@@ -536,6 +597,10 @@ func on_fast_tick(sample: Dictionary) -> void:
 		return
 	if _hit_limit:
 		return
+	# 采样间隔放在最前面：跳过的帧连一行字典都不拼，长跑开销可忽略。
+	_sample_counter += 1
+	if _sample_every > 1 and (_sample_counter % _sample_every) != 0:
+		return
 	if _authoritative_after_day >= 0:
 		var graph: Dictionary = sample.get("runtime_graph", {})
 		var committed := int(graph.get("simulation_committed_day", -1))
@@ -567,15 +632,15 @@ func on_fast_tick(sample: Dictionary) -> void:
 				"climate_pod_changed_cells", "climate_pod_state_hash",
 				"climate_pod_fallback_reason",
 				"simulation_committed_day", "simulation_generation",
-				"simulation_time_debt_days",
-
+				"simulation_time_debt_days", "last_visual_publish_at_us",
+				"snapshot_staleness_ms",
 				"ui_input_to_feedback_ms", "visual_apply_ms", "gpu_upload_ms",
 				"main_wait_on_sim_us", "simulation_environment_generation",
 				"simulation_environment_day", "simulation_environment_cell_count",
 				"simulation_environment_topology_validated",
-				"stale_environment_rejected",
+				"stale_environment_rejected", "snapshot_publish_throttled_count",
 				"command_queue_depth",
-				"receipt_queue_depth",
+				"receipt_queue_depth", "snapshot_publish_drop_count",
 				"worker_fault_count", "day_stage_count",
 				"day_completed_stage_count", "day_work_units",
 				"completed_days", "pod_completed_domain_mask",
@@ -601,7 +666,7 @@ func on_fast_tick(sample: Dictionary) -> void:
 				"country_pod_pending_checks", "country_pod_ack_pending",
 				"country_pod_blocker",
 				"worker_time_execute_us", "worker_time_input_wait_us",
-				"worker_time_environment_wait_us", "worker_time_input_retry_wait_us",
+				"worker_time_environment_wait_us", "worker_time_main_tail_wait_us", "worker_time_input_retry_wait_us",
 				"worker_time_clock_wait_us", "worker_time_boundary_wait_us",
 				"worker_time_save_build_us", "worker_time_save_pause_us",
 				"worker_time_paused_us",
@@ -616,6 +681,11 @@ func on_fast_tick(sample: Dictionary) -> void:
 				"country_worker_continuation_index",
 				"economy_yield_reason", "economy_stage_name",
 				"economy_substage_name",
+				# Deterministic per-committed-day economy hash. Same seed must
+				# reproduce it exactly, so it is the primary before/after gate
+				# for probe-only changes.
+				"economy_pod_state_hash", "economy_pod_committed_day",
+				"economy_pod_generation",
 				"economy_epoch_fiscal_ms", "economy_fiscal_settlement_ms",
 				"economy_income_subsidy_ms",
 				"economy_negative_tax_mask", "economy_active_tax_mask",
@@ -797,7 +867,27 @@ func _merge_breakdowns(row: Dictionary, bds: Dictionary) -> void:
 				"prepare_reuse_count", "workset_cells_planned",
 				"workset_cells_executed", "duplicate_range_count",
 				"household_market_prepare_ms", "household_market_worker_ms",
-				"household_market_merge_ms"]:
+				"household_market_merge_ms",
+				# Sparse-workset shape / continuation / boundary split probes.
+				"workset_market_cells_due", "workset_building_cells",
+				"workset_plan_cells", "workset_live_cells",
+				"workset_coverage_permille", "workset_market_bucket",
+				"workset_market_cycle_days", "workset_plan_cycle_days",
+				"workset_cells_per_slice", "probe_slice_count",
+				"probe_slice_budget_hits", "probe_slice_ms_max",
+				"probe_attempt_ms", "probe_formula_ms", "probe_publish_ms",
+				"probe_epoch_open_ms", "probe_formula_loop_ms",
+				"probe_country_capture_ms", "probe_workset_ms",
+				"probe_resource_lane_ms", "probe_fiscal_open_ms",
+				"probe_fiscal_settlement_ms", "probe_audit_ms",
+				"probe_household_market_ms", "probe_investment_ms",
+				"probe_employment_ms", "probe_production_ms",
+				"probe_trade_plan_ms", "probe_mirror_capture_ms",
+				"probe_mirror_import_ms", "probe_pod_publish_ms",
+				"probe_building_plan_ms", "probe_price_ms",
+				"probe_publish_stage_ms", "probe_trade_settle_ms",
+				"probe_trade_dispatch_ms", "probe_family_commit_ms",
+				"probe_person_commit_ms"]:
 				# Keep the exact plan field names as stable top-level CSV aliases;
 				# the bd_economy_* columns remain available for historical consumers.
 				row[ks] = value

@@ -34,6 +34,15 @@ func build(layer: CanvasItem, mesh: MeshInstance2D) -> void:
 	blit.centered = false
 	blit.texture = viewport.get_texture()
 	blit.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	# [fog-premultiply 2026-11-21 / _commit_a] SubViewport 是 transparent_bg=true：
+	# 雾 shader 写 `vec4(col, alpha)`，混合进全透明目标时已经写成 `rgb * alpha`
+	# （预乘），纹理里存的就是预乘色。再用默认 blend_mix 上屏，RGB 会**再乘一次**
+	# alpha ⇒ 半透明雾整体偏暗，雾越薄越暗（<100% 档实测亮度比 ~0.75）。
+	# 与 scripts/rendering/terrain_render_scale.gd:70-72 的同类 blit 同一口径。
+	# 100% 档没有 blit，所以这条只在 _effective_render_scale() < 100 时生效。
+	var blit_material := CanvasItemMaterial.new()
+	blit_material.blend_mode = CanvasItemMaterial.BLEND_MODE_PREMULT_ALPHA
+	blit.material = blit_material
 	blit.top_level = true
 	blit.z_index = 12
 	blit.visible = false

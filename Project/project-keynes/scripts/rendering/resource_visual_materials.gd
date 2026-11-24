@@ -78,6 +78,18 @@ static func _materials(host) -> Array[ShaderMaterial]:
 		out.append(host._cover.material())
 	return out
 
+## 纯数据判定：height 纹理就绪 + flow_buffer 覆盖 hm_size 全图。调用方只传"height 来源
+## 是否就绪"（tiled 是 visual_tiles.height，legacy 是 world.height_tex）。
+##
+## **不要**把 DCFeatureFlags.water_flowmap_enabled() 这类动画/省电开关并进来：shader 侧
+## has_flow_tex 是静态河网的总闸（scals.g = has_flow_tex ? height.b : 0），关掉它等于
+## 一条河都不画。移动端默认关的 flowmap 只应影响流速蠕动与环流漂移。
+static func _flow_channel_ready(height_ready: bool, flow_size: int, hm_size: Vector2i) -> bool:
+	if not height_ready or hm_size.x <= 0 or hm_size.y <= 0:
+		return false
+	return flow_size >= hm_size.x * hm_size.y
+
+
 static func _bind_terrain_textures(host, target: ShaderMaterial, tiles, tiled: bool) -> void:
 	if tiled:
 		target.set_shader_parameter("visual_horizon_tiles", tiles.horizon)
@@ -90,14 +102,20 @@ static func _bind_terrain_textures(host, target: ShaderMaterial, tiles, tiled: b
 			["visual_layer_size", layout.layer_size], ["visual_logical_resolution", layout.logical_size]]:
 			target.set_shader_parameter(pair[0], Vector2(pair[1]))
 		target.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
+		target.set_shader_parameter("terrain_edge_layers_bound", tiles.edge_distance != null)
+		target.set_shader_parameter("visual_edge_distance_tiles", tiles.edge_distance)
 	else:
 		target.set_shader_parameter("terrain_horizon_tex", host._world.terrain_horizon_tex)
 		target.set_shader_parameter("terrain_normal_tex", host._world.terrain_normal_tex)
 		target.set_shader_parameter("height_tex", host._world.height_tex)
+		target.set_shader_parameter("terrain_edge_distance_tex", host._world.terrain_edge_distance_tex)
+		target.set_shader_parameter("terrain_edge_layers_bound", host._world.terrain_edge_distance_tex != null)
 	var height_bound = tiles.height != null if tiled else host._world.height_tex != null
 	target.set_shader_parameter("has_height_tex", height_bound)
-	target.set_shader_parameter("has_flow_tex",
-		DCFeatureFlags.water_flowmap_enabled() and height_bound and not host._world.flow_buffer.is_empty())
+	# [river-flow-gate 2026-11-19] 与主地形同一个数据判定：关掉流动画不等于没有河。
+	# 这里若继续并进 DCFeatureFlags.water_flowmap_enabled()，移动端资源就不会再避让河道。
+	target.set_shader_parameter("has_flow_tex", _flow_channel_ready(
+		height_bound, host._world.flow_buffer.size(), host._world.hm_size))
 	target.set_shader_parameter("sea_level", host._world.sea_level)
 	target.set_shader_parameter("terrain_horizon_tex_bound", bool(tiles.horizon_ready) if tiled else host._world.terrain_horizon_tex != null)
 	target.set_shader_parameter("terrain_normal_tex_bound", tiles.terrain_normal != null if tiled else host._world.terrain_normal_tex != null)

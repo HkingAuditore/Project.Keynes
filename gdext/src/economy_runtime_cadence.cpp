@@ -738,6 +738,21 @@ int32_t NativeEconomyRuntime::choose_epoch_days(int64_t cohorts) {
         lock_plan_cycle(_market_cycle_start_day.get());
         lock_investment_cycle(_market_cycle_start_day.get());
         _cadence_initialized = true;
+        // First lock is the only cadence event production can ever emit: the
+        // auto controller is retired, so N/P/I never change afterwards and the
+        // change-triggered trace in maybe_lock_cadence_cycles() never fires.
+        // Emit one line here unconditionally so a headless run always has a
+        // cadence record.
+        if (std::FILE *trace = pk_sim_trace_file()) {
+            std::fprintf(trace,
+                "[econ-cadence] day=%lld n=%d p=%d i=%d ema=%.4f/%.4f/%.4f "
+                "reason=initial\n",
+                static_cast<long long>(_last_committed_day.get() + 1),
+                locked_market_cycle_days(), locked_plan_cycle_days(),
+                locked_investment_cycle_days(), _market_ms_per_knife_ema,
+                _slow_ms_per_knife_ema, _investment_ms_per_knife_ema);
+            std::fflush(trace);
+        }
     }
     return locked_market_cycle_days();
 }

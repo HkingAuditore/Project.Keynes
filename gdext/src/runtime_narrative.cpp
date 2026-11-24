@@ -17,6 +17,11 @@ constexpr int64_t POPUP_GAP = 60;
 constexpr int64_t PROBE_INTERVAL = 7;
 constexpr int64_t PULSE_INTERVAL = 20;
 constexpr int32_t SAMPLE_CELLS = 8;
+// ── 用户 11-23 口径（narrative_event_service.gd 常量），移植而非重放： ──
+// 上游默认是 25%（16384/65536）脉冲 + 每格每年 2 次；用户调成 6.25% + 每年 1 次。
+constexpr int64_t PULSE_CHANCE_Q16 = 4096;          // ~6.25% per pulse
+constexpr int64_t MAX_CELL_EVENTS_PER_YEAR = 1;     // 每格每年最多 1 次
+constexpr int64_t MAX_STATE_PROBE_CELLS_PER_DAY = 2; // 状态探针每日最多采样格数
 
 std::string scoped_key(const std::string &key, int32_t cell) {
     return cell < 0 ? "country:" + key : "cell:" + std::to_string(cell) + ":" + key;
@@ -57,7 +62,7 @@ bool RuntimeNarrative::paced(int64_t day) const {
 bool RuntimeNarrative::cell_capped(int32_t cell, int64_t day) const {
     if (cell < 0) return false;
     const auto it = _year_counts.find(annual_cell_key(day / _days_per_year, cell));
-    return it != _year_counts.end() && it->second >= 2;
+    return it != _year_counts.end() && it->second >= MAX_CELL_EVENTS_PER_YEAR;
 }
 
 int64_t RuntimeNarrative::roll(int64_t day, int32_t cell, int64_t salt) const {
@@ -266,7 +271,7 @@ void RuntimeNarrative::pulse(const NarrativeDay &input) {
         if (roll(input.day, first, 0x4149) < chance)
             request_ai(input, input.sample(first, true), {input.day + 1, 0, first, {}, {}, {}});
     }
-    if (roll(input.day, first, 0x50554C53) >= 16384) return;
+    if (roll(input.day, first, 0x50554C53) >= PULSE_CHANCE_Q16) return;
     std::vector<std::pair<const NarrativeDefinition *, int32_t>> candidates;
     std::vector<int64_t> weights;
     for (int32_t cell : cells) {

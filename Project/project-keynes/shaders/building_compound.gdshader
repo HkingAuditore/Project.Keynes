@@ -56,6 +56,18 @@ const float BUILDING_AMBIENT_GAIN = 0.62;
 const float BUILDING_SUN_GAIN = 0.78;
 const float BUILDING_MOON_GAIN = 0.40;
 
+// [early-hearth 2026-11-20] Stone and agrarian houses have no window grid, so at
+// night they used to read as solid black blocks. Their era language is firelight:
+// a lit doorway, a warm bounce under the eaves and a stronger ground halo. The
+// boost fades out by the high middle ages, where glass takes over.
+const float BUILDING_EARLY_FADE_START = 1.5;   // kingdom era: first glazed openings
+const float BUILDING_EARLY_FADE_END = 5.0;     // enlightenment era: full glass read
+const float BUILDING_HEARTH_GAIN = 1.7;
+const vec3 BUILDING_HEARTH_COLOR = vec3(1.0, 0.54, 0.22);
+const vec3 BUILDING_HEARTH_FILL = vec3(0.20, 0.10, 0.04);
+const float BUILDING_EARLY_HALO_LEVEL = 0.5;
+const float BUILDING_EARLY_HALO_FALLOFF = 2.4;
+
 // [building-terrain-light 2026-10-18] 高画质（visual_quality >= 2）下建筑不再自成一套光照：
 //   地形法线：vertex 按实例中心 map uv 采一次，flat varying 带进 fragment（每栋建筑一次 fetch）；
 //   horizon GI：fragment 用逐像素重建的 map uv 采样，一次拿直射遮蔽 / 天空可见度 / bent normal。
@@ -364,6 +376,13 @@ void fragment() {
 	float snow = v_building_weather.x;
 	float wet = v_building_weather.y;
 	float night = v_building_weather.z;
+	// 1 for stone/agrarian, fading to 0 by the enlightenment era.
+	float early_era = 1.0 - smoothstep(BUILDING_EARLY_FADE_START,
+		BUILDING_EARLY_FADE_END, era);
+	// Most early homes keep a fire at night, but a uniform glow across the whole
+	// village reads as fog. Vary the hearth per building instead.
+	float hearth_lit = mix(0.5, 1.0, step(0.22, bf_hash12(vec2(seed * 71.0, 13.0))));
+	float hearth = early_era * hearth_lit;
 
 	// Roof: the lean is small next to the roof slopes, so one correction of a
 	// mid-pitch guess lands on the surface.
@@ -451,6 +470,15 @@ void fragment() {
 		// Eave shade darkens the outline so roofs stay legible against fields.
 		float eave = smoothstep(0.0, 0.10 + px * 1.5, -f_roof);
 		c *= mix(0.68, 1.0, eave);
+		if (live && night > 0.0 && early_era > 0.0
+				&& form != BF_MOUND && mat != BM_HAY) {
+			// Firelight bounce: a dim warm wash over the whole roof plus a stronger
+			// band at the eave, so early huts keep a readable volume instead of
+			// turning into black blocks. Keep it a wash, not an outline.
+			float eave_warm = 1.0 - eave;
+			c += BUILDING_HEARTH_FILL * hearth * night
+				* (0.55 + 0.95 * eave_warm) * tod_exposure;
+		}
 		if (live && era >= 7.5 && (form == BF_FLAT || form == BF_TOWER) && visual_quality > 0) {
 			vec2 g = fract(P * 2.2 + seed * 3.0);
 			float skylight = step(0.82, bf_hash12(floor(P * 2.2 + seed * 3.0)))
@@ -484,6 +512,15 @@ void fragment() {
 		albedo *= wall_t > he + 0.02 ? 0.88 : 1.0;
 		vec3 c = albedo * light_at(n, hs);
 
+		// [early-hearth 2026-11-20] Warm firelight wash on windowless walls,
+		// strongest at the base where the hearth sits.
+		bool early_wall = live && night > 0.0 && era < 1.5
+			&& form != BF_MOUND && mat != BM_HAY;
+		if (early_wall) {
+			float base_t = 1.0 - clamp(wall_t / max(he, 0.05), 0.0, 1.0);
+			c += BUILDING_HEARTH_FILL * hearth * night * (0.45 + 0.85 * base_t) * tod_exposure;
+		}
+
 		bool windows = era >= 1.5 && form != BF_MOUND && form != BF_CHIMNEY
 			&& form != BF_COOLING && form != BF_DOME && form != BF_TANK
 			&& mat != BM_HAY && mat != BM_CHARCOAL;
@@ -500,10 +537,23 @@ void fragment() {
 			c = mix(c, vec3(0.10, 0.11, 0.13) * light_at(n, hs) * 1.6, in_win * 0.8);
 			if (live) {
 				// Once individual windows are below pixel size their average
-				// glow keeps lit facades readable at night.
+				// glow keeps lit facades readable at night. The first glazed eras
+				// are sparser, so they get a little extra gain.
 				float glow = in_win * lit + (1.0 - win_detail) * 0.16 * step(0.25, wall_t);
-				c += vec3(1.0, 0.64, 0.28) * glow * night * BUILDING_WINDOW_LIGHT_GAIN * tod_exposure;
+				float window_gain = BUILDING_WINDOW_LIGHT_GAIN * (1.0 + 0.35 * early_era);
+				c += vec3(1.0, 0.64, 0.28) * glow * night * window_gain * tod_exposure;
 			}
+		} else if (early_wall) {
+			// [early-hearth 2026-11-20] Stone and agrarian walls carry no window grid;
+			// their night read is one firelit doorway per face. Once the opening falls
+			// below a pixel the whole base band glows instead, so distant huts read too.
+			float door_detail = bf_detail(0.9, px);
+			float door = (1.0 - smoothstep(0.04, 0.09,
+				abs(fract(face * 0.9 + seed * 5.0) - 0.5))) * door_detail;
+			door += (1.0 - door_detail) * 0.45;
+			door *= 1.0 - smoothstep(0.18, 0.32, wall_t / max(he, 0.05));
+			c += BUILDING_HEARTH_COLOR * door * hearth * night
+				* BUILDING_HEARTH_GAIN * tod_exposure;
 		}
 		col += c * wall_cov;
 		alpha += wall_cov;
@@ -548,8 +598,10 @@ void fragment() {
 	// Night: warm spill on the ground around inhabited buildings.
 	if (live && visual_quality > 0 && night > 0.0 && form != BF_MOUND && mat != BM_HAY) {
 		float fg = max(footprint(s), 0.0);
-		float level = era < 1.5 ? 0.22 : (era < 5.5 ? 0.40 : (era < 7.5 ? 0.62 : 0.9));
-		float halo = exp(-fg * 2.6) * level * night * BUILDING_WINDOW_HALO_GAIN * (1.0 - alpha);
+		float level = era < 1.5 ? BUILDING_EARLY_HALO_LEVEL * (0.55 + 0.45 * hearth_lit)
+			: (era < 5.5 ? 0.40 : (era < 7.5 ? 0.62 : 0.9));
+		float falloff = era < 1.5 ? BUILDING_EARLY_HALO_FALLOFF : 2.6;
+		float halo = exp(-fg * falloff) * level * night * BUILDING_WINDOW_HALO_GAIN * (1.0 - alpha);
 		col += vec3(1.0, 0.56, 0.22) * halo * tod_exposure;
 		alpha += halo;
 	}

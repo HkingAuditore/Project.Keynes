@@ -245,7 +245,7 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 	_attach_visuals(chapters, report, tiers, old_tiers, dimensions, old_dimensions, industry_rows, resource_rows, parts, score_value)
 	_attach_notes(chapters, totals)
 
-	var title: String = "第 %d 年 · 年度报告" % year
+	var title: String = "%d年 · 年度报告" % year
 	var full_lines: Array[String] = [String(report.get("country_name", "本国")), title, "文明阶段：" + ERA_NAMES[era], ""]
 	for chapter in chapters:
 		full_lines.append("%s\n" % String(chapter.title))
@@ -257,17 +257,12 @@ static func build(report: Dictionary, previous: Dictionary = {}, catalogs: Dicti
 		for detail in chapter.details:
 			full_lines.append(String(detail))
 		full_lines.append("")
-	full_lines.append("原始年度账目（金额单位为 1/10000 游戏货币，商品单位为 1/1000，比例单位为 1/65536）")
-	for spec in METRICS:
-		if totals.has(spec[0]):
-			full_lines.append("%s：%d" % [spec[1], int(totals[spec[0]])])
-	full_lines.append("年度额外理念奖励原值（Q16）：%d" % int(report.get("reward_q16", 0)))
 	var months_gdp: PackedInt64Array = report.get("monthly_gdp", PackedInt64Array())
 	var months_population: PackedInt64Array = report.get("monthly_population", PackedInt64Array())
 	if complete and not months_gdp.is_empty():
-		full_lines.append("月度统计附表：月份｜已结算 GDP 原值（1/10000 游戏货币）｜月末人口")
+		full_lines.append("月度统计附表：月份｜产值（金币）｜月末人口（人）")
 		for month in mini(months_gdp.size(), months_population.size()):
-			full_lines.append("%d｜%d｜%d" % [month + 1, months_gdp[month], months_population[month]])
+			full_lines.append("%d｜%s｜%s" % [month + 1, format_value(months_gdp[month], "money"), format_value(months_population[month], "number")])
 
 	var tax_parts: Array = []
 	for spec in TAX_KEYS:

@@ -4,11 +4,11 @@ const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 
 const TARGETS := {
 	"wheat_grain": {
-		"buildings": ["wheat_farm", "tenant_rainfed_wheat_field", "method_wheat_farm_r3", "method_wheat_farm_r5", "method_wheat_farm_r6", "method_wheat_farm_r8", "method_wheat_farm_r10"],
+		"buildings": ["rainfed_wheat_plot", "tenant_rainfed_wheat_field", "method_wheat_farm_r3", "method_wheat_farm_r5", "method_wheat_farm_r6", "method_wheat_farm_r8", "method_wheat_farm_r10"],
 		"climate": "dryland_crop", "resources": ["arable_land", "fertile_soil"]
 	},
 	"rice_grain": {
-		"buildings": ["rice_collector", "tenant_paddy", "estate_paddy", "method_rice_collector_r3", "method_rice_collector_r5", "method_rice_collector_r6", "method_rice_collector_r8", "method_rice_collector_r10"],
+		"buildings": ["bunded_rice_field", "tenant_paddy", "estate_paddy", "tenant_paddy", "method_rice_collector_r5", "method_rice_collector_r6", "method_rice_collector_r8", "method_rice_collector_r10"],
 		"climate": "paddy_crop", "resources": ["paddy_land"]
 	},
 	"corn_grain": {
@@ -26,11 +26,11 @@ const TARGETS := {
 		"climates": ["dryland_crop", "plantation_crop"], "resources": ["arable_land", "fertile_soil"]
 	},
 	"bast_fiber": {
-		"buildings": ["flax_collector", "method_flax_collector_r3", "method_flax_collector_r5", "method_flax_collector_r6", "method_flax_collector_r8", "method_flax_collector_r10"],
+		"buildings": ["household_flax_plot", "method_flax_collector_r3", "method_flax_collector_r5", "method_flax_collector_r6", "method_flax_collector_r8", "method_flax_collector_r10"],
 		"climate": "dryland_crop", "resources": ["arable_land", "fertile_soil"]
 	},
 	"spices": {
-		"buildings": ["spice_shade_garden", "spice_plants_collector", "spice_managed_garden", "spice_commercial_plantation", "method_spice_plants_collector_r6", "method_spice_plants_collector_r8", "method_spice_plants_collector_r10"],
+		"buildings": ["spice_shade_garden", "spice_plants_collector", "spice_managed_garden", "spice_plants_collector", "method_spice_plants_collector_r6", "method_spice_plants_collector_r8", "method_spice_plants_collector_r10"],
 		"climate": "plantation_crop", "resources": ["plantation_land", "fertile_soil"]
 	},
 	"medicinal_herbs": {
@@ -47,12 +47,12 @@ const LAND_RESOURCES := ["arable_land", "fertile_soil", "paddy_land", "plantatio
 
 const STAGE_BUILDINGS := {
 	"wheat_grain": {"foundation": ["rainfed_wheat_plot"], "managed": ["method_wheat_farm_r3", "method_wheat_farm_r5"], "industrial": ["method_wheat_farm_r6"], "digital": ["method_wheat_farm_r8", "method_wheat_farm_r10"]},
-	"rice_grain": {"foundation": ["upland_rice_plot", "wetland_rice_garden"], "managed": ["method_rice_collector_r3", "method_rice_collector_r5"], "industrial": ["method_rice_collector_r6"], "digital": ["method_rice_collector_r8", "method_rice_collector_r10"]},
+	"rice_grain": {"foundation": ["upland_rice_plot", "wetland_rice_garden"], "managed": ["tenant_paddy", "method_rice_collector_r5"], "industrial": ["method_rice_collector_r6"], "digital": ["method_rice_collector_r8", "method_rice_collector_r10"]},
 	"corn_grain": {"foundation": ["maize_garden", "rainfed_maize_field"], "managed": ["landed_estate"], "industrial": ["method_landed_estate_r6"], "digital": ["method_maize_farm_r8", "method_maize_farm_r10"]},
 	"potatoes": {"foundation": ["potato_collector", "highland_tuber_plot"], "managed": ["tenant_potato_field", "potato_estate", "method_potato_farm_r5"], "industrial": ["method_potato_collector_r6"], "digital": ["method_potato_farm_r8", "method_potato_farm_r10"]},
 	"seed_cotton": {"foundation": ["cotton_garden"], "managed": ["cotton_smallholding", "cotton_collector"], "industrial": ["method_cotton_collector_r6"], "digital": ["method_cotton_collector_r8", "method_cotton_collector_r10"]},
-	"bast_fiber": {"foundation": ["flax_collector"], "managed": ["method_flax_collector_r3", "method_flax_collector_r5"], "industrial": ["method_flax_collector_r6"], "digital": ["method_flax_collector_r8", "method_flax_collector_r10"]},
-	"spices": {"foundation": ["spice_shade_garden"], "managed": ["spice_managed_garden", "spice_commercial_plantation"], "industrial": ["method_spice_plants_collector_r6"], "digital": ["method_spice_plants_collector_r8", "method_spice_plants_collector_r10"]},
+	"bast_fiber": {"foundation": ["household_flax_plot"], "managed": ["method_flax_collector_r3", "method_flax_collector_r5"], "industrial": ["method_flax_collector_r6"], "digital": ["method_flax_collector_r8", "method_flax_collector_r10"]},
+	"spices": {"foundation": ["spice_shade_garden"], "managed": ["spice_managed_garden", "spice_plants_collector"], "industrial": ["method_spice_plants_collector_r6"], "digital": ["method_spice_plants_collector_r8", "method_spice_plants_collector_r10"]},
 	"medicinal_herbs": {"foundation": ["medicinal_herb_garden"], "managed": ["medicinal_herb_estate", "medicinal_herbs_collector"], "industrial": ["method_medicinal_herbs_collector_r7"], "digital": ["method_medicinal_herbs_collector_r8", "method_medicinal_herbs_collector_r10"]},
 	"latex": {"foundation": ["rubber_tapping_camp"], "managed": ["rubber_tree_collector"], "industrial": ["method_rubber_tree_collector_r6"], "digital": ["method_rubber_tree_collector_r8", "method_rubber_tree_collector_r10"]},
 }
@@ -116,7 +116,7 @@ func _run() -> void:
 					break
 			_expect("%s has dedicated %s-stage production" % [good_id, stage_id], stage_is_covered)
 
-	var flax = building_by_id.get("flax_collector")
+	var flax = building_by_id.get("household_flax_plot")
 	var retting = building_by_id.get("flax_retting_pit")
 	_expect("flax farm produces bast_fiber", flax != null and Array(flax.output_good_ids) == ["bast_fiber"])
 	_expect("retting consumes bast_fiber and produces flax_fiber", retting != null and Array(retting.input_good_ids).has("bast_fiber") and Array(retting.output_good_ids) == ["flax_fiber"])

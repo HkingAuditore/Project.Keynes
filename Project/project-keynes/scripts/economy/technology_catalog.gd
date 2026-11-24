@@ -6,6 +6,7 @@ const ResearchConditionScript = preload("res://scripts/research/research_conditi
 const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
 const EraRewardCatalogScript = preload("res://scripts/effect/era_reward_catalog.gd")
 const ValidationScript = preload("res://scripts/economy/technology_catalog_validation.gd")
+const NetworkPresentation = preload("res://scripts/technology/technology_network_presentation.gd")
 
 const NETWORK_DATA_PATH := "res://data/technology/technology_network.json"
 
@@ -28,6 +29,31 @@ const STARTING_IDS := []
 const FLAG_ERA_KEY := 1
 const FLAG_MILESTONE := 2
 const FLAG_STARTING := 4
+
+## Authoring ratchet for the named knowledge exemption (Chief ruling 2026-11-21,
+## one-off: branch-entry nodes that have NO hard prerequisite but DO have a real
+## reveal gate may carry `knowledge_basis.exemption_reason`; see
+## `_validate_knowledge_basis`). The set is frozen together with the 467-node
+## table: the 14 branch entries of that freeze plus the starting node. One more
+## or one fewer fails the compile rather than sliding through as "yet another
+## special case" -- that is the whole point of naming them here.
+const KNOWLEDGE_EXEMPTION_IDS := [
+	"tech.dryland_cropland",
+	"tech.early_knowledge_institution",
+	"tech.highland_crop_archive",
+	"tech.highland_plot_yield",
+	"tech.hill_stone_quarrying",
+	"tech.oasis_craft_guilds",
+	"tech.oasis_well_digging",
+	"tech.plateau_quarry_commons",
+	"tech.polar_crop_acclimatization",
+	"tech.reef_fishery",
+	"tech.savanna_mixed_farming",
+	"tech.slope_terrace_agriculture",
+	"tech.taiga_timber_processing",
+	"tech.tundra_harvest_economy",
+	"tech.xeric_crop_archive",
+]
 
 # Packed postfix IR shared with NativeCountryRuntime. Values are deliberately
 # numeric here so no authoring StringName reaches the country hot path.
@@ -392,6 +418,9 @@ static func compile_native_catalog() -> Dictionary:
 		var era_gated := era_position >= 2 or (is_milestone_node and era_position >= 1)
 		technology_entry_milestones.append(
 			era_entry_milestones[era_position] if era_gated else -1)
+	var exemption_set := _validate_knowledge_exemption_set(technology_rows)
+	if not bool(exemption_set.get("ok", false)):
+		return exemption_set
 	var signal_ids: PackedStringArray = signal_catalog.get("research_signal_ids", PackedStringArray())
 	var conditions := _compile_research_conditions(technology_rows, ids, signal_ids, era_index,
 			prerequisite_offsets, prerequisites, milestone_offsets, milestone_candidates,
@@ -557,12 +586,63 @@ static func _validate_knowledge_basis(row: Dictionary, row_by_id: Dictionary) ->
 					"id": technology_id, "alternative_id": alternative_id}
 			alternative_seen[alternative_id] = true
 	if not exemption_reason.is_empty():
+		# The three original roles, plus one narrow shape: a branch-entry node
+		# with no hard prerequisite at all whose knowledge really is the reveal
+		# gate itself (`reveal_condition` non-empty). Those nodes cannot fill
+		# `required_ids` (no hard ancestor exists) nor `alternative_groups`
+		# (their `research_routes` are deliberately empty), so without this
+		# clause they would be impossible to author -- and the named-exemption
+		# idea is already accepted elsewhere in this file for
+		# `route_exemption_reason`. The exact id set is pinned by
+		# `KNOWLEDGE_EXEMPTION_IDS`; this clause only decides the shape.
+		var has_hard_prerequisite := not (row.get("hard_prerequisite_ids", []) as Array).is_empty()
+		var reveal_value: Variant = row.get("reveal_condition", {})
+		var has_reveal_gate := reveal_value is Dictionary \
+			and not (reveal_value as Dictionary).is_empty()
 		var exemption_allowed := bool(row.get("is_starter_eligible", false)) \
 			or bool(row.get("is_milestone", false)) \
-			or String(row.get("node_role", "")) == "identification"
+			or String(row.get("node_role", "")) == "identification" \
+			or (not has_hard_prerequisite and has_reveal_gate)
 		if not exemption_allowed:
 			return {"ok": false, "reason": "technology_knowledge_exemption_not_allowed",
 				"id": technology_id}
+	return {"ok": true}
+
+
+## Exact-set ratchet for the named knowledge exemption declared above. The shape
+## clause in `_validate_knowledge_basis` decides whether a row MAY carry the
+## exemption; this decides WHICH rows may. Separate functions on purpose: a new
+## branch entry that happens to have no prerequisite and a reveal gate must still
+## be added to the const, so "another special case" is a visible diff, not a
+## silent pass.
+static func _validate_knowledge_exemption_set(rows: Array) -> Dictionary:
+	var expected := {}
+	for expected_id in KNOWLEDGE_EXEMPTION_IDS:
+		expected[String(expected_id)] = true
+	var actual := {}
+	for row_value in rows:
+		if not row_value is Dictionary:
+			return {"ok": false, "reason": "technology_knowledge_exemption_row_invalid"}
+		var row: Dictionary = row_value
+		var basis_value: Variant = row.get("knowledge_basis", null)
+		if not basis_value is Dictionary:
+			continue
+		if String((basis_value as Dictionary).get("exemption_reason", "")).strip_edges().is_empty():
+			continue
+		actual[String(row.get("id", ""))] = true
+	var missing: Array = []
+	for expected_id in expected:
+		if not actual.has(expected_id):
+			missing.append(expected_id)
+	var unexpected: Array = []
+	for actual_id in actual:
+		if not expected.has(actual_id):
+			unexpected.append(actual_id)
+	if not missing.is_empty() or not unexpected.is_empty():
+		missing.sort()
+		unexpected.sort()
+		return {"ok": false, "reason": "technology_knowledge_exemption_set_drift",
+			"missing": missing, "unexpected": unexpected}
 	return {"ok": true}
 
 
@@ -993,7 +1073,8 @@ static func public_definitions(compiled_catalog: Dictionary = {}) -> Array[Dicti
 			"is_starting": (int(compiled.technology_flags[i]) & 4) != 0,
 			"is_starter_eligible": (compiled.starter_eligible_technology_ids as PackedStringArray).has(technology_id),
 			"description": String(source.get("description", "")),
-			"effect_summary": String(compiled.technology_effect_summaries[i]),
+			# Public summaries resolve effect names the same way as detail rows.
+			"effect_summary": NetworkPresentation.effect_summary(source),
 			"effect_profile": compiled.technology_effect_profile_ids[i],
 			"node_role": String(compiled.technology_node_roles[i]),
 			"network_role": String(compiled.technology_network_roles[i]),

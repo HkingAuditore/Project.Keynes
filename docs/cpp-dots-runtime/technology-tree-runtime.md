@@ -44,8 +44,8 @@
 
 ## 已达成条件的科研证据交付与未知节点详情（2026-10-18）
 
-完整 `0xFFF` ACTIVE 路径跳过旧的 `advance_runtime_pulse()`。Trigger 的效果交付仍经
-主线程兼容层，属于待迁移工作。`WorldRuntimeHost` 因此在既有 Trigger transport pump 中，每次最多交付 64 条连续的
+完整 `0xFFF` ACTIVE 路径跳过旧的 `advance_runtime_pulse()`，但 Trigger 的效果交付仍由
+主线程负责。`WorldRuntimeHost` 因此在既有 Trigger transport pump 中，每次最多交付 64 条连续的
 科研信号命令或通知，复用 Trigger → Effect → Country 命令与真实 Country receipt。交付在暂停时
 不主动启动；在途命令继续收取 receipt。Effect worker 快照暂缓覆盖正在交付的 facade 事务，
 直到 Country receipt 完成且 Trigger 确认成功入队；确认队列背压时重试，不能把 admission
@@ -243,10 +243,11 @@ authoring-side `research_condition`。王国时代以后的主干、制度和生
 渔舟移至农耕时代，并以完成二者任一项作为显式替代路线。辨识节点维持有成本、
 需目击/储量信号，开局不赠送。芦苇、草皮、湿地、洪泛、旱作、水田、高地、河运与风力等节点
 使用科技级精确证据，避免从宽泛路线继承无关信号。国内水运能力由四个硬编码科技门控，不走
-Modifier、也不另开 capability 子系统：`tech.river_transport` 开河运与湖泊，
-`tech.celestial_navigation` 开浅海（探索时代才开海；`tech.fishing_boats` 只解锁渔舟生产建筑，
-不开放航区），
-`tech.oceanic_navigation` 开远海，`tech.oceanic_ship_design` 开深海。海事等级嵌套，河运独立。
+Modifier、也不另开 capability 子系统，一档一个时代：`tech.river_transport`（农耕）开河运与湖泊，
+`tech.military.coastal_transport`（王国）开浅海（`tech.fishing_boats` 只解锁渔舟生产建筑，不开放
+航区），`tech.celestial_navigation`（帝国）开远海，`tech.oceanic_ship_design`（探索）开深海。
+海事等级嵌套，河运独立；`tech.oceanic_navigation` 不再单独发放航道，它只保留远洋船舶、远洋造船厂
+与「海上作业」产出加成。
 `node_role == identification` 的 18 个辨识节点只允许本对象自身的 `bio.*` 目击、
 `resource.*` 储量，或匹配的 `contact.*` 样本接触作为揭示条件。栖息地、地貌、天气、
 发展成就、`breakthrough.*` 以及跨物种/跨矿种信号均不得替代对象本身；目录测试维护完整的
@@ -288,10 +289,10 @@ term CSR、路线标签、每路线独立 postfix IR 与总 `ANY_OF`、prerequis
 纯观察辨识节点使用。该字段编译为 `technology_knowledge_basis_json` 并参与目录身份哈希，不新增
 国家运行时状态、研究谓词或存档字段。
 
-权威目录直接使用中文名称和中文效果摘要，`TechnologyCatalog.public_definitions()` 提供研究科技，
-`public_application_intersections()` 提供自动应用卡，前者同时提供中文路线标签；玩家界面不显示
+权威目录保存中文名称及结构化效果。`TechnologyCatalog.public_definitions()` 提供研究科技、中文路线标签，
+并通过与详情行共用的格式化器生成中文效果摘要。`public_application_intersections()` 提供自动应用卡。玩家界面不显示
 内部 `tech.*`/`app.*`/`route.*` ID。稳定 ID、dense 顺序、
-Effect/Trigger/经济绑定与这些目录文本共同参与精确 catalog identity，因此本轮不迁移旧目录存档；
+Effect/Trigger/经济绑定与作者目录文本共同参与精确 catalog identity，因此本轮不迁移旧目录存档；
 旧目录存档明确返回 `catalog_hash_mismatch`。
 
 内容解锁审计验证每项绑定存在且确有消费者。建筑保留一个主 `technology_tags`（定义性科技），并可通过
@@ -406,7 +407,7 @@ Modifier 已经落地；若 instance 仍未 ACK，则在该国家日直接套用
 因此单项队列在达到成本后不会因为没有下一项或没有新的入队命令而停留在“研发中”。
 已登记但未 ACK 的 instance 每个国家日会被重新排入 Effect 队列。GM “揭示全部未来科技”只写 discovered bit。
 
-Country ACTIVE（worker 唯一写者）下，当前兼容链路走 Host peer：`run_research_day` 每个国家日发一条
+Country ACTIVE（worker 唯一写者）下这条链走 Host peer：`run_research_day` 每个国家日发一条
 `ENSURE_TECHNOLOGY_EFFECT` intent，主线程 peer 适配器把 `technology.<id>` instance 登记到
 **Effect POD**（F8 下同步 `EffectRuntime` 只是回灌目标，往它 upsert 不会让 worker 看到），
 并按 POD 快照里的 fire/ACK 判定 READY。适配器答 PENDING 时该 intent **不再重新入队**：

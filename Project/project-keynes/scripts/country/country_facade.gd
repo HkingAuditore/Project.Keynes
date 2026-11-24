@@ -354,6 +354,39 @@ func set_tax_override_basis_points(handle: int, kind: int, item_id: StringName,
 	}])
 
 
+## 按税组批量写 override：整批一次 submit，N 条 SET_TAX_OVERRIDE 同批准入，
+## 所以不会出现「同一滑条只生效一半」的跨天中间态——原子性由命令批次保证，
+## 不是因为每个 item 单独成功。内核的 building_type 键数与结算表都不变。
+func set_tax_override_group_basis_points(handle: int, kind: int,
+		building_ids: PackedStringArray, rate_basis_points: int,
+		effective_day: int, sequence: int) -> Dictionary:
+	if not _configured:
+		return {"ok": false, "reason": "country facade is not configured"}
+	if building_ids.is_empty():
+		return {"ok": false, "reason": "empty tax group"}
+	var commands: Array[Dictionary] = []
+	for index in building_ids.size():
+		var item_id := building_ids[index]
+		var item := _tax_item_index(kind, item_id)
+		if item < 0:
+			# 整组一起拒，不留半组改写。
+			return {"ok": false, "reason": "unknown tax item: %s" % String(item_id)}
+		commands.append({
+			"opcode": Opcode.SET_TAX_OVERRIDE,
+			"target_handle": handle,
+			"tax_kind": kind,
+			"tax_item": item,
+			"stable_id": String(item_id),
+			"tax_rate_basis_points": rate_basis_points,
+			"tax_assessment_mode": TAX_MODE_PERCENT_BP,
+			"effective_day": effective_day,
+			"sequence": sequence,
+		})
+	var result := submit(commands)
+	result["group_size"] = commands.size()
+	return result
+
+
 func clear_tax_override(handle: int, kind: int, item_id: StringName,
 		effective_day: int, sequence: int) -> Dictionary:
 	var item := _tax_item_index(kind, item_id)
@@ -368,6 +401,67 @@ func clear_tax_override(handle: int, kind: int, item_id: StringName,
 		"effective_day": effective_day,
 		"sequence": sequence,
 	}])
+
+
+## 按税组批量清除 override：回滚「整组设了统一税率」时用，同样一次 submit。
+func clear_tax_override_group(handle: int, kind: int,
+		building_ids: PackedStringArray, effective_day: int,
+		sequence: int) -> Dictionary:
+	if not _configured:
+		return {"ok": false, "reason": "country facade is not configured"}
+	if building_ids.is_empty():
+		return {"ok": false, "reason": "empty tax group"}
+	var commands: Array[Dictionary] = []
+	for index in building_ids.size():
+		var item_id := building_ids[index]
+		var item := _tax_item_index(kind, item_id)
+		if item < 0:
+			return {"ok": false, "reason": "unknown tax item: %s" % String(item_id)}
+		commands.append({
+			"opcode": Opcode.CLEAR_TAX_OVERRIDE,
+			"target_handle": handle,
+			"tax_kind": kind,
+			"tax_item": item,
+			"stable_id": String(item_id),
+			"effective_day": effective_day,
+			"sequence": sequence,
+		})
+	var result := submit(commands)
+	result["group_size"] = commands.size()
+	return result
+
+
+## 回滚用：一批命令逐 item 指定各自税率。基线下本来有 override 的 item 用它
+## 恢复原值，本来没有的才走 clear_tax_override_group。整批共用一个 sequence：
+## 内核按 (effective_day, sequence, submit_order) 排序，同天连拉两次滑条也不会
+## 让前一批的条目越到后一批之后。
+func set_tax_overrides_batch(handle: int, kind: int,
+		item_ids: PackedStringArray, rates_basis_points: PackedInt32Array,
+		effective_day: int, sequence: int) -> Dictionary:
+	if not _configured:
+		return {"ok": false, "reason": "country facade is not configured"}
+	if item_ids.is_empty() or item_ids.size() != rates_basis_points.size():
+		return {"ok": false, "reason": "tax batch shape mismatch"}
+	var commands: Array[Dictionary] = []
+	for index in item_ids.size():
+		var item_id := item_ids[index]
+		var item := _tax_item_index(kind, item_id)
+		if item < 0:
+			return {"ok": false, "reason": "unknown tax item: %s" % String(item_id)}
+		commands.append({
+			"opcode": Opcode.SET_TAX_OVERRIDE,
+			"target_handle": handle,
+			"tax_kind": kind,
+			"tax_item": item,
+			"stable_id": String(item_id),
+			"tax_rate_basis_points": int(rates_basis_points[index]),
+			"tax_assessment_mode": TAX_MODE_PERCENT_BP,
+			"effective_day": effective_day,
+			"sequence": sequence,
+		})
+	var result := submit(commands)
+	result["group_size"] = commands.size()
+	return result
 
 
 func tax_policy_snapshot(handle: int) -> Dictionary:

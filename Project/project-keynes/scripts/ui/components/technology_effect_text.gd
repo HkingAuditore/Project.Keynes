@@ -10,8 +10,8 @@ extends RefCounted
 ## 结果同一个科技在列表里和详情里都显示成「没有效果」，玩家也就看不出它开放的是
 ## 浅海航道。两处统一调这里，别再各写一份。
 
-const TechnologyNetworkValidatorScript := preload(
-	"res://scripts/technology/technology_network_validator.gd")
+const NetworkPresentation := preload(
+	"res://scripts/technology/technology_network_presentation.gd")
 
 
 ## 结构化效果行：[{text, icon, accent}]。没有结构化效果时退回 effect_summary 的分句。
@@ -21,7 +21,7 @@ static func effect_items(definition: Dictionary) -> Array:
 		var effect: Dictionary = effect_value
 		var kind := String(effect.get("kind", ""))
 		var id := String(effect.get("id", ""))
-		var display_name := String(effect.get("display_name", id))
+		var display_name := NetworkPresentation.content_effect_name(effect)
 		var attribute := String(effect.get("attribute", ""))
 		var text := ""
 		match kind:
@@ -54,9 +54,11 @@ static func effect_items(definition: Dictionary) -> Array:
 	var modifier_texts := {}
 	for term_value in definition.get("modifier_terms", []):
 		var term: Dictionary = term_value
-		var value := int(round(float(term.get("value", 0.0)) * 100.0))
-		var delta := "%+d%%" % value
-		var subject := TechnologyNetworkValidatorScript.modifier_effect_subject(term)
+		# 增量必须走 NetworkPresentation：它认得 operation（倍率/取反）和 `_bp`
+		# 基点量纲。这里曾经自己写 value*100 再取整，于是「地产测绘」的地主税率
+		# 400bp 显示成 +40000%，「军事测绘」的视野 +10 显示成 +1000%。
+		var delta := NetworkPresentation.modifier_delta(term)
+		var subject := NetworkPresentation.modifier_effect_subject(term)
 		var text := ""
 		if not subject.is_empty():
 			text = "%s %s" % [subject, delta]
@@ -90,8 +92,7 @@ static func effect_texts(definition: Dictionary) -> PackedStringArray:
 	return texts
 
 
-## 一句话摘要：优先用作者写的 effect_summary，空的时候（如天文导航）才由结构化
-## 效果拼出来。返回值可能是多行。
+## 优先使用公开目录已格式化的摘要，缺少摘要时从结构化效果拼出多行文案。
 static func summary_text(definition: Dictionary) -> String:
 	var summary := String(definition.get("effect_summary", "")).strip_edges()
 	if not summary.is_empty():

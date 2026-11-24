@@ -25,10 +25,17 @@ func _ready() -> void:
 	WebTelemetry.flush()
 	_attach_headless_runner("PK_GAME_SAVE_ROUNDTRIP_TEST",
 		"res://tests/game/game_save_roundtrip_test.gd")
+	# 旧存档续跑：把别的构建写出的存档放进 PK_SAVE_DIR，在已运行的会话里换入，
+	# 验证 CLM2/ECP2/ECP1 的旧布局仍可恢复。见 tests/game/legacy_save_continuation_test.gd。
+	_attach_headless_runner("PK_LEGACY_SAVE_CONTINUITY",
+		"res://tests/game/legacy_save_continuation_test.gd")
 	# 存档回放复现入口。见 tests/headless_save_replay.gd 与
 	# tools/runtime/Invoke-SaveReplay.ps1。
 	_attach_headless_runner("PK_SAVE_REPLAY",
 		"res://tests/game/headless_save_replay.gd")
+	# 故障快照只读加载入口（--load-forensics），见 tests/game/headless_forensics_load.gd。
+	_attach_headless_runner("PK_FORENSICS_LOAD",
+		"res://tests/game/headless_forensics_load.gd")
 	_attach_headless_runner("PK_FAMILY_PROBE",
 		"res://tests/family/family_economy_probe.gd")
 	_attach_headless_runner("PK_COLONIZATION_PROBE",

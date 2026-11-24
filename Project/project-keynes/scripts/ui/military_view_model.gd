@@ -135,7 +135,9 @@ func configure(model: Dictionary) -> void:
 	_map_obj = section.get("map", _model.get("map", null))
 	_player_controller = section.get("player_controller",
 		_model.get("player_controller", null))
-	_cell_names = _as_dict(_model.get("cell_names", null))
+	# 地块名由装配层（CountryViewModel）从 Economy 的具名聚落装进军事段；顶层的
+	# `cell_names` 仍认，是为了夹具与旧调用面不必改。
+	_cell_names = _as_dict(section.get("cell_names", _model.get("cell_names", null)))
 	_country_names = _as_dict(_model.get("country_names", null))
 	_daily_wage = int(_snapshot.get("daily_wage", 0))
 	_gate_known = bool(section.get("tech_gate_known", false))
@@ -516,7 +518,7 @@ func army_readiness() -> Dictionary:
 		"low_morale": low_morale,
 		"worst_supply": worst_supply if worst_supply <= 1.0 else 0.0,
 		"morale_caption": ("%d 支部队士气低落" % low_morale) if low_morale > 0
-			else "%d 支部队按兵力加权" % _armies.size() if _armies.size() > 0 else "尚无野战部队",
+			else "",
 		"supply_caption": ("最低 %s %s" % [worst_name, _percent(worst_supply)])
 			if not worst_name.is_empty() else "尚无野战部队",
 	}
@@ -545,9 +547,6 @@ func _overview_insights(soldiers: int, deficit: int, pay_ratio: float,
 	if waiting > 0:
 		insights.append(_insight("equipment", "%d 笔训练订单在等装备到货。" % waiting,
 			"military.plan.training", UITokens.DOSSIER_BRASS))
-	if _as_array(_snapshot.get("wars", null)).is_empty() and insights.size() < 2:
-		insights.append(_insight("peace", "当前没有战争，军费全部用于常备与后勤。",
-			"military.war.truce", UITokens.DOSSIER_INK_MUTED))
 	return insights.slice(0, 4)
 
 
@@ -1398,7 +1397,7 @@ func _war_status(slot: int) -> Dictionary:
 		var until := int(_player_controller.call("military_truce_until", slot))
 		if until > _day:
 			return {"war": false, "truce_until": until,
-				"reason": "停战至第 %d 日" % until}
+				"reason": "停战至%s" % WorldClock.date_text_for_day(until)}
 	return {"war": false, "truce_until": -1, "reason": ""}
 
 
@@ -1504,12 +1503,12 @@ func _owner_map() -> PackedInt32Array:
 ## only shows up when neither the generator nor Country can name it.
 func cession_label(cell: int, owners: PackedInt32Array) -> String:
 	var zone := zone_name(cell)
-	var name := cell_name(cell)
-	if name == "未命名地块":
+	var settlement := settlement_name(cell)
+	if settlement.is_empty():
 		return zone
-	if zone.ends_with(name):
+	if zone.ends_with(settlement):
 		return zone
-	return "%s · %s" % [zone, name]
+	return "%s · %s" % [zone, settlement]
 
 
 func _owner_label(cell: int, owners: PackedInt32Array) -> String:
@@ -1556,27 +1555,59 @@ func evaluate_peace(war_id: int, war_score: float, terms: Array) -> Dictionary:
 func zone_name(cell: int) -> String:
 	if cell < 0:
 		return "—"
-	var region := ""
-	if _generator != null and _generator.has_method("region_name_for_cell"):
-		region = String(_generator.call("region_name_for_cell", cell)).strip_edges()
-	if region.is_empty():
-		# Fixture/offline stand-in for the generator's region names.
-		region = String(_as_dict(_as_dict(_model.get("military", null)).get(
-			"region_names", null)).get(cell, ""))
+	var region := _region_name(cell)
 	var owner := cell_owner_name(cell)
 	# A region with no authored name is said out loud ("青川国境内"): falling
 	# through to the fixture's cell table here is exactly how a production
-	# "地块 #1467" would look like a real name.
+	# "地块 1467" would look like a real name.
 	if not region.is_empty():
 		return "%s·%s" % [region, owner] if not owner.is_empty() else region
 	return "%s境内" % owner if not owner.is_empty() else cell_name(cell)
 
 
+## 作者写的地区名；空串表示这一格没有地区名。
+func _region_name(cell: int) -> String:
+	if cell < 0:
+		return ""
+	if _generator != null and _generator.has_method("region_name_for_cell"):
+		var region := String(_generator.call("region_name_for_cell", cell)).strip_edges()
+		if not region.is_empty():
+			return region
+	# Fixture/offline stand-in for the generator's region names.
+	return String(_as_dict(_as_dict(_model.get("military", null)).get(
+		"region_names", null)).get(cell, ""))
+
+
+## 具名聚落的名字（Economy 权威）。空串表示这一格没有具名聚落。
+##
+## 割地表用**它**判断「这一格有没有自己的名字」，不能用 `cell_name()`：后者在
+## 没有聚落名时会退回地区名，那样每个格子都会被当成「有名字」。
+func settlement_name(cell: int) -> String:
+	if cell < 0:
+		return ""
+	return String(_cell_names.get(cell, ""))
+
+
+## 具名聚落名表的条数。诊断用：0 表示这次刷新还没拿到 Economy 的聚落快照
+## （读视图在 worker 侧排队），此时面板写地区名而不是空白。
+func cell_name_count() -> int:
+	return _cell_names.size()
+
+
+## 面板上写的地块名：具名聚落 > 地区名 > 「地块 N」。
+##
+## 以前没有聚落名的格子一律写「未命名地块」，于是兵营行、训练行与割地表全在重复
+## 同一句半截话——既不是名字，也不提供定位信息。现在最差也给序号。
 func cell_name(cell: int) -> String:
 	if cell < 0:
 		return "—"
-	var name := String(_cell_names.get(cell, ""))
-	return name if not name.is_empty() else "未命名地块"
+	var settlement := settlement_name(cell)
+	if not settlement.is_empty():
+		return settlement
+	var region := _region_name(cell)
+	if not region.is_empty():
+		return region
+	return "地块 %d" % cell
 
 
 func army_name(army: Dictionary) -> String:

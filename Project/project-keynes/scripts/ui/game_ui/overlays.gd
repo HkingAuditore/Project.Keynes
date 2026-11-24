@@ -6,6 +6,7 @@ const CellBoardScene = preload("res://scenes/ui/cell_board.tscn")
 
 func _ensure_cell_hover_card(host) -> void:
 	if host._cell_hover_card != null:
+		_ensure_cell_board(host)
 		return
 	var hud := host.get_node_or_null("UIRoot/HUDLayer") as Control
 	if hud == null:
@@ -17,28 +18,45 @@ func _ensure_cell_hover_card(host) -> void:
 	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.add_child(card)
 	host._cell_hover_card = card
+	# 悬停格语义只在这里解析一次；地名纸签与左侧展板都订阅这条信号。
+	card.hover_cell_changed.connect(func(cell: int) -> void:
+		_on_hover_cell_changed(host, cell))
+	# 同格跨日或归属变化时，悬停卡按 REVALIDATE_MSEC 重建载荷；左侧展板借此刷新当日数据。
+	card.payload_applied.connect(func(cell: int) -> void:
+		_on_hover_payload_applied(host, cell))
 	_ensure_cell_board(host)
 	host._configure_cell_hover_card()
 
 
+## 左侧展板：复用悬停卡的「当前悬停格」信号，自己不再解析指针。
+## 展板实例与它的布局都挂在 HUD 布局组件上——它是既有各面板引用的落点，
+## 宿主只保留悬停卡与展板之间的信号连接。
 func _ensure_cell_board(host) -> void:
 	var layout = host._hud_layout_component
-	if layout == null or layout._cell_board != null:
+	if layout == null:
 		return
-	var panel_layer := host.get_node_or_null("UIRoot/PanelLayer") as Control
-	if panel_layer == null:
-		return
-	var board := CellBoardScene.instantiate() as CellBoard
-	panel_layer.add_child(board)
-	layout._cell_board = board
-	layout._cell_hover_card = host._cell_hover_card
-	if host._cell_hover_card != null:
-		host._cell_hover_card.hover_cell_changed.connect(board.on_hover_cell_changed)
-		host._cell_hover_card.payload_applied.connect(board.on_hover_cell_refreshed)
-	board.visibility_changed.connect(func() -> void:
-		if host._map_overlay_toolbar != null:
-			host._map_overlay_toolbar.set_board_obscured(board.visible)
-		layout.sync_board_avoidance())
+	if layout._cell_board == null:
+		var panel_layer := host.get_node_or_null("UIRoot/PanelLayer") as Control
+		if panel_layer == null:
+			return
+		var board := CellBoardScene.instantiate() as CellBoard
+		if board == null:
+			return
+		board.name = "CellBoard"
+		panel_layer.add_child(board)
+		layout._cell_board = board
+		# 两块浮层不互相遮挡：展板一出现就把自己的矩形推给卡片避让。
+		board.visibility_changed.connect(func() -> void:
+			if host._map_overlay_toolbar != null:
+				host._map_overlay_toolbar.set_board_obscured(board.visible)
+			if host._cell_hover_card == null:
+				return
+			host._cell_hover_card.set_avoid_rect(board.get_global_rect() \
+				if board.visible else Rect2()))
+		host.get_viewport().size_changed.connect(func() -> void:
+			layout._layout_cell_board())
+		if host._cell_hover_card != null:
+			board.on_hover_cell_changed(host._cell_hover_card.current_cell_index())
 	layout._layout_cell_board()
 
 
@@ -223,7 +241,7 @@ func _on_runtime_gm_toggle_changed(host, toggle_id: String, enabled: bool) -> vo
 
 
 func show_annual_report(host, model: Dictionary, ceremonial: bool) -> void:
-	if host.can_open_annual_report():
+	if host._annual_report_workspace != null:
 		host._annual_report_workspace.present(model, ceremonial)
 
 
@@ -235,7 +253,7 @@ func set_annual_history(host, rows: Array, offset: int, has_more: bool) -> void:
 
 
 func is_annual_report_open(host) -> bool:
-	return is_instance_valid(host._annual_report_workspace) and host._annual_report_workspace.is_visible_in_tree()
+	return host._annual_report_workspace != null and host._annual_report_workspace.visible
 
 
 
@@ -244,9 +262,17 @@ func close_annual_report(host) -> void:
 		host._annual_report_workspace.call("_close")
 
 
+func annual_other_modal_open(host) -> bool:
+	return host.is_era_reward_modal_open() or host.is_family_founding_modal_open() \
+		or host.is_narrative_event_modal_open() \
+		or (host._pause_menu != null and host._pause_menu.visible)
+
 
 func show_narrative_event_offer(host, offer: Dictionary) -> void:
 	host._ensure_narrative_ui()
+	# [popup-deferral 2026-11-20] 正常路径下 NarrativeEventFlow 已经保证这些窗口是关着的
+	# （开着就静置），这里只剩兜底：万一某个入口漏了 gate，宁可收起卷宗也不让弹窗压在
+	# 全屏卷宗后面变成看不见的模态。
 	if host._country_panel != null and host._country_panel.is_panel_open():
 		host.close_country_panel()
 	if host._colonization_panel != null and host._colonization_panel.visible:
@@ -297,6 +323,7 @@ func show_narrative_chronicle(host, records: Array) -> void:
 func close_narrative_chronicle(host) -> void:
 	if host._narrative_chronicle_panel != null and host._narrative_chronicle_panel.has_method("close_panel"):
 		host._narrative_chronicle_panel.close_panel()
+		notify_workspace_closed(host)
 
 
 
@@ -304,6 +331,36 @@ func is_narrative_chronicle_open(host) -> bool:
 	return host._narrative_chronicle_panel != null and host._narrative_chronicle_panel.visible
 
 
+## [popup-deferral 2026-11-20] 玩家正占着屏幕的显式窗口。叙事弹窗遇到这些窗口时不抢焦点，
+## 由 NarrativeEventFlow 先静置（停表 + 提示音），窗口关掉后再展示。
+## 右侧地块档案与暂停菜单不算：前者是选格后的常驻看板，后者本来就停了表。
+func is_player_workspace_open(host) -> bool:
+	if host._country_panel != null and host._country_panel.is_panel_open():
+		return true
+	if host._colonization_panel != null and host._colonization_panel.visible:
+		return true
+	if host.is_peace_window_open():
+		return true
+	if host.is_era_panel_open():
+		return true
+	if host._gm_console != null and host._gm_console.is_panel_open():
+		return true
+	if host.is_narrative_chronicle_open():
+		return true
+	if host._right_panel != null and (host._right_panel.building_workspace_open()
+			or host._right_panel.family_workspace_open()
+			or host._right_panel.military_dossier_open()):
+		return true
+	return false
+
+
+## 窗口关掉后把静置事件交回展示流程。必须延后一帧：关窗与开窗常常在同一个输入回合
+## （时代纸笺 → 国家卷宗），同步重查会在「旧的关了、新的还没显示」的缝隙里把弹窗抢进来。
+func notify_workspace_closed(host) -> void:
+	if host._player_controller == null \
+			or not host._player_controller.has_method("recheck_narrative_popup"):
+		return
+	host._player_controller.call_deferred("recheck_narrative_popup")
 
 
 func dismiss_overlay_menu(host) -> bool:
@@ -343,8 +400,6 @@ func dismiss_overlay_menu(host) -> bool:
 		host._colonization_panel.close_panel()
 		return true
 	if host._country_panel != null and host._country_panel.is_panel_open():
-		if host._country_panel.current_section() == "politics" and host._player_controller != null:
-			host._player_controller.dismiss_displayed_ideology_offer()
 		host.close_country_panel()
 		return true
 	if host._gm_console != null and host._gm_console.is_panel_open():
@@ -366,6 +421,16 @@ func toggle_pause_menu(host) -> void:
 	if host._pause_menu != null and not host.is_era_reward_modal_open() \
 			and not host.is_family_founding_modal_open():
 		host._pause_menu.toggle()
+
+
+func set_popups_suppressed(host, enabled: bool) -> void:
+	host._gm_popups_suppressed = enabled
+	if not enabled:
+		return
+	if host.is_era_ceremony_playing():
+		host._era_ceremony.skip()
+	if host._narrative_event_dialog != null and host._narrative_event_dialog.has_method("close_offer"):
+		host._narrative_event_dialog.close_offer()
 
 
 func set_all_ui_suppressed(host, enabled: bool) -> void:
@@ -432,6 +497,7 @@ func toggle_gm_panel(host) -> void:
 		return
 	if host._gm_console.is_panel_open():
 		host._gm_console.close_panel()
+		notify_workspace_closed(host)
 	else:
 		host._gm_console.open_panel()
 
@@ -454,12 +520,44 @@ func _configure_cell_hover_card(host) -> void:
 		return
 	host._cell_hover_card.configure(host._map, host._player_camera, host._hover_hex_size,
 		host._cell_hover_view_model, host._hover_blocked, host.map_safe_area)
-	var board: CellBoard = host._hud_layout_component._cell_board
-	if board != null:
-		board.configure(host._map,
-			func() -> Object: return host._economy_runtime_facade,
-			host._inspector_view_model, host._world_clock)
-		host._hud_layout_component._layout_cell_board()
+	_configure_cell_board(host)
+
+
+## 底座 cell_board 的 configure 是 4 参（不接悬停 view model），展板自身按悬停格信号取数。
+func _configure_cell_board(host) -> void:
+	var layout = host._hud_layout_component
+	if layout == null or layout._cell_board == null or host._map == null \
+			or host._inspector_view_model == null:
+		return
+	# 经济门面按需解析：世界绑定早于经济运行时绑定时，这里还拿不到对象。
+	layout._cell_board.configure(host._map,
+		func() -> Object: return host._economy_runtime_facade,
+		host._inspector_view_model, host._world_clock)
+	layout._layout_cell_board()
+
+
+## 悬停格变化的唯一分发点：地图地名纸签 + 左侧展板。
+func _on_hover_cell_changed(host, cell_index: int) -> void:
+	var layer = _settlement_label_layer(host)
+	if layer != null:
+		layer.set_hover_cell(cell_index)
+	var layout = host._hud_layout_component
+	if layout != null and layout._cell_board != null:
+		layout._cell_board.on_hover_cell_changed(cell_index)
+
+
+func _on_hover_payload_applied(host, cell_index: int) -> void:
+	var layout = host._hud_layout_component
+	if layout != null and layout._cell_board != null:
+		layout._cell_board.on_hover_cell_refreshed(cell_index)
+
+
+## 地名层由世界运行期持有；UI 只借用它的悬停纸签入口。
+func _settlement_label_layer(host):
+	if host._diagnostics_source == null \
+			or not host._diagnostics_source.has_method("settlement_label_layer"):
+		return null
+	return host._diagnostics_source.call("settlement_label_layer")
 
 
 func touch_layout_enabled(host) -> bool:

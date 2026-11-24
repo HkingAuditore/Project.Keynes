@@ -369,6 +369,16 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             if (need != day && economy->needs_environment_capture(need))
                 capture_day(need);
         }
+        // Sparse-workset probe. The graph never runs the compact economy slice
+        // while the worker owns the domain, so `_runtime_graph_last_economy_report`
+        // used to stay empty and the headless CSV lost every economy column.
+        // Publish the worker-owned runtime's scalar probe snapshot instead;
+        // it reads counters only and never mutates settlement state.
+        if (_runtime_graph_economy_capture_fatal_reason.empty()) {
+            auto *probe_runtime =
+                static_cast<NativeEconomyRuntime *>(_economy_runtime);
+            _runtime_graph_last_economy_report = probe_runtime->probe_report();
+        }
     }
 
     // Hand every new committed Economy opinion revision to the worker before
@@ -630,6 +640,17 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
 
 Dictionary DCWorldExt::get_runtime_graph_last_economy_report() const {
     return _runtime_graph_last_economy_report;
+}
+
+// The runtime graph stops pulsing once the simulation worker owns the day
+// loop, so the report captured in `_runtime_graph_last_economy_report` freezes
+// at the last pulse. Perf recording asks this accessor once per sampled row
+// instead, which keeps the probe columns aligned with the committed day.
+// Scalar counters only; nothing here mutates the economy runtime.
+Dictionary DCWorldExt::get_runtime_economy_probe_report() const {
+    if (_economy_runtime == nullptr) return Dictionary();
+    auto *economy = static_cast<NativeEconomyRuntime *>(_economy_runtime);
+    return economy->probe_report();
 }
 
 void DCWorldExt::flush_runtime_visuals(uint32_t dirty_mask) {

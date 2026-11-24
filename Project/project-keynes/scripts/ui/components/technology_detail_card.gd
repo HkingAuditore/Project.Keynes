@@ -109,8 +109,8 @@ func show_unknown(condition_items: Array = [], state: int = 0) -> void:
 	_name.text = "未知科技"
 	_state_label.text = STATE_NAMES[clampi(state, 0, 1)]
 	_state_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
-	_placeholder.visible = not condition_items.is_empty()
-	_placeholder.text = "完成以下条件以发现该科技"
+	_placeholder.visible = false
+	_placeholder.text = ""
 	_detail_block.visible = true
 	for child in _detail_block.get_children():
 		child.visible = child == _condition_title or child == _conditions
@@ -164,8 +164,6 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 	_state_label.text = _application_state_name(state) if is_application \
 		else STATE_NAMES[clampi(state, 0, STATE_NAMES.size() - 1)]
 	_state_label.add_theme_color_override("font_color", _state_colour(state))
-	var summary := String(definition.get("effect_summary", "")).strip_edges()
-	_summary.text = summary
 	_chips.set_facts(_facts_for(definition, era_name, domain_name, is_application))
 	_gauge.visible = not is_application
 	if not is_application:
@@ -176,12 +174,16 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 	_condition_title.visible = not condition_items.is_empty()
 	_conditions.visible = not condition_items.is_empty()
 	_conditions.set_items(condition_items)
+	# 效果排在详情栏最前面：它是玩家「点不点这个科技」的唯一依据，研究条件、
+	# 前置科技、后继与应用都退到它下面。最上面那行合并摘要负责一眼扫完，下面
+	# 逐条列表负责看清每一项——两者是同一批结构化数据的两种写法，所以数字必须
+	# 都出自 presentation 的同一个格式化函数，否则同一张卡会自己打脸（曾经
+	# 「种子与繁育观察」的摘要是 +3.8%、列表是 +4%，「地产测绘」的摘要是 +4%、
+	# 列表是 +40000%）。
+	var summary := String(definition.get("effect_summary", "")).strip_edges()
 	var effect_items := _effect_items(definition)
-	# Without structured effects the bullet list is the summary split apart;
-	# showing both would print every effect twice.
-	var structured := not (definition.get("content_effects", []) as Array).is_empty() \
-		or not (definition.get("modifier_terms", []) as Array).is_empty()
-	_summary.visible = not summary.is_empty() and structured
+	_summary.text = summary
+	_summary.visible = not summary.is_empty() and not effect_items.is_empty()
 	_effect_title.text = "启用后效果" if is_application else "掌握后效果"
 	_effect_title.visible = not effect_items.is_empty()
 	_effects.visible = not effect_items.is_empty()

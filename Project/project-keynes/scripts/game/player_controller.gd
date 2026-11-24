@@ -52,6 +52,7 @@ const COMMAND_RESEARCH_REMOVE = PlayerCommandValidation.COMMAND_RESEARCH_REMOVE
 const COMMAND_RESEARCH_MOVE = PlayerCommandValidation.COMMAND_RESEARCH_MOVE
 const COMMAND_COUNTRY_TAX_SET_DEFAULT = PlayerCommandValidation.COMMAND_COUNTRY_TAX_SET_DEFAULT
 const COMMAND_COUNTRY_TAX_SET_OVERRIDE = PlayerCommandValidation.COMMAND_COUNTRY_TAX_SET_OVERRIDE
+const COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP = PlayerCommandValidation.COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP
 const COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE = PlayerCommandValidation.COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE
 const COMMAND_CELL_TAX_SET_DEFAULT = PlayerCommandValidation.COMMAND_CELL_TAX_SET_DEFAULT
 const COMMAND_CELL_TAX_CLEAR_DEFAULT = PlayerCommandValidation.COMMAND_CELL_TAX_CLEAR_DEFAULT
@@ -114,6 +115,7 @@ const SUPPORTED_COMMANDS := {
 	COMMAND_RESEARCH_MOVE: true,
 	COMMAND_COUNTRY_TAX_SET_DEFAULT: true,
 	COMMAND_COUNTRY_TAX_SET_OVERRIDE: true,
+	COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP: true,
 	COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE: true,
 	COMMAND_CELL_TAX_SET_DEFAULT: true,
 	COMMAND_CELL_TAX_CLEAR_DEFAULT: true,
@@ -149,6 +151,9 @@ const SUPPORTED_COMMANDS := {
 	COMMAND_MILITARY_STATE_DEMOLISH: true,
 	COMMAND_MILITARY_WAGE: true,
 	COMMAND_MILITARY_PROCUREMENT: true,
+	# 军事预算信封（`policy.set_budget`）。缺了这一项，财政页的「军事预算 / 军饷 /
+	# 建筑维护 / 装备与给养」滑条提交时会被判成 unsupported_command，板块等于装饰。
+	COMMAND_MILITARY_BUDGET: true,
 	COMMAND_MILITARY_ARMY_CREATE: true,
 	COMMAND_MILITARY_ARMY_STATION: true,
 	COMMAND_MILITARY_ARMY_MOVE: true,
@@ -174,9 +179,15 @@ var _runtime_host = null
 var _world_clock = null
 var _ui_manager = null
 var _selected_cell = null
+var _cell_situation_picker: Callable
 var _player_country_handle := 0
 var _command_sequence := 1
 var _pause_before_menu := false
+## GM「屏蔽弹窗」：所有会自动锁时钟的玩家提示（年报、叙事、时代奖励、家族创立、
+## 理念抽取）都不再抢焦点。本代没有 era/family/ideology 暂停子系统，
+## 这两个字段只负责记录「屏蔽期间是否该恢复时钟」。
+var _popups_suppressed: bool = false
+var _suppression_resume_running: bool = false
 var _country_facade = null
 var _economy_facade = null
 var _ideology_facade = null
@@ -247,6 +258,12 @@ func _apply_camera_view_scale_compensation() -> void:
 
 
 func _on_clock_control_changed(_paused: bool, _speed: float) -> void:
+	if _popups_suppressed and _suppression_resume_running and _world_clock != null \
+			and _world_clock.paused and not _world_clock.authority_fault_hold \
+			and _is_suppressed_popup_pause_source(String(_world_clock.last_pause_source)):
+		# 等这次时钟通知完成后释放被屏蔽提示申请的暂停。
+		# 只释放已知的 UI 自动暂停来源，保留手动暂停、存档暂停和故障保护。
+		_world_clock.pause(false)
 	_sync_clock_visual_state()
 	_sync_time_ui()
 
@@ -318,6 +335,11 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 			result = facade.set_tax_override_basis_points(_player_country_handle,
 				int(args.kind), StringName(args.item_id), _tax_rate_basis_points(args),
 				effective_day, sequence, _tax_assessment_mode(args))
+		COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP:
+			# 整组调税一次成批提交，内核按同批准入；税率只走百分比模式。
+			result = facade.set_tax_override_group_basis_points(_player_country_handle,
+				int(args.kind), args.get("item_ids", PackedStringArray()),
+				_tax_rate_basis_points(args), effective_day, sequence)
 		COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE:
 			result = facade.clear_tax_override(_player_country_handle,
 				int(args.kind), StringName(args.item_id), effective_day, sequence)
@@ -753,14 +775,12 @@ func _on_simulation_view_updated(_from_day: int, to_day: int, _generation: int) 
 	_sync_time_ui()
 	if _ui_manager != null and _selected_cell != null:
 		_ui_manager.refresh_selected_daily_lines(false, to_day)
-	if _ui_manager != null and _ui_manager.has_method("refresh_committed_view"):
-		_ui_manager.refresh_committed_view()
+	if _ui_manager != null and _ui_manager.has_method("notify_committed_day"):
+		_ui_manager.notify_committed_day()
 
 func _on_simulation_day_records(_records: Array) -> void:
 	var commit: Dictionary = _runtime_host._runtime_last_commit
 	_narrative_service.apply_notice_history(commit.get("notice_history", []))
-	if _ui_manager != null and commit.has("gdp"):
-		_ui_manager.record_committed_ledger(commit)
 
 func player_confirmation_reason() -> String:
 	if _runtime_host == null or not _runtime_host.has_method("player_confirmation_view"):
@@ -850,6 +870,10 @@ func _connect_ui() -> void:
 	refresh_country_binding()
 
 
+func set_cell_situation_picker(picker: Callable) -> void:
+	_cell_situation_picker = picker
+
+
 func _on_tile_tapped(world_pos: Vector2) -> void:
 	if _runtime_host == null or _runtime_host.current_map() == null:
 		return
@@ -857,12 +881,17 @@ func _on_tile_tapped(world_pos: Vector2) -> void:
 		_runtime_host.hex_size)
 	# 议和窗口开着时地图就是「交割选格」：部队/战线拾取必须让路，否则停在候选格上的
 	# 部队棋子会先抢走这次点击。
-	if cell != null and _peace_window_open():
-		select_cell(cell)
+	if _peace_window_open():
+		if cell != null:
+			select_cell(cell)
 		return
 	# 部队指令模式下地图点击是目标格，保持旧语义；否则先给军务档案一次拾取机会。
 	if _military_order_mode.is_empty() and cell != null and military_map_pick(world_pos):
 		return
+	if _military_order_mode.is_empty() and _cell_situation_picker.is_valid() and _camera != null:
+		var alert_cell := int(_cell_situation_picker.call(_camera.safe_world_to_screen(world_pos)))
+		if alert_cell >= 0:
+			cell = _runtime_host.current_map().cell_at(alert_cell)
 	if cell != null:
 		select_cell(cell)
 
@@ -1029,9 +1058,8 @@ func _on_day_changed(day_idx: int) -> void:
 	var ui_breakdown: Dictionary = {}
 	if _ui_manager != null and not worker_days:
 		ui_breakdown = _ui_manager.refresh_selected_daily_lines(false, day_idx)
-		if _ui_manager.has_method("record_committed_day"):
-			_ui_manager.record_committed_day(day_idx)
-			_ui_manager.refresh_committed_view()
+		if _ui_manager.has_method("notify_committed_day"):
+			_ui_manager.notify_committed_day()
 		# Country workspaces are event-driven. Daily ticks only patch the selected
 		# cell and clock; country/economy/ideology commits invalidate their section.
 		ui_breakdown["country_summary_ms"] = 0.0
@@ -1527,6 +1555,21 @@ func narrative_ai_client():
 
 func narrative_event_locked() -> bool:
 	return _narrative_component.narrative_event_locked(self)
+
+func recheck_narrative_popup() -> void:
+	_narrative_component.recheck_narrative_popup(self)
+
+
+func set_popups_suppressed(enabled: bool) -> void:
+	_narrative_component.set_popups_suppressed(self, enabled)
+
+
+static func _is_suppressed_popup_pause_source(source: String) -> bool:
+	for marker in ["_pause_clock", "open_era_reward_offer", "_sync_era_reward_offer",
+			"_sync_family_founding_offer", "_sync_ideology_draw", "_pause_clock_for_ceremony"]:
+		if source.find(marker) >= 0:
+			return true
+	return false
 
 func open_narrative_chronicle(filter_cell: int = -1) -> void:
 	_narrative_component.open_narrative_chronicle(self, filter_cell)

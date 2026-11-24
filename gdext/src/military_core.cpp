@@ -279,10 +279,12 @@ uint64_t catalog_hash(const MilitaryCatalog &c) {
             h = mix_scalar<int64_t>(h, mat.rate_q32);
         }
     }
-    // Naval transport gates participate in the catalog identity: a catalog
-    // that grants (or stops granting) sea passage is a different catalog.
-    h = mix_scalar<int32_t>(h, c.coastal_transport_bit);
-    h = mix_scalar<int32_t>(h, c.ocean_transport_bit);
+    // Water-crossing gates participate in the catalog identity: a catalog that
+    // grants (or stops granting) a water tier is a different catalog.
+    h = mix_scalar<int32_t>(h, c.water_lake_bit);
+    h = mix_scalar<int32_t>(h, c.water_shallow_bit);
+    h = mix_scalar<int32_t>(h, c.water_far_bit);
+    h = mix_scalar<int32_t>(h, c.water_deep_bit);
     h = mix_scalar<uint64_t>(h, (uint64_t)c.categories.size());
     for (const MilitaryEquipCategory &cat : c.categories) {
         h = mix_string(h, cat.id);

@@ -5,6 +5,19 @@ const CatalogScript = preload("res://scripts/era/era_advancement_catalog.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const FLAG_MILESTONE := 2
 const SHARE_UNSET := -1
+## Narrow read-time migration for the two basket rows swapped in the catalog
+## (target era 2 `bronze_tools` → `copper_tools`, target era 5 `glass` → `lime`).
+## `restore` keeps the saved basket and never reconciles it with the catalog, so
+## an in-flight purchase would otherwise keep chasing a good the catalog no longer
+## asks for. Rules: match by good id (never by row index — catalog order can
+## change), rewrite the id in place, keep the quantity, never seize what the
+## treasury already bought, never restart the purchase. Idempotent by
+## construction: a rewritten id no longer matches a source id.
+## Deliberately narrow: only these two goods, never "basket ≠ catalog → restart".
+const BASKET_GOOD_ID_MIGRATIONS := {
+	"bronze_tools": "copper_tools",
+	"glass": "lime",
+}
 
 signal changed(snapshot: Dictionary)
 signal era_advanced(old_index: int, new_index: int, buffs: PackedStringArray)
@@ -133,7 +146,25 @@ func capture() -> Dictionary:
 
 
 func stage_restore(state: Dictionary) -> Dictionary:
-	return {"ok": true} if state.is_empty() else _submit("restore", 0, 0, state)
+	if state.is_empty():
+		return {"ok": true}
+	# Narrow id-matched migration of the two swapped catalog rows. Quantities,
+	# phase, target era and the treasury are left untouched; a second restore of
+	# the same state is a no-op because the old ids are gone.
+	var migrated := state.duplicate(true)
+	var saved_goods: PackedStringArray = migrated.get("required_good_ids", PackedStringArray())
+	if not saved_goods.is_empty():
+		migrated["required_good_ids"] = _migrate_basket_good_ids(saved_goods)
+	return _submit("restore", 0, 0, migrated)
+
+
+static func _migrate_basket_good_ids(good_ids: PackedStringArray) -> PackedStringArray:
+	var out := good_ids.duplicate()
+	for i in range(out.size()):
+		var replacement := String(BASKET_GOOD_ID_MIGRATIONS.get(String(out[i]), ""))
+		if not replacement.is_empty():
+			out[i] = replacement
+	return out
 
 
 func _compile(economy) -> Dictionary:

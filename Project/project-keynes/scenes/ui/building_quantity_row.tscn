@@ -1,0 +1,42 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
+
+[node name="BuildingQuantityRow" type="HBoxContainer"]
+mouse_filter = 2
+theme_override_constants/separation = 6
+
+[node name="Icon" parent="." instance=ExtResource("1_icon")]
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="Description" type="VBoxContainer" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_constants/separation = 0
+
+[node name="Name" type="Label" parent="Description"]
+layout_mode = 2
+theme_type_variation = &"PKDossierBody"
+autowrap_mode = 3
+
+[node name="Detail" type="Label" parent="Description"]
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+
+[node name="Options" type="HFlowContainer" parent="Description"]
+visible = false
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/h_separation = 9
+theme_override_constants/v_separation = 3
+
+[node name="Quantity" type="Label" parent="."]
+layout_mode = 2
+size_flags_vertical = 0
+theme_type_variation = &"PKDossierBody"
+horizontal_alignment = 2

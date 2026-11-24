@@ -2327,7 +2327,14 @@ godot::Dictionary DCWorldExt::bake_building_visual_chunk(godot::Dictionary knobs
 
 namespace {
 
-#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+// web 上一律内联，与有没有 pthreads 无关：
+//   * 无 pthreads：std::thread 构造会直接 abort；
+//   * 有 pthreads：worker 线程里访问本模块 TLS 上的原子量会 trap
+//     （"operation does not support unaligned accesses"，且发生在 worker 内、
+//     不会冒到主线程，表现成世界生成卡死）。
+// 队列量很小，内联完全够用：非线程路径由 take_ready_chunks / chunks_in_rect
+// 带时间预算把队列跑干（见 plan_queued(deadline)），不会卡住主线程。
+#if defined(__EMSCRIPTEN__)
 constexpr bool kBuildingVisualThreaded = false;
 #else
 constexpr bool kBuildingVisualThreaded = true;

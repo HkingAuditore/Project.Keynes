@@ -1,5 +1,6 @@
 #include "economy_runtime.h"
 #include "economy_runtime_building_investment_internal.h"
+#include "economy_family_move_cash.h"
 #include "runtime_switch_registry.h"
 #include <algorithm>
 #include <array>
@@ -91,35 +92,48 @@ bool NativeEconomyRuntime::investment_portfolio_funds_feasible(
             if (people >= from.population || from.funds < required_capital || to.funds < 0)
                 return false;
             load_families(from);
-            int64_t carried = 0;
+            // The cash carried by the movers is resolved by the same rule the
+            // commit writes with (economy_family_move_cash.h cohort_move_cash).
+            // Keeping one definition is what makes this replay a valid
+            // certificate for the later write; a second formula here is how a
+            // funded prefix used to become a building_investment_capital_
+            // preflight_drift stop after the population had already moved.
+            int64_t family_people = 0;
+            int64_t family_claim = 0;
+            for (const auto &family : from.families) {
+                family_people = saturating_add(family_people,
+                    std::max<int64_t>(0, family.people), sat);
+                family_claim = saturating_add(family_claim,
+                    std::max<int64_t>(0, family.cash), sat);
+            }
+            const bool family_plan_valid = !from.families.empty();
+            int64_t moved_claim = 0;
+            int64_t anonymous_moved = 0;
             if (plan.sponsor_family_handle != 0) {
                 auto *family = from.family(plan.sponsor_family_handle);
                 // A prior leg may have moved the selected people. Reject this
                 // prefix if the live move would fall back to other parties.
                 if (family == nullptr || family->people < people) return false;
-                const int64_t claim = proportional_cash_share(
-                    std::max<int64_t>(0, family->cash), people, family->people, sat);
-                carried = std::min(claim, from.funds);
+                moved_claim = std::min(family_move_cash_share(
+                    std::max<int64_t>(0, family->cash), people, family->people,
+                    sat, mul_div_sat), from.funds);
                 family->people -= people;
-                family->cash -= claim;
+                family->cash -= moved_claim;
                 load_families(to);
                 if (auto *destination_family = to.family(plan.sponsor_family_handle)) {
                     destination_family->people = saturating_add(destination_family->people, people, sat);
-                    destination_family->cash = saturating_add(destination_family->cash, claim, sat);
+                    destination_family->cash = saturating_add(destination_family->cash, moved_claim, sat);
                 } else {
-                    to.families.push_back({plan.sponsor_family_handle, people, claim});
+                    to.families.push_back({plan.sponsor_family_handle, people, moved_claim});
                 }
             } else {
-                int64_t family_people = 0, family_claim = 0;
-                for (const auto &family : from.families) {
-                    family_people = saturating_add(family_people, std::max<int64_t>(0, family.people), sat);
-                    family_claim = saturating_add(family_claim, std::max<int64_t>(0, family.cash), sat);
-                }
                 const int64_t anonymous_people = std::max<int64_t>(0, from.population - family_people);
                 if (anonymous_people < people) return false;
-                carried = proportional_cash_share(std::max<int64_t>(0, from.funds - family_claim),
-                    people, anonymous_people, sat);
+                anonymous_moved = people;
             }
+            const int64_t carried = cohort_move_cash(from.funds, from.population, people,
+                family_plan_valid, moved_claim, family_claim, anonymous_moved,
+                std::max<int64_t>(0, from.population - family_people), sat, mul_div_sat);
             const int64_t capital = std::max(required_capital, carried);
             const int64_t top_up = capital - carried;
             from.population -= people;
@@ -805,15 +819,53 @@ NativeEconomyRuntime::investment_preflight_portfolio(
     return InvestmentPreflightResult::Ready;
 }
 
+void NativeEconomyRuntime::record_investment_fatal_row(int32_t cell,
+        const InvestmentCandidatePlan &plan, int32_t portfolio_index,
+        int32_t portfolio_size, int32_t branch, int64_t owner_population,
+        int64_t required_capital, int64_t carried, int64_t correction,
+        int32_t owner_slot, int64_t owner_funds, bool source_drained) {
+    InvestmentFatalRow &row = _investment_fatal_row;
+    row = InvestmentFatalRow{};
+    row.valid = true;
+    row.branch = branch;
+    row.cell = cell;
+    row.type_id = plan.type_id;
+    row.portfolio_index = portfolio_index;
+    row.portfolio_size = portfolio_size;
+    row.allocated_count = plan.allocated_count;
+    row.owner_population = owner_population;
+    row.funding_capital = plan.funding_capital;
+    row.merchant_credit = plan.merchant_credit;
+    row.required_capital = required_capital;
+    row.carried = carried;
+    row.correction = correction;
+    row.sponsor_slot = plan.sponsor;
+    row.sponsor_family_handle = plan.sponsor_family_handle;
+    if (plan.sponsor >= 0 &&
+        plan.sponsor < static_cast<int32_t>(population_store().active.size())) {
+        row.sponsor_handle = static_cast<int64_t>(
+            population_store().handle_for_slot(plan.sponsor));
+        row.sponsor_population = population_store().population[plan.sponsor];
+        row.sponsor_funds = population_store().funds[plan.sponsor];
+    }
+    row.owner_slot = owner_slot;
+    row.owner_funds = owner_funds;
+    row.source_drained = source_drained;
+}
+
 bool NativeEconomyRuntime::investment_commit_portfolio(
         BuildingInvestmentCellContext &ctx, bool &population_changed,
         std::string &error) {
+    // Per-cell trace for post-mortem diagnosis (re-initialised for every cell so
+    // a fatal names the cell that actually failed).
+    _investment_leg_trace.clear();
     auto &cell = ctx.cell;
     auto &portfolio = ctx.portfolio;
     auto &portfolio_size = ctx.portfolio_size;
     auto &portfolio_population_changed = ctx.portfolio_population_changed;
     auto &commit_material_plans = ctx.commit_material_plans;
     auto &commit_time_factor = ctx.commit_time_factor;
+    auto &active_types = ctx.active_types;
     auto &total_buildings = ctx.total_buildings;
     auto &total_owner_population = ctx.total_owner_population;
     auto &max_type_owner_population = ctx.max_type_owner_population;
@@ -822,6 +874,66 @@ bool NativeEconomyRuntime::investment_commit_portfolio(
     for (int32_t i = 0; i < portfolio_size; ++i) {
         Candidate &candidate = portfolio[i];
         if (candidate.plan.allocated_count <= 0) continue;
+        // investment_portfolio_funds_feasible() replays the whole cell on a
+        // snapshot taken before this loop. The live slot can already be short
+        // by the time this leg runs: an earlier leg that emptied the sponsor
+        // cohort leaves a released slot whose signature is retained, and
+        // move_cohort_population() then returns success without moving a unit
+        // (economy_runtime.cpp:1675-1677), so the backstop assertions below
+        // would fire after the epoch was already half-written. Re-verify the
+        // exact transfer this write is about to perform and trim the candidate
+        // -- the documented prefix trim -- instead of writing then faulting.
+        // See docs/architecture/feature-guides.md §自动建筑投资的资金预检.
+        const bool sponsor_in_range = candidate.plan.sponsor >= 0 &&
+            candidate.plan.sponsor < static_cast<int32_t>(
+                population_store().active.size());
+        const bool gate_type_in_range = candidate.plan.type_id >= 0 &&
+            candidate.plan.type_id < static_cast<int32_t>(_building_types.size());
+        if (sponsor_in_range && gate_type_in_range) {
+            const bool planned_transition = static_cast<int32_t>(
+                population_store().signature_id[candidate.plan.sponsor]) !=
+                candidate.plan.owner_signature_id;
+            const int64_t planned_capital = saturating_mul(
+                candidate.plan.allocated_count, candidate.plan.funding_capital,
+                _saturation_count);
+            if (planned_transition) {
+                const int64_t planned_owner_population = saturating_mul(
+                    candidate.plan.allocated_count, std::max<int64_t>(1,
+                        _building_types[candidate.plan.type_id].owner_slots_per_building),
+                    _saturation_count);
+                // The dry run keeps _family_owner_seats_guarded exact: it is a
+                // per-epoch diagnostic counter, not a transfer side effect.
+                const int64_t guarded_before = _family_owner_seats_guarded;
+                bool planned_drain = false;
+                const int64_t planned_carried = plan_cohort_move_cash(
+                    candidate.plan.sponsor, cell, planned_owner_population,
+                    candidate.plan.sponsor_family_handle, true, &planned_drain);
+                _family_owner_seats_guarded = guarded_before;
+                // Exact per-branch mirror of the two backstops below.
+                //  * Drained source (:971-978) fires iff carried < required.
+                //    A drain carries every fund unit, so carried equals the
+                //    sponsor's whole balance and the condition is the same.
+                //  * Normal move (:997-1003) reads funds[sponsor] AFTER
+                //    move_cohort_population() already subtracted the carried
+                //    cash, so its check
+                //        (funds_before - carried) < (required - carried)
+                //    cancels `carried` and reduces to
+                //        funds_before < required.
+                // Gating on the narrower `funds_before < required - carried`
+                // would leave the window required - carried <= funds_before <
+                // required unfunded-here-but-fatal-at-the-backstop, i.e. the
+                // very drift this gate exists to remove.
+                const bool would_drift = planned_drain
+                    ? planned_carried < planned_capital
+                    : planned_carried < planned_capital &&
+                        population_store().funds[candidate.plan.sponsor] < planned_capital;
+                if (would_drift) {
+                    candidate.plan.allocated_count = 0;
+                    ++_building_investment_capital_limited;
+                    continue;
+                }
+            }
+        }
         const int64_t source_funds_before =
             population_store().funds[candidate.plan.sponsor];
         const int64_t source_population_before =
@@ -848,6 +960,25 @@ bool NativeEconomyRuntime::investment_commit_portfolio(
         const int64_t merchant_credit = saturating_mul(
             candidate.plan.allocated_count, candidate.plan.merchant_credit,
             _saturation_count);
+        // Trace this leg as it executes: a later drift backstop can then be
+        // diagnosed from one log line + this trace, without the player's save.
+        if (_investment_leg_trace.size() < 16) {
+            InvestmentLegTrace trace;
+            trace.candidate = i;
+            trace.type_id = candidate.plan.type_id;
+            trace.allocated = candidate.plan.allocated_count;
+            trace.transition = profession_transition;
+            trace.sponsor_slot = candidate.plan.sponsor;
+            trace.owner_population = owner_population;
+            trace.required_capital = required_capital;
+            trace.source_population_before = source_population_before;
+            trace.source_funds_before = source_funds_before;
+            trace.credit = merchant_credit;
+            _investment_leg_trace.push_back(trace);
+        }
+        const auto trace_leg = [&]() -> InvestmentLegTrace * {
+            return _investment_leg_trace.empty() ? nullptr : &_investment_leg_trace.back();
+        };
         bool source_drained = false;
         if (profession_transition && !move_cohort_population(
                 candidate.plan.sponsor, cell, candidate.plan.owner_signature_id,
@@ -877,7 +1008,17 @@ bool NativeEconomyRuntime::investment_commit_portfolio(
             // people. Surplus above required_capital stays on the owner.
             const int64_t carried =
                 population_store().funds[owner_slot] - target_funds_before;
+            if (auto *leg = trace_leg()) {
+                leg->owner_slot = owner_slot;
+                leg->carried = carried;
+                leg->source_drained = true;
+                leg->owner_funds_after_move = population_store().funds[owner_slot];
+            }
             if (carried < required_capital) {
+                record_investment_fatal_row(cell, candidate.plan, i,
+                    portfolio_size, 1, owner_population, required_capital,
+                    carried, required_capital - carried, owner_slot,
+                    population_store().funds[owner_slot], source_drained);
                 error = "building_investment_capital_preflight_drift";
                 return false;
             }
@@ -902,8 +1043,18 @@ bool NativeEconomyRuntime::investment_commit_portfolio(
             const int64_t carried = owner_funds_after - target_funds_before;
             const int64_t correction = std::max<int64_t>(
                 0, required_capital - carried);
+            if (auto *leg = trace_leg()) {
+                leg->owner_slot = owner_slot;
+                leg->carried = carried;
+                leg->correction = correction;
+                leg->owner_funds_after_move = owner_funds_after;
+            }
             if (correction > 0 &&
                 population_store().funds[candidate.plan.sponsor] < correction) {
+                record_investment_fatal_row(cell, candidate.plan, i,
+                    portfolio_size, 2, owner_population, required_capital,
+                    carried, correction, owner_slot, owner_funds_after,
+                    source_drained);
                 error = "building_investment_capital_preflight_drift";
                 return false;
             }
@@ -993,6 +1144,12 @@ bool NativeEconomyRuntime::investment_commit_portfolio(
                     _saturation_count);
             }
         }
+        if (auto *leg = trace_leg()) {
+            leg->owner_slot = owner_slot;
+            if (!profession_transition)
+                leg->owner_funds_after_move = population_store().funds[owner_slot];
+            leg->owner_funds_after_credit = population_store().funds[owner_slot];
+        }
     }
     // Population slots are stable and later ordinals never revisit this
     // cell. Defer the global merchant CSR rebuild until the deterministic
@@ -1021,6 +1178,12 @@ bool NativeEconomyRuntime::investment_commit_portfolio(
         command.i32_1 = candidate.plan.type_id;
         command.i64_0 = candidate.plan.allocated_count;
         const int64_t consumed_before = _construction_goods_consumed;
+        for (auto &leg : _investment_leg_trace) {
+            if (leg.candidate != i) continue;
+            leg.material_cost = commit_material_plans[i].total_cost;
+            leg.owner_funds_at_material = population_store().funds[owner_slot];
+            break;
+        }
         const BuildingType &type = _building_types[candidate.plan.type_id];
         const int32_t effective_construction_days =
             type.construction_days <= 0 ? 0 : std::max<int32_t>(1,
@@ -1029,9 +1192,14 @@ bool NativeEconomyRuntime::investment_commit_portfolio(
                     Q16_ONE, _saturation_count)));
         _construction_sponsor_override = candidate.plan.sponsor_family_handle;
         _construction_sponsor_override_set = true;
+        // Lets a materials drift name the leg order, not just the cell.
+        _construction_fatal_portfolio_index = i;
+        _construction_fatal_portfolio_size = portfolio_size;
         const bool built = commit_preflighted_build_command(
             command, owner_slot, commit_material_plans[i],
             effective_construction_days, 0, 0, 0, error);
+        _construction_fatal_portfolio_index = -1;
+        _construction_fatal_portfolio_size = 0;
         _construction_sponsor_override_set = false;
         if (!built) return false;
         if (candidate.plan.merchant_credit > 0) {
@@ -1076,6 +1244,33 @@ bool NativeEconomyRuntime::investment_commit_portfolio(
         _investment_pending_by_cell_type[pending_key] = saturating_add(
             _investment_pending_by_cell_type[pending_key],
             candidate.plan.allocated_count, _saturation_count);
+    }
+    // The gate above may have trimmed a candidate after the preflight already
+    // summed it into these aggregates. Recompute them from the legs that were
+    // actually committed so the day report never counts a trimmed building.
+    active_types = 0;
+    total_buildings = 0;
+    total_owner_population = 0;
+    max_type_owner_population = 0;
+    for (int32_t i = 0; i < portfolio_size; ++i) {
+        const Candidate &committed = portfolio[i];
+        if (committed.plan.allocated_count <= 0) continue;
+        ++active_types;
+        total_buildings = saturating_add(total_buildings,
+            committed.plan.allocated_count, _saturation_count);
+        const int64_t owner_population = saturating_mul(
+            committed.plan.allocated_count, std::max<int64_t>(1,
+                _building_types[committed.plan.type_id].owner_slots_per_building),
+            _saturation_count);
+        total_owner_population = saturating_add(
+            total_owner_population, owner_population, _saturation_count);
+        max_type_owner_population = std::max(
+            max_type_owner_population, owner_population);
+    }
+    if (active_types <= 0) {
+        // Every leg was trimmed before writing: nothing started this cycle,
+        // which is the same outcome the preflight Skip path produces.
+        return true;
     }
     ++_building_investment_portfolios_started;
     _building_investment_types_started = saturating_add(

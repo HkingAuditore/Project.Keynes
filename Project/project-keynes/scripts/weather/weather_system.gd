@@ -158,6 +158,7 @@ var _field_precip_inertia: float = 0.58
 var _field_classify_gate_land: float = 0.040   # W4
 var _field_classify_gate_water: float = 0.032  # W4
 var _field_precip_spatial_smooth: float = 0.30  # W5
+var _weather_classify_anomaly_cap: float = 0.12  # W6（分类器距平钳制，≠ _weather_temp_anomaly_cap）
 # 雨云化(2026-06-22):降水动力化的两个旋钮镜像(默认与 field_solver const 一致;C++ 经 knobs 接收,不重编)。
 var _field_precip_base_frac: float = 0.08  # 背景成雨比例；降低固定弱雨，让降水更依赖移动动力触发
 var _field_cloud_reevap: float = 0.28      # 干空气云水再蒸发；保留非降水薄云，避免清云过强

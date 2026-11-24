@@ -212,6 +212,9 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
         // (≥12 on a 6-country map); keep preparing until the fiscal peer
         // barrier clears or we hit a hard safety cap.
         constexpr int kMaxEconomyAssetRounds = 64;
+        // Probe mark: end of attempt/preflight and start of the formula loop.
+        // Timing only; it never gates a slice.
+        const auto economy_loop_started = std::chrono::steady_clock::now();
         for (int asset_round = 0; asset_round < kMaxEconomyAssetRounds;
              ++asset_round) {
             economy_pending_input = false;
@@ -221,11 +224,25 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                 for (int slice = 0; slice < 64; ++slice) {
                     bool slice_done = false;
                     bool pending_input = false;
+                    const auto slice_started = std::chrono::steady_clock::now();
                     if (!worker_run_stage_ops_slice(
                             plan.context.day, plan.context.input_generation,
                             economy_error, &slice_done, &pending_input)) {
                         economy_fatal = true;
                         break;
+                    }
+                    // Probe: this writer bypasses NativeEconomyRuntime::run_slice*,
+                    // so account the slice here. Timing only.
+                    {
+                        godot::Dictionary slice_probe;
+                        slice_probe["done"] = slice_done || pending_input;
+                        slice_probe["elapsed_ms"] =
+                            std::chrono::duration<double, std::milli>(
+                                std::chrono::steady_clock::now() - slice_started)
+                                .count();
+                        slice_probe["yield_reason"] = slice_done
+                            ? godot::String("") : godot::String("budget");
+                        _economy_production_runtime->note_probe_slice(slice_probe);
                     }
                     if (pending_input) {
                         economy_pending_input = true;
@@ -398,6 +415,12 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
         // slice done 也可能表示空闲或前置领域尚未就绪，不能伪造 epoch 提交。
         const auto economy_formulas_finished = std::chrono::steady_clock::now();
         _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_FORMULAS);
+        _economy_production_runtime->note_boundary_phase_ms(0,
+            std::chrono::duration<double, std::milli>(
+                economy_loop_started - economy_attempt_started).count());
+        _economy_production_runtime->note_boundary_phase_ms(1,
+            std::chrono::duration<double, std::milli>(
+                economy_formulas_finished - economy_loop_started).count());
         economy_day_done = economy_day_done &&
             !_economy_production_runtime->epoch_active() &&
             _economy_production_runtime->last_committed_day() >= 0;
@@ -463,15 +486,24 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                 // capture → POD import would replace the bound object.
                 // Flush the domain mirrors into the Owned committed blocks
                 // and republish the snapshot from that live state instead.
+                const auto owned_flush_started = std::chrono::steady_clock::now();
                 _economy_production_runtime
                     ->flush_formula_owned_domain_mirrors();
                 _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_MIRROR_CAPTURE);
+                const auto owned_publish_started = std::chrono::steady_clock::now();
+                _economy_production_runtime->note_boundary_phase_ms(3,
+                    std::chrono::duration<double, std::milli>(
+                        owned_publish_started - owned_flush_started).count());
                 ledger_published =
                     _economy_pod_authority.publish_owned_committed_mirror(
                         _economy_production_runtime->committed_generation(),
                         _economy_production_runtime->current_day(),
                         economy_error);
                 _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_MIRROR_PUBLISH);
+                _economy_production_runtime->note_boundary_phase_ms(4,
+                    std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - owned_publish_started)
+                        .count());
             } else {
                 RuntimeEconomyLedgerState &ledger_state =
                     _economy_mirror_capture_scratch;
@@ -484,10 +516,16 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                         false);
                 _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_MIRROR_CAPTURE);
                 const auto import_started = std::chrono::steady_clock::now();
+                _economy_production_runtime->note_boundary_phase_ms(3,
+                    std::chrono::duration<double, std::milli>(
+                        import_started - capture_started).count());
                 ledger_published =
                     _economy_pod_authority.import_and_publish_captured_ledger(
                         ledger_state, economy_error);
                 _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_MIRROR_PUBLISH);
+                _economy_production_runtime->note_boundary_phase_ms(4,
+                    std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - import_started).count());
                 static thread_local unsigned mirror_samples = 0;
                 if (mirror_samples++ < 8) {
                     std::fprintf(stderr, "[economy-mirror-cost] day=%lld capture_ms=%.3f import_ms=%.3f\n",
@@ -535,6 +573,10 @@ bool NativeSimulationHost::stage_economy(DayExecution &day, RuntimeDomainPlan &s
                 stages_ms,
                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - economy_formulas_finished).count());
         }
+        // Probe: boundary publish segment (mirror capture/import + POD hash).
+        _economy_production_runtime->note_boundary_phase_ms(2,
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - economy_formulas_finished).count());
         // Phase 5: publish production snapshot into the Economy POD ring.
         {
             uint32_t ring_index = 0;

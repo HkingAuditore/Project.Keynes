@@ -760,6 +760,27 @@ bool NativeEconomyRuntime::route_trade_source(
             trade_factor_q16 = _epoch_country_trade_capacity_factor_q16[
                 static_cast<size_t>(source.country)];
         }
+        // A4: the per-good capacity factor multiplies the country one, so a card
+        // that names a single good moves only that good's offered volume. Both
+        // arrays default to Q16_ONE, so an absent stat stays exactly neutral and
+        // this block cannot perturb a run without per-good modifiers.
+        if (source.good >= 0 && source.country >= 0) {
+            const size_t good_count = _good_ids.size();
+            const size_t good_index = static_cast<size_t>(source.country) * good_count +
+                static_cast<size_t>(source.good);
+            if (good_count > 0 && static_cast<size_t>(source.good) < good_count &&
+                good_index < _epoch_country_good_trade_capacity_factor_q16.size()) {
+                const int32_t good_factor_q16 =
+                    _epoch_country_good_trade_capacity_factor_q16[good_index];
+                if (good_factor_q16 != Q16_ONE) {
+                    const int64_t combined = mul_div_sat(
+                        static_cast<int64_t>(trade_factor_q16),
+                        static_cast<int64_t>(good_factor_q16), Q16_ONE, sat);
+                    trade_factor_q16 = static_cast<int32_t>(
+                        std::clamp<int64_t>(combined, 0, 0x7FFFFFFF));
+                }
+            }
+        }
         const int64_t offered_quantity = trade_factor_q16 == Q16_ONE
             ? source.quantity
             : mul_div_sat(source.quantity, trade_factor_q16, Q16_ONE, sat);

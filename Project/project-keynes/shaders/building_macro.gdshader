@@ -203,6 +203,13 @@ void fragment() {
 			BUILDING_MACRO_WINDOW_NIGHT_FULL, ed.pixel_night);
 		color += vec3(1.0, 0.60, 0.22) * windows * window_night
 			* BUILDING_MACRO_WINDOW_LIGHT_GAIN * tod_exposure;
+		// [early-hearth 2026-11-20] Before the kingdom era there is no window grid
+		// to read: the lit doorway and the warm ground around it carry the
+		// settlement so early towns do not disappear at far zoom.
+		float early = 1.0 - smoothstep(1.5, 4.0, era);
+		float hearth = (1.0 - smoothstep(0.0, 0.30, length(q - vec2(0.0, 0.14)))) * 0.45;
+		color += vec3(1.0, 0.50, 0.19) * (door * 1.25 + hearth) * window_night
+			* early * tod_exposure;
 	}
 	if (knowledge < 0.88) {
 		float gray = dot(color, vec3(0.299, 0.587, 0.114));

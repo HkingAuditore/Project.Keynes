@@ -11,6 +11,47 @@ func narrative_flow(host):
 	return host._narrative_flow
 
 
+## [popup-deferral 2026-11-20] GM「屏蔽弹窗」：锁住时钟的提示在开关切换瞬间立即释放，
+## 原生 offer 保留，关闭屏蔽后再正常领取。HEAD 已删掉 era/family/ideology 的暂停
+## 子系统，所以用 host.get() 探测字段：有就按 fb4 语义释放，没有就跳过。
+func set_popups_suppressed(host, enabled: bool) -> void:
+	if enabled and not host._popups_suppressed:
+		host._suppression_resume_running = host._world_clock != null and not host._world_clock.paused
+	host._popups_suppressed = enabled
+	if host._annual_report_flow != null and host._annual_report_flow.has_method("set_popups_suppressed"):
+		host._annual_report_flow.set_popups_suppressed(enabled)
+	if host._narrative_flow != null and host._narrative_flow.has_method("set_popups_suppressed"):
+		host._narrative_flow.set_popups_suppressed(enabled)
+	if not enabled:
+		return
+	# 已经锁住时钟的提示在开关切换瞬间也必须释放。
+	if bool(host.get("_era_reward_locked")):
+		if host._ui_manager != null and host._ui_manager.has_method("close_era_reward_offer"):
+			host._ui_manager.close_era_reward_offer()
+		host.set("_era_reward_locked", false)
+		if host._world_clock != null:
+			host._world_clock.set_speed(host.get("_era_reward_previous_speed"))
+			host._world_clock.pause(not bool(host.get("_era_reward_resume_running")))
+	if bool(host.get("_family_founding_locked")):
+		if host._ui_manager != null and host._ui_manager.has_method("close_family_founding_offer"):
+			host._ui_manager.close_family_founding_offer()
+		host.set("_family_founding_locked", false)
+		if host._world_clock != null:
+			host._world_clock.set_speed(host.get("_family_founding_previous_speed"))
+			host._world_clock.pause(not bool(host.get("_family_founding_resume_running")))
+	if not String(host.get("_ideology_draw_phase")).is_empty() \
+			and host.has_method("_finish_ideology_draw"):
+		host._finish_ideology_draw("popup_suppressed")
+
+
+static func _is_suppressed_popup_pause_source(host, source: String) -> bool:
+	for marker in ["_pause_clock", "open_era_reward_offer", "_sync_era_reward_offer",
+			"_sync_family_founding_offer", "_sync_ideology_draw", "_pause_clock_for_ceremony"]:
+		if source.find(marker) >= 0:
+			return true
+	return false
+
+
 
 func narrative_ai_client(host):
 	return host._narrative_ai_client
@@ -19,6 +60,12 @@ func narrative_ai_client(host):
 
 func narrative_event_locked(host) -> bool:
 	return host._narrative_flow != null and host._narrative_flow.is_locked()
+
+
+## 玩家关掉自己窗口后的重查入口：静置中的事件在这一刻才允许展示。
+func recheck_narrative_popup(host) -> void:
+	if host._narrative_flow != null:
+		host._narrative_flow.try_present()
 
 
 func open_narrative_chronicle(host, filter_cell: int = -1) -> void:

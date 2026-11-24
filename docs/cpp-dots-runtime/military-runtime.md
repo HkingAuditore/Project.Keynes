@@ -17,17 +17,14 @@
 | | `military_core_logistics.cpp` | 3 格采购（§9.3）、威胁/护卫场、车队与拦截、消耗、征发、物资账本 |
 | | `military_core_war.cpp` | 战争、交战段（plan→replay）、会战、夺格/撤退/歼灭、战争分、区域任务、和议/赔款/吞并、增量战线、controller |
 | | `military_core_ai.cpp` | AI 军事议程（每国错峰 30 日主决策） |
-| | `military_core_save.cpp` | PKMI v6 解码（事务式 restore；section 23 探路、24 采购订单、25 维护行） |
-| | `military_core_save_write.cpp` | PKMI v6 编码；与解码共用的格式常量与读写器在 `military_core_save_internal.h` |
-| | `military_core_selftest.cpp` | `MilitaryCore::self_test` / `bench`；含自动探路、维护定点余量与采购闭环、PKMI v6 覆盖；军饷/预算/采购/守恒夹具在 `military_core_payroll_budget_selftest.inc` |
-| Godot 桥 | `gdext/src/world_ext_military.cpp` | 军务配置与绑定、查询、渲染快照、PKMI 外层包装、自测/基准入口 |
-| | `gdext/src/world_ext_military_digest.cpp` | 每日桥 `NativeMilitaryRuntime::run_day`、意图→Country/Economy 命令翻译（D+1）、口粮、采集已提交的 Country/Economy 输入 |
-| | `gdext/src/native_simulation_host_military_receipts.cpp` | 命令提交与回执游标、延迟现金 `apply_military_deferred_cash`；共用意图工具在 `world_ext_internal_military_intents.h` |
+| | `military_core_save.cpp` | PKMI v6 编解码（事务式 restore；section 23 探路、24 采购订单、25 维护行） |
+| | `military_core_selftest.cpp` | `MilitaryCore::self_test` / `bench`；含自动探路、维护定点余量与采购闭环、PKMI v6 覆盖 |
+| Godot 桥 | `gdext/src/world_ext_military.cpp` | 目录解析、digest 采集、意图→Country/Economy 命令翻译、回执、查询、渲染快照、PKMI 外层包装 |
 | | `gdext/src/world_ext_economy_military.cpp` | `set_military_ration_satisfaction`（口粮满足率推给 Economy）、`collect_military_economy_receipts`（Economy 结算 trace → 回执） |
 | GDScript | `scripts/military/military_facade.gd` | 冷路径 facade，全部 `has_method` 守卫（旧 DLL 零成本降级） |
 | | `scripts/military/military_catalog_compiler.gd` | `data/military/military_catalog.json` → dense id 字典；口粮候选来自 `soldier_household` |
 | | `scripts/simulation/systems/military_daily_system.gd` | DCSystem `military_daily`，事件转发到 `GameplayEventBus` |
-| 接线 | `map_generator.gd`（`_configure_military_runtime` / `_maybe_register_military_system` / `refresh_military_terrain`）、`world_runtime_host.gd`（季节地形、图层节点）、`world_runtime_daily_adapter_part3.gd`（整日结算交接）、`game_save_coordinator.gd`（`pkmi` provider）、`player_controller.gd`（`military.*` 命令白名单） | |
+| 接线 | `map_generator.gd`（`_configure_military_runtime` / `_maybe_register_military_system` / `refresh_military_terrain`）、`world_runtime_host.gd`（整图补跑、季节地形、图层节点）、`game_save_coordinator.gd`（`pkmi` provider）、`player_controller.gd`（`military.*` 命令白名单） | |
 | 渲染 | `scripts/rendering/military_*.gd`、`shaders/military_*.gdshader` | §9 |
 | UI | `scripts/ui/military_view_model.gd`、`scripts/ui/components/military_workspace.gd` + `components/military/*` | 只读快照 + 语义命令 |
 
@@ -54,8 +51,7 @@
 - Military **读 D 日已提交**的 Country/Economy（`capture_military_digest`：`copy_economy_snapshot`、
   `cash_for_slot`、`military_read_cell_view`、`military_read_market`、`military_read_state_buildings`、
   `has_technology`、Modifier `effective_value`），**只写自己的 store**，产出生效于 D+1 的意图。
-- 整日后台模式在核心结算后冻结军务输入，将行军、战斗、招募、口粮和兵员对账交给日执行线程。
-  主线程安装完成的结果、接收玩家命令并发送 D+1 批次。同步模式使用同一计算。
+- 不新增 `RuntimeDomainId`；Military 不是 worker domain，永远在主线程同步执行。
 - 所有权变化（割地、吞并）只走 Country 命令，照常触发 `country_committed`。
 - 状态全整数（q16 / MONEY_SCALE=10000 / GOODS_SCALE=1000），RNG 只由 `(seed, key, day)` 派生。
 - 人员模型（`military_core.cpp` 头注释）：士兵始终是**家乡格**的 Economy soldier cohort；army 中的 lot
@@ -69,8 +65,8 @@
 2. `capture_military_digest` 采集 D 日视图（同时为每个活跃国家 `ensure_country_slot`）。
 3. `apply_military_deferred_cash` 执行前一日的 `SPEND_CASH`（D+1 财政预留/收回适配）；
    `collect_military_receipts` 折叠所有已到终态的待回执行（Country 回执游标 + Economy 结算事件，§5.1）。
-4. `MilitaryCore::step_day(day, digest, receipts, intents)`，随后计算驻军口粮、人数和部队账簿差额。
-5. 将当日驻军及部队的口粮结果交给 Economy（§5.2），同时保留计算期间接收的后续命令。
+4. `MilitaryCore::step_day(day, digest, receipts, intents)`。
+5. `publish_military_ration_satisfaction` → Economy（真实驻军口粮满足率，§5.2）。
 6. 意图翻译为 Country / Economy 命令批，`effective_day = day + 1`，经 `submit_country_commands` /
    `submit_economy_commands` 提交；新行**追加**到跨日的 `_military_pending_intents`，直到发出回执才移除。
 7. 返回 report（§10）+ `intents_submitted / country_ops / economy_ops / capture_ms / state_hash`。
@@ -117,13 +113,15 @@ Country 认可该句柄）通过 `ensure_military_country_slots` 打开，不再
   `slice_budget_ms=0.8`、`AlwaysPolicy`；`declare_reads/writes` 为空（不写 DataCore cell component）。
 - **非整图路径**：`should_run` → `facade.should_run(day)`；`tick` 调 `facade.run_daily(day)`，随后
   `forward_military_events()`。
-- **整日后台模式**：旧 `MilitaryDailySystem` 让出日推进。主线程从已提交的第 D 天取输入并复制
-  Military 状态，`run_military_daily` 把计算交给当天的日执行线程，并返回 `pending` 供后续帧查询。
-  同一天复用同一个任务。结果就绪后，主线程安装候选状态、保留计算期间收到的后续命令、
-  转发当天军务事件，并提交 D+1 的 Country/Economy 命令。之后按同一天的军务结果处理视野，
-  当天交接完成才放行下一日。
-- **同步模式**：`run_military_daily` 使用同一计算，`run_military_catch_up` 是兼容入口。
-  主线程军务交接耗时记入 `_dcp_military_ms`（日成本键 `mil`）。
+- **整图 ACTIVE**：`MilitaryDailySystem.should_run` 恒 false（`generator.runtime_graph_active()`）。
+  `WorldRuntimeHost._consume_runtime_commit_if_ready` 每观察到一个已提交日调用
+  `_queue_runtime_military_commit(day)`，同帧 `_drain_runtime_military_commits()` 每帧最多补跑
+  `RUNTIME_MILITARY_CATCHUP_DAYS_PER_FRAME = 4` 日：`facade.should_run(day)` 为真则 `facade.run_daily(day)`，
+  否则只推进游标；每个补跑日之前先调用 `_prepare_military_exploration_day(day)`，每日后调用 job 的
+  `forward_military_events()`。首次观察只回补最近 4 日。
+  worker **从不**推进 Military；`facade.catch_up` / `run_military_catch_up` 只是带同一防重入守卫的主线程
+  `run_military_daily` 别名。
+  耗时记入 `_dcp_military_ms`（日成本键 `mil`）。
 - **季节地形**：`refresh_military_terrain` 在季节刷新后重推 cover（facade 按 `hash(cover)` 跳过未变化）；
   整图 ACTIVE 由 host 的 `_refresh_military_terrain_on_season_edge` 检测季节边。
 
@@ -340,7 +338,7 @@ tier 7 与 tier 8 两行；UI 显示取该档容量较大者，拆除只看 `rol
 - 每日在 `run_movement()` 前规划：已探索目标直接 resolved；否则选最近未解决目标，并在半径
   0..2 的候选观察点中按稳定次序尝试。每军最多实际到达 3 个观察点。
 - 探路 passability 与普通 `find_path()` 分离：陆地只允许无主/本国控制，战争状态也不进入
-  他国控制格；水域继续遵守海运科技和连续水格限制。
+  他国控制格；水域继续按水级（湖/浅海/远海/深海）门控，与贸易航道同一张表。
 - 每任务每日 ≤2 次 A*，每国每日 ≤8 个规划槽、≤16 次探路 A*；共享全国 32 次路径预算中
   保留至少 16 次给区域控制。预算耗尽返回 `DAILY_BUDGET_EXHAUSTED` 并在次日重试。
 - 全部目标解决后返回 origin；origin 失效时用 `nearest_friendly_cell()`；无安全路线则
@@ -660,15 +658,15 @@ python tools/ci/check_save_contracts.py
 4. ~~口粮恒满额~~（已修复，§5.2）；部队（army lot）口粮不回写 Economy，因 cohort 留在家乡格。
 5. ~~选择/战线进度恒空~~（已修复，§9）；`risk_q16` 仍是路线成本代理而非拦截概率。`MilitaryAreaLayer` 需由
    UI 调 `set_render_selection` 才显示。
-6. 恢复后 `_front_edges` 清空，直到下一次控制/交战变化才逐格重建（`military_core_save.cpp:1384`）。
+6. 恢复后 `_front_edges` 清空，直到下一次控制/交战变化才逐格重建（`military_core_save.cpp:1462`）。
 7. 交战 Plan 阶段未并行；`vision_patch_cells` 仍是军事 report 的兼容计数，部队视野
-   从当天已提交的玩家军队位置取得，交给统一的物理视野计算。
+   已由 Host 的已提交 render snapshot 接入统一 `VisionSolver`，不单独维护军事迷雾补丁。
 8. `get_military_cell_snapshot` 的 `observer` 被忽略（未按迷雾过滤）；统帅恒为空位。
 9. 占领不切换 Economy 税收/补贴归属；controller 只在 Military。
 10. 人员模型：士兵不随部队移动，无随军/客籍消费、无 `ArmyPersonnelStore`（设计 §5.7、PKEC v59 未实现）。
-11. ~~海运只有 `EMBARKED` 损耗豁免~~：已接入 coastal/ocean transport 科技、连续水格限制、
-    海运运力成本与上岸姿态恢复；仍无独立海军单位与封锁。
-12. 整日模式的军务计算已移到日执行线程。输入复制、状态安装和跨域命令交接仍由主线程执行（§4）。
+11. ~~海运只有 `EMBARKED` 损耗豁免~~：已接入四档水级（河运/近海运兵/天文导航/远洋船舶设计）、
+    海运运力成本与上岸姿态恢复；「连续水格 ≤ 3」已删除。仍无独立海军单位与封锁。
+12. ~~注释漂移（worker 推进 military）~~：已更正为主线程 `run_military_daily` + host 整图补跑。
 13. ~~`GameplayEventBus` payload 注释不一致~~：已按 §10 原生字段更正。LEVY 原生事件未填
     `payload_schema`（=0），由 `GameplayEventBus.military_payload_schema()` 回填 25。
 14. 设计稿 §22 写 PKCN v14 承载 `cell_controller` 与 PKEC v59；当前 controller 在 PKMI v4，
@@ -696,3 +694,69 @@ python tools/ci/check_save_contracts.py
 `GameUIManager` 通过 `update_military_arm_order` 更新显示，不改 MilitaryCore 权威、每日调度或 PKMI。
 探路按钮、半径行、`E/Enter/Esc/右键`、44dp 热区和焦点链见
 [部队指挥交互与验证](../ui/military-army-controls.md)。
+
+## 招兵面板的两处数据通路缺陷（2026-11-20）
+
+玩家存档复盘（`autosave.pksv` day 6570）：6 个国家的 `target_value` 全为 0、`pending` 为空、
+`last_day` 等于存档日、lot 段为空表。军事日正常推进（30 日维护实付 799），但招募目标从未被写入，
+于是 `plan = min(effective_target − country_soldiers, open_sum) = 0`、`quota` 恒为 0，
+ENLIST/LEVY 一条都不发——「兵额 8 / 在驻 0 / 配额 0」只是这个零的自洽结果，不是兵营被锁。
+
+1. **目标滑条只有 `drag_ended` 提交**（`military_workspace.gd`）。键盘、点击轨道、无障碍调整
+   都不发这个信号；而每 200ms 的刷新又会用原生 `target_value` 把把手写回去，玩家的调整被静默
+   回滚成 0。现在 `value_changed` 走 250ms 防抖提交，`drag_ended` 仍然「松手即提交」；提交值在
+   快照追上之前用 `_target_pending_mode/_value` 覆盖，模式与数值都对上才释放。重复值不再发第二条
+   命令，点当前模式也不再照发一条「value = 滑条当前值」（滑条停在 0 时那条等于清零）。
+2. **「人数 / 预算」两个模式签不是 toggle**：`IconButton.apply_with_text()` 的 `toggle` 参数默认
+   `false`，且 `configure()` 无条件写 `button.toggle_mode = toggle`。漏传就退化成普通按钮：
+   `button_pressed` 恒 false，而 `BaseButton::set_pressed_no_signal(false)` 在
+   `!toggle_mode && !pressed` 时直接早退，两个签会同时显示为按下。后果是「预算」模式进不去，
+   `_commit_target()` 一律按人数模式提交，货币数值会被当成兵数。已按 toggle 装配。
+3. **国库页的「军事」板块永远「暂不可用」**：经济章的 `CountryViewModel.build("economy")` 从不
+   装配 `military` 段，`fiscal_budget_page` 读到空字典 → `available=false` → 「军事账目尚未就绪」。
+   新增 `CountryViewModel.build_military_spending_model()`：只取 `get_military_country_snapshot` +
+   实物维护两项读数（不装部队/目录/科技闸门，避免国库页每刷新多读三份原生数据），产出与
+   `military_spending_model` 同键的段；事件驱动 `build()` 与 `_build_full_legacy()` 两条路径都接上。
+4. **`policy.set_budget` 不在玩家命令白名单**：`PlayerController.SUPPORTED_COMMANDS` 缺
+   `COMMAND_MILITARY_BUDGET`，财政页四个滑条提交一律 `unsupported_command`（提示「该正式玩家命令
+   尚未开放」）。已补白名单，并在 `PlayerCommandValidation` 加份额范围校验（`total_bp` 0..10000，
+   通道 `-1` 表示本次不改）。
+
+验证：新增 `tests/ui/military_target_commit_test.gd`（防抖提交、不回弹、快照追上释放、拖动即提交、
+重复模式点击不提交、模式切换走预算）与 `tests/ui/fiscal_military_model_test.gd`（四类快照状态的
+段产出）；`tests/ui/fiscal_military_block_test.gd`、`tests/ui/military_config_command_test.gd`
+回归 0 失败；`tests/game/player_country_ui_smoke_test.gd` 0 失败，并新增三条断言（经济章模型带
+`military` 段、段内带信封通道、会话有 facade 时 `available=true`）。
+
+未覆盖：目标命令仍是 D+1 落库（提交成功只代表入队）；滑条量程（50000 人 / 50000 货币）是 UI
+常量，原生只校验非负；`budget_share_bp` / `budget_wage_bp` / `budget_upkeep_bp` 仍不进 PKMI
+（`write_policies` 不写这三项），读档后由 `PlayerController._repush_military_budget()` 重推。
+
+### 文案契约（同日）
+
+面板不长篇解释，只说要紧的字和数：
+
+- 命令受理的反馈统一是 `命令已下达`（`player_controller/military.gd`）。不要写「已排队，将在下一
+  游戏日生效」这类整句——生效日由运行时排期，玩家不需要在提示里读一遍机制。
+- 国库页军事栏不再有说明行与组标签（`独立信封 · 军饷 / 维护 / 装备给养`、`招募本身不拨款…`、
+  `未启用时按现金结算…`、`每日信封 A：军饷 B…` 都删了）。信封行只写 `未启用` / `每日 X`，三条
+  通道滑条各自带份额与日额，结算行只写实付。
+- 通道脚注只保留带数字的状态字：`超支 X` / `待购 N 件` / `暂停`；没有这些状态就不出现。通道
+  脚注的「超支/待购」语义仍由 `military_spending_model` 的 `*_overspend` 与
+  `procurement_deferred_units` 决定，去掉的只是句式。
+
+### 地块名的数据源（同日）
+
+`MilitaryViewModel.cell_name()` 以前读的 `cell_names` 只有测试夹具会填，于是兵营行、训练行与
+割地表全写「未命名地块」。现在：
+
+- 装配：`CountryViewModel.build_military_model()` 把表装进军事段（`section["cell_names"]`），
+  数据来自 Economy 的具名聚落 —— `named_settlement_snapshot()` 首读，`settlement_delta(revision)`
+  增量；按 `revision` 缓存，名字没变时每次刷新只是一次空读。只收 `name_active != 0` 且名字非空
+  的格（未命名聚落行在原生里也带占位名）。读失败（worker 忙、旧 DLL）保留上一份。
+  **注意有两条出口**：不可用时的早退字面量，和通过快照检查后重新赋值的那个 section——两处都要写
+  `cell_names`，只写一处的话可用状态下名字会整份丢掉。
+- 取名链：`cell_name()` = 具名聚落 > 作者地区名（`MapGenerator.region_name_for_cell`）> `地块 N`。
+  割地表用 `settlement_name()` 判断「这一格有没有自己的名字」，不能用 `cell_name()`（它会退回
+  地区名，那样每格都算「有名字」）。
+- 兼容：`MilitaryViewModel.configure()` 仍读顶层的 `cell_names`，截图夹具与旧调用面不用改。

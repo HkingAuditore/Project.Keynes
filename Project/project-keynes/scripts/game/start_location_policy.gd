@@ -16,6 +16,9 @@ const COUNTRY_DISTANCE_MAP_RATIO := 0.15
 const MIN_COUNTRY_DISTANCE := 4
 const MAX_COUNTRY_DISTANCE := 12
 const STARTER_POPULATION := 40
+## 玩家落点门槛：所在大陆的陆地格数下限（水格 landmass_id == 0，不计数）。
+## 取 4 而不是 2：LM2（3 格）、LM7（2 格）也要退出玩家候选（gate_10 §2）。
+const MIN_PLAYER_LANDMASS_LAND_CELLS := 4
 
 static var _research_signal_index_by_id: Dictionary = {}
 static var _research_signal_occupancy_bit: PackedInt32Array = PackedInt32Array()
@@ -52,9 +55,20 @@ static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreig
 			"没有找到气候与通行条件合格的出生地。")
 	CandidateOrder.rank_for_player(candidates, map)
 	var chosen: Dictionary = {}
-	for candidate in candidates:
-		if _close_candidate_route(map, world, neighbors, starter_catalog, candidate):
-			chosen = candidate
+	# 玩家落点两趟：第一趟跳过所在大陆不足 MIN_PLAYER_LANDMASS_LAND_CELLS 格的碎岛；
+	# 若第一趟被筛空（全池都是小岛），第二趟不带门槛重跑同一循环，
+	# 再落回下面的 starter_capability_unsatisfied——只加一层会把小岛地图变成新的硬失败。
+	var player_landmass_land_cells := _landmass_land_cell_counts(map)
+	for player_pass in range(2):
+		var landmass_gate_active := player_pass == 0
+		for candidate in candidates:
+			if landmass_gate_active and _skips_small_landmass(
+					map, player_landmass_land_cells, int(candidate.cell)):
+				continue
+			if _close_candidate_route(map, world, neighbors, starter_catalog, candidate):
+				chosen = candidate
+				break
+		if not chosen.is_empty():
 			break
 	if chosen.is_empty():
 		return _error("starter_capability_unsatisfied",
@@ -811,6 +825,37 @@ static func _write_reserve(map: MapData, resource_id: String, cell_idx: int,
 		return
 
 
+## 一次数清每块大陆的陆地格数：landmass_id → 格数。
+## 水格 landmass_id == 0，不计数（component_ids.gd:232 的语义）。
+## 数组缺失或长度不足时返回空字典，调用方据此关掉门槛、保持旧行为。
+static func _landmass_land_cell_counts(map: MapData) -> Dictionary:
+	var counts: Dictionary = {}
+	var ids := map.landmass_id_arr
+	if ids.size() < map.cell_count():
+		return counts
+	for cell_idx in range(map.cell_count()):
+		var landmass_id := int(ids[cell_idx])
+		if landmass_id == 0:
+			continue
+		counts[landmass_id] = int(counts.get(landmass_id, 0)) + 1
+	return counts
+
+
+## 玩家落点门槛：该格所在大陆陆地格数是否不足 MIN_PLAYER_LANDMASS_LAND_CELLS。
+## 只在玩家落点排序之后过筛；候选池、_is_candidate、外国落点都不走这里。
+static func _skips_small_landmass(map: MapData, landmass_land_cells: Dictionary,
+		cell_idx: int) -> bool:
+	if landmass_land_cells.is_empty():
+		return false
+	var ids := map.landmass_id_arr
+	if cell_idx < 0 or cell_idx >= ids.size():
+		return false
+	var landmass_id := int(ids[cell_idx])
+	if landmass_id == 0:
+		return true
+	return int(landmass_land_cells.get(landmass_id, 0)) < MIN_PLAYER_LANDMASS_LAND_CELLS
+
+
 static func _is_candidate(map: MapData, cell_idx: int, _neighbors: PackedInt32Array) -> bool:
 	if map.is_water_arr[cell_idx] != 0:
 		return false
@@ -915,14 +960,23 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 			"没有找到气候与通行条件合格的出生地。")
 	CandidateOrder.rank_for_player(candidates, map)
 	var chosen: Dictionary = {}
-	for candidate in candidates:
-		if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
-			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
-			if frame_gate != null and frame_gate.canceled:
-				return _error("loading_canceled", "生成已取消。")
-			slice_start = Time.get_ticks_usec()
-		if _close_candidate_route(map, world, neighbors, starter_catalog, candidate):
-			chosen = candidate
+	# 与同步版同一套两趟逻辑：第一趟带大陆格数门槛，被筛空则第二趟不带门槛重跑。
+	var player_landmass_land_cells := _landmass_land_cell_counts(map)
+	for player_pass in range(2):
+		var landmass_gate_active := player_pass == 0
+		for candidate in candidates:
+			if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
+				await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+				if frame_gate != null and frame_gate.canceled:
+					return _error("loading_canceled", "生成已取消。")
+				slice_start = Time.get_ticks_usec()
+			if landmass_gate_active and _skips_small_landmass(
+					map, player_landmass_land_cells, int(candidate.cell)):
+				continue
+			if _close_candidate_route(map, world, neighbors, starter_catalog, candidate):
+				chosen = candidate
+				break
+		if not chosen.is_empty():
 			break
 	if chosen.is_empty():
 		return _error("starter_capability_unsatisfied",

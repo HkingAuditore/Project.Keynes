@@ -229,7 +229,8 @@ func _classify_field_weather_core(host, temp: float, vapor: float, cloud: float,
 	# 7) 热浪(2026-06-28 重标定)：恢复气象学定义=显著正温度距平的暖事件。原"暖+干"无距平门 → 普通暖干陆地
 	#    恒成立(实测当前热浪格 temp_anomaly 均值仅 0.0045≈0,即把常态暖干地误判热浪→实测热浪 6.7%过多)。
 	#    加 temp_anom>0.04 门(≈陆地 p87)：仅保留约 6% 真·暖距平干热格(热浪 6.7%→~0.4%)。镜像 world_ext_internal.h。
-	if (not is_water) and warm and temp_anom > 0.04 and precip < 0.012 and effective_cloud < 0.24 and vapor < 0.12:
+	# W6 补丁：热浪 = 湿热（vapor > 0.12），干旱 = 干热；原来 `vapor < 0.12` 使热浪结构性不可达。
+	if (not is_water) and warm and temp_anom > 0.04 and precip < 0.012 and effective_cloud < 0.30 and vapor > 0.12:  # W6 校准：0.24 过紧（effective_cloud 含 cw*1.25）
 		return WeatherType.WT.HEATWAVE
 	return WeatherType.WT.CLEAR
 

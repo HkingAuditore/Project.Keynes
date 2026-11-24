@@ -108,6 +108,10 @@ func _configure_runtime() -> void:
 	_ui_manager.bind_gm_sun_camera(_camera)
 	_ui_manager.bind_player_camera(_camera)
 	_player_controller.configure(_camera, _highlight, _runtime_host, _world_clock, _ui_manager)
+	# 近景告警图标的点击拾取：军务档案/选格之前先让这一层拦一次（用户 11-23 接线）。
+	_player_controller.set_cell_situation_picker(_cell_situations.pick_cell_at_screen)
+	# 阶层不满按格推给近景告警层（用户 11-23 第二行接线）。
+	_ui_manager.population_discontent_changed.connect(_cell_situations.set_population_discontent)
 	# Injected after configure so the single-cell selection highlight and the
 	# many-cell card overlay stay independent: selecting a hex must not wipe the
 	# card's hits, and showing a card's hits must not move the selection.
@@ -302,7 +306,12 @@ func _on_day_night_toggled(enabled: bool) -> void:
 
 
 func _on_gm_runtime_toggle_changed(toggle_id: String, enabled: bool) -> void:
-	if toggle_id == "simulation.paused":
+	if toggle_id == "ui.suppress_popups":
+		if _player_controller != null:
+			_player_controller.set_popups_suppressed(enabled)
+		if _ui_manager != null and _ui_manager.has_method("set_popups_suppressed"):
+			_ui_manager.set_popups_suppressed(enabled)
+	elif toggle_id == "simulation.paused":
 		_player_controller.sync_ui()
 	elif toggle_id == "visual.day_night":
 		day_night_enabled = enabled
@@ -311,7 +320,8 @@ func _on_gm_runtime_toggle_changed(toggle_id: String, enabled: bool) -> void:
 func _on_player_confirmation_updated(view: Dictionary) -> void:
 	if _ui_manager != null:
 		# Required responses still need a visible surface while GM hides the HUD.
-		_ui_manager.set_era_ceremony_suppressed(bool(view.hide_popups))
+		if _ui_manager.has_method("set_popups_suppressed"):
+			_ui_manager.set_popups_suppressed(bool(view.hide_popups))
 		_ui_manager.set_all_ui_suppressed(bool(view.hide_popups) and String(view.reason).is_empty())
 
 

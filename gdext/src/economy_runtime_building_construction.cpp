@@ -659,6 +659,33 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
         error);
 }
 
+void NativeEconomyRuntime::record_construction_fatal_row(int32_t cell,
+        int32_t type_id, int64_t allocated_count, int64_t total_cost,
+        int32_t owner_slot, int64_t owner_funds, int64_t funding_gap,
+        int64_t debt_principal, bool material_feasible, int32_t good_count,
+        int32_t first_good_id, int64_t first_required, int64_t first_stock,
+        const char *reason) {
+    ConstructionFatalRow &row = _construction_fatal_row;
+    row = ConstructionFatalRow{};
+    row.valid = true;
+    row.cell = cell;
+    row.type_id = type_id;
+    row.allocated_count = allocated_count;
+    row.total_cost = total_cost;
+    row.owner_slot = owner_slot;
+    row.owner_funds = owner_funds;
+    row.funding_gap = funding_gap;
+    row.debt_principal = debt_principal;
+    row.material_feasible = material_feasible;
+    row.good_count = good_count;
+    row.first_good_id = first_good_id;
+    row.first_required = first_required;
+    row.first_stock = first_stock;
+    row.reason = reason == nullptr ? std::string() : std::string(reason);
+    row.portfolio_index = _construction_fatal_portfolio_index;
+    row.portfolio_size = _construction_fatal_portfolio_size;
+}
+
 bool NativeEconomyRuntime::commit_preflighted_build_command(
         const Command &cmd, int32_t owner_slot,
         const ConstructionMaterialPlan &material_plan,
@@ -679,6 +706,11 @@ bool NativeEconomyRuntime::commit_preflighted_build_command(
     if (!material_plan.feasible || planned_good_ids.size() !=
             planned_quantities.size() ||
         population_store().funds[owner_slot] < total_cost) {
+        record_construction_fatal_row(cell, type_id, count, total_cost,
+            owner_slot, population_store().funds[owner_slot], funding_gap,
+            construction_debt_principal, material_plan.feasible,
+            static_cast<int32_t>(planned_good_ids.size()), -1, 0, 0,
+            "building_construction_preflight_funds_drift");
         error = "building_construction_preflight_funds_drift";
         return false;
     }
@@ -688,6 +720,15 @@ bool NativeEconomyRuntime::commit_preflighted_build_command(
             planned_quantities[i] < 0 ||
             market_store().stock[market_store().index(market, good_id)] <
                 planned_quantities[i]) {
+            const int64_t stock = good_id >= 0 &&
+                    good_id < market_store().good_count.get()
+                ? market_store().stock[market_store().index(market, good_id)] : -1;
+            record_construction_fatal_row(cell, type_id, count, total_cost,
+                owner_slot, population_store().funds[owner_slot], funding_gap,
+                construction_debt_principal, material_plan.feasible,
+                static_cast<int32_t>(planned_good_ids.size()), good_id,
+                planned_quantities[i], stock,
+                "building_construction_preflight_stock_drift");
             error = "building_construction_preflight_stock_drift";
             return false;
         }

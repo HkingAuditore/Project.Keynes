@@ -686,6 +686,8 @@ public:
     // Built-in colonization transaction used by the Economy-owned expedition
     // state machine. Unowned targets emit CLAIM then SETTLE and stay unpublished
     // until Country and Economy ACK. Own-country relocation emits SETTLE only.
+    static constexpr int64_t BUILTIN_TRANSACTION_ID_BASE = int64_t{1} << 50;
+
     bool enqueue_family_colonization_pod(
         int64_t effect_id, int64_t effective_day, int64_t source_id,
         uint64_t country_handle, uint32_t country_generation,
@@ -694,6 +696,10 @@ public:
         int64_t *out_transaction_id = nullptr,
         bool claim_unowned = true,
         int32_t population_reward = 0);
+    int32_t family_colonization_transaction_status_pod(
+        int64_t transaction_id, int64_t effect_id,
+        uint32_t expedition_generation, uint64_t fire_sequence,
+        int64_t *out_resolved_transaction_id = nullptr) const;
     uint64_t family_colonization_settle_idempotency_key(
         int64_t effect_id, uint32_t expedition_generation,
         uint64_t fire_sequence) const;
@@ -1337,6 +1343,7 @@ private:
     int64_t _last_completed_day = -1;
     int64_t _run_day = -1;
     int32_t _run_cursor = 0;
+    int64_t allocate_builtin_transaction_id();
     int64_t _next_transaction_id = 1;
     int64_t _acked_transaction_id = 0;
     uint64_t _next_activation_sequence = 1;

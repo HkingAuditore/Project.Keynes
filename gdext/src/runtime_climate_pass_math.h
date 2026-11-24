@@ -1166,8 +1166,11 @@ inline uint8_t wf_classify_field_weather_at(float temp, float vapor, float cloud
     if (!is_water && temp > 0.55f && temp_anom > 0.05f && precip < 0.006f &&
         effective_cloud < 0.18f)
         return 4; // DROUGHT
+    // W6 补丁：热浪判据原来要求 `vapor < 0.12`（干空气），实测在暖区 154 个过云门的格子里
+    // **没有一个** vapor < 0.12 ⇒ 该分支结构性不可达（实测 HEATWAVE 恒 0）。
+    // 改成 `vapor > 0.12`：热浪 = 湿热，干旱 = 干热，用湿度把两者分开，两个分支都可达。
     if (!is_water && warm && temp_anom > 0.04f && precip < 0.012f &&
-        effective_cloud < 0.24f && vapor < 0.12f)
+        effective_cloud < 0.30f && vapor > 0.12f)   // W6 校准：0.24 在 effective_cloud=max(cloud, cw*1.25) 下过紧（实测只出 5 格）
         return 6; // HEATWAVE
     return 0; // CLEAR
 }

@@ -531,7 +531,31 @@ bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
     _native_gameplay_request_ids.clear();
     _native_gameplay_ack_bindings.clear();
     _native_gameplay_bound_transaction_ids.clear();
+    auto remap_preserved_bindings = [](int64_t old_id, int64_t new_id,
+                                       std::vector<NativeAckBinding> &bindings,
+                                       std::unordered_set<int64_t> &bound_ids) {
+        for (NativeAckBinding &binding : bindings) {
+            if (binding.transaction_id == old_id) binding.transaction_id = new_id;
+        }
+        if (bound_ids.erase(old_id) > 0) bound_ids.insert(new_id);
+    };
     for (PreservedBuiltin &row : preserved_builtins) {
+        if (_transaction_ids.count(row.transaction.id) != 0) {
+            // Builtin transactions (colonization/canal) never originate on the
+            // worker POD. A matching ID here is an ID collision with a worker
+            // catalog transaction (for example from an older save); remap it
+            // into the disjoint builtin ID range instead of silently dropping
+            // the expedition's CLAIM/SETTLE transaction.
+            const int64_t old_id = row.transaction.id;
+            const int64_t new_id = allocate_builtin_transaction_id();
+            row.transaction.id = new_id;
+            remap_preserved_bindings(old_id, new_id,
+                _native_country_ack_bindings,
+                _native_country_bound_transaction_ids);
+            remap_preserved_bindings(old_id, new_id,
+                _native_economy_ack_bindings,
+                _native_economy_bound_transaction_ids);
+        }
         row.transaction.command_begin =
             static_cast<uint32_t>(_command_arena.size());
         row.transaction.command_count =

@@ -123,6 +123,9 @@ var _economy_current_cell_checkbox: CheckBox
 var _economy_data_recorder: RefCounted = null
 var _atlas_river_probe_dump_btn: Button
 var _atlas_river_probe_status_label: Label
+var _open_log_dir_btn: Button
+var _open_log_dir_label: Label
+var _log_dir_opener: Callable
 # _show_record_toast 期间冻结 _refresh_record_btn_text，避免 timer 把绿色提示文本盖回去
 var _record_btn_toast_until_msec: int = 0
 var _tile_record_btn_toast_until_msec: int = 0
@@ -456,6 +459,24 @@ func _build_gm_recording_page(parent: Control) -> void:
 	page.add_child(profile_row)
 
 	_add_gm_atlas_probe_recorder_row(page)
+
+	var log_dir_row := HBoxContainer.new()
+	log_dir_row.add_theme_constant_override("separation", UITokens.SPACE_SM)
+	var log_dir_button := Button.new()
+	log_dir_button.name = "GMOpenLogDirButton"
+	log_dir_button.tooltip_text = "打开日志输出文件夹（%s）" % _resolve_log_output_dir()
+	log_dir_button.custom_minimum_size = Vector2(38.0, 34.0)
+	IconButton.apply(log_dir_button, &"action.chevron_right", 15)
+	log_dir_button.pressed.connect(_on_gm_open_log_dir_pressed)
+	log_dir_row.add_child(log_dir_button)
+	var log_dir_label := Label.new()
+	log_dir_label.text = "打开日志文件夹"
+	log_dir_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	log_dir_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	log_dir_row.add_child(log_dir_label)
+	page.add_child(log_dir_row)
+	_open_log_dir_btn = log_dir_button
+	_open_log_dir_label = log_dir_label
 
 
 func _add_gm_recorder_row(parent: VBoxContainer, recorder_id: String,
@@ -806,6 +827,42 @@ func _on_gm_atlas_river_probe_record_pressed() -> void:
 		else:
 			_append_gm_output(String(result.get("message", result.get("code", "导出失败"))), true)
 	_refresh_gm_atlas_river_probe_status()
+
+
+static func _resolve_log_output_dir() -> String:
+	var log_path := String(
+		ProjectSettings.get_setting("debug/file_logging/log_path", "user://logs/godot.log")
+	).strip_edges()
+	if log_path.is_empty():
+		log_path = "user://logs/godot.log"
+	var log_dir := log_path.get_base_dir()
+	if log_dir.is_empty():
+		log_dir = "user://logs"
+	return ProjectSettings.globalize_path(log_dir).simplify_path()
+
+
+func _on_gm_open_log_dir_pressed() -> void:
+	var log_dir := _resolve_log_output_dir()
+	DirAccess.make_dir_recursive_absolute(log_dir)
+	var err: Error = OK
+	if _log_dir_opener.is_valid():
+		err = int(_log_dir_opener.call(log_dir)) as Error
+	elif OS.has_feature("mobile"):
+		DisplayServer.clipboard_set(log_dir)
+		if _open_log_dir_label != null:
+			_open_log_dir_label.text = "打开日志文件夹 · 路径已复制"
+		_append_gm_output("日志文件夹路径已复制：%s" % log_dir, false)
+		return
+	else:
+		err = OS.shell_open(log_dir)
+	if err == OK:
+		if _open_log_dir_label != null:
+			_open_log_dir_label.text = "打开日志文件夹 · 已打开"
+		_append_gm_output("已打开日志文件夹：%s" % log_dir, false)
+	else:
+		if _open_log_dir_label != null:
+			_open_log_dir_label.text = "打开日志文件夹 · 失败 (%d)" % err
+		_append_gm_output("打开日志文件夹失败（err=%d）：%s" % [err, log_dir], true)
 
 
 func _refresh_gm_atlas_river_probe_status() -> void:
@@ -1210,13 +1267,51 @@ func _on_btn_snapshot() -> void:
 		push_warning("[DebugConsole] 快照写入失败：%s (err=%d)" % [fname, err])
 		_show_snapshot_toast("写入失败 err=%d" % err, true)
 		return
-	f.store_string(JSON.stringify(payload, "  "))
+	# 采样窗口为空时 avg/min/max 可能是 NaN/INF；JSON.stringify 会把它们写成
+	# null 并只报一次警告，事后无法知道是哪个指标。这里替换成 null 并指出键路径。
+	var non_finite_paths: Array = []
+	var safe_payload = _sanitize_non_finite(payload, "$", non_finite_paths)
+	if not non_finite_paths.is_empty():
+		push_warning("[PerfSnapshot] non-finite float replaced with null at %s"
+			% ", ".join(PackedStringArray(non_finite_paths.slice(0, 4))))
+	f.store_string(JSON.stringify(safe_payload, "  "))
 	f.close()
 
 	# 转成绝对路径打印到控制台（res:// 在 dev 下 = 项目根目录）
 	var abs_path: String = ProjectSettings.globalize_path(fname)
 	print_rich("[color=cyan][PerfSnapshot][/color] saved to %s" % abs_path)
 	_show_snapshot_toast("已保存：%s" % fname.get_file(), false)
+
+
+## Replaces NaN/INF floats with null so JSON.stringify cannot silently write null
+## for an unknown metric, and records the offending paths for the log line.
+static func _sanitize_non_finite(value, path: String, reported: Array):
+	if value is float:
+		var number := float(value)
+		if is_nan(number) or is_inf(number):
+			if reported.size() < 32:
+				reported.append(path)
+			return null
+		return number
+	if value is PackedFloat32Array or value is PackedFloat64Array:
+		var floats := []
+		for index in range(value.size()):
+			floats.append(_sanitize_non_finite(float(value[index]),
+				"%s[%d]" % [path, index], reported))
+		return floats
+	if value is Dictionary:
+		var sanitized := {}
+		for key in value:
+			sanitized[key] = _sanitize_non_finite(value[key],
+				"%s.%s" % [path, key], reported)
+		return sanitized
+	if value is Array:
+		var sanitized_array := []
+		for index in range(value.size()):
+			sanitized_array.append(_sanitize_non_finite(value[index],
+				"%s[%d]" % [path, index], reported))
+		return sanitized_array
+	return value
 
 
 func _build_snapshot_payload() -> Dictionary:

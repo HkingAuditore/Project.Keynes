@@ -69,13 +69,6 @@ static func build_treasury(cash_valid: bool, cash: int, fiscal: Dictionary,
 	model["window_text"] = String(flow.get("window_text", model["meta"]))
 	var income_segments: Array = flow.get("income_segments", [])
 	var expense_segments: Array = flow.get("expense_segments", [])
-	if income_segments.is_empty() and expense_segments.is_empty():
-		model["note"] = "近 %d 日没有税收入账，也没有补贴或科研采购支出。" \
-			% int(flow.get("covered_days", 0)) if rolling \
-			else "本日没有税收入账，也没有补贴或科研采购支出。"
-	elif rolling:
-		model["note"] = "按最近 %d 日国库现金变化折算；多日结算不会堆在一天。" \
-			% int(flow.get("covered_days", 0))
 	model["income_bar"] = {
 		"title": "收入 · 日均" if rolling else "收入构成",
 		"total": String(flow.get("income_text", "0")),
