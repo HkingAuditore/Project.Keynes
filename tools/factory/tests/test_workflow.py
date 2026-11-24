@@ -1455,6 +1455,29 @@ sys.stdin.read()
             self.assertTrue(legacy_running(self.root, "run.py"))
             self.assertFalse(legacy_running(self.root, "watch_prs.py"))
 
+    def test_installer_pins_head_of_linked_worktree(self):
+        repo = self.root / "repo"
+        repo.mkdir()
+        work.git(str(repo), "init", "-q", "-b", "master")
+        work.git(str(repo), "config", "user.name", "Factory Test")
+        work.git(str(repo), "config", "user.email", "factory@example.invalid")
+        self.write_file(repo, "initial")
+        work.commit(str(repo), "initial")
+        candidate = self.root / "candidate"
+        work.git(str(repo), "worktree", "add", "--detach", str(candidate))
+        for name in ("install_poller.sh", "poll.sh", "common.py", "config.json", "bin/godot"):
+            self.write_file(candidate, f"tools/factory/{name}", (FACTORY / name).read_text())
+        head = work.commit(str(candidate), "candidate")
+        self.write_file(self.root, "launchctl", "#!/bin/sh\nexit 0\n").chmod(0o755)
+        (self.root / "python3").symlink_to(sys.executable)
+        env = {**os.environ, "HOME": str(self.root), "PATH": f"{self.root}:/usr/bin:/bin"}
+        installer = ["/bin/zsh", str(candidate / "tools/factory/install_poller.sh")]
+        result = subprocess.run(installer, env=env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.root / ".keynes-factory/poll.sh").exists())
+        subprocess.run([*installer, "--runner-ref", "HEAD"], env=env, capture_output=True, text=True, check=True)
+        self.assertEqual((self.root / ".keynes-factory/runner-ref").read_text().strip(), head)
+
     def test_installer_plist_carries_configured_python(self):
         script = (FACTORY / "install_poller.sh").read_text().split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
         factory = self.root / "factory"

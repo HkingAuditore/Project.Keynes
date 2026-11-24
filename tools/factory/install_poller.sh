@@ -24,7 +24,11 @@ REPO="${REPO%/.git}"
 HOME_DIR="$HOME/.keynes-factory"
 ref=""
 if [ "$#" -eq 2 ]; then
-  ref="$(git -C "$REPO" rev-parse --verify "$2^{commit}")"
+  ref="$(git -C "$FACTORY_DIR" rev-parse --verify "$2^{commit}")"
+fi
+if ! git -C "$REPO" cat-file -e "${ref:-fork/master}:tools/factory/bin/godot" 2>/dev/null; then
+  echo "${ref:-fork/master} lacks the parallel factory code. Use --runner-ref with a compatible commit." >&2
+  exit 1
 fi
 
 mkdir -p "$HOME_DIR" "$AGENTS"
