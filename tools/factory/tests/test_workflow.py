@@ -21,7 +21,7 @@ import qodo
 import run as issue_runner
 import sync_rules
 import work
-from common import Events, Result, load_config
+from common import Events, Result, lane_lock, legacy_lane_gate, load_config
 from github import GitHub
 from run import Run
 from verdict import CIFacts, CIRun, Verdict
@@ -373,7 +373,7 @@ class WatchWorkflowTest(TempFactory):
               patch.object(watcher, "scope_blocked", return_value=False),
               patch("work.save_patch", return_value=[]),
               patch.object(watcher, "stop") as stop, patch("work.commit", return_value="b" * 40) as commit,
-              patch("checks.Candidate.committed"), patch("watch_prs.must")):
+              patch("checks.Candidate.committed"), patch("work.push")):
             record = {}
             outcome = watcher._fix(PR, PrState(), [FINDING], self.root, Events(), record)
         return outcome, codex, stop, commit, record
@@ -459,7 +459,7 @@ class WatchWorkflowTest(TempFactory):
                       patch("agent.codex", return_value={"ok": False, "report": "partial", "code": code}),
                       patch("work.save_patch", return_value=paths) as save,
                       patch("checks.Runner.run") as candidate_checks,
-                      patch("work.commit") as commit, patch("watch_prs.must") as push):
+                      patch("work.commit") as commit, patch("work.push") as push):
                     watcher.fix(PR, PrState(), [FINDING])
                 save.assert_called_once_with(watcher.workdir, HEAD, paths[0])
                 for step in (candidate_checks, commit, push):
@@ -550,7 +550,7 @@ class WatchWorkflowTest(TempFactory):
               patch("work.scratch", return_value="- unknown: file.gd:42"),
               patch("agent.codex", return_value={"ok": True, "report": ""}),
               patch("work.save_patch", return_value=paths) as save,
-              patch("work.commit") as commit, patch("watch_prs.must") as push):
+              patch("work.commit") as commit, patch("work.push") as push):
             watcher.fix(PR, PrState(), [FINDING])
         save.assert_called_once_with(watcher.workdir, HEAD, paths[0])
         for step in (candidate_checks, commit, push):
@@ -587,7 +587,7 @@ class WatchWorkflowTest(TempFactory):
               patch("work.changed", return_value=["edit.gd"]),
               patch("agent.codex", return_value={"ok": True, "report": ""}) as codex,
               patch("checks.sh", return_value=Result(1, "", "")) as execute,
-              patch("work.commit") as commit, patch("watch_prs.must") as push):
+              patch("work.commit") as commit, patch("work.push") as push):
             watcher.fix(PR, PrState(), [FINDING])
         codex.assert_called_once()
         for step in (execute, commit, push):
@@ -685,7 +685,7 @@ class ConflictUpdateTest(TempFactory):
     def check_baseline(self, cfg, workdir, head, cache, logs):
         self.assertEqual(work.head(workdir), head)
         self.assertIsNone(work.merge_head(workdir))
-        self.assertEqual(Path(cache), self.root / "base-checks")
+        self.assertEqual(Path(cache), self.root / "pr-base-checks")
         if head == self.base:
             return self.parent_results["base"]
         self.assertEqual(head, self.pr["headRefOid"])
@@ -1345,6 +1345,7 @@ class AdapterTest(TempFactory):
         self.assertFalse((self.root / "fix.vendor__clean.patch").exists())
 
     def test_prepare_forces_submodule_checkout_and_cleans_inside(self):
+        work.git(str(self.root), "init", "-q")
         with patch("work._is_sparse", return_value=False), patch("work.must", return_value="") as git:
             work.prepare(str(self.root), "fork", "master", "test")
         sub = self.root / "gdext/godot-cpp"
@@ -1387,11 +1388,13 @@ class AdapterTest(TempFactory):
 
 class PollScriptsTest(TempFactory):
     def test_poll_distinguishes_unmerged_factory_from_broken_checkout(self):
-        runner = self.root / "runner"
+        runner = self.root / "pr-runner"
         runner.mkdir()
         (runner / ".git").touch()
         fake_git = self.root / "git"
-        fake_git.write_text('#!/bin/sh\nif [ "$1" = ls-tree ]; then printf "%s" "$FACTORY_TEST_ENTRY"; fi\n')
+        fake_git.write_text('#!/bin/sh\n'
+                            'if [ "$3" = rev-parse ]; then printf "%s\\n" "$KEYNES_FACTORY_HOME"; fi\n'
+                            'if [ "$1" = ls-tree ]; then printf "%s" "$FACTORY_TEST_ENTRY"; fi\n')
         fake_git.chmod(0o755)
         env = {**os.environ, "PATH": f"{self.root}:/usr/bin:/bin", "KEYNES_REPO": str(self.root),
                "KEYNES_FACTORY_HOME": str(self.root), "KEYNES_FACTORY_PYTHON": sys.executable}
@@ -1404,6 +1407,8 @@ class PollScriptsTest(TempFactory):
         factory = runner / "tools/factory"
         factory.mkdir(parents=True)
         (factory / "watch_prs.py").write_text("import sys\nprint(sys.executable, sys.argv[1])\n")
+        self.write_file(factory, "bin/godot").chmod(0o755)
+        self.write_file(factory, "git_remote.py")
         result = subprocess.run(args, env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), f"{sys.executable} --dry")
@@ -1414,18 +1419,139 @@ class PollScriptsTest(TempFactory):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(result.stdout.strip().endswith(" --dry"))
 
+    def test_both_poll_jobs_run_at_the_same_time_in_separate_checkouts(self):
+        fake_git = self.write_file(self.root, "git", '#!/bin/sh\n'
+                                   'if [ "$3" = rev-parse ]; then printf "%s\\n" "$KEYNES_FACTORY_HOME"; fi\n')
+        fake_git.chmod(0o755)
+        for name, entry in (("runner", "run.py"), ("pr-runner", "watch_prs.py")):
+            runner = self.root / name
+            self.write_file(runner, ".git")
+            self.write_file(runner, "tools/factory/bin/godot").chmod(0o755)
+            self.write_file(runner, "tools/factory/git_remote.py")
+            self.write_file(runner, f"tools/factory/{entry}", """import os
+import sys
+print(os.getcwd(), *sys.argv[1:], flush=True)
+sys.stdin.read()
+""")
+        env = {**os.environ, "PATH": f"{self.root}:/usr/bin:/bin", "KEYNES_REPO": str(self.root),
+               "KEYNES_FACTORY_HOME": str(self.root), "KEYNES_FACTORY_PYTHON": sys.executable}
+        poll = ["/bin/zsh", str(FACTORY / "poll.sh")]
+        with subprocess.Popen(poll, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as issue:
+            try:
+                self.assertEqual(issue.stdout.readline().strip(), f"{(self.root / 'runner').resolve()} --next")
+                pr = subprocess.run([*poll, "--pr-lane"], env=env, input="", capture_output=True, text=True, check=True)
+                self.assertEqual(pr.stdout.strip(), str((self.root / "pr-runner").resolve()))
+                self.assertIsNone(issue.poll())
+                duplicate = subprocess.run(poll, env=env, input="", capture_output=True, text=True, check=True)
+                self.assertIn("already running", duplicate.stdout)
+            finally:
+                issue.stdin.close()
+
+    def test_lane_locks_are_independent_and_same_lane_merges_serialize(self):
+        with lane_lock(self.root, "pr") as pr, lane_lock(self.root, "issue") as issue:
+            self.assertTrue(pr and issue)
+            with lane_lock(self.root, "pr") as second_pr, lane_lock(self.root, "issue") as second_issue:
+                self.assertFalse(second_pr or second_issue)
+        with lane_lock(self.root, "pr") as pr:
+            self.assertTrue(pr)
+
+    def test_existing_issue_run_does_not_block_the_pr_lane(self):
+        (self.root / "lock").write_text("42")
+        with patch("common.sh", return_value=Result(0, "python3 tools/factory/run.py --next", "")):
+            self.assertTrue(legacy_lane_gate(self.root, "issue"))
+            self.assertFalse(legacy_lane_gate(self.root, "pr"))
+
+    def test_old_pr_runner_blocks_issue_entry_before_it_touches_work(self):
+        (self.root / "lock").write_text("42")
+        owner = Result(0, "python3 tools/factory/watch_prs.py", "")
+        with (patch("common.sh", return_value=owner), patch("run.load_config", return_value=self.cfg),
+              patch.object(sys, "argv", ["run.py", "--next"]), patch("run.process_ticket") as process):
+            self.assertEqual(issue_runner.main(), 0)
+        process.assert_not_called()
+
+    def test_remote_commands_hold_the_common_git_lock_from_either_worktree(self):
+        repo = self.root / "repo"
+        repo.mkdir()
+        work.git(str(repo), "init", "-q", "-b", "master")
+        work.git(str(repo), "config", "user.name", "Factory Test")
+        work.git(str(repo), "config", "user.email", "factory@example.invalid")
+        self.write_file(repo, "initial")
+        work.commit(str(repo), "initial")
+        linked = self.root / "linked"
+        work.git(str(repo), "worktree", "add", "--detach", str(linked))
+        real_git = work.must(["which", "git"]).strip()
+        fake_git = self.write_file(self.root, "git", f"#!{sys.executable}\n" + """import fcntl
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+real = os.environ["FACTORY_TEST_REAL_GIT"]
+args = sys.argv[1:]
+if args[2] not in ("fetch", "push"):
+    sys.exit(subprocess.call([real, *args]))
+with Path(os.environ["FACTORY_TEST_REFS_LOCK"]).open("a") as lock:
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        sys.exit(0)
+sys.exit("shared Git lock was not taken")
+""")
+        fake_git.chmod(0o755)
+        env = {"PATH": f"{self.root}:{os.environ['PATH']}",
+               "FACTORY_TEST_REAL_GIT": real_git,
+               "FACTORY_TEST_REFS_LOCK": str(repo / ".git/keynes-factory-remote.lock")}
+        with patch.dict(os.environ, env):
+            work.git(str(linked), "fetch", "fork")
+            work.git(str(repo), "push", "fork")
+            subprocess.run([sys.executable, str(FACTORY / "git_remote.py"), str(repo), "fetch", "fork"],
+                           check=True)
+
+    def test_installer_pins_head_of_linked_worktree(self):
+        repo = self.root / "repo"
+        repo.mkdir()
+        work.git(str(repo), "init", "-q", "-b", "master")
+        work.git(str(repo), "config", "user.name", "Factory Test")
+        work.git(str(repo), "config", "user.email", "factory@example.invalid")
+        self.write_file(repo, "initial")
+        work.commit(str(repo), "initial")
+        candidate = self.root / "candidate"
+        work.git(str(repo), "worktree", "add", "--detach", str(candidate))
+        for name in ("install_poller.sh", "poll.sh", "git_remote.py", "common.py", "config.json", "bin/godot"):
+            self.write_file(candidate, f"tools/factory/{name}", (FACTORY / name).read_text())
+        head = work.commit(str(candidate), "candidate")
+        self.write_file(self.root, "launchctl", "#!/bin/sh\nexit 0\n").chmod(0o755)
+        (self.root / "python3").symlink_to(sys.executable)
+        env = {**os.environ, "HOME": str(self.root), "PATH": f"{self.root}:/usr/bin:/bin"}
+        installer = ["/bin/zsh", str(candidate / "tools/factory/install_poller.sh")]
+        result = subprocess.run(installer, env=env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.root / ".keynes-factory/poll.sh").exists())
+        subprocess.run([*installer, "--runner-ref", "HEAD"], env=env, capture_output=True, text=True, check=True)
+        self.assertEqual((self.root / ".keynes-factory/runner-ref").read_text().strip(), head)
+        remote = self.root / "fork.git"
+        work.git(str(repo), "init", "--bare", "-q", str(remote))
+        work.git(str(candidate), "push", "-q", str(remote), "HEAD:refs/heads/master")
+        work.git(str(repo), "remote", "add", "fork", str(remote))
+        subprocess.run(installer, env=env, capture_output=True, text=True, check=True)
+        self.assertEqual(work.git(str(repo), "rev-parse", "fork/master"), head)
+        self.assertFalse((self.root / ".keynes-factory/runner-ref").exists())
+
     def test_installer_plist_carries_configured_python(self):
-        path = self.root / "launch.plist"
         script = (FACTORY / "install_poller.sh").read_text().split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
         factory = self.root / "factory"
         factory.mkdir()
         (factory / "common.py").write_text((FACTORY / "common.py").read_text())
         self.cfg["tools"]["python"] = "/test/path with spaces & symbols/python3"
         (factory / "config.json").write_text(json.dumps(self.cfg))
-        subprocess.run([sys.executable, "-", str(factory), str(path), "test", str(self.root), str(self.root)],
+        subprocess.run([sys.executable, "-", str(factory), str(self.root), "issue", "pr", str(self.root), str(self.root)],
                        input=script, text=True, check=True)
-        env = plistlib.loads(path.read_bytes())["EnvironmentVariables"]
-        self.assertEqual(env["KEYNES_FACTORY_PYTHON"], self.cfg["tools"]["python"])
+        issue = plistlib.loads((self.root / "issue.plist").read_bytes())
+        pr = plistlib.loads((self.root / "pr.plist").read_bytes())
+        for job in (issue, pr):
+            self.assertEqual(job["EnvironmentVariables"]["KEYNES_FACTORY_PYTHON"], self.cfg["tools"]["python"])
+        self.assertEqual(pr["ProgramArguments"], [*issue["ProgramArguments"], "--pr-lane"])
+        self.assertNotEqual(pr["StandardOutPath"], issue["StandardOutPath"])
 
 
 class EnsureTest(unittest.TestCase):

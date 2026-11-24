@@ -11,6 +11,7 @@ import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 FACTORY = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(FACTORY))
@@ -21,7 +22,7 @@ import ticket
 import verdict
 import work
 import watch_prs
-from common import load_config
+from common import Result, legacy_lane_gate, load_config
 
 CFG = load_config()
 NATIVE = CFG["checks"]["nativeRuntimeCheck"]
@@ -91,8 +92,22 @@ def preflight_refuses(kind, *, remote_base="base1", moved=True):
         return watch_prs.Watcher.merge_preflight(me, p) is not None
 
 
+def refuses_legacy_owner(lane, entry):
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "lock").write_text("42")
+        owner = Result(0, f"python3 tools/factory/{entry}", "")
+        with patch("common.sh", return_value=owner):
+            return legacy_lane_gate(root, lane)
+
+
 # name -> list of (description, callable returning True when the gate refused the input)
 GATES = {
+    "legacy_lane_gate": [
+        ("the old Issue runner owns the Issue workspace", lambda: refuses_legacy_owner("issue", "run.py")),
+        ("the old PR runner owns the shared workspace", lambda: refuses_legacy_owner("issue", "watch_prs.py")),
+        ("the old PR runner owns PR processing", lambda: refuses_legacy_owner("pr", "watch_prs.py")),
+    ],
     "parse_disputes": [
         ("line without the '- ' marker", lambda: refuses_dispute("f1: evidence")),
         ("id that is only a prefix of a real id", lambda: refuses_dispute("- f: evidence")),
