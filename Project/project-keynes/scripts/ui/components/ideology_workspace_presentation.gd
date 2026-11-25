@@ -1053,6 +1053,13 @@ func _draw_waiting(host) -> bool:
 	return host._pending_draw_sequence >= 0
 
 
+func _blocking_confirmation_reason(host, allow_ideology: bool = false) -> String:
+	if host._player_controller == null or not host._player_controller.has_method("player_confirmation_reason"):
+		return ""
+	var reason := String(host._player_controller.player_confirmation_reason())
+	return "" if reason.is_empty() or (allow_ideology and reason == "ideology_choice_required") else reason
+
+
 ## Per-card effect-instance totals for the card face.
 ##
 ## Effect target rows can change when a committed day changes or an equipped

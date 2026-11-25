@@ -91,6 +91,24 @@ func _run() -> void:
 	panel.apply_live_patch({"kpis": kpi_specs})
 	if String(panel._kpi_values.get("kpi_0", "")) != kpi_signature:
 		failures.append("unchanged KPI patch restarted the card animation")
+	var live_kpis := [
+		{"id": "kpi_population", "title": "人口", "kind": "count", "value": 1460.0, "caption": "4 个阶层", "icon": "summary.overview"},
+		{"id": "kpi_gdp", "title": "GDP", "kind": "money", "value": 1000.0, "decimals": 0, "caption": "日均 5", "icon": &"metric.treasury"},
+		{"id": "kpi_jobs", "title": "就业", "kind": "percent", "value": 0.85, "caption": "空缺 8 岗", "icon": "economy.building"},
+		{"id": "kpi_satisfaction", "title": "需求满足", "kind": "percent", "value": 0.66, "caption": "勉强维持", "icon": "family.house"},
+	]
+	panel.apply_live_patch({"kpis": live_kpis})
+	panel.apply_published_gdp({
+		"id": "kpi_gdp", "title": "GDP", "kind": "money", "value": 2234.0,
+		"decimals": 0, "caption": "日均 10", "icon": &"metric.treasury",
+	})
+	var pop_card := panel._kpi_cards[0] as DossierKpiCard
+	var gdp_card := panel._kpi_cards[1] as DossierKpiCard
+	if not is_equal_approx(pop_card._value, 1460.0):
+		failures.append("apply_published_gdp overwrote live-patched population KPI: got %.1f" % pop_card._value)
+	if not is_equal_approx(gdp_card._value, 2234.0):
+		failures.append("apply_published_gdp did not update GDP KPI: got %.1f" % gdp_card._value)
+	panel.apply_live_patch({"kpis": kpi_specs})
 	var overview_count := panel.visible_node_count()
 	var overview_patch := _make_patch("geography")
 	var title_before_partial := panel._title_label.text

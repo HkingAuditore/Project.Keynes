@@ -66,6 +66,7 @@ func _run() -> void:
 	_test_board_widget()
 	_test_narrow_board_layout()
 	_test_same_cell_daily_refresh()
+	_test_retry_while_map_frame_behind()
 	_test_card_avoid_rect()
 	_clock.free()
 	if _failures.is_empty():
@@ -274,7 +275,21 @@ func _test_same_published_day() -> void:
 	var optional_view := CellBoardViewModel.new()
 	optional_view.set_context(_map, func() -> Object: return without_mobilization, _inspector, _clock)
 	_expect("没有组织度接口时仍可显示其他读数", bool(optional_view.build(0).get("ok", false)))
+	# 第 0 天首次提交前（read_view_day == -1）应允许显示初始已发布快照；推进到第 1 天后 -1 必须判过期。
+	_clock.current_day = 0.0
+	var day0_pop := _population_payload()
+	day0_pop["read_view_day"] = -1
+	var day0_market := _market_payload()
+	day0_market["read_view_day"] = -1
+	_economy.population_payloads = {0: day0_pop}
+	_economy.market_payloads = {0: day0_market}
+	_fresh_view_model()
+	_expect("第 0 天初始快照（read_view_day=-1）可读", bool(_view_model.build(0).get("ok", false)))
 	_clock.current_day = 1.0
+	_fresh_view_model()
+	_expect("第 1 天时 read_view_day=-1 仍按过期重试", bool(_view_model.build(0).get("pending", false)))
+	_economy.population_payloads = {0: _population_payload()}
+	_economy.market_payloads = {0: _market_payload()}
 
 
 ## 同一格里 payloads 会被换掉，缓存按 (cell, day) 命中——每个子用例都要一份新实例。
@@ -405,6 +420,64 @@ func _test_same_cell_daily_refresh() -> void:
 	board.hide_board(true)
 	root.remove_child(board)
 	board.free()
+
+
+## 模拟运行中新日已到达但地图视口尚未画完时，展板应排队重试而不是直接放弃；
+## 真正不可见的迷雾格仍立即隐藏且不重试。
+func _test_retry_while_map_frame_behind() -> void:
+	_economy.busy = false
+	_clock.current_day = 2.0
+	var pop := _population_payload()
+	pop["read_view_day"] = 2
+	var market := _market_payload()
+	market["read_view_day"] = 2
+	_economy.population_payloads = {0: pop}
+	_economy.market_payloads = {0: market}
+	var frame := MapDrawnFrame.new()
+	frame.attach(_map)
+	frame.received_day = 2
+	frame.staged_day = 1
+	frame.stage_vision(_map.vision_revision, _map.visible_arr, PackedByteArray([1, 1]))
+	frame.submit(Transform2D.IDENTITY, Vector2(1600, 900))
+	frame.present()
+	var board := (load(BOARD_SCENE) as PackedScene).instantiate() as CellBoard
+	root.add_child(board)
+	board.configure(_map, func() -> Object: return _economy, _inspector, _clock)
+	board.apply_available_height(CellBoard.FULL_HEIGHT)
+	board.on_hover_cell_changed(0)
+	board._dwell_timer.stop()
+	board._on_resolve_timer_elapsed()
+	_expect("地图绘制落后于已接收日时进入重试而不放弃",
+		not board.visible and not board._retry_timer.is_stopped())
+	# 视口画完当日后，重试即可弹出展板。
+	frame.staged_day = 2
+	frame.submit(Transform2D.IDENTITY, Vector2(1600, 900))
+	frame.present()
+	board._retry_timer.stop()
+	board._on_resolve_timer_elapsed()
+	_expect("地图画完后重试弹出展板", board.visible and board.current_cell_index() == 0)
+	# 已显示的同一格在下一日绘制尚未完成时保持可见并排队重试，不闪烁隐藏。
+	frame.received_day = 3
+	board.on_hover_cell_refreshed(0)
+	_expect("同格跨日绘制中保持可见并等待重试",
+		board.visible and not board._retry_timer.is_stopped())
+	# 真正掉入迷雾的格子必须立即隐藏且不再重试。
+	frame.staged_day = 3
+	frame.stage_vision(_map.vision_revision + 1, PackedByteArray([0, 1]), PackedByteArray([1, 1]))
+	_map.vision_revision += 1
+	frame.submit(Transform2D.IDENTITY, Vector2(1600, 900))
+	frame.present()
+	board._retry_timer.stop()
+	board._on_resolve_timer_elapsed()
+	_expect("不可见迷雾格立即开始隐藏且不重试",
+		(not board.visible or board._hiding) and board.current_cell_index() == -1
+			and board._retry_timer.is_stopped())
+	frame.detach(_map)
+	_map.vision_revision = 0
+	board.hide_board(true)
+	root.remove_child(board)
+	board.free()
+	_clock.current_day = 1.0
 
 
 ## 两块浮层不许互相遮挡：展板可见时卡片必须让开。

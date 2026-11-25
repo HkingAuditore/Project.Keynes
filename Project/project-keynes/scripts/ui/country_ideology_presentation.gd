@@ -218,6 +218,14 @@ static func ideology_player_reason(reason: String) -> String:
 			return "理念事务暂不可用。"
 		"ideology_country_handle_stale", "ideology_country_state_unavailable":
 			return "国家数据已更新，请稍后重试。"
+		"era_reward_choice_required":
+			return "请先完成时代奖励选择。"
+		"narrative_choice_required":
+			return "请先处理当前事件。"
+		"annual_report_confirmation_required":
+			return "请先确认年度报告。"
+		"family_founding_choice_required":
+			return "请先完成家族创建选择。"
 		"正在载入已提交数据":
 			return "载入中…"
 		_:

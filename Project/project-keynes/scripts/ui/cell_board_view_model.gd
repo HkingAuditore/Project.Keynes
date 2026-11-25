@@ -91,10 +91,11 @@ func build(cell_index: int) -> Dictionary:
 
 	var population: Dictionary = _economy.population_cell_snapshot(cell_index, false)
 	var population_day := int(population.get("read_view_day", day))
+	var day_ready := population_day >= day or (day == 0 and population_day == -1)
 	var population_ready := bool(population.get("ok", false)) \
-		and population.has("populations") and population_day >= day
+		and population.has("populations") and day_ready
 	if not population_ready:
-		return _pending_payload(population, population_day < day)
+		return _pending_payload(population, not day_ready)
 	var population_total := int(population.get("population", 0))
 	if population_total <= 0:
 		for raw in population.get("populations", PackedInt64Array()):
@@ -450,6 +451,9 @@ func current_day() -> int:
 
 
 func _day() -> int:
+	var frame := MapDrawnFrame.for_map(_map)
+	if frame != null:
+		return frame.received_day
 	if _inspector != null:
 		return _inspector.sample_day()
 	if _world_clock != null:

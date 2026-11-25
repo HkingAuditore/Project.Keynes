@@ -694,7 +694,8 @@ func _poll_simulation_stall_watchdog(host) -> void:
 	if host._world_clock == null or not host._runtime_ready_for_ticks:
 		return
 	if host._world_clock.paused or host._world_clock.speed_multiplier <= 0.0 \
-			or host._runtime_worker_fault_paused:
+			or host._runtime_worker_fault_paused \
+			or not String(host._player_confirmation_view.get("reason", "")).is_empty():
 		host._stall_watchdog_day = -1
 		return
 	var day = host._world_clock.day_index()

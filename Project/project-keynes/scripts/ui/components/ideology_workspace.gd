@@ -397,19 +397,21 @@ func _open_offer() -> void:
 		return
 	if _player_controller == null:
 		return
-	var result: Dictionary = _player_controller.request_command(
-		PlayerControllerScript.COMMAND_IDEOLOGY_OFFER)
-	if not bool(result.get("ok", false)):
-		_show_result(result)
+	var blocked: String = _presentation_component._blocking_confirmation_reason(self, false)
+	if not blocked.is_empty():
+		_show_result({"ok": false, "reason": blocked}); return
+	var result: Dictionary = _player_controller.request_command(PlayerControllerScript.COMMAND_IDEOLOGY_OFFER)
+	if not bool(result.get("ok", false)): _show_result(result)
 
 
 func _reroll_offer() -> void:
-	if _player_controller == null:
-		return
-	var result: Dictionary = _player_controller.request_command(
-		PlayerControllerScript.COMMAND_IDEOLOGY_REROLL, {
-			"offer_generation": int(_snapshot.get("offer_generation", 0)),
-		})
+	if _player_controller == null: return
+	var blocked: String = _presentation_component._blocking_confirmation_reason(self, true)
+	if not blocked.is_empty():
+		_show_result({"ok": false, "reason": blocked}); return
+	var result: Dictionary = _player_controller.request_command(PlayerControllerScript.COMMAND_IDEOLOGY_REROLL, {
+		"offer_generation": int(_snapshot.get("offer_generation", 0)),
+	})
 	if bool(result.get("ok", false)):
 		_render_draw_waiting()
 	else:
@@ -494,6 +496,8 @@ func _on_ideology_offer_ready(snapshot: Dictionary) -> void:
 	_snapshot = snapshot
 	_presentation = CountryViewModel.present_ideology(_snapshot, _catalog)
 	_index_states()
+	if bool(_snapshot.get("offer_active", false)) and int(_snapshot.get("offer_generation", 0)) > _revealed_generation:
+		_pending_draw_sequence = -1
 	_dismissed_generation = -1
 	_hint_hold_until = 0
 	_render_top()

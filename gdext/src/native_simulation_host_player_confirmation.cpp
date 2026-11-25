@@ -134,7 +134,7 @@ const char *NativeSimulationHost::player_confirmation_block(int64_t published_da
 }
 
 void NativeSimulationHost::admit_player_response_through(int64_t day) {
-    if (!_world_environment || !_calendar_suspended.load(std::memory_order_acquire)) return;
+    if (!_world_environment) return;
     auto &grant = _player_confirmation.advance_through;
     int64_t previous = grant.load(std::memory_order_acquire);
     while (day > previous && !grant.compare_exchange_weak(previous, day, std::memory_order_acq_rel)) {}
@@ -162,6 +162,9 @@ void NativeSimulationHost::prepare_player_ideology_responses(int64_t day, bool o
     if (!_world_environment) return;
     const auto country = confirmation_country();
     const auto generation = player_ideology_offer();
+    const char *blocked = opinion_missing ? nullptr : player_confirmation_block(day - 1);
+    const bool blocked_by_other_confirmation = blocked != nullptr &&
+        std::strcmp(blocked, IDEOLOGY_CHOICE) != 0;
     std::vector<RuntimeIdeologyPodCommand> rejected;
     {
         std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
@@ -174,7 +177,8 @@ void NativeSimulationHost::prepare_player_ideology_responses(int64_t day, bool o
                 generation != _player_confirmation.dismissed_ideology &&
                 (it->opcode == IdeologyOpcode::OPEN_OFFER ||
                  (it->offer_generation != 0 && it->offer_generation != generation));
-            if (it->effective_day <= day && (opinion_missing || duplicates_waiting_offer)) {
+            if (blocked_by_other_confirmation ||
+                (it->effective_day <= day && (opinion_missing || duplicates_waiting_offer))) {
                 rejected.push_back(*it);
                 it = _ideology_commands.erase(it);
             } else {
@@ -185,12 +189,13 @@ void NativeSimulationHost::prepare_player_ideology_responses(int64_t day, bool o
     }
     for (const auto &command : rejected) {
         const bool open = command.opcode == IdeologyOpcode::OPEN_OFFER;
-        const char *reason = opinion_missing ? "ideology_opinion_snapshot_missing" :
-            (open ? "ideology_offer_pending" : "ideology_offer_generation_stale");
+        const char *reason = blocked_by_other_confirmation ? blocked :
+            (opinion_missing ? "ideology_opinion_snapshot_missing" :
+             (open ? "ideology_offer_pending" : "ideology_offer_generation_stale"));
         const char *id = open ? "ideology.offer" :
             (command.opcode == IdeologyOpcode::REROLL_OFFER ? "ideology.reroll" : "ideology.choose");
         auto result = confirmation_receipt(false, reason);
-        result["settled_day"] = day;
+        result["settled_day"] = blocked_by_other_confirmation ? std::max<int64_t>(0, day - 1) : day;
         publish_boundary_command_result(id, command.sequence, std::move(result));
     }
 }
@@ -282,7 +287,9 @@ void NativeSimulationHost::finish_player_confirmation_day(int64_t day) {
     int64_t previous = grant.load(std::memory_order_acquire);
     while (previous != -1 && previous <= day &&
            !grant.compare_exchange_weak(previous, -1, std::memory_order_acq_rel)) {}
-    player_confirmation_block(day);
+    const char *blocked = player_confirmation_block(day);
+    if (blocked != nullptr && std::strcmp(blocked, IDEOLOGY_CHOICE) != 0)
+        prepare_player_ideology_responses(day + 1, false);
     if (_economy_production_runtime) {
         const godot::Array receipts = economy_api::take_family_founding_receipts(*_economy_production_runtime);
         for (int64_t i = 0; i < receipts.size(); ++i) {

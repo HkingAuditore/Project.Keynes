@@ -150,9 +150,13 @@ func _on_resolve_timer_elapsed() -> void:
 func _resolve(cell_index: int) -> void:
 	if not _show_market and not _show_cohorts:
 		return
-	if _map.cell_at(cell_index) == null or not VisionSolver.displayed_cell_visible(_map, cell_index) \
-			or not VisionSolver.displayed_fields_current(_map):
+	if _map.cell_at(cell_index) == null or not VisionSolver.displayed_cell_visible(_map, cell_index):
 		hide_board(false)
+		return
+	if not VisionSolver.displayed_fields_current(_map):
+		_retry_timer.start(RETRY_SEC)
+		if _shown_cell != cell_index:
+			hide_board(false)
 		return
 	var payload: Dictionary = _view_model.build(cell_index)
 	if not bool(payload.get("ok", false)):

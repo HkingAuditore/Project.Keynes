@@ -186,6 +186,19 @@ func _test_ideology(workspace: IdeologyWorkspace) -> bool:
 	if not await _wait_for(next_day, ""):
 		return false
 	_expect("restored calendar displays the next day", story_clock.day_index() == next_day + 1)
+
+	# Regression: submitting a draw/reroll while running and pausing immediately
+	# before the target day commits must still admit that day and settle.
+	var pause_race := story_controller.request_command(&"ideology.reroll", {
+		"offer_generation": generation})
+	_expect("running-then-paused reroll is admitted",
+		bool(pause_race.get("ok", false)) and int(pause_race.get("effective_day", -1)) == next_day + 1)
+	story_clock.pause(true)
+	story_ext.set_runtime_clock(true, 10.0)
+	if not await _wait_for(next_day + 1, IDEOLOGY_STOP):
+		return false
+	_expect("running-then-paused reroll settles and clears draw waiting",
+		await _has_receipt(pause_race, "") and not workspace._draw_waiting())
 	return true
 
 
@@ -233,6 +246,9 @@ func _test_family() -> void:
 		"offer_generation": 99, "choice_index": 0})
 	_expect("stale era selection reaches the executor",
 		bool(stale_era.get("ok", false)) and await _has_receipt(stale_era, "era_reward_offer_generation_stale"))
+	var blocked_draw := story_controller.request_command(&"ideology.offer")
+	_expect("ideology draw while family stop is active is rejected with the blocking reason",
+		bool(blocked_draw.get("ok", false)) and await _has_receipt(blocked_draw, FAMILY_STOP))
 
 	var display := ReceiptSurface.new()
 	story_controller._ui_manager = display

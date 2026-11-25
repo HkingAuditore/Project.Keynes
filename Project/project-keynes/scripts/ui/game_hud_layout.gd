@@ -341,6 +341,7 @@ func _layout_right_panel() -> void:
 	# fade_slide_in 可能会缓存到一个还没被上面这套 offset 结算过的旧/零值，
 	# 之后每次开合面板都会被带回那个错误坐标——这正是"详情框缩在左上角"的成因。
 	UIAnimation.refresh_rest_position(_right_panel)
+	_layout_cell_board()
 
 
 ## 右栏"内容最小宽度"：量之前先把本函数上一轮写进 custom_minimum_size 的宽度清零。
