@@ -23877,6 +23877,66 @@
       "status": "active"
     },
     {
+      "id": "INV-ECON-0896",
+      "reason": "demand_basis_cell_slot_reuse_or_isolation_failed",
+      "kind": "unknown",
+      "stage": "unclassified",
+      "invariant": "",
+      "witness": {},
+      "owner": "economy.unassigned",
+      "first_seen": null,
+      "playbook": [],
+      "status": "active"
+    },
+    {
+      "id": "INV-ECON-0897",
+      "reason": "demand_basis_dense_world_capacity_exceeds_its_cell_count",
+      "kind": "unknown",
+      "stage": "unclassified",
+      "invariant": "",
+      "witness": {},
+      "owner": "economy.unassigned",
+      "first_seen": null,
+      "playbook": [],
+      "status": "active"
+    },
+    {
+      "id": "INV-ECON-0898",
+      "reason": "demand_basis_employment_refresh_did_not_replace_the_cached_row",
+      "kind": "unknown",
+      "stage": "unclassified",
+      "invariant": "",
+      "witness": {},
+      "owner": "economy.unassigned",
+      "first_seen": null,
+      "playbook": [],
+      "status": "active"
+    },
+    {
+      "id": "INV-ECON-0899",
+      "reason": "demand_basis_new_day_reused_stale_lookup_or_values",
+      "kind": "unknown",
+      "stage": "unclassified",
+      "invariant": "",
+      "witness": {},
+      "owner": "economy.unassigned",
+      "first_seen": null,
+      "playbook": [],
+      "status": "active"
+    },
+    {
+      "id": "INV-ECON-0900",
+      "reason": "demand_basis_unregistered_cell_must_compute_without_allocating_cache",
+      "kind": "unknown",
+      "stage": "unclassified",
+      "invariant": "",
+      "witness": {},
+      "owner": "economy.unassigned",
+      "first_seen": null,
+      "playbook": [],
+      "status": "active"
+    },
+    {
       "id": "INV-EFFECT-0001",
       "reason": "canal_effect_shape_invalid",
       "kind": "unknown",

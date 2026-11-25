@@ -1,5 +1,6 @@
 extends RefCounted
 const RendererCloudShadowBinding = preload("res://scripts/rendering/renderer_cloud_shadow_binding.gd")
+const WaterRippleLattice = preload("res://scripts/rendering/water_ripple_lattice.gd")
 
 ## Stateless collaborator for ShrubLayer.
 
@@ -526,12 +527,8 @@ static func sync_ripple_lattice(host) -> void:
 	if host._ripple_table == null:
 		return
 	var phase: float = host._world_time * (host.water_flow_advection / 1.15)
-	var cycles := Vector4(floorf(phase * 0.04), floorf(phase * 0.04 + 0.5),
-		floorf(phase * 0.06), floorf(phase * 0.06 + 0.5))
-	if cycles != host._ripple_cycles:
-		host._ripple_cycles = cycles
-		host._ripple_table.material.set_shader_parameter("cycles", cycles)
-		host._ripple_table.refresh()
+	host._ripple_table.update_cycles(Vector4(floorf(phase * 0.04), floorf(phase * 0.04 + 0.5),
+		floorf(phase * 0.06), floorf(phase * 0.06 + 0.5)))
 
 
 static func _bind_ripple_lattice(host) -> void:
@@ -541,10 +538,8 @@ static func _bind_ripple_lattice(host) -> void:
 			host._ripple_table = null
 		return
 	if host._ripple_table == null:
-		host._ripple_table = preload("res://scripts/rendering/render_data_table.gd").new()
-		host._ripple_table.configure(host._water_quad, Vector2i(256, 256 * 3),
-			preload("res://shaders/water_ripple_lattice.gdshader"))
-		host._ripple_cycles = Vector4(-1.0, -1.0, -1.0, -1.0)
+		host._ripple_table = WaterRippleLattice.new()
+		host._ripple_table.setup(host._water_quad)
 		sync_ripple_lattice(host)
 	host._water_mat.set_shader_parameter("water_ripple_lattice", host._ripple_table.get_texture())
 

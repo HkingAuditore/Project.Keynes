@@ -136,6 +136,7 @@ func _run() -> void:
 	if not bool(save_result.get("ok", false)):
 		_finish()
 		return
+	var expected_overlays := _capture_map_overlays(first_host)
 	await _verify_wiped_fog_is_never_persisted(first_host)
 
 	# Compare frozen military bytes at load completion, before the worker starts
@@ -161,6 +162,13 @@ func _run() -> void:
 	if loaded_host != null:
 		_expect("loaded world has a distinct session generation",
 			int(loaded_host.session_report().generation) != previous_generation)
+		_expect("the loaded scene starts with the overlays closed",
+			not loaded_host.map_overlay_diagnostics().active)
+		var restored_overlays := _capture_map_overlays(loaded_host)
+		for mode in [OverlayMode.MODE.ELEVATION, OverlayMode.MODE.WIND_DIR]:
+			_expect("overlay %d restores the saved image and stats byte for byte" % mode,
+				expected_overlays.has(mode) and restored_overlays.get(mode) == expected_overlays[mode])
+		loaded_host.clear_map_overlay()
 		var resaved: Dictionary = await _game_save.call("request_manual_save", "manual_2")
 		var reopened: Dictionary = _game_save.get("_repository").load_slot("manual_2")
 		var restored_military: PackedByteArray = reopened.get("section_bytes", {}).get("pkmi", PackedByteArray())
@@ -242,6 +250,21 @@ func _run() -> void:
 		_expect("the pending GM popup policy change applies after restore",
 			loaded_host.get_gm_toggle_state("ui.suppress_popups").get("enabled") == false)
 	_finish()
+
+
+func _capture_map_overlays(host: WorldRuntimeHost) -> Dictionary:
+	var captured := {}
+	for mode in [OverlayMode.MODE.ELEVATION, OverlayMode.MODE.WIND_DIR]:
+		var before: int = host.map_overlay_diagnostics().refresh_count
+		host.set_map_overlay({"mode": mode})
+		var diag := host.map_overlay_diagnostics()
+		var image := host._map_overlay_image
+		var built: bool = diag.refresh_count == before + 1 and image != null \
+			and host._map_overlay_layer.has_cell_lut_texture(host._map_overlay_tex)
+		_expect("overlay %d generates and binds its texture when opened" % mode, built)
+		if built:
+			captured[mode] = [image.get_data(), var_to_bytes(diag.last_result.stats)]
+	return captured
 
 
 ## Changing the display copy must not change the authoritative saved exploration.

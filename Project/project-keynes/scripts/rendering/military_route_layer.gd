@@ -118,7 +118,7 @@ func _rebuild_points() -> void:
 
 func _camera_x() -> float:
 	if is_inside_tree():
-		var camera := get_viewport().get_camera_2d()
+		var camera := MapCamera.for_layer(self)
 		if camera != null:
 			return camera.global_position.x
 	return NAN
@@ -164,7 +164,7 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	if _map == null or _points.size() < 2:
 		return
-	var camera := get_viewport().get_camera_2d() if is_inside_tree() else null
+	var camera := MapCamera.for_layer(self)
 	var unit := 1.0 / maxf(camera.zoom.x, 0.01) if camera != null else 1.0
 	var shift := Vector2.ZERO
 	if camera != null:

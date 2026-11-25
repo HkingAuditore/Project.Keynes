@@ -1394,6 +1394,19 @@ Dictionary DCWorldExt::poll_runtime_commit(int64_t after_generation, bool take_d
     if (publication) {
         out["display_dirty_cells"] = publication->changed_cells;
         out["display_class_cells"] = publication->changed_classes;
+        if (commit.day_tail && !commit.day_tail->cell_luts.transition_age.empty()) {
+            const auto &model = commit.day_tail->cell_luts;
+            const auto pack = [](const std::vector<uint8_t> &bytes) {
+                PackedByteArray result;
+                if (!bytes.empty() && result.resize(bytes.size()) == OK)
+                    std::memcpy(result.ptrw(), bytes.data(), bytes.size());
+                return result;
+            };
+            Dictionary frame;
+            frame["transition_age"] = pack(model.transition_age);
+            frame["previous_vitality"] = pack(model.previous_vitality);
+            out["cell_lut_frame"] = frame;
+        }
         out["days"] = publication->records;
         out["notice_history"] = publication->notices;
         if (!publication->construction_receipts.is_empty())

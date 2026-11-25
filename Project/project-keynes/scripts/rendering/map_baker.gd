@@ -1414,11 +1414,6 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false,
 		dirty_indices: PackedInt32Array = PackedInt32Array(),
 		force_full_encode: bool = true) -> Dictionary:
 	return CellLutBakerScript.bake_cell_luts(self, map, world, cache_valid, publish_weather_lut, dirty_indices, force_full_encode)
-func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int,
-		snow_cover_override: PackedFloat32Array = PackedFloat32Array(),
-		publish_weather_lut: bool = true,
-		fog_k_override: PackedByteArray = PackedByteArray()) -> void:
-	return CellLutBakerScript._bake_cell_luts_gd(self, map, world, lw, lh, snow_cover_override, publish_weather_lut, fog_k_override)
 func _lut_tex_from_data(data: PackedByteArray, w: int, h: int, fmt: int, existing: ImageTexture) -> ImageTexture:
 	return CellLutBakerScript._lut_tex_from_data(self, data, w, h, fmt, existing)
 func _publish_weather_lut_bytes(data: PackedByteArray, world: WorldData, lw: int, lh: int, force_changed: bool = false) -> Dictionary:
@@ -1629,7 +1624,7 @@ func _rasterize_upwelling_slice_from_hex(world: WorldData, dst: PackedByteArray,
 		s: int, e: int) -> void:
 	return PhysicalSolveBakerScript._rasterize_upwelling_slice_from_hex(self, world, dst, s, e)
 var _ocean_pixel_to_cell_idx: PackedInt32Array = PackedInt32Array()
-var _ocean_pixel_cache_size: Vector2i = Vector2i.ZERO
+var _ocean_pixel_cache_key: Array = []
 func _ensure_ocean_pixel_to_cell_index(map: MapData, world: WorldData) -> void:
 	return PhysicalSolveBakerScript._ensure_ocean_pixel_to_cell_index(self, map, world)
 func run_ocean_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapConfig,

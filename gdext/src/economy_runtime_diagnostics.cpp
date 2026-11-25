@@ -656,9 +656,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_staging_cell_generation);
     cap(_structural_touched_cells); cap(_population_changed_cells);
     cap(_deferred_population_reconcile_cells);
-    cap(_demand_basis_cache_day); cap(_demand_basis_variant_scores);
-    cap(_demand_basis_variant_prices); cap(_demand_basis_need_score_sums);
-    cap(_demand_basis_need_composites); cap(_demand_basis_need_environment);
+    bytes += _demand_basis_cache.values_bytes() + _demand_basis_cache.index_bytes();
     cap(_building_types); cap(_building_type_market_signal_goods);
     cap(_building_type_labor_signal_professions);
     cap(_building_employee_roles); cap(_building_construction_goods);
@@ -2493,6 +2491,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["person_jobs_bound"] = _person_jobs_bound;
     out["person_need_edges_processed"] = _person_need_edges_processed;
     out["memory_bytes"] = memory_bytes();
+    out["demand_basis_cache"] = demand_basis_cache_report();
     out["city_good_output_shared_count"] = static_cast<int64_t>(
         _city_output_shared_goods_q16.size());
     out["city_good_output_non_neutral_shared_count"] = static_cast<int64_t>(

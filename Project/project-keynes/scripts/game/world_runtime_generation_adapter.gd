@@ -13,6 +13,7 @@ func _prepare_world_data(host) -> Dictionary:
 	host._visual_progress = 0.0
 	host._runtime_commit_generation = 0
 	host._runtime_commit_day = -1
+	host.reset_presentation()
 	host._player_confirmation_view.clear()
 	host._runtime_last_commit.clear()
 	host._runtime_vision_result.clear()
@@ -208,6 +209,7 @@ func _prepare_world_simulation(host) -> Dictionary:
 		if bool(restored.get("available", false)):
 			host._runtime_commit_day = int(restored.committed_day)
 			host._runtime_commit_generation = int(restored.generation)
+			host._presentation.ui_presented_day = host._runtime_commit_day
 		var report: Dictionary = host._runtime_control_state()
 		host._apply_climate_writeback_if_authoritative(report)
 		host._publish_player_confirmation(report)
@@ -312,7 +314,6 @@ func _start_runtime_executor(host) -> void:
 				"fault_code": String(seeded.get("code", "runtime_environment_seed_failed"))})
 			return
 	host._runtime_commit_generation = 0
-	host._presentation.reset_worker_views()
 	var started: Dictionary = host._generator.start_runtime_worker(config)
 	if not bool(started.get("ok", false)):
 		host._web_worker_start_ok = false

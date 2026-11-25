@@ -220,6 +220,8 @@ func refresh_country_visuals(host, reason: String) -> Dictionary:
 		# 并上这些格（cell_lut_baker.gd 的并集），否则 aux 永远停在初始 255 = 雾画不出来。
 		# 保持默认的增量编码：并集已精确覆盖变化格，不需要 force_full_encode 的全量重编。
 		out["lut"] = _republish_cell_luts(host, host._vision_dirty_indices)
+		if out.lut.get("lut_encode_path", "none") != "none":
+			host.map_texture_published.emit(-1)
 	host._vision_dirty_indices = PackedInt32Array()
 	host._runtime_vision_result.erase("newly_visible_cells")
 	_cv_phase(host, "lut", _cv_t3)
@@ -529,7 +531,7 @@ func apply_runtime_vision_display(host) -> Dictionary:
 	var revealed := PackedInt32Array()
 	var compare := map.fog_solved and map.fog_k_arr.size() == count and map.visible_arr.size() == count
 	for cell in count:
-		if not compare or map.fog_k_arr[cell] != fog[cell] or map.visible_arr[cell] != visible[cell]:
+		if enabled_changed or not compare or map.fog_k_arr[cell] != fog[cell] or map.visible_arr[cell] != visible[cell]:
 			pending_dirty[cell] = true
 		if enabled and visible[cell] != 0 and (not compare or map.visible_arr[cell] == 0):
 			revealed.append(cell)

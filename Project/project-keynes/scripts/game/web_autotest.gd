@@ -348,12 +348,12 @@ func _apply_tier_probe() -> void:
 			return
 	var renderer: Node = null
 	# `_host` 是 RuntimeHost 节点本身；WorldRoot 与它是**兄弟**，所以原来的
-	# `_host.get_node_or_null("WorldRoot/HexRenderer")` 恒为 null，探针从来没生效过。
+	# `_host.get_node_or_null("%WorldRoot/HexRenderer")` 恒为 null，探针从来没生效过。
 	# 先用 host 自己的访问器，再退回父节点下的路径。
 	if _host != null and _host.has_method("get_renderer"):
 		renderer = _host.call("get_renderer")
 	if renderer == null and _host != null and _host.get_parent() != null:
-		renderer = _host.get_parent().get_node_or_null("WorldRoot/HexRenderer")
+		renderer = _host.get_parent().get_node_or_null("%WorldRoot/HexRenderer")
 	if renderer != null and renderer.has_method("set_mobile_quality_tier"):
 		renderer.set_mobile_quality_tier(define)
 		WebTelemetry.emit("tier_probe", {"tier": tier, "define": define})

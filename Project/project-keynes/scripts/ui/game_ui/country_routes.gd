@@ -803,14 +803,11 @@ func refresh_selected_daily_lines(host, force: bool = false, day_idx: int = -1) 
 		"live_patch_build_ms": 0.0,
 		"live_patch_apply_ms": 0.0,
 	}
-	host._refresh_dispatch_status()
-	if host._colonization_panel != null and host._colonization_panel.visible:
-		host._colonization_panel.refresh_visible()
 	if host._selected_cell == null or host._inspector_view_model == null or host._right_panel == null:
 		host._report_inspector_daily_timing(timing, _t_all)
 		return timing
 	# 视野状态变了意味着页签集合变了，打补丁改不动页签栏，必须整块重建。
-	var fog := VisionSolver.fog_state(host._map, int(host._selected_cell.index))
+	var fog := VisionSolver.displayed_fog_state(host._map, int(host._selected_cell.index))
 	if fog != host._selected_fog_state:
 		host._selected_fog_state = fog
 		host._set_inspector_trace_cell(int(host._selected_cell.index) \

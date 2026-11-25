@@ -296,6 +296,9 @@ func _terrain_color(terrain_v: int) -> Color:
 # ───────────────────────────── 读取工具 ─────────────────────────────
 
 func _day() -> int:
+	var frame := MapDrawnFrame.for_map(_map)
+	if frame != null:
+		return frame.received_day
 	if _inspector != null:
 		return _inspector.sample_day()
 	if _world_clock != null:

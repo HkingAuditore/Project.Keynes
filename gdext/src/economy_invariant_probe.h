@@ -29,5 +29,8 @@ public:
     // built returns reproduced=false with `detail` naming what is missing, and
     // an empty/unknown incident returns reproduced=false instead of crashing.
     static godot::Dictionary replay_incident(const godot::Dictionary &incident);
+
+private:
+    static bool run_demand_basis_cache(std::string &error);
 };
 }

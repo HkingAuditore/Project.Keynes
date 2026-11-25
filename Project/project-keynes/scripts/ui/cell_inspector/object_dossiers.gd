@@ -733,7 +733,7 @@ static func build_object_detail(host, cell: HexCell, request: Dictionary) -> Dic
 	if not host.OBJECT_DETAIL_TAB.has(kind) or row_id.is_empty():
 		return {}
 	var idx = int(cell.index)
-	if VisionSolver.fog_state(host._map, idx) != VisionSolver.FOG_VISIBLE:
+	if VisionSolver.displayed_fog_state(host._map, idx) != VisionSolver.FOG_VISIBLE:
 		return {}
 	var category = host.build_tab_category(cell, String(host.OBJECT_DETAIL_TAB[kind]))
 	var row = {}

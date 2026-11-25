@@ -70,6 +70,8 @@ func _test_ideology(workspace: IdeologyWorkspace) -> bool:
 	_expect("points are checked by the executor", bool(empty.get("ok", false)))
 	if not await _wait_for(2, ""):
 		return false
+	_expect("the dated draw receipt is available before the map shows day 2",
+		int(_find_receipt(empty).get("settled_day", -1)) == 2 and story_host.presented_worker_day() < 2)
 	_expect("insufficient points are rejected on the command date",
 		await _has_receipt(empty, "ideology_points_insufficient"))
 	_expect("the ideology panel shows the draw rejection",

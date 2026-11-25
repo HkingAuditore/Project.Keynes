@@ -17,10 +17,12 @@
 // 第二批：wind field 主循环（含热力季风与 NS Phase 1 动量项）。
 // 后续：psi SOR / upwelling / wind traj。
 
+#include "map_overlay_input_signature.h"
 #include "simulation_math.h"
 #include <cstdint>
 #include <cmath>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -531,6 +533,8 @@ struct RuntimeClimatePhysicsState {
     int64_t  committed_day = -1;
     uint64_t input_generation = 0;
     int64_t  last_daily_day = -1, last_slp_day = -1, last_wind_day = -1, last_ocean_day = -1;
+    std::optional<MapOverlayInputSignature> wind_display_signature;
+    void note_wind_solve(int64_t day);
     uint64_t daily_due_seq = 0;
     uint64_t cyclone_total_injected = 0, cyclone_total_replaced = 0, cyclone_total_decayed = 0;
 
@@ -648,6 +652,7 @@ struct RuntimeClimatePhysicsState {
         ocean_psi_prev.assign(n, 0.0f);
         initialized = false;
         committed_day = last_daily_day = last_slp_day = last_wind_day = last_ocean_day = -1;
+        wind_display_signature.reset();
         input_generation = daily_due_seq = 0;
         cyclone_total_injected = cyclone_total_replaced = cyclone_total_decayed = 0;
         psi_tau_x.clear(); psi_tau_y.clear(); psi_ny.clear(); psi_ls.clear();
@@ -686,7 +691,7 @@ struct RuntimeClimatePhysicsState {
     }
 
     // 形状/有限性校验。失败写 error 并返回 false（caller 不跑物理）。
-    bool validate(std::string &error) const {
+    bool validate(std::string &error, MapOverlayInputSignature *wind_signature = nullptr) const {
         if (cell_count <= 0 || cell_count > 10000000) { error = "physics_cell_count_invalid"; return false; }
         const size_t n = static_cast<size_t>(cell_count);
         auto ok_n = [n](const std::vector<float> &v) { return v.size() == n; };
@@ -722,9 +727,9 @@ struct RuntimeClimatePhysicsState {
             error = "water_lane_shape_mismatch";
             return false;
         }
-        return validate_values(error);
+        return validate_values(error, wind_signature);
     }
-    bool validate_values(std::string &error) const;
+    bool validate_values(std::string &error, MapOverlayInputSignature *wind_signature) const;
 
     // 轻量状态哈希（FNV-1a，按位：float 用 bit pattern）。用于读视图游标
     // （get_climate_physics_read_view 的 generation 比对）与存档段校验；
@@ -767,7 +772,7 @@ struct RuntimeClimatePhysicsState {
 bool physics_state_self_test(std::string &error);
 
 // 空 blob 是 legacy 冷启动；非空错误返回 false，且不修改目标状态。
-bool serialize_physics_state(const RuntimeClimatePhysicsState &state,
+bool serialize_physics_state(RuntimeClimatePhysicsState &state,
                              std::vector<uint8_t> &blob, std::string &error);
 // Copy the saved fields of an already validated commit for native readers.
 // Solver scratch and derived caches remain private to the solver.

@@ -1,0 +1,1592 @@
+{
+  "provenance": {
+    "run": "54-aqua-20261123-114851",
+    "commit": "0fae578384cd1805945d10259f3f7bcf24e1409e",
+    "engine": "4.6.3.stable.official.7d41c59c4",
+    "debug_library": "addons/dots_ext/bin/macos/libdots_ext.macos.template_debug.arm64.dylib",
+    "debug_library_sha256": "5466f3cbd635812ee9623878b3e74bdb90ceb838c7b9b32e0d08bf9640850880",
+    "capture": "Unlocked Aqua, Apple M2, Metal Mobile, MOBILE_QUALITY_LOW",
+    "seed": 20260718,
+    "map_hexes": [
+      60,
+      40
+    ],
+    "countries": 4,
+    "fog_enabled": true,
+    "warmup_frames_per_interval": 60,
+    "template": "Instruments Game Performance",
+    "export_scripts_sha256": {
+      "measure_trace.py": "fef3c8a89972aa1b387d2ba4ae4b1e7c831c81171f37adf0159b1dc8eb9deb51",
+      "verify.py": "5e905aacd6569d1a303f2438c814fdbe474c905f154a414c3bc805457e23529d"
+    },
+    "input_sha256": {
+      "captures.jsonl": "2d7f19216ce5a3303f0103fe54cb323f6ef256a9cb6254729b11e5cccfea6e60",
+      "environment-check.csv": "e96170218998b410640aa290fc12280af1c6a0919c5e80f5ccd0f5b96e7f9cd7",
+      "explored-full-timings.json": "d95ce2010b4499e65efee63195d7505506b32c7f53b3ccc9dbba0b17a0490333",
+      "explored-land-timings.json": "7aa3b656267d4f432821eb0dbc6f367f337e3a130fe3c4d6ce404a8a7f1e9a88",
+      "explored-vegetation-timings.json": "e5a1cdc561af1690685520bfaff3f5b7b56dac1f3e9003b3221e82d3acd74188",
+      "explored-water-timings.json": "3d34306724d586718da3947477ec72b1ed842c4e2a30dd5f922885b7e7a3fb1e",
+      "opening-full-timings.json": "4931b8f1d756b1632fff004dd4665a73a14fe7ea222516af5775483d16f0fe8a",
+      "opening-land-timings.json": "902aaaf96b8a0985f7b44b8fe2e387f7cad28a707dedf0c011e4799c516b6986",
+      "opening-vegetation-timings.json": "fe9bc52265eb4db759cc95487f0901922386a94f06e9d0ea4d53532a42c475ff",
+      "opening-water-timings.json": "159cfd37114bf65bb72ac30cce6c209fa7a46e823c752cff427b569eb29c35dc"
+    }
+  },
+  "units": {
+    "*_ms": "milliseconds",
+    "*_px": "physical pixels",
+    "*_unix_s": "Unix epoch seconds",
+    "avg_fps": "application draw callbacks per second",
+    "display_refresh_hz": "hertz",
+    "scale_percent": "percent",
+    "samples": "count in the metric's own population"
+  },
+  "process_checks": [
+    {
+      "source": "explored-full.trace",
+      "process_id": 6630,
+      "in_game_checks": 36,
+      "in_game_failures": 0
+    },
+    {
+      "source": "explored-land.trace",
+      "process_id": 7162,
+      "in_game_checks": 36,
+      "in_game_failures": 0
+    },
+    {
+      "source": "explored-water.trace",
+      "process_id": 7821,
+      "in_game_checks": 36,
+      "in_game_failures": 0
+    },
+    {
+      "source": "explored-vegetation.trace",
+      "process_id": 8444,
+      "in_game_checks": 36,
+      "in_game_failures": 0
+    },
+    {
+      "source": "opening-full.trace",
+      "process_id": 9473,
+      "in_game_checks": 25,
+      "in_game_failures": 0
+    },
+    {
+      "source": "opening-land.trace",
+      "process_id": 10307,
+      "in_game_checks": 25,
+      "in_game_failures": 0
+    },
+    {
+      "source": "opening-water.trace",
+      "process_id": 10953,
+      "in_game_checks": 25,
+      "in_game_failures": 0
+    },
+    {
+      "source": "opening-vegetation.trace",
+      "process_id": 11759,
+      "in_game_checks": 25,
+      "in_game_failures": 0
+    }
+  ],
+  "shutdown_failures": [
+    {
+      "source": "explored-full.trace",
+      "process_id": 6630,
+      "crash_report": "Godot-2026-11-23-114933.ips",
+      "crash_time": "2026-11-23 11:49:26.1176 -0800",
+      "signal": "SIGBUS",
+      "stack": [
+        "TextServerAdvanced::_free_rid(RID const&)",
+        "TextLine::~TextLine()",
+        "Font::~Font()",
+        "Variant::_clear_internal()",
+        "Dictionary::_unref() const",
+        "Dictionary::~Dictionary()",
+        "GDScript::clear()",
+        "GDScriptLanguage::finish()",
+        "ScriptServer::finish_languages()",
+        "Main::cleanup(bool)",
+        "OS_MacOS_NSApp::cleanup()"
+      ]
+    }
+  ],
+  "captures": [
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 60.011417172117,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 3,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 247.645833333333,
+        "median": 248.0,
+        "p95": 253,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795463360.4708,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 16.6634958333333,
+        "median": 16.637,
+        "p95": 18.167,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1600,
+        960
+      ],
+      "ok": true,
+      "omitted_layer": "",
+      "os": "macOS",
+      "process_id": 6630,
+      "scale_percent": 100,
+      "scene": "explored",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795463356.47147,
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.480533331477394,
+        "median": 0.442999988794327,
+        "p95": 0.768999993801117,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "explored-full.trace"
+    },
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 60.0262164500346,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 3,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 267.241666666667,
+        "median": 266.0,
+        "p95": 275,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795463365.7693,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 16.6593875,
+        "median": 16.611,
+        "p95": 18.025,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1200,
+        720
+      ],
+      "ok": true,
+      "omitted_layer": "",
+      "os": "macOS",
+      "process_id": 6630,
+      "scale_percent": 75,
+      "scene": "explored",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795463361.77099,
+      "terrain_draw_cpu_ms": {
+        "mean": 0.0476624999466973,
+        "median": 0.046000000089407,
+        "p95": 0.0829999968409538,
+        "samples": 240
+      },
+      "terrain_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.469920834619552,
+        "median": 0.464499995112419,
+        "p95": 0.734000027179718,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "explored-full.trace"
+    },
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 59.2670883684635,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 3,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 246.358333333333,
+        "median": 248.0,
+        "p95": 252,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795463608.07085,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 16.8727708333333,
+        "median": 16.66,
+        "p95": 17.911,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1600,
+        960
+      ],
+      "ok": true,
+      "omitted_layer": "land",
+      "os": "macOS",
+      "process_id": 7162,
+      "scale_percent": 100,
+      "scene": "explored",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795463604.02125,
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.509433333855122,
+        "median": 0.467000007629395,
+        "p95": 0.839999973773956,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "explored-land.trace"
+    },
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 60.001530039016,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 3,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 265.291666666667,
+        "median": 265.0,
+        "p95": 274,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795463613.37074,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 16.6662416666667,
+        "median": 16.644,
+        "p95": 17.488,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1200,
+        720
+      ],
+      "ok": true,
+      "omitted_layer": "land",
+      "os": "macOS",
+      "process_id": 7162,
+      "scale_percent": 75,
+      "scene": "explored",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795463609.37075,
+      "terrain_draw_cpu_ms": {
+        "mean": 0.0437291668456358,
+        "median": 0.0439999997615814,
+        "p95": 0.0820000022649765,
+        "samples": 240
+      },
+      "terrain_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.458258333367606,
+        "median": 0.434000000357628,
+        "p95": 0.723999977111816,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "explored-land.trace"
+    },
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 59.9946754725518,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 3,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 244.720833333333,
+        "median": 245.0,
+        "p95": 252,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795463876.57006,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 16.6681458333333,
+        "median": 16.6525,
+        "p95": 18.219,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1600,
+        960
+      ],
+      "ok": true,
+      "omitted_layer": "water",
+      "os": "macOS",
+      "process_id": 7821,
+      "scale_percent": 100,
+      "scene": "explored",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795463872.56963,
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.496858333361646,
+        "median": 0.453500002622604,
+        "p95": 0.816999971866608,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "explored-water.trace"
+    },
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 60.0130228259533,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 3,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 263.891666666667,
+        "median": 266.0,
+        "p95": 274,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795463881.81926,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 16.66305,
+        "median": 16.702,
+        "p95": 21.453,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1200,
+        720
+      ],
+      "ok": true,
+      "omitted_layer": "water",
+      "os": "macOS",
+      "process_id": 7821,
+      "scale_percent": 75,
+      "scene": "explored",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795463877.82007,
+      "terrain_draw_cpu_ms": {
+        "mean": 0.0883458348961237,
+        "median": 0.0445000007748604,
+        "p95": 0.100000001490116,
+        "samples": 240
+      },
+      "terrain_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.48083333298564,
+        "median": 0.443499997258186,
+        "p95": 0.829999983310699,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "explored-water.trace"
+    },
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 56.0612487830037,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 3,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 233.295833333333,
+        "median": 234.0,
+        "p95": 235,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795464103.65307,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 17.8376333333333,
+        "median": 16.593,
+        "p95": 18.839,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1600,
+        960
+      ],
+      "ok": true,
+      "omitted_layer": "vegetation",
+      "os": "macOS",
+      "process_id": 8444,
+      "scale_percent": 100,
+      "scene": "explored",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795464099.37192,
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.392341667289535,
+        "median": 0.385999992489815,
+        "p95": 0.708000004291534,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "explored-vegetation.trace"
+    },
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 59.9601265158669,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 3,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 235.25,
+        "median": 235.0,
+        "p95": 236,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795464108.95568,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 16.67775,
+        "median": 16.6525,
+        "p95": 19.592,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1200,
+        720
+      ],
+      "ok": true,
+      "omitted_layer": "vegetation",
+      "os": "macOS",
+      "process_id": 8444,
+      "scale_percent": 75,
+      "scene": "explored",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795464104.95293,
+      "terrain_draw_cpu_ms": {
+        "mean": 0.050570833531674,
+        "median": 0.046000000089407,
+        "p95": 0.0970000028610229,
+        "samples": 240
+      },
+      "terrain_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.356154166348279,
+        "median": 0.342500001192093,
+        "p95": 0.572000026702881,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "explored-vegetation.trace"
+    },
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 58.9973547061084,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 0,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 228.583333333333,
+        "median": 230.0,
+        "p95": 237,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795464342.20461,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 16.9499125,
+        "median": 16.6385,
+        "p95": 18.656,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1600,
+        960
+      ],
+      "ok": true,
+      "omitted_layer": "",
+      "os": "macOS",
+      "process_id": 9473,
+      "scale_percent": 100,
+      "scene": "opening",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795464338.13653,
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.465045831911266,
+        "median": 0.449999988079071,
+        "p95": 0.744000017642975,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "opening-full.trace"
+    },
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 59.0126156678003,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 0,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 251.291666666667,
+        "median": 253.0,
+        "p95": 262,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795464347.53697,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 16.9455291666667,
+        "median": 16.7085,
+        "p95": 19.538,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1200,
+        720
+      ],
+      "ok": true,
+      "omitted_layer": "",
+      "os": "macOS",
+      "process_id": 9473,
+      "scale_percent": 75,
+      "scene": "opening",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795464343.46995,
+      "terrain_draw_cpu_ms": {
+        "mean": 0.0542750000837259,
+        "median": 0.0494999997317791,
+        "p95": 0.105999998748302,
+        "samples": 240
+      },
+      "terrain_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.457291667722166,
+        "median": 0.434000000357628,
+        "p95": 0.716000020503998,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "opening-full.trace"
+    },
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 60.013473024694,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 0,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 226.9625,
+        "median": 229.0,
+        "p95": 230,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795464567.05318,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 16.662925,
+        "median": 16.685,
+        "p95": 19.936,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1600,
+        960
+      ],
+      "ok": true,
+      "omitted_layer": "land",
+      "os": "macOS",
+      "process_id": 10307,
+      "scale_percent": 100,
+      "scene": "opening",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795464563.0539,
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.497937501159807,
+        "median": 0.446000009775162,
+        "p95": 0.78600001335144,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "opening-land.trace"
+    },
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 58.8627135122302,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 0,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 246.4875,
+        "median": 245.0,
+        "p95": 253,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795464572.36452,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 16.9886833333333,
+        "median": 16.713,
+        "p95": 19.289,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1200,
+        720
+      ],
+      "ok": true,
+      "omitted_layer": "land",
+      "os": "macOS",
+      "process_id": 10307,
+      "scale_percent": 75,
+      "scene": "opening",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795464568.28715,
+      "terrain_draw_cpu_ms": {
+        "mean": 0.0472541666473262,
+        "median": 0.0430000014603138,
+        "p95": 0.0860000029206276,
+        "samples": 240
+      },
+      "terrain_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.428662501741201,
+        "median": 0.414000004529953,
+        "p95": 0.629000008106232,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "opening-land.trace"
+    },
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 60.0011550222342,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 0,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 226.6125,
+        "median": 229.0,
+        "p95": 230,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795464808.07,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 16.6663458333333,
+        "median": 16.6365,
+        "p95": 17.88,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1600,
+        960
+      ],
+      "ok": true,
+      "omitted_layer": "water",
+      "os": "macOS",
+      "process_id": 10953,
+      "scale_percent": 100,
+      "scene": "opening",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795464804.06998,
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.495066665578634,
+        "median": 0.483500003814697,
+        "p95": 0.75,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "opening-water.trace"
+    },
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 58.2877535244055,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 0,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 246.920833333333,
+        "median": 245.5,
+        "p95": 253,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795464813.4047,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 17.1562625,
+        "median": 16.709,
+        "p95": 23.629,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1200,
+        720
+      ],
+      "ok": true,
+      "omitted_layer": "water",
+      "os": "macOS",
+      "process_id": 10953,
+      "scale_percent": 75,
+      "scene": "opening",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795464809.28708,
+      "terrain_draw_cpu_ms": {
+        "mean": 0.0470000001175019,
+        "median": 0.0455000009387732,
+        "p95": 0.096000000834465,
+        "samples": 240
+      },
+      "terrain_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.431070832380404,
+        "median": 0.407499998807907,
+        "p95": 0.754999995231628,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "opening-water.trace"
+    },
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 58.2754686258232,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 0,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 214.470833333333,
+        "median": 215.0,
+        "p95": 216,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795465072.32093,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 17.1598791666667,
+        "median": 16.665,
+        "p95": 17.916,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1600,
+        960
+      ],
+      "ok": true,
+      "omitted_layer": "vegetation",
+      "os": "macOS",
+      "process_id": 11759,
+      "scale_percent": 100,
+      "scene": "opening",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795465068.20244,
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.412541667185724,
+        "median": 0.344999998807907,
+        "p95": 0.698000013828278,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "opening-vegetation.trace"
+    },
+    {
+      "adapter": "Apple M2 (Apple8)",
+      "avg_fps": 60.0877882586459,
+      "camera_center": [
+        1152.67980957031,
+        665.5
+      ],
+      "camera_zoom": 0.676532745361328,
+      "day": 0,
+      "display_refresh_hz": 60.0,
+      "draw_calls": {
+        "mean": 216.25,
+        "median": 216.0,
+        "p95": 217,
+        "samples": 240
+      },
+      "driver": "metal",
+      "end_unix_s": 1795465077.95313,
+      "engine_max_fps": 0,
+      "fixed_view": true,
+      "fog_px": [
+        800,
+        480
+      ],
+      "frame_interval_ms": {
+        "mean": 16.6423166666667,
+        "median": 16.617,
+        "p95": 18.311,
+        "samples": 240
+      },
+      "godot": "4.6.3-stable (official)",
+      "gpu_timing_source": "system_trace_required",
+      "land_water_px": [
+        1200,
+        720
+      ],
+      "ok": true,
+      "omitted_layer": "vegetation",
+      "os": "macOS",
+      "process_id": 11759,
+      "scale_percent": 75,
+      "scene": "opening",
+      "sizes_ok": true,
+      "speed": 1.0,
+      "start_unix_s": 1795465073.95889,
+      "terrain_draw_cpu_ms": {
+        "mean": 0.0513958336863046,
+        "median": 0.0515000000596046,
+        "p95": 0.0900000035762787,
+        "samples": 240
+      },
+      "terrain_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "vegetation_px": [
+        1600,
+        960
+      ],
+      "vsync_mode": 0,
+      "window_draw_cpu_ms": {
+        "mean": 0.412475001004835,
+        "median": 0.340499997138977,
+        "p95": 0.629000008106232,
+        "samples": 240
+      },
+      "window_draw_gpu_ms": {
+        "mean": null,
+        "median": null,
+        "p95": null,
+        "samples": 0
+      },
+      "window_px": [
+        1600,
+        960
+      ],
+      "trace": "opening-vegetation.trace"
+    }
+  ],
+  "trace_summaries": [
+    {
+      "scene": "explored",
+      "scale_percent": 100,
+      "omitted_layer": "",
+      "process_id": 6630,
+      "start_unix_s": 1795463356.47147,
+      "end_unix_s": 1795463360.4708,
+      "source": "explored-full.trace",
+      "capture_frames": 240,
+      "present_requests": 240,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 240,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 240, "mean": 9.617135391666666, "median": 9.2965825, "p95": 14.901166},
+      "observed_drawable_wait_event_ms": {"samples": 240, "mean": 10.1668357875, "median": 10.1355415, "p95": 14.134708},
+      "observed_presentation_delta_ms": {"samples": 240, "mean": 16.67135388333333, "median": 16.666624, "p95": 16.666708},
+      "gpu_active_intervals_in_window": 2349
+    },
+    {
+      "scene": "explored",
+      "scale_percent": 75,
+      "omitted_layer": "",
+      "process_id": 6630,
+      "start_unix_s": 1795463361.77099,
+      "end_unix_s": 1795463365.7693,
+      "source": "explored-full.trace",
+      "capture_frames": 240,
+      "present_requests": 240,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 240,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 240, "mean": 9.384242408333334, "median": 8.800979, "p95": 14.597709},
+      "observed_drawable_wait_event_ms": {"samples": 240, "mean": 9.805120483333333, "median": 9.6379375, "p95": 13.915208},
+      "observed_presentation_delta_ms": {"samples": 240, "mean": 16.668598375, "median": 16.666625, "p95": 16.66675},
+      "gpu_active_intervals_in_window": 3073
+    },
+    {
+      "scene": "explored",
+      "scale_percent": 100,
+      "omitted_layer": "land",
+      "process_id": 7162,
+      "start_unix_s": 1795463604.02125,
+      "end_unix_s": 1795463608.07085,
+      "source": "explored-land.trace",
+      "capture_frames": 240,
+      "present_requests": 240,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 240,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 240, "mean": 9.764854329166667, "median": 8.9892915, "p95": 15.054875},
+      "observed_drawable_wait_event_ms": {"samples": 231, "mean": 10.065415004329004, "median": 9.997792, "p95": 14.771417},
+      "observed_presentation_delta_ms": {"samples": 240, "mean": 16.647646091666665, "median": 16.666625, "p95": 16.666708},
+      "gpu_active_intervals_in_window": 2351
+    },
+    {
+      "scene": "explored",
+      "scale_percent": 75,
+      "omitted_layer": "land",
+      "process_id": 7162,
+      "start_unix_s": 1795463609.37075,
+      "end_unix_s": 1795463613.37074,
+      "source": "explored-land.trace",
+      "capture_frames": 240,
+      "present_requests": 240,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 240,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 240, "mean": 10.711272933333333, "median": 12.008875, "p95": 14.082043},
+      "observed_drawable_wait_event_ms": {"samples": 240, "mean": 10.070900191666667, "median": 10.1016665, "p95": 13.352625},
+      "observed_presentation_delta_ms": {"samples": 240, "mean": 16.666594875, "median": 16.666583, "p95": 16.666708},
+      "gpu_active_intervals_in_window": 3074
+    },
+    {
+      "scene": "explored",
+      "scale_percent": 100,
+      "omitted_layer": "water",
+      "process_id": 7821,
+      "start_unix_s": 1795463872.56963,
+      "end_unix_s": 1795463876.57006,
+      "source": "explored-water.trace",
+      "capture_frames": 240,
+      "present_requests": 240,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 240,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 240, "mean": 8.796816054166667, "median": 8.4958975, "p95": 12.711043},
+      "observed_drawable_wait_event_ms": {"samples": 239, "mean": 9.701233263598326, "median": 9.835917, "p95": 14.437208},
+      "observed_presentation_delta_ms": {"samples": 240, "mean": 16.673422770833334, "median": 16.666583, "p95": 16.666708},
+      "gpu_active_intervals_in_window": 2361
+    },
+    {
+      "scene": "explored",
+      "scale_percent": 75,
+      "omitted_layer": "water",
+      "process_id": 7821,
+      "start_unix_s": 1795463877.82007,
+      "end_unix_s": 1795463881.81926,
+      "source": "explored-water.trace",
+      "capture_frames": 240,
+      "present_requests": 240,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 240,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 240, "mean": 9.1178026625, "median": 9.868084, "p95": 12.253123},
+      "observed_drawable_wait_event_ms": {"samples": 238, "mean": 9.431867659663865, "median": 9.742208, "p95": 14.280958},
+      "observed_presentation_delta_ms": {"samples": 240, "mean": 16.668766054166667, "median": 16.666625, "p95": 16.666791},
+      "gpu_active_intervals_in_window": 3070
+    },
+    {
+      "scene": "explored",
+      "scale_percent": 100,
+      "omitted_layer": "vegetation",
+      "process_id": 8444,
+      "start_unix_s": 1795464099.37192,
+      "end_unix_s": 1795464103.65307,
+      "source": "explored-vegetation.trace",
+      "capture_frames": 240,
+      "present_requests": 239,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 239,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 239, "mean": 9.328079246861925, "median": 8.699544, "p95": 15.720374},
+      "observed_drawable_wait_event_ms": {"samples": 230, "mean": 9.157545095652173, "median": 9.9850625, "p95": 14.121375},
+      "observed_presentation_delta_ms": {"samples": 239, "mean": 16.487494845188284, "median": 16.666583, "p95": 16.666666},
+      "gpu_active_intervals_in_window": 2366
+    },
+    {
+      "scene": "explored",
+      "scale_percent": 75,
+      "omitted_layer": "vegetation",
+      "process_id": 8444,
+      "start_unix_s": 1795464104.95293,
+      "end_unix_s": 1795464108.95568,
+      "source": "explored-vegetation.trace",
+      "capture_frames": 240,
+      "present_requests": 241,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 241,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 241, "mean": 8.07297186307054, "median": 7.836831, "p95": 12.611042},
+      "observed_drawable_wait_event_ms": {"samples": 236, "mean": 9.636317788135592, "median": 9.619666500000001, "p95": 14.295875},
+      "observed_presentation_delta_ms": {"samples": 240, "mean": 16.66655467083333, "median": 16.666541, "p95": 16.666708},
+      "gpu_active_intervals_in_window": 3144
+    },
+    {
+      "scene": "opening",
+      "scale_percent": 100,
+      "omitted_layer": "",
+      "process_id": 9473,
+      "start_unix_s": 1795464338.13653,
+      "end_unix_s": 1795464342.20461,
+      "source": "opening-full.trace",
+      "capture_frames": 240,
+      "present_requests": 241,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 241,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 241, "mean": 10.07698179253112, "median": 9.632916, "p95": 15.586875},
+      "observed_drawable_wait_event_ms": {"samples": 232, "mean": 9.829418478448275, "median": 10.058583500000001, "p95": 14.710583},
+      "observed_presentation_delta_ms": {"samples": 238, "mean": 16.52592250840336, "median": 16.666583, "p95": 16.666708},
+      "gpu_active_intervals_in_window": 2364
+    },
+    {
+      "scene": "opening",
+      "scale_percent": 75,
+      "omitted_layer": "",
+      "process_id": 9473,
+      "start_unix_s": 1795464343.46995,
+      "end_unix_s": 1795464347.53697,
+      "source": "opening-full.trace",
+      "capture_frames": 240,
+      "present_requests": 240,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 240,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 240, "mean": 7.9369754375, "median": 6.8639995, "p95": 13.349876},
+      "observed_drawable_wait_event_ms": {"samples": 239, "mean": 9.592877615062761, "median": 9.547917, "p95": 13.764292},
+      "observed_presentation_delta_ms": {"samples": 240, "mean": 16.601693158333333, "median": 16.666625, "p95": 16.666749},
+      "gpu_active_intervals_in_window": 3079
+    },
+    {
+      "scene": "opening",
+      "scale_percent": 100,
+      "omitted_layer": "land",
+      "process_id": 10307,
+      "start_unix_s": 1795464563.0539,
+      "end_unix_s": 1795464567.05318,
+      "source": "opening-land.trace",
+      "capture_frames": 240,
+      "present_requests": 240,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 240,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 240, "mean": 9.054636525, "median": 8.3138945, "p95": 14.719667},
+      "observed_drawable_wait_event_ms": {"samples": 239, "mean": 9.38440031380753, "median": 9.672875, "p95": 14.318708},
+      "observed_presentation_delta_ms": {"samples": 240, "mean": 16.668913829166666, "median": 16.666625, "p95": 16.66675},
+      "gpu_active_intervals_in_window": 2343
+    },
+    {
+      "scene": "opening",
+      "scale_percent": 75,
+      "omitted_layer": "land",
+      "process_id": 10307,
+      "start_unix_s": 1795464568.28715,
+      "end_unix_s": 1795464572.36452,
+      "source": "opening-land.trace",
+      "capture_frames": 240,
+      "present_requests": 241,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 241,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 241, "mean": 9.8125985186722, "median": 10.597459, "p95": 12.241},
+      "observed_drawable_wait_event_ms": {"samples": 230, "mean": 9.454369386956522, "median": 9.4424375, "p95": 14.034292},
+      "observed_presentation_delta_ms": {"samples": 240, "mean": 16.462599933333333, "median": 16.666625, "p95": 16.66675},
+      "gpu_active_intervals_in_window": 3082
+    },
+    {
+      "scene": "opening",
+      "scale_percent": 100,
+      "omitted_layer": "water",
+      "process_id": 10953,
+      "start_unix_s": 1795464804.06998,
+      "end_unix_s": 1795464808.07,
+      "source": "opening-water.trace",
+      "capture_frames": 240,
+      "present_requests": 240,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 240,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 240, "mean": 9.490510316666667, "median": 9.7542285, "p95": 11.353168},
+      "observed_drawable_wait_event_ms": {"samples": 240, "mean": 9.781011795833333, "median": 9.7049585, "p95": 13.8665},
+      "observed_presentation_delta_ms": {"samples": 240, "mean": 16.666600916666667, "median": 16.666583, "p95": 16.66675},
+      "gpu_active_intervals_in_window": 2344
+    },
+    {
+      "scene": "opening",
+      "scale_percent": 75,
+      "omitted_layer": "water",
+      "process_id": 10953,
+      "start_unix_s": 1795464809.28708,
+      "end_unix_s": 1795464813.4047,
+      "source": "opening-water.trace",
+      "capture_frames": 240,
+      "present_requests": 240,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 240,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 240, "mean": 8.081860170833334, "median": 8.485247999999999, "p95": 10.181417},
+      "observed_drawable_wait_event_ms": {"samples": 237, "mean": 9.400049620253165, "median": 9.269917, "p95": 14.294834},
+      "observed_presentation_delta_ms": {"samples": 240, "mean": 16.532061175, "median": 16.666625, "p95": 16.66675},
+      "gpu_active_intervals_in_window": 3078
+    },
+    {
+      "scene": "opening",
+      "scale_percent": 100,
+      "omitted_layer": "vegetation",
+      "process_id": 11759,
+      "start_unix_s": 1795465068.20244,
+      "end_unix_s": 1795465072.32093,
+      "source": "opening-vegetation.trace",
+      "capture_frames": 240,
+      "present_requests": 239,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 239,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 239, "mean": 9.94684741004184, "median": 9.151626, "p95": 15.032625},
+      "observed_drawable_wait_event_ms": {"samples": 237, "mean": 10.445912662447258, "median": 10.761792, "p95": 13.186458},
+      "observed_presentation_delta_ms": {"samples": 238, "mean": 16.73897505042017, "median": 16.666625, "p95": 16.66675},
+      "gpu_active_intervals_in_window": 2350
+    },
+    {
+      "scene": "opening",
+      "scale_percent": 75,
+      "omitted_layer": "vegetation",
+      "process_id": 11759,
+      "start_unix_s": 1795465073.95889,
+      "end_unix_s": 1795465077.95313,
+      "source": "opening-vegetation.trace",
+      "capture_frames": 240,
+      "present_requests": 239,
+      "unmapped_request_buffers": 0,
+      "requested_frame_ids": 239,
+      "frames_missing_gpu_activity": [],
+      "gpu_work_ms": {"samples": 239, "mean": 9.872400359832636, "median": 11.069835, "p95": 11.73925},
+      "observed_drawable_wait_event_ms": {"samples": 240, "mean": 9.432529854166667, "median": 9.560125, "p95": 13.187208},
+      "observed_presentation_delta_ms": {"samples": 240, "mean": 16.670879420833334, "median": 16.666625, "p95": 16.666708},
+      "gpu_active_intervals_in_window": 3071
+    }
+  ]
+}

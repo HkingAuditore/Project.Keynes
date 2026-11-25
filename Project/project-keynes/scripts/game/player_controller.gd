@@ -743,6 +743,7 @@ func _connect_runtime() -> void:
 			"simulation_command_results": _on_simulation_command_results,
 			"player_confirmation_updated": _on_player_confirmation_updated,
 			"colonization_quotes_ready": colonization_quotes_ready.emit,
+			"simulation_ui_updated": _on_simulation_ui_updated,
 			"simulation_view_updated": _on_simulation_view_updated}
 		for event in runtime_callbacks:
 			if _runtime_host.has_signal(event) and not _runtime_host.is_connected(event, runtime_callbacks[event]):
@@ -759,13 +760,18 @@ func _connect_runtime() -> void:
 func _on_simulation_view_updated(_from_day: int, to_day: int, _generation: int) -> void:
 	if _runtime_host == null or _world_clock == null:
 		return
-	if _ideology_facade != null:
-		_ideology_facade.drain_receipts()
-	_sync_time_ui()
+	if _camera == null or _camera.drawn_frame == null:
+		refresh_selected_map_view(to_day)
+
+func refresh_selected_map_view(day: int) -> void:
 	if _ui_manager != null and _selected_cell != null:
-		_ui_manager.refresh_selected_daily_lines(false, to_day)
+		_ui_manager.refresh_selected_daily_lines(false, day)
 	if _ui_manager != null and _ui_manager.has_method("notify_committed_day"):
 		_ui_manager.notify_committed_day()
+
+
+func _on_simulation_ui_updated(_from_day: int, _to_day: int, _generation: int) -> void:
+	_sync_time_ui()
 
 func _on_simulation_day_records(_records: Array) -> void:
 	var commit: Dictionary = _runtime_host._runtime_last_commit
@@ -1070,6 +1076,9 @@ func _on_day_changed(day_idx: int) -> void:
 func _on_season_changed(season_idx: int) -> void:
 	if _runtime_host != null:
 		_runtime_host.on_season_changed(season_idx)
+	# Runtime dates refresh the selected cell when the matching map is drawn.
+	if _world_clock != null and _world_clock._publishing_runtime_date:
+		return
 	if _ui_manager != null:
 		_ui_manager.refresh_selected_daily_lines(true)
 	sync_ui()
@@ -1078,6 +1087,9 @@ func _on_season_changed(season_idx: int) -> void:
 func _on_year_changed(year_idx: int) -> void:
 	if _runtime_host != null:
 		_runtime_host.on_year_changed(year_idx)
+	# Runtime dates refresh the selected cell when the matching map is drawn.
+	if _world_clock != null and _world_clock._publishing_runtime_date:
+		return
 	if _ui_manager != null:
 		_ui_manager.refresh_selected_daily_lines(true)
 	sync_ui()
@@ -1086,7 +1098,6 @@ func _on_year_changed(year_idx: int) -> void:
 func _on_visual_day_phase_changed(phase: float) -> void:
 	if _runtime_host != null:
 		_runtime_host.on_visual_day_phase_changed(phase)
-	_sync_time_ui()
 
 
 func _on_speed_changed(speed: float) -> void:

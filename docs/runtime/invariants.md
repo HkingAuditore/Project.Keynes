@@ -8,12 +8,12 @@
 
 | Metric | Count |
 | --- | --- |
-| Invariants | 2767 |
+| Invariants | 2772 |
 | kind=fatal | 4 |
 | kind=rejection | 30 |
 | kind=backpressure | 0 |
-| kind=unknown | 2733 |
-| status=active | 2767 |
+| kind=unknown | 2738 |
+| status=active | 2772 |
 | status=retired | 0 |
 | entries with witness | 4 |
 | entries with playbook | 36 |
@@ -21,7 +21,7 @@
 
 ## Invariants by module
 
-### ECON (895)
+### ECON (900)
 
 | ID | reason | kind | stage | owner | status |
 | --- | --- | --- | --- | --- | --- |
@@ -920,6 +920,11 @@
 | INV-ECON-0893 | `family_trait_command_strength_invalid` | rejection | narrative_command | economy.narrative | active |
 | INV-ECON-0894 | `save_building_maintenance_exception_invalid` | rejection | save_restore | economy.persistence | active |
 | INV-ECON-0895 | `save_market_signal_observation_size_invalid` | rejection | save_restore | economy.persistence | active |
+| INV-ECON-0896 | `demand_basis_cell_slot_reuse_or_isolation_failed` | unknown | unclassified | economy.unassigned | active |
+| INV-ECON-0897 | `demand_basis_dense_world_capacity_exceeds_its_cell_count` | unknown | unclassified | economy.unassigned | active |
+| INV-ECON-0898 | `demand_basis_employment_refresh_did_not_replace_the_cached_row` | unknown | unclassified | economy.unassigned | active |
+| INV-ECON-0899 | `demand_basis_new_day_reused_stale_lookup_or_values` | unknown | unclassified | economy.unassigned | active |
+| INV-ECON-0900 | `demand_basis_unregistered_cell_must_compute_without_allocating_cache` | unknown | unclassified | economy.unassigned | active |
 
 ### CLIMATE (232)
 

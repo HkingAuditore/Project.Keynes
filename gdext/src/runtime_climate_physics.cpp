@@ -1931,6 +1931,31 @@ bool physics_state_self_test(std::string &error) {
         restored.state_hash() != restored_hash) {
         error = "physics_state_corruption_accepted"; return false;
     }
+    st.note_wind_solve(st.committed_day);
+    if (!serialize_physics_state(st, blob, why) || !st.wind_display_signature) {
+        error = "physics_wind_signature_missing:" + why; return false;
+    }
+    const auto initial_wind = st.wind_display_signature->words;
+    st.note_wind_solve(++st.committed_day);
+    if (!serialize_physics_state(st, blob, why) || !st.wind_display_signature ||
+        st.wind_display_signature->words != initial_wind) {
+        error = "physics_wind_signature_depends_on_solve_day:" + why; return false;
+    }
+    for (auto *lane : {&st.wind_x, &st.wind_y, &st.wind_speed}) {
+        const float original = lane->back();
+        lane->back() = 0.5f;
+        st.note_wind_solve(++st.committed_day);
+        if (!serialize_physics_state(st, blob, why) || !st.wind_display_signature ||
+            st.wind_display_signature->words == initial_wind) {
+            error = "physics_wind_signature_missed_changed_cell:" + why; return false;
+        }
+        lane->back() = original;
+    }
+    st.note_wind_solve(++st.committed_day);
+    if (!serialize_physics_state(st, blob, why) || !st.wind_display_signature ||
+        st.wind_display_signature->words != initial_wind) {
+        error = "physics_wind_signature_missed_restored_values:" + why; return false;
+    }
     return true;
 }
 

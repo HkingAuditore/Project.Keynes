@@ -936,17 +936,6 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
         error = "merchant_index_shape_invalid";
         return false;
     }
-    const size_t cache_cells = static_cast<size_t>(_cell_count.get());
-    const size_t cache_variants = cache_cells * _variants.size();
-    const size_t cache_needs = cache_cells * _needs.size();
-    if (_demand_basis_cache_day.size() != cache_cells)
-        _demand_basis_cache_day.assign(
-            cache_cells, std::numeric_limits<int64_t>::min());
-    _demand_basis_variant_scores.resize(cache_variants);
-    _demand_basis_variant_prices.resize(cache_variants);
-    _demand_basis_need_score_sums.resize(cache_needs);
-    _demand_basis_need_composites.resize(cache_needs);
-    _demand_basis_need_environment.resize(cache_needs);
     bool merchant_index_dirty = false;
     for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
         const int32_t primary = _merchant_primary_slot[cell];
@@ -1418,6 +1407,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     _country_research_consumed_opening = opening_research_consumed;
     _opening_audit_force_full = false;
     _audit_ms += elapsed_ms(audit_started);
+    clear_demand_basis_day();
     _sample_day = day_index;
     _current_day = day_index;
     begin_incremental_audit_epoch();

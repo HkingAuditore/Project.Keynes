@@ -29,6 +29,7 @@ func _run() -> void:
 	_test_mid_cycle_lock_holds(compiled)
 	_test_no_missed_cells_on_n3(compiled)
 	_test_sparse_live_workset(compiled)
+	_test_demand_basis_worker_parity(compiled)
 	_test_save_restore_keeps_buckets(compiled)
 	_test_ecp2_owned_state_roundtrip(compiled)
 	_test_food_access_between_settlements(compiled)
@@ -299,8 +300,123 @@ func _test_sparse_live_workset(compiled: Dictionary) -> void:
 		_expect("sparse due_cells stay inside the live set",
 			int(report.get("due_cells", -1)) <= 3 and
 			int(report.get("economy_live_cells", 0)) == 3)
+		var cache: Dictionary = ext.get_economy_report().get("demand_basis_cache", {})
+		_expect("sparse day %d has fresh rows only for its due markets" % day,
+			int(cache.get("sample_day", -1)) == day and
+			int(cache.get("valid_cells", -2)) == int(report.get("due_cells", -1)))
 	_expect("one market cycle due_cells sum equals live cells, not cell_count",
 		total == 3)
+
+
+func _test_demand_basis_worker_parity(compiled: Dictionary) -> void:
+	# Two cells have wages, retention and household demand. The other markets
+	# reach the cache for the first time only when households start to settle.
+	const CELLS := 8
+	const SEED := 853
+	var workshop := (compiled.building_type_ids as PackedStringArray).find("knapping_workshop")
+	var artisan := (compiled.signature_keys as PackedStringArray).find("artisan|default")
+	_expect("demand cache fixture has its workshop and owner profession",
+		workshop >= 0 and artisan >= 0)
+	if workshop < 0 or artisan < 0:
+		return
+	var buildings := {
+		"building_cells": PackedInt32Array([0, CELLS - 1]),
+		"building_type_ids": PackedInt32Array([workshop, workshop]),
+		"building_owner_signature_ids": PackedInt32Array([artisan, artisan]),
+		"building_counts": PackedInt64Array([1, 1]),
+	}
+	var options := {"economy_cadence_force_market_days": 1, "starvation_death_rate_q32": 0}
+	var scalar := _boot(compiled, CELLS, 0.01, 0.01, SEED,
+		options.merged({"worker_enabled": false}), buildings, "artisan|default")
+	var worker := _boot(compiled, CELLS, 0.01, 0.01, SEED,
+		options.merged({"worker_enabled": true, "worker_tasks_hint": 4}), buildings,
+		"artisan|default")
+	var temperatures := PackedFloat32Array()
+	temperatures.resize(CELLS)
+	for day in range(3):
+		temperatures.fill(0.25 + 0.25 * day)
+		for ext in [scalar, worker]:
+			ext.write_f32_range(ext.component_id(&"cell_temp"), 0, temperatures)
+		var scalar_result := _run_day(scalar, day)
+		var worker_result: Dictionary = worker.run_economy_stage_ops_day(day)
+		_expect("demand cache day %d commits through Compact and StageOps" % day,
+			bool(scalar_result.get("done", false)) and not bool(scalar_result.get("fatal", true))
+			and bool(worker_result.get("ok", false)))
+		for ext in [scalar, worker]:
+			var report: Dictionary = ext.get_economy_report()
+			var cache: Dictionary = report.get("demand_basis_cache", {})
+			_expect("demand cache day %d covers the union of building and market cells" % day,
+				int(cache.get("sample_day", -1)) == day and
+				int(cache.get("registered_cells", -1)) == CELLS and
+				int(cache.get("valid_cells", -1)) == CELLS)
+			_expect("demand cache day %d conserves all three ledgers" % day,
+				int(report.get("population_error", -1)) == 0 and
+				int(report.get("money_error", -1)) == 0 and
+				int(report.get("goods_error", -1)) == 0)
+		var scalar_report: Dictionary = scalar.get_economy_report()
+		var worker_report: Dictionary = worker.get_economy_report()
+		_expect("demand cache day %d exercises serial and parallel household fills" % day,
+			int(scalar_report.get("last_completed_market_worker_parallel_dispatches", -1)) == 0
+			and int(worker_report.get("last_completed_market_worker_parallel_dispatches", 0)) > 0
+			and int(worker_report.get("last_completed_market_worker_tasks_max", 0)) > 1)
+		_expect("demand cache day %d has identical complete economy state" % day,
+			scalar.get_economy_state_hash() == worker.get_economy_state_hash())
+		if day == 0:
+			var saved: Dictionary = scalar.capture_economy_ecp2(0)
+			_expect("demand cache source saves on the committed day", bool(saved.get("ok", false)))
+			if not bool(saved.get("ok", false)):
+				return
+			var restored: Dictionary = worker.restore_economy_ecp2(saved.bytes)
+			var cache: Dictionary = worker.get_economy_report().get("demand_basis_cache", {})
+			_expect("same-day restore releases the destination's existing demand rows",
+				bool(restored.get("ok", false)) and int(cache.get("sample_day", -1)) == day
+				and int(cache.get("registered_cells", -1)) == 0
+				and int(cache.get("values_bytes", -1)) == 0
+				and worker.get_economy_state_hash() == scalar.get_economy_state_hash())
+		elif day == 1:
+			_test_demand_cache_restore_rollback(worker)
+	var merchant := (compiled.signature_keys as PackedStringArray).find("merchant|default")
+	var reboot: Dictionary = worker.bootstrap_economy({
+		"cell_indices": PackedInt32Array([CELLS - 1]),
+		"signature_ids": PackedInt32Array([merchant]),
+		"population": PackedInt64Array([20]),
+		"funds": PackedInt64Array([100000000]),
+	}, {})
+	var reopened: Dictionary = worker.get_economy_report().get("demand_basis_cache", {})
+	_expect("a new opening on the same configuration releases old demand storage",
+		bool(reboot.get("ok", false)) and int(reopened.get("values_bytes", -1)) == 0
+		and int(reopened.get("index_bytes", -1)) == 0)
+	var catalog := compiled.duplicate(true)
+	catalog.erase("ok")
+	var reconfigured: Dictionary = scalar.configure_economy(catalog, _profile(), CELLS, SEED + 1)
+	var empty: Dictionary = scalar.get_economy_report().get("demand_basis_cache", {})
+	_expect("reconfiguring the runtime releases both demand rows and their cell index",
+		bool(reconfigured.get("ok", false)) and int(empty.get("values_bytes", -1)) == 0
+		and int(empty.get("index_bytes", -1)) == 0)
+
+
+func _test_demand_cache_restore_rollback(ext: Object) -> void:
+	var saved: Dictionary = ext.capture_economy_ecp2(0)
+	_expect("rollback fixture captures current economy", bool(saved.get("ok", false)))
+	if not bool(saved.get("ok", false)):
+		return
+	var candidate: PackedByteArray = saved.bytes
+	# ECP2 ABI 4 puts a 128-byte typed envelope before the PKEC header chunk.
+	const HEADER := 28 + 128
+	var has_header := candidate.size() > HEADER + 6 and candidate.decode_u32(HEADER) == 0x43454b50
+	_expect("rollback fixture has a typed envelope followed by PKEC", has_header)
+	if not has_header:
+		return
+	# Preserve the outer envelope checksum so the candidate reaches install.
+	candidate.encode_u16(HEADER + 4, 0)
+	candidate.encode_s64(16, _fnv_checkpoint(candidate.slice(24)))
+	var before: int = ext.get_economy_state_hash()
+	var result: Dictionary = ext.restore_economy_ecp2(candidate)
+	var cache: Dictionary = ext.get_economy_report().get("demand_basis_cache", {})
+	_expect("a rejected install rolls back the economy and clears temporary demand rows",
+		not bool(result.get("ok", true)) and String(result.get("reason", "")).ends_with(";rolled_back")
+		and ext.get_economy_state_hash() == before and int(cache.get("values_bytes", -1)) == 0
+		and int(cache.get("index_bytes", -1)) == 0)
 
 
 func _test_save_restore_keeps_buckets(compiled: Dictionary) -> void:

@@ -396,9 +396,9 @@ bool NativeEconomyRuntime::run_building_employment_drain(int64_t &work_done,
         }
         const int32_t end = building_slice_end(_building_cell_cursor);
         for (; _building_cell_cursor < end; ++_building_cell_cursor) {
-            if (!run_building_employment_cell(
-                    cells[static_cast<size_t>(_building_cell_cursor)], true,
-                    error)) {
+            const int32_t cell = cells[static_cast<size_t>(_building_cell_cursor)];
+            register_demand_basis_cell(cell);
+            if (!run_building_employment_cell(cell, true, error)) {
                 fail(error.empty() ? "building_employment_failed" : error);
                 return false;
             }
@@ -488,6 +488,7 @@ bool NativeEconomyRuntime::run_building_production_drain(int64_t &work_done,
         _production_cell_weights_scratch.resize(static_cast<size_t>(total_cells));
         for (int32_t relative = 0; relative < total_cells; ++relative) {
             const int32_t cell = cells[static_cast<size_t>(relative)];
+            register_demand_basis_cell(cell);
             const int32_t group_begin = _building_cell_offsets[cell];
             const int32_t group_end = _building_cell_offsets[cell + 1];
             int64_t cell_work = 1;

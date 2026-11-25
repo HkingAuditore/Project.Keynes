@@ -1,4 +1,4 @@
-"""The agent's working tree: one full checkout reused across runs, so the Godot import cache
+"""Factory working trees: one full checkout per lane, reused across runs, so the Godot import cache
 (`.godot/`, ignored) and SCons objects survive. Tracked files are reset before every run."""
 
 from __future__ import annotations
@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Iterator
 
 from common import must, sh
+from git_remote import lock_remote_refs
 from ticket import touching
 
 SCRATCH = ".factory-"
@@ -15,7 +16,11 @@ GODOT_CPP = "gdext/godot-cpp"
 
 
 def git(workdir: str, *args: str) -> str:
-    return must(["git", "-C", workdir, *args]).rstrip("\n")
+    command = ["git", "-C", workdir, *args]
+    if args[0] in {"fetch", "push"}:
+        with lock_remote_refs(workdir):
+            return must(command).rstrip("\n")
+    return must(command).rstrip("\n")
 
 
 def common_dir(path: str) -> str:
@@ -177,6 +182,20 @@ def conflict_markers(workdir: str, paths: list[str]) -> list[str]:
     return sorted(filter(None, result.out.split("\0")))
 
 
+def validate_conflict_files(workdir: str, resolutions: dict[str, tuple[str, str]]) -> None:
+    for path, (action, _) in resolutions.items():
+        target = Path(workdir) / path
+        if action == "delete":
+            if os.path.lexists(target):
+                raise ValueError(f"Conflict resolution declares deletion but {path!r} still exists")
+        elif target.is_symlink() or not target.is_file() or b"\0" in target.read_bytes():
+            raise ValueError(f"Conflict resolution must keep a regular text file at {path!r}")
+
+    marked = conflict_markers(workdir, list(resolutions))
+    if marked:
+        raise ValueError("conflict markers remain: " + ", ".join(marked))
+
+
 def remote_head(workdir: str, remote: str, branch: str) -> str | None:
     ref = f"refs/heads/{branch}"
     return git(workdir, "ls-remote", "--refs", remote, ref).partition("\t")[0] or None
@@ -245,8 +264,11 @@ def commit(workdir: str, message: str, *, staged: bool = False) -> str:
     return head(workdir)
 
 
-def push(workdir: str, remote: str, branch: str) -> None:
-    git(workdir, "push", "-q", "--force-with-lease", remote, f"HEAD:refs/heads/{branch}")
+def push(workdir: str, remote: str, branch: str, *, expected_head: str | None = None) -> None:
+    lease = "--force-with-lease"
+    if expected_head is not None:
+        lease += f"=refs/heads/{branch}:{expected_head}"
+    git(workdir, "push", "-q", lease, remote, f"HEAD:refs/heads/{branch}")
 
 
 def scratch(workdir: str, name: str) -> str | None:

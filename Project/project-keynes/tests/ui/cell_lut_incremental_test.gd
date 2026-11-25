@@ -4,6 +4,7 @@ extends SceneTree
 #   godot --headless --path . --script res://tests/ui/cell_lut_incremental_test.gd
 
 const RendererWeatherState = preload("res://scripts/rendering/renderer_weather_state.gd")
+const WindSource = preload("res://scripts/rendering/weather_wind_source.gd")
 
 var _checks := 0
 var _failures := 0
@@ -38,6 +39,7 @@ func _run() -> void:
 	_test_dense_native_flush(ext, dirty_world, map)
 	_test_incremental_lut(ext, dirty_world, map)
 	_test_worker_lut_upload_batch()
+	_test_worker_ecology_frame(ext, map)
 
 
 func _make_map() -> MapData:
@@ -202,6 +204,48 @@ class RecordingBaker extends MapBaker:
 		return uploaded_bytes.get(texture.get_instance_id(), PackedByteArray())
 
 
+func _test_worker_ecology_frame(ext: DCWorldExt, map: MapData) -> void:
+	# Match the native slot to the test map's current vitality before comparing bytes.
+	ext.write_f32(ext.component_id(&"cell_vegetation_vitality"), 0, 0.5)
+	var frame := {"transition_age": PackedByteArray([237, 0, 0, 0]),
+		"previous_vitality": PackedByteArray([64, 128, 128, 128])}
+	var bad_frames := [{}, null, {"transition_age": PackedByteArray([237]),
+		"previous_vitality": frame.previous_vitality}, {"transition_age": frame.transition_age,
+		"previous_vitality": PackedByteArray([64])}, {"transition_age": frame.transition_age,
+		"previous_vitality": [64, 128, 128, 128]}]
+	for path in ["gdscript", "gdext"]:
+		var baker := RecordingBaker.new()
+		if path == "gdext":
+			baker.set_world_ext(ext)
+		var world := WorldData.new()
+		world.lut_dims = Vector2i(4, 1)
+		var report := DCCellLutBaker.bake_cell_luts(baker, map, world, true, false,
+			PackedInt32Array(), true, false, {"cell_lut_frame": frame})
+		var ecology := baker.bytes_for(world.eco_lut_tex) if world.eco_lut_tex != null else PackedByteArray()
+		_expect("%s uses published transition age and previous vitality" % path,
+			report.get("lut_encode_path") == path and ecology.size() == 16
+			and ecology[2] == 237 and ecology[3] == 255)
+		var uploads := baker.upload_count
+		for i in bad_frames.size():
+			report = DCCellLutBaker.bake_cell_luts(baker, map, world, true, false,
+				PackedInt32Array(), true, false, {"cell_lut_frame": bad_frames[i]})
+			_expect("%s refuses malformed worker ecology %d before upload" % [path, i],
+				report.get("lut_encode_path") == "none" and report.get("reason") == "invalid_cell_lut_frame"
+				and baker.upload_count == uploads and world.eco_lut_tex != null
+				and baker.bytes_for(world.eco_lut_tex) == ecology)
+		world.lut_dims = Vector2i(1, 1)
+		report = DCCellLutBaker.refresh_cell_luts_daily(baker, map, world,
+			PackedInt32Array(), true, false, false, {"cell_lut_frame": frame})
+		_expect("%s refuses a texture grid smaller than the map" % path,
+			report.get("lut_encode_path") == "none" and report.get("reason") == "invalid_lut_dims"
+			and baker.upload_count == uploads)
+	for i in bad_frames.size():
+		var report: Dictionary = ext.encode_cell_luts({"map": map, "n_cells": 4, "lut_w": 4,
+			"lut_h": 1, "cache_valid": true, "cell_lut_frame": bad_frames[i]})
+		_expect("native encoder refuses malformed worker ecology %d" % i,
+			report.get("reason") == "invalid_cell_lut_frame" and not report.has("eco_lut"))
+
+
 func _test_worker_lut_upload_batch() -> void:
 	var reference: Dictionary = _run_worker_lut_days(false)
 	var batched: Dictionary = _run_worker_lut_days(true)
@@ -312,7 +356,12 @@ func _test_late_presentation() -> void:
 	world.lut_dims = Vector2i(4, 1)
 	var baker := RecordingBaker.new()
 	baker.set_world_ext(ext)
+	baker._last_bake_map = map
 	baker.bake_cell_luts(map, world)
+	var wind := WindSource.new()
+	wind.bind(world, map)
+	_expect("initial weather upload provides the first wind endpoint", wind.update() and wind.current != null)
+	var first_wind: Texture2D = wind.current
 	renderer._map_baker = baker
 	renderer._world = world
 	renderer._weather_layer = WeatherReader.new()
@@ -325,11 +374,19 @@ func _test_late_presentation() -> void:
 	renderer.publish = func() -> void:
 		_expect("live renderer accepts a staged upload",
 				RendererWeatherState.can_defer_cell_lut_upload(renderer, baker, world))
+		map.wind_x_arr[0] = 1.0
+		map.wind_speed_arr[0] = 20.0
+		ext.write_f32(intensity_id, 0, 0.5)
+		DCCellLutBaker.refresh_cell_luts_daily(baker, map, world,
+				PackedInt32Array(), true, true, true)
+		map.wind_x_arr[0] = -1.0
 		ext.write_f32(intensity_id, 0, 0.625)
 		DCCellLutBaker.refresh_cell_luts_daily(baker, map, world,
 				PackedInt32Array(), true, true, true)
 		_expect("worker commit leaves the previous interpolation timestamp alone",
 				world.weather_lut_update_usec == prior)
+		_expect("a wind read before the late upload still sees the last publication",
+				not wind.update() and wind.current == first_wind)
 	await process_frame
 	await process_frame
 	_expect("weather reads the new timestamp in the commit's render frame",
@@ -337,6 +394,11 @@ func _test_late_presentation() -> void:
 			and renderer._weather_layer.timestamp == world.weather_lut_update_usec \
 			and renderer._weather_layer.changed_frame == renderer.committed_frame)
 	_expect("render flush consumes the pending batch", world.staged_cell_lut_upload.is_empty())
+	_expect("late weather upload flips the weather table once for two staged updates",
+			world.weather_table_valid and world.weather_table_cur == 1)
+	_expect("late upload supplies the batch's final wind with the previous texture as its endpoint",
+			wind.update() and wind.has_previous and wind.previous == first_wind
+			and wind._current_wind_bytes.slice(0, 4) == PackedByteArray([0, 127, 255, 255]))
 	renderer.free()
 
 

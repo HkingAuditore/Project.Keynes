@@ -611,14 +611,6 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _environment_hash = static_cast<int64_t>(
         (bootstrap_environment_hash & 0x7fffffffffffffffULL) | 1ULL);
     _committed_cells.assign(cell_count, {});
-    const size_t cache_cells = static_cast<size_t>(cell_count);
-    _demand_basis_cache_day.assign(
-        cache_cells, std::numeric_limits<int64_t>::min());
-    _demand_basis_variant_scores.resize(cache_cells * _variants.size());
-    _demand_basis_variant_prices.resize(cache_cells * _variants.size());
-    _demand_basis_need_score_sums.resize(cache_cells * _needs.size());
-    _demand_basis_need_composites.resize(cache_cells * _needs.size());
-    _demand_basis_need_environment.resize(cache_cells * _needs.size());
     _technology_words = static_cast<int32_t>((_technology_ids.size() + 63) / 64);
     if (_country_runtime == nullptr || !country_reads().economy_available()) {
         reset("country_runtime_required");
@@ -706,6 +698,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         return out;
     }
     _bootstrapped = false;
+    _demand_basis_cache = {};
     population_store().clear(_cell_count.get());
     _birth_residual_q32.assign(
         static_cast<size_t>(_cell_count.get()) * _ethnicity_ids.size(), 0);

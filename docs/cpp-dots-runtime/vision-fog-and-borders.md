@@ -44,6 +44,10 @@ lut --> wx["weather overlay / curtain<br/>按可见性屏蔽"]
 新探索格和境外观察资格变化。主线程冻结输入，日执行线程计算结果，主线程安装后安排地图刷新。
 无变化且已有视野时跳过全图解算。同步模式运行同一原生算法。
 
+每天继续安装已发布的视野和探索副本。实际可见性、迷雾知识度或开关变化时，
+地图更新在本帧提交迷雾贴图，并通知国界、建筑情报、资源和聚落标签使用这份视野。
+陆地和水面裁剪在绘制前读取同一份贴图。资源实例继续按既有预算补齐。
+
 ## 军事探路 trail 与日边界（2026-11-10）
 
 玩家自动探路需要记录“一日内实际走过、但不再是最终落点”的格。Military 只返回
@@ -169,7 +173,9 @@ solve 的 LUT 重烘都会把整张地图刷成未探索。LUT 首烘推迟到 `
 
 视野变化时不能等 `DynamicVisualAtlasUploadSystem` 的日刷——它在 `dirty_count == 0`
 时会 early-return，而视野变化不体现在 climate/weather 的 dirty mask 上。所以
-`refresh_country_visuals()` 显式调 `MapBaker.refresh_cell_luts_daily()` 强制重烘。
+宿主优先将视野变格并入待绘制的每日地图。单独的视野变化由 `refresh_country_visuals()`
+调用 `MapBaker.refresh_cell_luts_daily()` 重烘。保存时由宿主同步已发布视野和建筑情报，
+再由存档服务采集建筑情报。
 
 ## 渲染层次
 

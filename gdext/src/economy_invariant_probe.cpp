@@ -591,6 +591,7 @@ Dictionary EconomyInvariantProbe::replay_incident(const Dictionary &incident) {
 }
 
 bool EconomyInvariantProbe::run(std::string &error) {
+    if (!run_demand_basis_cache(error)) return false;
     {
         auto economy = std::make_unique<NativeEconomyRuntime>();
         RuntimeEconomyEcp2State incomplete;

@@ -1,6 +1,6 @@
 {
   "class": "DCWorldExt",
-  "count": 674,
+  "count": 675,
   "methods": [
     "_debug_poke_f32",
     "_debug_poke_f32_with_flush",
@@ -228,6 +228,7 @@
     "get_city_output_factor_q16",
     "get_class_metric_source_for_test",
     "get_climate_modes_report",
+    "get_climate_physics_commit_info",
     "get_climate_physics_read_view",
     "get_construction_command_receipts",
     "get_country_ai_country_snapshot",

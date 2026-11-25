@@ -653,6 +653,7 @@ public:
     // requested and the worker's first day not yet committed.
     bool climate_main_thread_suppressed() const;
     bool climate_physics_authoritative() const;
+    godot::Dictionary get_climate_physics_commit_info() const;
     godot::Dictionary get_climate_physics_read_view() const;
     // Applies the newest worker-committed Climate day into the DataCore slots
     // and flushes them to MapData. This is the main-thread half of ACTIVE

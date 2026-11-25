@@ -1,6 +1,5 @@
 #include "world_ext.h"
 #include "world_ext_internal.h"
-#include "runtime_day_tail.h"
 #include "world_ext_internal_cell_luts.h"
 
 #include <godot_cpp/core/builtin_ptrcall.hpp>
@@ -169,6 +168,28 @@ godot::Dictionary DCWorldExt::encode_cell_luts(godot::Dictionary opts) {
     const int slots_total = lut_w * lut_h;
     if (slots_total < n_cells) return fail("lut grid smaller than n_cells");
 
+    const bool has_frame = opts.has("cell_lut_frame");
+    PackedByteArray transition_ages;
+    PackedByteArray previous_vitalities;
+    if (has_frame) {
+        const Variant value = opts["cell_lut_frame"];
+        if (value.get_type() == Variant::DICTIONARY) {
+            const Dictionary frame = value;
+            const Variant ages = frame.get("transition_age", Variant());
+            const Variant vitalities = frame.get("previous_vitality", Variant());
+            if (ages.get_type() == Variant::PACKED_BYTE_ARRAY) transition_ages = ages;
+            if (vitalities.get_type() == Variant::PACKED_BYTE_ARRAY) previous_vitalities = vitalities;
+        }
+        if (transition_ages.size() != n_cells || previous_vitalities.size() != n_cells) {
+            out["reason"] = String("invalid_cell_lut_frame");
+            out["path"] = String("none");
+            UtilityFunctions::push_warning("[DCWorldExt] encode_cell_luts rejected worker publication: expected ",
+                n_cells, " transition ages and previous vitalities, got ",
+                transition_ages.size(), " and ", previous_vitalities.size());
+            return out;
+        }
+    }
+
     Object *map = opts.has("map") ? Object::cast_to<Object>(opts["map"]) : nullptr;
 
     // SoA 槽位（与 run_atlas_pipeline_step / encode_ecology_visual_atlas 同源）。
@@ -299,9 +320,6 @@ godot::Dictionary DCWorldExt::encode_cell_luts(godot::Dictionary opts) {
     uint8_t * const __restrict PV_VEG = st->lut_prev_veg.ptrw();
     uint8_t * const __restrict PV_VIT = st->lut_prev_vit.ptrw();
     uint8_t * const __restrict TR = st->lut_transition_age.ptrw();
-    const auto &tail = _runtime_display_commit.day_tail;
-    const auto *model = tail && tail->cell_luts.transition_age.size() == size_t(n_cells)
-        && bool(opts.get("runtime_frame", false)) ? &tail->cell_luts : nullptr;
     const bool eff_cache_valid = cache_valid_opt && lut_state_ok;
 
     uint8_t * const __restrict ENUM = st->lut_enum_data.ptrw();
@@ -384,9 +402,9 @@ godot::Dictionary DCWorldExt::encode_cell_luts(godot::Dictionary opts) {
         const int cur_vit_byte = pk_q01_byte(double(VIT[ci]));
         int transition_age;
         int prev_vit_byte;
-        if (model) {
-            transition_age = model->transition_age[ci];
-            prev_vit_byte = model->previous_vitality[ci];
+        if (has_frame) {
+            transition_age = transition_ages[ci];
+            prev_vit_byte = previous_vitalities[ci];
         } else if (eff_cache_valid) {
             const int prev_veg = int(PV_VEG[ci]);
             prev_vit_byte = int(PV_VIT[ci]);

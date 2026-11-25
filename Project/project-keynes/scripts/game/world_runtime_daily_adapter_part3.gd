@@ -1,7 +1,6 @@
 extends RefCounted
 
 ## Extracted world_runtime_daily_adapter.gd group 3; state stays with host.
-const RendererWeatherState = preload("res://scripts/rendering/renderer_weather_state.gd")
 const EconomyDisplay = preload("res://scripts/economy/economy_facade_display.gd")
 
 func _apply_season_display(map: MapData, applied: Dictionary) -> bool:
@@ -76,6 +75,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		var old_day: int = host._runtime_commit_day
 		host._runtime_commit_generation = generation
 		host._runtime_commit_day = commit_day
+		host.map_fields_received.emit(commit_day)
 		if commit_day <= old_day or int(commit.get("from_day", -1)) == commit_day:
 			host._generator.get_data_core_world_ext().finish_runtime_display_frame()
 			host._publish_player_confirmation(host._runtime_control_state())
@@ -123,20 +123,6 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		host.finish_daily_tick(0.0)
 		if dcp:
 			host._dcp_finish_ms = float(Time.get_ticks_usec() - finish_usec) / 1000.0
-	var visual_started_us = Time.get_ticks_usec()
-	if bool(report.get("authority_ready", false)):
-		var defer_cell_lut_upload := RendererWeatherState.can_defer_cell_lut_upload(
-				host._renderer, host._generator._baker, host._world_data)
-		host._generator.publish_worker_climate_visuals(defer_cell_lut_upload, commit)
-		# 不能在这里清 `_vision_dirty_indices`：它是 `refresh_country_visuals()`
-		# (world_runtime_visual_adapter.gd:231) 触发 `_republish_cell_luts()` 的唯一输入，
-		# 而 cell_table 第 2 层（PW_CELL_FIELD 路径的雾 k）只有它能重烘。气候脏格
-		# 与 vision 脏格不是同一集合，提前清空会让 aux 层永远停在初始 255（雾全透明）。
-		# 消费与清空都在 adapter:233，那里烘完才清。
-		if host._renderer != null:
-			host._renderer.set_season_phase(host._world_clock.season_phase_for_day(host._runtime_commit_day))
-			host._renderer.set_climate_anomaly(host._world_clock.climate_anomaly)
-		host.mark_map_overlay_dirty(&"worker_committed")
 	if not days.is_empty():
 		host.simulation_day_records.emit(days)
 	if host._world_clock != null:
@@ -149,19 +135,16 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 			commit["colonization_receipts"])
 	host._publish_player_confirmation(host._runtime_control_state())
 	host._gm_adapter.consume_territory_receipts(host)
+	var ideology = host._generator.get_ideology_facade()
+	if ideology != null:
+		ideology.drain_receipts()
 	host.simulation_committed.emit(from_day, host._runtime_commit_day, host._runtime_commit_generation)
 	ext.finish_runtime_display_frame()
+	if not whole_graph:
+		# This path publishes the installed map directly, without a queued worker texture.
+		host.map_texture_published.emit(commit_day)
 	host._presentation.queue_worker_commit(from_day,
-			host._runtime_commit_day, host._runtime_commit_generation)
-	host._runtime_last_visual_apply_ms = float(Time.get_ticks_usec() - visual_started_us) / 1000.0
-	host._sched_proc_visual_ms += host._runtime_last_visual_apply_ms
-	if dcp:
-		host._dcp_visual_ms = host._runtime_last_visual_apply_ms
-	if host._generator.has_method("record_runtime_visual_timings"):
-		host._generator.record_runtime_visual_timings(
-			host._runtime_last_ui_feedback_ms,
-			host._runtime_last_visual_apply_ms,
-			host._runtime_last_gpu_upload_ms)
+			host._runtime_commit_day, host._runtime_commit_generation, commit if whole_graph else {})
 
 
 func military_report(host) -> Dictionary:

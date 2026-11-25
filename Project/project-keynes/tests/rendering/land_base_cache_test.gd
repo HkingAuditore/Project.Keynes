@@ -35,7 +35,7 @@ func _run() -> void:
 	var loading := game.get_node("UI/UIRoot/ModalLayer/WorldLoadingOverlay") as Control
 	while loading.visible:
 		await loading.visibility_changed
-	var land := game.get_node("WorldRoot/HexRenderer") as HexRenderer
+	var land := game.get_node("%WorldRoot/HexRenderer") as HexRenderer
 	var camera := game.get_node("MapCamera") as MapCamera
 	var cache := land._land_base_cache
 	game.get_node("WorldClock").pause(true)
@@ -46,8 +46,8 @@ func _run() -> void:
 	var water_time := land._world_time
 	var fog_time := land.fog_of_war_layer()._world_time
 	land.set_fog_of_war_enabled(true, false)
-	await RenderingServer.frame_post_draw
-	await RenderingServer.frame_post_draw
+	await _drawable_frame()
+	await _drawable_frame()
 	_check(land._world_time > water_time and land.fog_of_war_layer()._world_time > fog_time,
 		"water and fog animation clocks advance with caching enabled")
 	game.get_node("WorldClock").pause(true)
@@ -67,37 +67,37 @@ func _run() -> void:
 	game.process_mode = Node.PROCESS_MODE_DISABLED
 	for scale_percent in [100, 75, 100]:
 		land.set_terrain_render_scale(scale_percent, Viewport.MSAA_DISABLED)
-		await RenderingServer.frame_post_draw
-		await RenderingServer.frame_post_draw
+		await _drawable_frame()
+		await _drawable_frame()
 		var builds := cache.builds
 		land.set_day_phase(0.27)
-		await RenderingServer.frame_post_draw
+		await _drawable_frame()
 		_check(cache.builds == builds and land._shader_mat.shader == cache._reader and cache._reader != null,
 			"stationary land survives lighting updates at %d%%" % scale_percent)
 		land.biome_tint_strength = 0.5 if land.biome_tint_strength != 0.5 else 0.6
-		await RenderingServer.frame_post_draw
+		await _drawable_frame()
 		_check(cache.builds == builds + 1, "changed land colours refresh before display")
 		await _check_cached_pixels(cache)
 		var revision := land._world.land_base_revision
 		map.fog_k_arr[index] = 255 - map.fog_k_arr[index]
 		map.vision_revision += 1
 		host._republish_cell_luts(PackedInt32Array([index]))
-		await RenderingServer.frame_post_draw
+		await _drawable_frame()
 		_check(land._world.land_base_revision > revision and land._shader_mat.shader != cache._reader,
 			"republished terrain is drawn directly on the first changed frame")
-		await RenderingServer.frame_post_draw
+		await _drawable_frame()
 		_check(land._shader_mat.shader == cache._reader, "the new publication is reusable next frame")
 		camera.restore_view_state(camera.position + Vector2(24, 12), camera.zoom)
 		camera.force_update_scroll()
-		await RenderingServer.frame_post_draw
+		await _drawable_frame()
 		_check(land._shader_mat.shader != cache._reader, "a moved view draws fresh terrain")
 	# At 1600x960, fill alone has unit stretch. The explicit 125% UI
 	# setting exercises canvas stretching on the native output grid.
 	DCFeatureFlags._debug_render_flag("render_viewport")
 	DCFeatureFlags._debug_render_flags["render_viewport"] = 0
 	settings.ui_scaling().set_qa_override({"profile": "mobile", "layout": "fill"})
-	await RenderingServer.frame_post_draw
-	await RenderingServer.frame_post_draw
+	await _drawable_frame()
+	await _drawable_frame()
 	_check(root.content_scale_mode == Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
 		and not root.get_stretch_transform().get_scale().is_equal_approx(Vector2.ONE),
 		"touch layout exercises a non-unit canvas stretch")
@@ -118,7 +118,7 @@ func _run() -> void:
 func _check_cached_pixels(cache: Node) -> void:
 	var cached := root.get_texture().get_image()
 	cache.enabled = false
-	await RenderingServer.frame_post_draw
+	await _drawable_frame()
 	var direct := root.get_texture().get_image()
 	var mean_error := 0.0
 	var count := 0
@@ -130,26 +130,26 @@ func _check_cached_pixels(cache: Node) -> void:
 			count += 3
 	_check(mean_error / count < 1.0 / 255.0, "cached pixels match the direct land material")
 	cache.enabled = true
-	await RenderingServer.frame_post_draw
-	await RenderingServer.frame_post_draw
+	await _drawable_frame()
+	await _drawable_frame()
 
 
 func _check_idle_presentation(game: Node, land: HexRenderer, camera: MapCamera) -> void:
 	var fog := land.fog_of_war_layer()
 	land.set_fog_of_war_enabled(true, false)
 	fog.set_render_scale(50)
-	await RenderingServer.frame_post_draw
+	await _drawable_frame()
 	var updates := 0
 	for frame in 12:
 		var previous: float = fog._shader_mat.get_shader_parameter("world_time")
 		fog._process(1.0 / 30.0)
-		await RenderingServer.frame_post_draw
+		await _drawable_frame()
 		updates += int(previous != fog._shader_mat.get_shader_parameter("world_time"))
 	_check(updates == 6, "idle fog redraws six times in twelve display frames")
 	fog._process(1.0 / 30.0)
 	camera.restore_view_state(camera.position + Vector2(80, 24), camera.zoom)
 	camera.force_update_scroll()
-	await RenderingServer.frame_post_draw
+	await _drawable_frame()
 	_check(is_equal_approx(fog._shader_mat.get_shader_parameter("world_time"), fog._world_time),
 		"moving the camera refreshes fog on the first draw")
 
@@ -158,23 +158,30 @@ func _check_idle_presentation(game: Node, land: HexRenderer, camera: MapCamera) 
 	ui.show()
 	loading.show()
 	land.set_terrain_render_scale(75, Viewport.MSAA_DISABLED)
-	await RenderingServer.frame_post_draw
+	await _drawable_frame()
 	var terrain := land._world_quad.get_viewport() as SubViewport
 	_check(not land.is_visible_in_tree() and terrain.render_target_update_mode == SubViewport.UPDATE_DISABLED,
 		"an opaque full-window loading page skips the world and its scaled terrain")
 	ui.hide()
-	await RenderingServer.frame_post_draw
+	await _drawable_frame()
 	_check(land.is_visible_in_tree(), "a hidden UI layer cannot cover the map")
 	ui.show()
 	loading.modulate.a = 0.8
-	await RenderingServer.frame_post_draw
+	await _drawable_frame()
 	_check(land.is_visible_in_tree() and terrain.render_target_update_mode == SubViewport.UPDATE_ALWAYS,
 		"the first translucent draw restores the scaled terrain")
 	loading.modulate.a = 1.0
 	loading.offset_left += 24.0
-	await RenderingServer.frame_post_draw
+	await _drawable_frame()
 	_check(land.is_visible_in_tree(), "a visible strip at the edge keeps the map live")
 	loading.hide()
+
+
+# A minimized Metal window can signal frame_post_draw for resource work without drawing.
+func _drawable_frame() -> void:
+	await RenderingServer.frame_post_draw
+	while not DisplayServer.window_can_draw():
+		await RenderingServer.frame_post_draw
 
 
 func _check(ok: bool, message: String) -> void:

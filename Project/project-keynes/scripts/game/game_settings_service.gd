@@ -55,8 +55,18 @@ func _ready() -> void:
 	_ui_scaling = MobileUIScalingScript.new()
 	_ui_scaling.name = "MobileUIScaling"
 	add_child(_ui_scaling)
-	load_settings()
+	if coast_pan_requested():
+		# Start windowed before the OS begins an asynchronous fullscreen transition.
+		_settings.window_mode = "windowed"
+		_settings.resolution_width = 1600
+		_settings.resolution_height = 960
+	else:
+		load_settings()
 	apply()
+
+
+func coast_pan_requested() -> bool:
+	return "--coast-pan" in OS.get_cmdline_user_args() or OS.has_feature("coast_pan")
 
 
 ## 移动端缩放策略节点（安全区 / 总缩放 / dp 换算都问它）。
@@ -116,6 +126,9 @@ func load_settings() -> Dictionary:
 
 
 func save_settings() -> Dictionary:
+	# The benchmark starts with its own profile and must never replace player preferences.
+	if coast_pan_requested():
+		return {"ok": true, "code": "coast_pan_ephemeral", "message": ""}
 	var cfg := ConfigFile.new()
 	for key in _settings:
 		cfg.set_value("settings", key, _settings[key])

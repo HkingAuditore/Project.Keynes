@@ -24,6 +24,11 @@ func _ready() -> void:
 	# 「菜单构建」分开：`boot` → `menu_ready` → `ready`（进世界）。
 	WebTelemetry.emit("boot", {"engine_msec": Time.get_ticks_msec()})
 	WebTelemetry.flush()
+	# Opt in from a desktop command line or a dedicated mobile export preset.
+	if get_tree().root.get_node("GameSettings").coast_pan_requested():
+		var probe := load("res://scripts/diagnostics/coast_pan.gd") as GDScript
+		get_tree().root.call_deferred("add_child", probe.new())
+
 	_attach_headless_runner("PK_GAME_SAVE_ROUNDTRIP_TEST",
 		"res://tests/game/game_save_roundtrip_test.gd")
 	# 旧存档续跑：把别的构建写出的存档放进 PK_SAVE_DIR，在已运行的会话里换入，
@@ -115,6 +120,10 @@ func session() -> Dictionary:
 	return _session.duplicate(true)
 
 
+func player_scene_transition_active() -> bool:
+	return _transition_active
+
+
 func report_player_start_failure(result: Dictionary) -> void:
 	player_start_failed.emit(result)
 
@@ -204,8 +213,7 @@ func _finish_player_scene_transition(id: int, overlay: WorldLoadingOverlay, fram
 	if id!=_transition_id:return
 	var scene := request.result as PackedScene
 	if scene == null:
-		overlay.show_failure("游戏场景载入失败。")
-		_transition_active = false
+		_fail_player_scene_transition(overlay, "player_scene_load_failed", "游戏场景载入失败。")
 		return
 	overlay.set_progress("preparing", 0.15)
 	var ext: DCWorldExt = NativeWorld.create()
@@ -217,9 +225,9 @@ func _finish_player_scene_transition(id: int, overlay: WorldLoadingOverlay, fram
 			preview.append(String(missing[i]))
 		var suffix := ", …" if missing.size() > preview.size() else ""
 		# 标题行给玩家看，方法清单留在可复制的详情区与日志里。
-		overlay.show_failure_detailed("游戏组件版本不匹配，无法启动。请更新或重新安装游戏。",
+		_fail_player_scene_transition(overlay, String(native_error.get("reason", "native_world_unavailable")),
+			"游戏组件版本不匹配，无法启动。请更新或重新安装游戏。",
 			"缺少 %d 个方法（%s%s）" % [missing.size(), ", ".join(preview), suffix])
-		_transition_active = false
 		return
 	await LoadingCatalogCache.prepare(ext, frames)
 	if id!=_transition_id:return
@@ -227,13 +235,11 @@ func _finish_player_scene_transition(id: int, overlay: WorldLoadingOverlay, fram
 	if id != _transition_id:
 		return
 	if not bool(closed.get("ok", false)):
-		overlay.show_failure("上一局游戏尚未关闭，请重试。")
-		_transition_active = false
+		_fail_player_scene_transition(overlay, "previous_world_close_failed", "上一局游戏尚未关闭，请重试。", str(closed))
 		return
 	var error := get_tree().change_scene_to_packed(scene)
 	if error != OK:
-		overlay.show_failure("无法进入游戏场景。")
-		_transition_active = false
+		_fail_player_scene_transition(overlay, "scene_change_failed", "无法进入游戏场景。", error_string(error))
 		return
 	await frames.next_frame()
 	await frames.next_frame()
@@ -242,6 +248,15 @@ func _finish_player_scene_transition(id: int, overlay: WorldLoadingOverlay, fram
 	if is_instance_valid(_transition_layer):
 		_transition_layer.queue_free()
 	_transition_active = false
+
+
+func _fail_player_scene_transition(overlay: WorldLoadingOverlay, code: String,
+		message: String, detail: String = "") -> void:
+	_transition_active = false
+	overlay.show_failure_detailed(message, detail)
+	var result := _result(false, code, message)
+	result["detail"] = detail
+	report_player_start_failure(result)
 
 
 func quit_game() -> void:

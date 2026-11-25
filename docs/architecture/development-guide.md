@@ -22,6 +22,8 @@ POD 与 checkpoint。政治目录内容身份必须与保存内容匹配；旧�
 
 改到具体功能（地形起伏、经济平衡、天气/光照 Shader、时代晋升、军事界面、GM 屏蔽、科技节奏、军需市场）时，另读 [专项开发约束](feature-guides.md) 的对应小节。
 
+地图绘制的常规桌面性能复测使用[固定海岸平移场景](../../tools/perf/coast_pan/README.md)。
+
 ## 改一个模块
 
 只要接口不变，改模块内部不需要读其他模块。
@@ -58,6 +60,24 @@ POD 与 checkpoint。政治目录内容身份必须与保存内容匹配；旧�
 4. 保留气候前置提交、域前后故障点、Events 尾部调用、完成检查和 publish 顺序；改这些语义要另行设计并提供回放证据。
 5. 新独立日域会改 ABI（`RuntimeDomainId`），不能当普通表项加。
 6. 改 reads/writes 后同步模块描述符（`runtime_module_contracts.json`），跑 `check_module_contracts.py`；描述符是只读契约，不改调度顺序。新业务域要在 Freeze 入口登记 `RuntimeFrozenInputVersion`。
+
+## 每日结算与每帧显示
+
+宿主在处理帧领取后台已发布的结果。默认每帧检查一次，也可给本局的
+`publication_reader.interval_usec` 设置现实时间间隔。到期后的第一个处理帧一次取回积累的记录。
+暂停日历时仍然检查。存档等同步操作可以立即领取。`simulation_day_records` 保留每一日的顺序，
+`simulation_committed` 标记整批范围，操作回执和待答事项随领取交付。
+普通面板监听 `simulation_ui_updated`。地图按自己的节奏合并地块，贴图处理完成后发送
+`simulation_view_updated`。选格和悬停使用地图实际画出的日期、视野和镜头。
+详见[地图显示更新](feature-guides.md#地图显示更新)。
+
+业务命令、逐日计算和待答判定归执行器。
+
+时钟发布允许结算到的日期，1× 时最多放行到已提交日加一。日尾无需前台确认。
+命令受理时取请求日、已封口日加一和已提交日加一的最大值，立即回传实际生效日。
+读取、同步显示或打印诊断不得推进模拟。前台发送玩家选择和外部 AI 回执，后台在待答
+边界验证后继续。安全存档在已提交边界取数据。完整现状见
+[运行现状](current-state.md#放行命令与发布)。
 
 ## 跨域读取与请求
 

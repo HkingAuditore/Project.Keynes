@@ -23,9 +23,8 @@ import agent  # noqa: E402
 import checks  # noqa: E402
 import qodo  # noqa: E402
 import work  # noqa: E402
-from common import Events, load_config, must  # noqa: E402
+from common import Events, lane_lock, legacy_lane_gate, load_config, must  # noqa: E402
 from github import PR_MERGE_FIELDS, ChangedFile, GitHub  # noqa: E402
-from run import take_lock  # noqa: E402
 from verdict import CIFacts, NativeFacts, unknown_findings  # noqa: E402
 
 TRAILER = "Fixed-By: keynes-factory"
@@ -190,7 +189,8 @@ class Watcher:
         self.cfg, self.dry = cfg, dry
         self.gh = GitHub(cfg["repo"])
         self.home = Path(cfg["home"])
-        self.workdir = str(self.home / "work")
+        self.workdir = str(self.home / "pr-work")
+        self.base_cache = str(self.home / "pr-base-checks")
         self.stamp = time.strftime("%Y%m%d-%H%M%S")
 
     # ---- state -----------------------------------------------------------------------
@@ -505,11 +505,10 @@ class Watcher:
         base = pr.get("baseRefName", cfg["base"])
         parent = work.git(self.workdir, "rev-parse", f"{cfg['remote']}/{base}")
         record.update(base=base, baseSha=parent)
-        cache = str(self.home / "base-checks")
-        head_res = checks.base_results(cfg, self.workdir, head, cache, str(logs / "checks-head"))
+        head_res = checks.base_results(cfg, self.workdir, head, self.base_cache, str(logs / "checks-head"))
         try:
             work.checkout(self.workdir, parent)
-            base_res = checks.base_results(cfg, self.workdir, parent, cache, str(logs / "checks-base"))
+            base_res = checks.base_results(cfg, self.workdir, parent, self.base_cache, str(logs / "checks-base"))
         finally:
             work.checkout(self.workdir, head, branch=f"factory-pr-{n}")
         parent_failures = {"head": checks.failed(head_res), "base": checks.failed(base_res)}
@@ -588,7 +587,17 @@ class Watcher:
                                 record.get("agentFailure", ""))
                 if not out["ok"]:
                     return stop(record["agentFailure"], record["report"])
-                resolutions.extend([f"- `{path}` · resolved by Codex." for path in paths])
+                if work.head(self.workdir) != head or work.merge_head(self.workdir) != parent:
+                    return stop("the working checkout no longer has the expected pending merge")
+                if work.unmerged(self.workdir) != conflicts:
+                    return stop("Codex changed the conflict entries in the index")
+                try:
+                    choices = agent.parse_conflict_resolutions(out["report"], paths)
+                    work.validate_conflict_files(self.workdir, choices)
+                except ValueError as e:
+                    return stop(str(e), out["report"])
+                work.git(self.workdir, "add", "-A", "--", *[f":(top,literal){path}" for path in paths])
+                resolutions.extend(f"- `{path}` · {choices[path][0]}: {choices[path][1]}" for path in paths)
 
             repaired = False
 
@@ -680,8 +689,7 @@ class Watcher:
                     self.save(n, st)
                 return "head moved" if blocker == "head moved" else "skipped"
             try:
-                work.git(self.workdir, "push", "-q", f"--force-with-lease=refs/heads/{branch}:{head}",
-                         cfg["remote"], f"HEAD:refs/heads/{branch}")
+                work.push(self.workdir, cfg["remote"], branch, expected_head=head)
             except RuntimeError:
                 if self.update_head_moved(pr, ev):
                     return "head moved"
@@ -695,8 +703,6 @@ class Watcher:
             lines = [f"### Factory updated this branch from `{base}`", "",
                      f"Pushed merge commit `{sha}`.", "", "Conflict resolutions", "",
                      *(resolutions or ["Git merged cleanly with the fetched base."])]
-            if paths:
-                lines += ["", "Codex resolution notes", "", record["report"]]
             if repaired:
                 lines += ["", "Codex repaired checks that failed after the merge", "", *record["checkFixReports"]]
             lines += ["", facts.report(), "", "Checks", ""]
@@ -718,7 +724,7 @@ class Watcher:
             st.rounds, st.seen = 0, []
         if not self.prepare_head(pr, ev):
             return "head moved"
-        base_res = checks.base_results(cfg, self.workdir, head, str(self.home / "base-checks"), str(logs / "checks-head"))
+        base_res = checks.base_results(cfg, self.workdir, head, self.base_cache, str(logs / "checks-head"))
         before = checks.failed(base_res)
         ev.add("checks-before", failed=before)
 
@@ -834,8 +840,7 @@ class Watcher:
         sha = work.commit(self.workdir, f"Address Qodo findings on #{n}\n\nFindings: {', '.join(ids)}\n\n"
                                         f"Implemented-By: Codex ({cfg['agent']['model']})\n{TRAILER}\n")
         candidate.committed()
-        must(["git", "-C", self.workdir, "push", "-q", f"--force-with-lease=refs/heads/{branch}:{head}",
-              cfg["remote"], f"HEAD:refs/heads/{branch}"])
+        work.push(self.workdir, cfg["remote"], branch, expected_head=head)
         st.pushed.append(sha)
         st.rounds += 1
         st.gave_up_at = st.reason = None
@@ -874,15 +879,14 @@ def main() -> int:
     ap.add_argument("--dry", action="store_true", help="print decisions only")
     a = ap.parse_args()
     cfg = load_config()
-    lock = Path(cfg["home"]) / "lock"
-    if not a.dry and not take_lock(lock):
-        print("another factory run holds the lock")
-        return 0
-    try:
-        return Watcher(cfg, a.dry).tick(a.pr)
-    finally:
-        if not a.dry:
-            lock.unlink(missing_ok=True)
+    if a.dry:
+        return Watcher(cfg, True).tick(a.pr)
+    home = Path(cfg["home"])
+    with lane_lock(home, "pr") as acquired:
+        if not acquired or legacy_lane_gate(home, "pr"):
+            print("the PR lane is already running", flush=True)
+            return 0
+        return Watcher(cfg, False).tick(a.pr)
 
 
 if __name__ == "__main__":

@@ -1118,13 +1118,13 @@ static func _rasterize_upwelling_slice_from_hex(baker: MapBaker, world: WorldDat
 # ─── DOTS-Total-CPP（plan/dots-total-cpp 任务 4+5）────────────────────────
 # Ocean rasterize 一次性 hex→pixel byte 直出 — 替代 _rasterize_ocean_current_slice_from_hex
 # + _rasterize_upwelling_slice_from_hex 的 17 个 pixel slice。
-	# Gate：caller 已确认 ext + has_method (use_gdext_ocean_currents_pixel removed in dots-flag-prune-pr1).
 
-# 缓存 ocean rasterize 的 pixel→cell-index 表（与 sea_ice 缓存独立）。
+# 洋流像素索引按地图、绘制目标和尺寸缓存，与 sea_ice 缓存独立。
 
 static func _ensure_ocean_pixel_to_cell_index(baker: MapBaker, map: MapData, world: WorldData) -> void:
 	var n: int = int(world.derived_size.x) * int(world.derived_size.y)
-	if baker._ocean_pixel_cache_size == world.derived_size and baker._ocean_pixel_to_cell_idx.size() == n:
+	var cache_key := [map.get_instance_id(), world.get_instance_id(), world.derived_size]
+	if baker._ocean_pixel_cache_key == cache_key and baker._ocean_pixel_to_cell_idx.size() == n:
 		return
 	baker._ocean_pixel_to_cell_idx = PackedInt32Array()
 	baker._ocean_pixel_to_cell_idx.resize(n)
@@ -1132,7 +1132,7 @@ static func _ensure_ocean_pixel_to_cell_index(baker: MapBaker, map: MapData, wor
 	for i in range(n):
 		var cell = lookup[i] if i < lookup.size() else null
 		baker._ocean_pixel_to_cell_idx[i] = map.index_of(cell) if cell != null else -1
-	baker._ocean_pixel_cache_size = world.derived_size
+	baker._ocean_pixel_cache_key = cache_key
 
 
 # 一次性把 ocean_current + upwelling SoA 通过 C++ rasterize 量化进

@@ -40,8 +40,8 @@ func _consume_modifier_worker_snapshot_if_authoritative(host) -> void:
 	_part2._consume_modifier_worker_snapshot_if_authoritative(host)
 func _consume_country_worker_read_view_if_authoritative(host) -> void:
 	_part2._consume_country_worker_read_view_if_authoritative(host)
-func _service_country_visual_refresh_budgeted(host, frame_started_usec: int) -> void:
-	_part2._service_country_visual_refresh_budgeted(host, frame_started_usec)
+func _service_country_visual_refresh_budgeted(host, frame_started_usec: int, vision_changed: bool) -> void:
+	_part2._service_country_visual_refresh_budgeted(host, frame_started_usec, vision_changed)
 
 func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) -> void:
 	_part3._consume_runtime_commit_if_ready(host, report_override)

@@ -979,7 +979,7 @@ func trade_orders_model(host, cell_idx: int, good_id: String, offset: int = 0,
 	var h = host
 	if host._map == null or cell_idx < 0:
 		return h._trade_orders_failure("", "trade_orders_map_unavailable")
-	if VisionSolver.fog_state(host._map, cell_idx) != VisionSolver.FOG_VISIBLE:
+	if VisionSolver.displayed_fog_state(host._map, cell_idx) != VisionSolver.FOG_VISIBLE:
 		return h._trade_orders_failure("此地不在当前视野内。", "cell_not_visible")
 	var facade = host._economy_facade()
 	if facade == null or not facade.has_method("trade_orders_for_cell"):
@@ -1172,7 +1172,7 @@ func _build_trade_orders_model(host, page: Dictionary,
 				destination_price = int(line_destination_prices[line])
 		var delivered = int(cargo_delivered[i]) if i < cargo_delivered.size() else 0
 		var flags = int(order_flags[i]) if i < order_flags.size() else 0
-		var counterpart_visible: bool = counterpart >= 0 and VisionSolver.fog_state(
+		var counterpart_visible: bool = counterpart >= 0 and VisionSolver.displayed_fog_state(
 			host._map, counterpart) == VisionSolver.FOG_VISIBLE
 		var counterpart_name = "视野外"
 		var counterpart_sub = ""

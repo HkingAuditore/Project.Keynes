@@ -38,7 +38,6 @@ var _hits: Array[Dictionary] = []
 var _last_transform := Transform2D()
 var _last_size := Vector2.ZERO
 var _last_fog := false
-var _last_zoom := -1.0
 var _tooltip: PanelContainer
 var _tooltip_label: Label
 var _hover_key := ""
@@ -92,7 +91,6 @@ func configure(map: MapData, camera: Camera2D, host, economy,
     _cursor = 0
     _near = false
     _dirty = true
-    _last_zoom = -1.0
     _query_due = 0.0
     _host.daily_tick_completed.connect(_on_daily_commit)
     _host.simulation_view_updated.connect(_on_worker_view)
@@ -143,7 +141,7 @@ func _process(delta: float) -> void:
     if _map == null or _camera == null or not is_visible_in_tree():
         _hide_tooltip()
         return
-    var width := sqrt(3.0) * _hex_size * _camera.zoom.x
+    var width := sqrt(3.0) * _hex_size * _map_transform().get_scale().x
     var near_now := width >= (UITokens.MAP_SITUATION_HIDE_WIDTH if _near
         else UITokens.MAP_SITUATION_SHOW_WIDTH)
     if not near_now:
@@ -155,27 +153,25 @@ func _process(delta: float) -> void:
             _hide_tooltip()
             queue_redraw()
         return
-    var transform := get_viewport().get_canvas_transform()
+    var transform := _map_transform()
     var fog := bool(_host.is_fog_of_war_enabled())
     # 撤销视野立即清掉已绘制命令，不等待下一轮经济批次。
-    if fog:
-        var visible := _map.visible_arr
+    if fog or MapDrawnFrame.for_map(_map) != null:
         for cell in _rows.keys():
-            if int(cell) >= visible.size() or visible[int(cell)] == 0:
+            if not _can_show(int(cell)):
                 _rows.erase(cell)
                 _dirty = true
                 queue_redraw()
     if not _near or transform != _last_transform or size != _last_size \
-            or fog != _last_fog or not is_equal_approx(_last_zoom, _camera.zoom.x):
+            or fog != _last_fog:
         _near = true
         _last_transform = transform
         _last_size = size
         _last_fog = fog
-        _last_zoom = _camera.zoom.x
         _dirty = true
         queue_redraw()
     # Privacy is enforced again at drawing/tooltip time, even while a read is pending.
-    if _time >= _query_due:
+    if _time >= _query_due and VisionSolver.displayed_fields_current(_map):
         _query_due = _time + UITokens.MAP_SITUATION_REFRESH_SECONDS
         if _dirty:
             _rebuild_candidates()
@@ -189,7 +185,7 @@ func _rebuild_candidates() -> void:
     _candidates.clear()
     _scan_count = 0
     var view := Rect2(Vector2.ZERO, get_viewport_rect().size).grow(40.0)
-    var inverse := get_viewport().get_canvas_transform().affine_inverse()
+    var inverse := _map_transform().affine_inverse()
     var start := inverse * view.position
     var end := inverse * view.end
     var first_row := maxi(0, floori(start.y / (_hex_size * 1.5)) - 1)
@@ -347,7 +343,16 @@ func _update_weather(cell: int) -> void:
     _rows[cell] = row
 
 
+func _map_transform() -> Transform2D:
+    var frame := MapDrawnFrame.for_map(_map)
+    if frame != null and frame.valid:
+        return frame.screen_transform(get_viewport_rect().size)
+    return get_viewport().get_canvas_transform()
+
+
 func _can_show(cell: int) -> bool:
+    if _map != null and MapDrawnFrame.for_map(_map) != null:
+        return VisionSolver.displayed_fog_state(_map, cell) == VisionSolver.FOG_VISIBLE
     return _map != null and cell >= 0 and cell < _map.cell_count() and \
         (not _host.is_fog_of_war_enabled() or (cell < _map.visible_arr.size() \
         and _map.visible_arr[cell] != 0))
@@ -406,8 +411,9 @@ func pick_cell_at_screen(screen: Vector2) -> int:
 func _screen_center(cell: int) -> Vector2:
     var hex := _map.cell_at(cell)
     var world := HexUtils.cube_to_world(hex.q, hex.r, _hex_size)
-    world = HexUtils.nearest_display_world(world, _camera.global_position.x, _wrap)
-    var screen := get_viewport().get_canvas_transform() * world
+    var center := _map_transform().affine_inverse() * get_viewport_rect().get_center()
+    world = HexUtils.nearest_display_world(world, center.x, _wrap)
+    var screen := _map_transform() * world
     # [control-space 2026-11-03] 本层是 UI CanvasLayer 下的 Control，draw_* 用的是
     # **本控件的本地空间**（= CanvasLayer 变换 ∘ 控件变换），而不是裸屏幕像素。
     # 之前直接把 world→screen 的结果当本地坐标用，只要 CanvasLayer/控件带一点平移
@@ -459,7 +465,7 @@ func _draw() -> void:
         # 换算到屏幕要乘 canvas 变换的缩放（相机 zoom × content_scale，移动端
         # CANVAS_ITEMS ≈1.375）。旧写法只乘 camera.zoom，在手机上少算 37%，
         # 图标会压到格子上沿而不是浮在格子上方。
-        var canvas_scale := get_viewport().get_canvas_transform().get_scale().x
+        var canvas_scale := _map_transform().get_scale().x
         var hex_screen_r := _hex_size * maxf(canvas_scale, 0.0001)
         var top := center + Vector2(-columns * side * 0.5,
             -hex_screen_r * 0.5 - row_count * side)

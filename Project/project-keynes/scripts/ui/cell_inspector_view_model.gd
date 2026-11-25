@@ -249,9 +249,9 @@ func build(cell: HexCell) -> Dictionary:
 	if cell == null or _map == null:
 		return {}
 	var idx := int(cell.index)
-	var fog := VisionSolver.fog_state(_map, idx)
-	if fog == VisionSolver.FOG_UNEXPLORED:
-		return _build_unexplored_model(cell)
+	var fog := VisionSolver.displayed_fog_state(_map, idx)
+	if fog in [VisionSolver.FOG_UNAVAILABLE, VisionSolver.FOG_UNEXPLORED]:
+		return _Geography.drawn_cell_summary(cell, fog == VisionSolver.FOG_UNEXPLORED)
 	var intel_visible := fog == VisionSolver.FOG_VISIBLE
 	var off := HexUtils.cube_to_offset(cell.q, cell.r)
 	var terrain_v := _terrain(cell, idx)
@@ -304,18 +304,12 @@ func build(cell: HexCell) -> Dictionary:
 
 
 func _build_unexplored_model(cell: HexCell) -> Dictionary:
-	var off := HexUtils.cube_to_offset(cell.q, cell.r)
-	return {
-		"cell_index": int(cell.index),
-		"header": {
-			"kicker": "区域 %d, %d" % [off.x + 1, off.y + 1],
-			"title": "未探索区域",
-			"subtitle": "尚未进入视野",
-		},
-		"kpis": [],
-		"tabs": [],
-		"categories": {},
-	}
+	return _Geography.drawn_cell_summary(cell, true)
+
+
+func drawn_cell_summary(cell: HexCell) -> Dictionary:
+	return _Geography.drawn_cell_summary(cell,
+		VisionSolver.displayed_fog_state(_map, int(cell.index)) == VisionSolver.FOG_UNEXPLORED)
 
 
 func live_patch_revision(cell: HexCell, current_tab: String) -> Dictionary:
@@ -323,7 +317,7 @@ func live_patch_revision(cell: HexCell, current_tab: String) -> Dictionary:
 		return {}
 	var idx := int(cell.index)
 	var tab_id := current_tab if current_tab != "" else "geography"
-	var fog := VisionSolver.fog_state(_map, idx)
+	var fog := VisionSolver.displayed_fog_state(_map, idx)
 	var intel_visible := fog == VisionSolver.FOG_VISIBLE
 	var population_summary := _population_summary(idx) if intel_visible else {}
 	var country_summary := _country_summary(idx) if intel_visible else {}
@@ -392,9 +386,9 @@ func build_live_patch(
 	if cell == null or _map == null:
 		return {}
 	var idx := int(cell.index)
-	var fog := VisionSolver.fog_state(_map, idx)
-	if fog == VisionSolver.FOG_UNEXPLORED:
-		return _build_unexplored_model(cell)
+	var fog := VisionSolver.displayed_fog_state(_map, idx)
+	if fog in [VisionSolver.FOG_UNAVAILABLE, VisionSolver.FOG_UNEXPLORED]:
+		return _Geography.drawn_cell_summary(cell, fog == VisionSolver.FOG_UNEXPLORED)
 	var intel_visible := fog == VisionSolver.FOG_VISIBLE
 	var off := HexUtils.cube_to_offset(cell.q, cell.r)
 	var terrain_v := _terrain(cell, idx)
@@ -467,7 +461,8 @@ func build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 	if cell == null or _map == null:
 		return {}
 	var idx := int(cell.index)
-	if VisionSolver.fog_state(_map, idx) != VisionSolver.FOG_VISIBLE and tab_id != "geography":
+	var fog := VisionSolver.displayed_fog_state(_map, idx)
+	if fog <= VisionSolver.FOG_UNEXPLORED or (fog != VisionSolver.FOG_VISIBLE and tab_id != "geography"):
 		_category_cache.clear()
 		return {}
 	if idx != _category_cache_cell:
@@ -489,7 +484,8 @@ func _build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 		return {}
 	var idx := int(cell.index)
 	# 兜底：页签栏本来就不会给出被门控掉的页签，但延迟请求可能跨越一次视野变化。
-	if VisionSolver.fog_state(_map, idx) != VisionSolver.FOG_VISIBLE and tab_id != "geography":
+	var fog := VisionSolver.displayed_fog_state(_map, idx)
+	if fog <= VisionSolver.FOG_UNEXPLORED or (fog != VisionSolver.FOG_VISIBLE and tab_id != "geography"):
 		return {}
 	match tab_id:
 		"population":
@@ -525,7 +521,7 @@ func _build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 				temp, moist, base_moist, _weather_field(cell, idx),
 				_snow_cover(cell, idx), _vitality(cell, landform_v),
 				TerrainType.is_passable_land(terrain_v), is_water)
-			if VisionSolver.fog_state(_map, idx) == VisionSolver.FOG_VISIBLE:
+			if VisionSolver.displayed_fog_state(_map, idx) == VisionSolver.FOG_VISIBLE:
 				_append_resources_to_geography(category, idx, is_water)
 			return category
 	return {}

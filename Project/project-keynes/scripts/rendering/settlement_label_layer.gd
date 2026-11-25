@@ -85,6 +85,8 @@ var _last_rebuild_label_count: int = 0
 
 
 func _ready() -> void:
+	# Rebuild against the visibility installed by RuntimeHost in this frame.
+	process_priority = 1
 	# Absolute z only; the layer keeps inheriting HexRenderer's transform so
 	# labels stay in world coordinates.
 	z_as_relative = false

@@ -8,6 +8,7 @@ var previous: Texture2D
 var has_previous := false
 var _stamp := -1
 var _dims := Vector2i.ZERO
+var _current_wind_bytes := PackedByteArray()
 
 
 func bind(next_world: WorldData, next_map: MapData) -> void:
@@ -20,22 +21,38 @@ func bind(next_world: WorldData, next_map: MapData) -> void:
 	has_previous = false
 	_stamp = -1
 	_dims = Vector2i.ZERO
+	_current_wind_bytes = PackedByteArray()
 
 
 func update() -> bool:
 	if world == null or map == null:
 		return false
 	var stamp := int(world.weather_lut_update_usec)
-	if stamp == _stamp and world.lut_dims == _dims:
+	var dims := world.lut_dims
+	if stamp == _stamp and dims == _dims:
 		return false
-	var image := build_image(map, world.lut_dims)
+	var published_bytes = world.published_weather_wind_bytes(map)
+	var bytes: PackedByteArray
+	var image: Image
+	if published_bytes == null:
+		# A standalone preview can supply wind without publishing weather LUTs.
+		image = build_image(map, dims)
+		bytes = image.get_data() if image != null else PackedByteArray()
+	else:
+		bytes = published_bytes
 	previous = current
-	current = ImageTexture.create_from_image(image) if image != null else null
-	has_previous = current != null and previous != null and _dims == world.lut_dims
+	# Keep both interpolation endpoints. Identical encoded pixels can use the
+	# current texture for both without another graphics upload.
+	if dims != _dims or bytes != _current_wind_bytes:
+		if image == null and not bytes.is_empty():
+			image = Image.create_from_data(dims.x, dims.y, false, Image.FORMAT_RGBA8, bytes)
+		current = ImageTexture.create_from_image(image) if image != null else null
+		_current_wind_bytes = bytes
+	has_previous = current != null and previous != null and _dims == dims
 	if not has_previous:
 		previous = current
 	_stamp = stamp
-	_dims = world.lut_dims
+	_dims = dims
 	return true
 
 
@@ -66,15 +83,8 @@ static func build_image(map: MapData, dims: Vector2i) -> Image:
 	return image
 
 
-# [cell-field-overlays 2026-11-18] 与 build_image() **逐字节相同**的原始字节（index 空间，
-# 长度 = dims.x * dims.y * 4，按 cell.index 排列）。
-#
-# 为什么需要它：cloud_shadow_field / weather_layer 只消费 `Texture2D`（set_wind_luts 拿到
-# 的是纹理），拿不到像素字节；weather_table 的 layer2/3 必须在 CPU 侧重排到 offset 空间。
-# 这里**不新写一份编码**：直接复用 build_image() 再 get_data()，所以量化口径（Color→RGBA8
-# 的取整、speed/20 的归一、风向 normalize 的阈值）不可能与 wind_lut 分叉。
-# 读取上游（map.wind_x_arr / wind_y_arr / wind_speed_arr）的时机与 update() 完全一致：
-# 都是天气 LUT 换字节的那一次提交（weather_lut_update_usec 变化）。
+# Index-ordered RGBA8 for a weather publication. Use the same pixel
+# quantization as the standalone wind preview.
 static func build_bytes(map: MapData, dims: Vector2i) -> PackedByteArray:
 	var image := build_image(map, dims)
 	if image == null:
