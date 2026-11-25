@@ -209,8 +209,12 @@ for /f "delims=" %%A in ('where adb 2^>nul') do (
 )
 if defined ADB_EXE exit /b 0
 
-if exist "<toolroot>\platform-tools-latest-windows\platform-tools\adb.exe" (
-    set "ADB_EXE=<toolroot>\platform-tools-latest-windows\platform-tools\adb.exe"
+if exist "%~dp0..\..\platform-tools-latest-windows\platform-tools\adb.exe" (
+    set "ADB_EXE=%~dp0..\..\platform-tools-latest-windows\platform-tools\adb.exe"
+    exit /b 0
+)
+if exist "%~dp0..\platform-tools-latest-windows\platform-tools\adb.exe" (
+    set "ADB_EXE=%~dp0..\platform-tools-latest-windows\platform-tools\adb.exe"
     exit /b 0
 )
 if defined ANDROID_HOME if exist "%ANDROID_HOME%\platform-tools\adb.exe" (

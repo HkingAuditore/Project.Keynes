@@ -268,11 +268,16 @@ if defined GODOT_EXE exit /b 0
 call :first_on_path godot4
 if defined GODOT_EXE exit /b 0
 
-call :try_godot "<GODOT_BIN>"
+call :try_godot "%GODOT_BIN%"
 if defined GODOT_EXE exit /b 0
-call :try_godot "<GODOT_BIN>"
+rem %~dp0 is repo\scripts\, so ..\.. is the folder that holds the repo
+call :try_godot "%~dp0..\..\Godot_v4.6.2-stable_win64.exe"
 if defined GODOT_EXE exit /b 0
-call :try_godot "<toolroot>\Godot\Godot_v4.6.2-stable_win64.exe"
+call :try_godot "%~dp0..\..\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe"
+if defined GODOT_EXE exit /b 0
+call :try_godot "%~dp0..\Godot_v4.6.2-stable_win64.exe"
+if defined GODOT_EXE exit /b 0
+call :try_godot "%~dp0..\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe"
 if defined GODOT_EXE exit /b 0
 call :try_godot "%LOCALAPPDATA%\Programs\Godot\Godot.exe"
 if defined GODOT_EXE exit /b 0
@@ -280,7 +285,7 @@ if defined GODOT_EXE exit /b 0
 echo.
 echo [ERROR] Godot executable was not found.
 echo Set GODOT_EXE to your Godot 4.6 executable, for example:
-echo   set GODOT_EXE=<GODOT_BIN>
+echo   set "GODOT_EXE=C:\path\to\Godot_v4.6.2-stable_win64.exe"
 exit /b 1
 
 :try_godot
@@ -305,8 +310,12 @@ for /f "delims=" %%A in ('where adb 2^>nul') do (
 )
 if defined ADB_EXE exit /b 0
 
-if exist "<toolroot>\platform-tools-latest-windows\platform-tools\adb.exe" (
-    set "ADB_EXE=<toolroot>\platform-tools-latest-windows\platform-tools\adb.exe"
+if exist "%~dp0..\..\platform-tools-latest-windows\platform-tools\adb.exe" (
+    set "ADB_EXE=%~dp0..\..\platform-tools-latest-windows\platform-tools\adb.exe"
+    exit /b 0
+)
+if exist "%~dp0..\platform-tools-latest-windows\platform-tools\adb.exe" (
+    set "ADB_EXE=%~dp0..\platform-tools-latest-windows\platform-tools\adb.exe"
     exit /b 0
 )
 if defined ANDROID_HOME if exist "%ANDROID_HOME%\platform-tools\adb.exe" (

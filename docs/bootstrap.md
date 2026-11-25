@@ -32,6 +32,7 @@ powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 | Android SDK + NDK | 只有 Android 目标需要 | Android Studio 勾 *NDK (Side by side)*，设 `ANDROID_HOME` |
 | FMOD Engine（HTML5） | 只有 Web 的 FMOD 需要，**带授权，仓库不带** | [fmod.com/download](https://www.fmod.com/download) |
 | FMOD Studio | 只有生成 `.bank` 需要，**带授权** | 同上，注意是 Studio 不是 Engine |
+| 7-Zip | **第一次**解压 FMOD Studio 安装包时强依赖（`tools/audio/Start-FmodStudio.ps1` 找不到 `7z.exe` 会 throw） | [7-zip.org](https://www.7-zip.org/download.html)；脚本会先找 PATH 里的 `7z.exe`，再找 `%ProgramFiles%\7-Zip\7z.exe` |
 
 环境变量（都在当前终端里设，不要写进仓库）：
 
@@ -105,6 +106,23 @@ Windows 上建议用 **VS 2022 x64 Native Tools** 命令提示符跑；编译前
 - `-SkipBanks` / `--skip-banks` 可以跳过
 - **mac/Linux 不支持**：这条链是 Windows 的 PowerShell + FMOD Studio GUI，脚本会明确报「不支持」
 
+**已知限制：这个 FMOD 工程自身就是校验失败的。** `fmodstudiocl -diagnostic` 报
+
+```
+Files containing incomplete or malformed components:
+- Encoding Setting
+- Platform ["Desktop"]
+```
+
+于是 `-build` 直接以退出码 1 结束（`FMOD project validation failed; banks were not synchronized.`）。
+**这与仓库重建无关**，已经用对照实验确认：拿同一个 `tools/fmod-studio/2.03.15/fmodstudiocl.exe`
+去跑**原始仓库副本**（LF 换行、从未被 FMOD Studio 打开过），报的是同样两条、同样 exit 1。
+痕迹指向 2026-11-16 那次 metadata 编辑：`Metadata/Platform/` 下 `Mobile` 那份是 `Studio.02.03.00` 新格式，
+而 `Desktop` / `HTML5` 两份仍是 `Studio.01.10.00` 老格式。
+
+修它要动 FMOD 工程本体（用 GUI 打开工程重新保存，或重建那两个 platform 对象），
+**不在仓库重建范围内**，本轮不修。需要出 bank 时用 `-SkipBanks`，或先在 GUI 里把工程存一次。
+
 ### 6. AI skill 与自检
 
 `python tools/sync_skills.py link` 把 36 个 skill 的真源（根目录 `skills/`）链到 7 个 AI 工具目录，
@@ -138,6 +156,7 @@ Windows 上建议用 **VS 2022 x64 Native Tools** 命令提示符跑；编译前
 | Web side module 加载时报 `failed to load dynamic library` | Emscripten 版本不是 4.0.20 | 见下节 |
 | `missing FMOD HTML5 archive: ...` | `fmod_sdk` 路径不对或缺 SDK | 设 `FMOD_SDK` 指向含 `api/studio/lib` 的目录 |
 | 游戏能跑但没声音 | `.bank` 没生成，或 `FmodGodot` 原生库缺失 | 装 FMOD Studio 重出 bank；补齐第 4 阶段 |
+| `FMOD project validation failed; banks were not synchronized` | 工程自身校验错误（见第 5 节的已知限制），**不是仓库被剥坏** | 用 `-SkipBanks`，或先在 FMOD Studio GUI 里打开工程保存一次再重出 |
 | Android 构建找不到 NDK | `ANDROID_HOME` 未设或 NDK 未装 | Android Studio 装 *NDK (Side by side)* |
 
 ### Emscripten 版本为什么必须是 4.0.20

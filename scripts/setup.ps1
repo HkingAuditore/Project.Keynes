@@ -93,9 +93,9 @@ function Test-Cmd([string]$Name) {
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
-function Get-ToolVersion([string]$Exe, [string[]]$Args) {
+function Get-ToolVersion([string]$Exe, [string[]]$ToolArgs) {
     try {
-        $out = & $Exe @Args 2>&1 | Out-String
+        $out = & $Exe @ToolArgs 2>&1 | Out-String
         return ($out -split "`n")[0].Trim()
     } catch {
         return '(版本未知)'
