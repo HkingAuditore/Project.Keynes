@@ -3,7 +3,7 @@ setlocal EnableExtensions
 chcp 65001 >nul
 title Project.Keynes Economy Validator
 
-for %%I in ("%~dp0.") do set "REPO_ROOT=%%~fI"
+for %%I in ("%~dp0..") do set "REPO_ROOT=%%~fI"
 set "TOOL_ROOT=%REPO_ROOT%\tools\supply-chain-explorer"
 set "SCENARIO=%TOOL_ROOT%\scenario.stone_age.example.json"
 if not "%~1"=="" set "SCENARIO=%~f1"

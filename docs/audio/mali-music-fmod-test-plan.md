@@ -152,7 +152,7 @@ build 依然报 `Build completed successfully`。
 Project/project-keynes/assets/audio/banks/**/*.bank
 ```
 
-构建脚本本来就会生成，代价只是新克隆要跑一次 `Build-FMOD-Banks.cmd`。
+构建脚本本来就会生成，代价只是新克隆要跑一次 `scripts/Build-FMOD-Banks.cmd`。
 
 ---
 

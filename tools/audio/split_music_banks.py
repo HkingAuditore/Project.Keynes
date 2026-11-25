@@ -23,7 +23,7 @@
     python tools\\audio\\split_music_banks.py --check    # 只报告当前状态
     python tools\\audio\\split_music_banks.py --revert   # 还原成单一 Music bank
 
-改完必须重编 bank（`Build-FMOD-Banks.cmd`）。运行期还要配合按时代加载，见
+改完必须重编 bank（`scripts/Build-FMOD-Banks.cmd`）。运行期还要配合按时代加载，见
 `scripts/audio/game_audio_service.gd` 的 `_ensure_era_bank()`；否则 Desktop 的
 Music.bank 不含 Suite，音乐会是哑的。
 """
@@ -138,7 +138,7 @@ def apply() -> int:
     if changed == 0:
         print("[split] 已是拆分状态，无改动")
     else:
-        print(f"[split] 完成（{changed} 处改动）。下一步：Build-FMOD-Banks.cmd")
+        print(f"[split] 完成（{changed} 处改动）。下一步：scripts/Build-FMOD-Banks.cmd")
     return 0
 
 
@@ -156,7 +156,7 @@ def revert() -> int:
     if changed == 0:
         print("[split] 已是单一 Music bank 状态，无改动")
     else:
-        print(f"[split] 已还原（{changed} 处改动）。下一步：Build-FMOD-Banks.cmd")
+        print(f"[split] 已还原（{changed} 处改动）。下一步：scripts/Build-FMOD-Banks.cmd")
     return 0
 
 

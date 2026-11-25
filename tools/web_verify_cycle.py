@@ -3,7 +3,7 @@
 
 做四件事：
   1) 记下 tmp/web_events.jsonl 当前长度（这样只解析本次运行产生的事件）；
-  2) 跑 Build-Web.cmd（默认跳过 native 重建，传 --native 则连 scons 一起跑）；
+  2) 跑 scripts/Build-Web.cmd（默认跳过 native 重建，传 --native 则连 scons 一起跑）；
   3) 跑 tools/verify_web_session.py 打开真机浏览器会话；
   4) 解析本次新增事件，打印结论：进世界耗时、日历推进、fault/diag 关键字段。
 
@@ -76,11 +76,11 @@ def _reap(verbose: bool = False) -> None:
 
 
 def _build_web(with_native: bool) -> int:
-    cmd = [str(REPO / "Build-Web.cmd")]
+    cmd = [str(REPO / "scripts/Build-Web.cmd")]
     if not with_native:
         cmd.append("skip-native")
     print(f"[cycle] build: {' '.join(cmd)}")
-    # Build-Web.cmd 是 cmd 脚本，必须经 cmd /c
+    # scripts/Build-Web.cmd 是 cmd 脚本，必须经 cmd /c
     return subprocess.call(["cmd", "/c", *cmd], cwd=REPO)
 
 

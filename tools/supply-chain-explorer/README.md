@@ -30,20 +30,20 @@ Windows 双击入口会在仓库根目录的 `.venv-economy-validator` 中创建
 
 ### 运行
 
-Windows 最简单的方式：在仓库根目录双击 `打开经济校验器.cmd`。它会直接执行并在完成后自动打开
+Windows 最简单的方式：在仓库根目录双击 `scripts/scripts/打开经济校验器.cmd`。它会直接执行并在完成后自动打开
 `balance_report.html`。也可以把自己的场景 JSON 直接拖到这个 `.cmd` 文件上执行。
 
-macOS 使用仓库根目录的 `打开经济校验器_mac.command`。首次使用如果提示没有执行权限，在 Terminal
+macOS 使用仓库根目录的 `scripts/scripts/打开经济校验器_mac.command`。首次使用如果提示没有执行权限，在 Terminal
 中执行一次：
 
 ```bash
-chmod +x ./打开经济校验器_mac.command
+chmod +x ./scripts/scripts/打开经济校验器_mac.command
 ```
 
 之后可以直接双击；也可以从 Terminal 执行且不需要修改权限：
 
 ```bash
-bash ./打开经济校验器_mac.command
+bash ./scripts/scripts/打开经济校验器_mac.command
 ```
 
 macOS 启动器优先使用 `python3`，完成后通过系统 `open` 命令打开同一份 HTML 报告。

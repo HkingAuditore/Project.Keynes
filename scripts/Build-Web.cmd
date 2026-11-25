@@ -86,7 +86,7 @@ rem   Build-Web.cmd skip-native     reuse the existing wasm side module
 rem   Build-Web.cmd skip-native-debug  export debug only, reuse the debug wasm
 rem ===========================================================================
 
-set "ROOT=%~dp0"
+set "ROOT=%~dp0..\"
 set "MODE=%~1"
 if "%MODE%"=="" set "MODE=release"
 

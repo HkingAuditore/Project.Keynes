@@ -74,7 +74,7 @@ scripts/
 ```bat
 git clone --recurse-submodules <repo>   :: 子模块必须初始化，否则编不过
 gdext\rebuild.bat                       :: Windows 原生扩展（关掉 Godot 再跑）
-Build-Web.cmd                           :: Web 导出（需要 emsdk 4.0.20）
+scripts/Build-Web.cmd                           :: Web 导出（需要 emsdk 4.0.20）
 ```
 
 `WebBuild/`、`Build/` 是构建产物，**不进版本库**（pck 约 282 MB，超过 GitHub 单文件上限），

@@ -47,13 +47,13 @@ LineEdit，玩家用 IME 打的字不可能出现在源码里；国名还会以�
 ----
     python tools/subset_fonts.py                    # = subset：只跑子集 + 自检 + 报告
     python tools/subset_fonts.py subset --force     # 忽略缓存重跑
-    python tools/subset_fonts.py prepare --godot <godot.exe>   # 子集 + 注入缓存（Build-Web.cmd 用）
+    python tools/subset_fonts.py prepare --godot <godot.exe>   # 子集 + 注入缓存（scripts/Build-Web.cmd 用）
     python tools/subset_fonts.py verify --pck WebBuild/ProjectKeynes.pck
     python tools/subset_fonts.py restore            # 还原 .godot 里的原 fontsdata
     python tools/subset_fonts.py status             # 看是否还残留注入
 
 依赖：`python -m pip install fonttools brotli`（woff2 输入/输出需要 brotli）。
-回退：设置 `PK_WEB_SKIP_FONT_SUBSET=1` 跳过整件事（Build-Web.cmd 会按现状打包全字库）。
+回退：设置 `PK_WEB_SKIP_FONT_SUBSET=1` 跳过整件事（scripts/Build-Web.cmd 会按现状打包全字库）。
 """
 
 from __future__ import annotations
@@ -1287,7 +1287,7 @@ def ensure_fonttools() -> None:
             "    Install them, then retry:\n"
             "        python -m pip install fonttools brotli\n"
             "    Or export the web package without subsetting (old 282 MB behaviour):\n"
-            "        set PK_WEB_SKIP_FONT_SUBSET=1 && Build-Web.cmd",
+            "        set PK_WEB_SKIP_FONT_SUBSET=1 && scripts/Build-Web.cmd",
             code=1,
         )
 

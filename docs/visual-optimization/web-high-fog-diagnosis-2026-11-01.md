@@ -1,6 +1,6 @@
 # Web 高画质战争迷雾“表现很差”诊断报告（2026-11-01）
 
-结论先行：**你看到的不是当前代码的迷雾，而是 `serve_web.bat` 默认服务的旧 release 包
+结论先行：**你看到的不是当前代码的迷雾，而是 `scripts/serve_web.bat` 默认服务的旧 release 包
 `WebBuild/`（2026-10-31 23:57 构建）。该包里的 `fog_of_war.gdshader` 还是修复前版本：
 web 的编译期档被钉死为 `MOBILE_QUALITY_LOW` 时 `effective_fog_quality()` 直接返回 0，
 所以即使玩家选“高画质”，迷雾仍然只渲染 q0 的纯色平板；而同一帧里的地形已经走
@@ -68,7 +68,7 @@ int effective_fog_quality() {
 
 ### 2.1 重新构建 release Web 包（部署根因）
 
-`Build-Web.cmd`（release：native release 重建 → catalog 预烘焙 → 贴图/字体 web 压缩 →
+`scripts/Build-Web.cmd`（release：native release 重建 → catalog 预烘焙 → 贴图/字体 web 压缩 →
 export）已成功重出 `WebBuild/`，pck 126.35 MB。实测：
 
 ```
@@ -116,7 +116,7 @@ web 的编译期档固定 LOW，于是 `shader_quality.gdshaderinc` 定义的 `P
 
 ## 3. 怎么验证 / 使用
 
-1. 直接重跑 `serve_web.bat`（默认 root = `WebBuild/`，端口 8060），**强制刷新**
+1. 直接重跑 `scripts/serve_web.bat`（默认 root = `WebBuild/`，端口 8060），**强制刷新**
    （Ctrl+F5 或清缓存；旧包 pck 315 MB → 新包 126 MB，缓存命中旧 pck 就会看到旧画面）。
 2. 画质设置选“高”；若要 PC-HIGH 完整地形，用 `?quality=high` URL 启动（boot 期决定）。
 3. 验收指纹（页面遥测 `warmup_plan`，或看 `tmp/web_events.jsonl`）：

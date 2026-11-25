@@ -4,9 +4,9 @@ setlocal EnableExtensions EnableDelayedExpansion
 rem Project.Keynes Android logcat capture helper.
 rem Captures device logcat to Build\logs without building or installing the APK.
 
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
-set "BUILD_DIR=%~dp0Build"
+set "BUILD_DIR=%~dp0..\Build"
 set "LOG_DIR=%BUILD_DIR%\logs"
 set "PACKAGE_NAME=com.projectkeynes.game"
 set "PAUSE_ON_EXIT=1"

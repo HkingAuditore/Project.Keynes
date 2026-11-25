@@ -77,7 +77,7 @@ Godot 插件的 2.03.06 基线。若官网下载列表无法提供该版本，�
 
 ### 双击启动与克隆后自动准备
 
-仓库根目录的 `Open-FMOD-Studio.cmd` 调用 `tools/audio/Start-FmodStudio.ps1`。
+仓库根目录的 `scripts/Open-FMOD-Studio.cmd` 调用 `tools/audio/Start-FmodStudio.ps1`。
 默认打开 `Audio/ProjectKeynes/ProjectKeynes.fspro`；工程不存在时打开 Studio 欢迎界面。
 可使用 `-ProjectPath` 指定其他 `.fspro`，`-SetupOnly` 只部署而不打开编辑器。
 
@@ -119,13 +119,13 @@ FMOD 运行库随游戏分发是另一个授权范围。音频素材和 Bank 的
 6. 创建 `Music`、`UI` Bank，并将事件显式分配到对应 Bank。
 7. Desktop 构建输出为 `Audio/ProjectKeynes/Build/Desktop`。
 
-双击 `Build-FMOD-Banks.cmd`，或运行 `tools/audio/Build-FmodBanks.ps1`，会使用固定版本
+双击 `scripts/Build-FMOD-Banks.cmd`，或运行 `tools/audio/Build-FmodBanks.ps1`，会使用固定版本
 Studio CLI 先进行工程完整性诊断，通过后构建 Desktop Bank 并同步四个文件到
 `Project/project-keynes/assets/audio/banks/Desktop/`。中间构建目录忽略，游戏侧 Bank
 随项目保存，克隆后试听不需要先重新构建。测试 WAV 来源为仓库自己的合成器脚本；
 不包含 FMOD 示例包的音频素材。当前事件直接路由至 Master；分类混音后续制作。
 
-双击 `Run-FMOD-Demo.cmd` 可试听，用 Tension 滑块加入旋律/鼓点，用按钮试听 Click，
+双击 `scripts/Run-FMOD-Demo.cmd` 可试听，用 Tension 滑块加入旋律/鼓点，用按钮试听 Click，
 调整 Master 音量或静音。试听不保存设置。Godot 可执行文件可通过 `GDA_GODOT` 指定，
 也可给 `tools/audio/Run-FmodDemo.ps1` 传 `-GodotExe`。
 

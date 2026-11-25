@@ -133,7 +133,7 @@ wrap 周期，于是采样频率 f 的纹理周期是 1/f 个世界周期；跨 
 把它们换成了 1,398,501 字节的 512² —— 是 `tools/web_cloud_shadow_shrink.gd` 的产物。
 桌面因此一直跑在半分辨率噪声上。已从 `f4d833abb^` 恢复。
 
-**构建纪律**：`Build-Web.cmd` 的 shrink/restore 是成对的，只在 export 期间有效；
+**构建纪律**：`scripts/Build-Web.cmd` 的 shrink/restore 是成对的，只在 export 期间有效；
 任何在 Web 构建之后做的提交，必须先确认 `.1024.bak` 已还原（`ls` 大小应为 5.6MB）。
 
 ### 6. HIGH 档的分辨率才是细节瓶颈

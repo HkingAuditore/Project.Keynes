@@ -71,7 +71,7 @@ goto finish
 :build
 echo.
 echo === %SCONS_CMD% platform=android target=%~1 arch=arm64 ndk_version=%NDK_VER% disable_exceptions=no ===
-rem disable_exceptions=no is REQUIRED (same reason as Build-Web.cmd):
+rem disable_exceptions=no is REQUIRED (same reason as scripts\Build-Web.cmd):
 rem   godot-cpp forces -fno-exceptions on every non-MSVC platform by default,
 rem   but this native runtime uses C++ exceptions on purpose --
 rem   src/economy_change_registry.h throws std::logic_error/std::out_of_range

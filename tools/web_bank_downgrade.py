@@ -58,7 +58,7 @@ Godot 的脏检查（比对 source_md5）认为没变化，**不会触发重导�
     python tools\\web_bank_downgrade.py verify --pck WebBuild\\ProjectKeynes.pck
 
 前提：`Audio/ProjectKeynes/Build/HTML5/` 存在且不比 Desktop 那套旧 ——
-由 `Build-FMOD-Banks.cmd`（默认同时编 Desktop + HTML5）保证。
+由 `scripts/Build-FMOD-Banks.cmd`（默认同时编 Desktop + HTML5）保证。
 """
 
 from __future__ import annotations
@@ -291,7 +291,7 @@ def restore_from_state(state: dict[str, Any], *, quiet: bool = False) -> int:
             f"[bank]   {BANK_SRC}\n"
             f"[bank]   {IMPORTED}\n"
             "[bank] 全部是 Desktop 那套 91 MB 的原始 bank 才算干净；"
-            "否则用 git checkout 恢复源，并重跑 Build-FMOD-Banks.cmd。",
+            "否则用 git checkout 恢复源，并重跑 scripts/Build-FMOD-Banks.cmd。",
             file=sys.stderr,
         )
         return 1
@@ -318,7 +318,7 @@ def collect_plan() -> tuple[list[Record], list[str]]:
             continue
         if not os.path.exists(new):
             problems.append(
-                f"{bank}: 没有 HTML5 版本 {new} —— 先跑 Build-FMOD-Banks.cmd"
+                f"{bank}: 没有 HTML5 版本 {new} —— 先跑 scripts/Build-FMOD-Banks.cmd"
             )
             continue
         try:
@@ -416,7 +416,7 @@ def cmd_begin(_args: Any) -> int:
         print(
             f"[bank] 错误: 只省 {mb(before - after)}，低于门槛 {mb(MIN_SAVING_BYTES)}。\n"
             f"[bank] 大概率是 HTML5 那套没重新编，或 Music_*.bank 还没拆出来。\n"
-            "[bank] 先跑 python tools\\audio\\split_music_banks.py + Build-FMOD-Banks.cmd。",
+            "[bank] 先跑 python tools\\audio\\split_music_banks.py + scripts/Build-FMOD-Banks.cmd。",
             file=sys.stderr,
         )
         return 1
@@ -613,7 +613,7 @@ def cmd_publish(args: Any) -> int:
     for bank in ERA_BANKS:
         src = os.path.join(HTML5_BUILD, bank)
         if not os.path.exists(src):
-            print(f"[bank] publish: 缺 {src} —— 先跑 Build-FMOD-Banks.cmd", file=sys.stderr)
+            print(f"[bank] publish: 缺 {src} —— 先跑 scripts/Build-FMOD-Banks.cmd", file=sys.stderr)
             return 1
         check_bank_header(src)
         dst = os.path.join(out, bank)

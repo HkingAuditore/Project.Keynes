@@ -17,7 +17,7 @@ Godot 4 的 `.import` 没有"按平台"的参数段（见报告 §2 的证据）
     export : 原样跑原有导出（此时 .godot/imported/ 里是 web 规格的 ctex）
     end    : 还原 .import -> 再 `--import` 一次，把本机缓存恢复成桌面规格
 
-`end` 必须在成功和失败两条路径上都被调用（Build-Web.cmd 的 `:fail` 里也要有）。
+`end` 必须在成功和失败两条路径上都被调用（scripts/Build-Web.cmd 的 `:fail` 里也要有）。
 如果构建进程被 Ctrl-C 杀掉，`begin` 会在下次运行时发现残留状态并**先自动还原**
 （self-healing）；也可以手动 `python tools\\web_tex_downgrade.py restore`。
 
@@ -377,7 +377,7 @@ def find_godot(repo: str, explicit: str) -> str:
     env = os.environ.get("GODOT_BIN", "")
     if env and os.path.isfile(env):
         return env
-    # 与 Build-Web.cmd 一致：<repo>\..\..\Godot_v4.6.2-stable_win64.exe\<exe>
+    # 与 scripts/Build-Web.cmd 一致：<repo>\..\..\Godot_v4.6.2-stable_win64.exe\<exe>
     base = repo
     for _ in range(3):
         for cand in (

@@ -18,9 +18,9 @@
 | macOS 原生扩展 | `cd gdext && ./rebuild.sh` | `.../bin/macos/` |
 | Linux 原生扩展 | `cd gdext && scons platform=linux target=template_release -j8` | `.../bin/linux/` |
 | Android 原生扩展 | `gdext\build_android.bat` | `.../bin/android/` |
-| Web 全流程（推荐） | `Build-Web.cmd` | `WebBuild/` |
-| Web 只重新导出 | `Build-Web.cmd skip-native` | `WebBuild/` |
-| 本地预览 WebBuild | `serve_web.bat` | `http://127.0.0.1:8060/ProjectKeynes.html` |
+| Web 全流程（推荐） | `scripts/Build-Web.cmd` | `WebBuild/` |
+| Web 只重新导出 | `scripts/Build-Web.cmd skip-native` | `WebBuild/` |
+| 本地预览 WebBuild | `scripts/serve_web.bat` | `http://127.0.0.1:8060/ProjectKeynes.html` |
 | 桌面导出 | Godot 编辑器 → 导出 → `Windows Desktop` 预设 | `Build/ProjectKeynes.exe` |
 
 ---
@@ -159,7 +159,7 @@ source ./emsdk_env.sh
 emsdk_env.bat
 ```
 
-`Build-Web.cmd` 假定 emsdk 在**仓库根目录的 `emsdk/`**（该目录已被 `.gitignore` 忽略）。
+`scripts/Build-Web.cmd` 假定 emsdk 在**仓库根目录的 `emsdk/`**（该目录已被 `.gitignore` 忽略）。
 
 ### 4.2 三个必须记住的编译约束
 
@@ -169,7 +169,7 @@ emsdk_env.bat
 | `disable_exceptions` | `no` | `economy_*.h` 等 11 个文件用 `throw` 报不变量错误，编译直接失败 |
 | `lto` | `none` | 用默认 `full` 时每次链接要等很久，联调期不划算 |
 
-对应的编译命令（`Build-Web.cmd` 内部就是这条）：
+对应的编译命令（`scripts/Build-Web.cmd` 内部就是这条）：
 
 ```bat
 scons platform=web arch=wasm32 threads=yes lto=none disable_exceptions=no -j16 target=template_release dev_build=no
@@ -178,10 +178,10 @@ scons platform=web arch=wasm32 threads=yes lto=none disable_exceptions=no -j16 t
 ### 4.3 一键导出
 
 ```bat
-Build-Web.cmd              :: release：编 native → 预烘目录 → 导出 release 包
-Build-Web.cmd debug        :: 同上，debug 变体
-Build-Web.cmd both         :: 两套都做
-Build-Web.cmd skip-native  :: 不重编 wasm，只预烘 + 重新导出（改 GDScript 后最快的选项）
+scripts/Build-Web.cmd              :: release：编 native → 预烘目录 → 导出 release 包
+scripts/Build-Web.cmd debug        :: 同上，debug 变体
+scripts/Build-Web.cmd both         :: 两套都做
+scripts/Build-Web.cmd skip-native  :: 不重编 wasm，只预烘 + 重新导出（改 GDScript 后最快的选项）
 ```
 
 脚本能用的前提：
@@ -220,8 +220,8 @@ scons platform=web arch=wasm32 threads=yes lto=none disable_exceptions=no -j16 t
 ### 4.6 本地预览与验证
 
 ```bat
-serve_web.bat            :: 默认 8060 端口，会自己开浏览器
-serve_web.bat 8080       :: 换端口
+scripts/serve_web.bat            :: 默认 8060 端口，会自己开浏览器
+scripts/serve_web.bat 8080       :: 换端口
 ```
 
 **不要用 `python -m http.server`**：它不发 `.wasm` 的正确 MIME，也不发
@@ -257,8 +257,8 @@ python tools\verify_web_session.py --url http://127.0.0.1:8060/ProjectKeynes.htm
    `%ANDROID_HOME%\ndk\<版本>`，也可以直接设 `ANDROID_NDK_ROOT`。
 2. 编原生库：`gdext\build_android.bat`（`release` / `debug` / `both`）。
 3. 编辑器里配好 keystore，用 `Android` 预设导出 `Build/ProjectKeynes.apk`；
-   一键装机脚本是仓库根目录的 `build_install_android.bat`（需 adb）。
-4. 只看日志：`capture_android_log.bat`。
+   一键装机脚本是仓库根目录的 `scripts/build_install_android.bat`（需 adb）。
+4. 只看日志：`scripts/capture_android_log.bat`。
 
 Android 预设里的 `godot-lib.*.aar` 已经在仓库中（`android/build/libs/`），无需额外下载。
 
@@ -272,8 +272,8 @@ Android 预设里的 `godot-lib.*.aar` 已经在仓库中（`android/build/libs/
 只有改了 `Audio/ProjectKeynes/ProjectKeynes.fspro` 或音源时才需要：
 
 ```bat
-Build-FMOD-Banks.cmd      :: 用 tools/fmod-studio/2.03.15/fmodstudiocl.exe 重烘并同步到 banks/Desktop
-Open-FMOD-Studio.cmd      :: 打开 FMOD Studio GUI
+scripts/Build-FMOD-Banks.cmd      :: 用 tools/fmod-studio/2.03.15/fmodstudiocl.exe 重烘并同步到 banks/Desktop
+scripts/Open-FMOD-Studio.cmd      :: 打开 FMOD Studio GUI
 ```
 
 FMOD Studio 版本固定在 **2.03.15**，命令行工具路径写死在
@@ -334,12 +334,12 @@ FMOD Studio 版本固定在 **2.03.15**，命令行工具路径写死在
 1. checkout（含子模块）→ 装 Python + SCons；
 2. 装 emsdk 4.0.20（带缓存）；
 3. 下载 Godot 4.6.2 win64 编辑器 + Web 导出模板；
-4. 跑 `Build-Web.cmd release`；
+4. 跑 `scripts/Build-Web.cmd release`；
 5. 把 `WebBuild/` 作为 **artifact** 上传；推 tag `v*` 时再附加到 Release。
 
 下载产物：仓库页 → Actions → 选中那次运行 → 页面底部 Artifacts。
 
-> 这个 workflow 与本地流程一一对应（就是把 `Build-Web.cmd` 搬上 runner），
+> 这个 workflow 与本地流程一一对应（就是把 `scripts/Build-Web.cmd` 搬上 runner），
 > 但**首次运行请自己看一遍日志**：runner 的镜像、emsdk 下载源、模板解压路径
 > 都可能随 GitHub 更新漂移。版本号集中在 workflow 顶部的 `env:` 里，改一处即可。
 
@@ -353,8 +353,8 @@ FMOD Studio 版本固定在 **2.03.15**，命令行工具路径写死在
 - [ ] 编辑器里装 4.6.2 导出模板
 - [ ] 关掉 Godot，跑 `gdext\rebuild.bat`（Windows）→ 确认 `bin\windows\` 有时间戳是今天的 dll
 - [ ] 打开 Godot 跑一次游戏，确认 C++ 路径生效（控制台会出现 `[native_generation/base] path=gdext`）
-- [ ] 要 Web：装 emsdk 4.0.20 到仓库根 `emsdk/`，跑 `Build-Web.cmd`
-- [ ] `serve_web.bat` + `python tools\verify_web_export.py` 过一遍
+- [ ] 要 Web：装 emsdk 4.0.20 到仓库根 `emsdk/`，跑 `scripts/Build-Web.cmd`
+- [ ] `scripts/serve_web.bat` + `python tools\verify_web_export.py` 过一遍
 - [ ] 要 Android：装 NDK，`gdext\build_android.bat`，再导 APK
 
 ---

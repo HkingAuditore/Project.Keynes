@@ -17,7 +17,7 @@ extends EditorPlugin
 ##      已有的快照，至少让导出包能启动，错误在导出日志里一眼可见；
 ##   4) 校验通过后用 add_file() 把 7 个快照打进 pck。
 ##
-## 正常流程里预烘已经在 Build-Web.cmd 里先跑过，这里只会走第 1、4 步。
+## 正常流程里预烘已经在 scripts/Build-Web.cmd 里先跑过，这里只会走第 1、4 步。
 
 const BAKE_SCRIPT := "res://tools/loading_catalog_bake.gd"
 

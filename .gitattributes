@@ -3,6 +3,3 @@
 *.cmd text eol=crlf
 *.command text eol=lf
 *.sh text eol=lf
-# Hooks have no extension, so *.sh does not cover them; a CRLF checkout would put
-# a stray \r into every command and let the derived-copy guard pass silently.
-.githooks/* text eol=lf

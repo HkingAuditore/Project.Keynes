@@ -8,12 +8,12 @@ rem Usage:
 rem   serve_web.bat
 rem   serve_web.bat 8080
 
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 set "PORT=8060"
 if not "%~1"=="" set "PORT=%~1"
 
-set "WEB_ROOT=%~dp0WebBuild"
+set "WEB_ROOT=%~dp0..\WebBuild"
 set "ENTRY=%WEB_ROOT%\ProjectKeynes.html"
 set "URL=http://127.0.0.1:%PORT%/ProjectKeynes.html"
 
@@ -41,7 +41,7 @@ echo Opening browser, then starting server. Ctrl-C to stop.
 echo.
 
 start "" "%URL%"
-python "%~dp0tools\serve_web.py" --port %PORT% --root "%WEB_ROOT%"
+python "%~dp0..\tools\serve_web.py" --port %PORT% --root "%WEB_ROOT%"
 set "EXIT_CODE=%ERRORLEVEL%"
 
 if not "%EXIT_CODE%"=="0" (

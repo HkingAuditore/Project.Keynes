@@ -5,10 +5,10 @@ rem Project.Keynes Android test package helper.
 rem Builds the Android debug GDExtension, exports a debug APK, then installs it
 rem onto the single connected Android device.
 
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
-set "PROJECT_DIR=%~dp0Project\project-keynes"
-set "BUILD_DIR=%~dp0Build"
+set "PROJECT_DIR=%~dp0..\Project\project-keynes"
+set "BUILD_DIR=%~dp0..\Build"
 set "APK_PATH=%BUILD_DIR%\ProjectKeynes-debug.apk"
 set "EXPORT_PRESET=Android"
 set "PACKAGE_NAME=com.projectkeynes.game"
@@ -66,7 +66,7 @@ echo [log]   "%LOG_FILE%"
 if "%BUILD_GDEXT%"=="1" (
     echo.
     echo === [1/4] Build Android GDExtension debug library ===
-    call :run_logged "%~dp0gdext\build_android.bat" debug
+    call :run_logged "%~dp0..\gdext\build_android.bat" debug
     if errorlevel 1 (
         echo.
         echo [ERROR] Android GDExtension build failed.
@@ -96,7 +96,7 @@ rem Android plays the portable vorbis in assets/audio/native/** through
 rem native_audio_backend, so the FMOD .bank files must stay excluded. Somebody
 rem once removed assets/audio/banks/* from the Android preset as "redundant"
 rem and nearly shipped a silent build. Abort instead of shipping one again.
-python "%~dp0toolserify_audio_packaging.py" --presets-skip --apk "%APK_PATH%" >> "%LOG_FILE%" 2>&1
+python "%~dp0..\tools\verify_audio_packaging.py" --presets-skip --apk "%APK_PATH%" >> "%LOG_FILE%" 2>&1
 if errorlevel 1 (
     echo.
     echo [ERROR] audio packaging guard FAILED for "%APK_PATH%"

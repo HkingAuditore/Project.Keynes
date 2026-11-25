@@ -12,15 +12,15 @@
 #     4. 恢复 .gdignore 并再 import 一次，把工程状态还原（Android/Windows 仍走显式加载）
 #
 # ⚠️ 本脚本**只**做 import + export，不含任何体积优化。
-#   Build-Web.cmd 的六步（字体子集 / 贴图降质 / bank 降质 / 边车预压缩 / manifest /
-#   音乐分包）它一步都不跑。同一份代码实测：本路径 345 MB，Build-Web.cmd 88 MB。
-#   要出可发布的包请用 `Build-Web.cmd`；本脚本保留给"只想快速看一眼 web 能不能起"。
+#   scripts\Build-Web.cmd 的六步（字体子集 / 贴图降质 / bank 降质 / 边车预压缩 / manifest /
+#   音乐分包）它一步都不跑。同一份代码实测：本路径 345 MB，scripts\Build-Web.cmd 88 MB。
+#   要出可发布的包请用 `scripts\Build-Web.cmd`；本脚本保留给"只想快速看一眼 web 能不能起"。
 #
 # 用法：
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\export_web_with_fmod.ps1
 #   ... -Out WebBuild\ProjectKeynes.html -SkipImport
 #
-# 拆开的两个阶段（Build-Web.cmd 用，导出命令仍由 cmd 自己掌控）：
+# 拆开的两个阶段（scripts\Build-Web.cmd 用，导出命令仍由 cmd 自己掌控）：
 #   ... -EnableOnly     只挂 FmodGodot（移 .gdignore + import + 校验），不还原
 #   ... -RestoreOnly    只还原 .gdignore（+ import）
 #   调用方必须在**成功和失败两条路径**上都跑一次 -RestoreOnly；状态记在
@@ -54,7 +54,7 @@ $presetTool = Join-Path $root 'tools\web_fmod_preset.py'
 $bridgeTool = Join-Path $root 'tools\web_fmod_bridge.py'
 # era bank 必须物理挪出工程：preset 的 exclude 对导入型资源（.bank/.ctex）不生效，
 # 包内路径是 .godot/imported/ 那一份，所以只能让源文件在导出期间不存在。
-# 用的就是 Build-Web.cmd 的 :bank_begin 那同一个工具（它自带备份、sha 校验、中断恢复）。
+# 用的就是 scripts\Build-Web.cmd 的 :bank_begin 那同一个工具（它自带备份、sha 校验、中断恢复）。
 $bankTool = Join-Path $root 'tools\web_bank_downgrade.py'
 function Get-Python {
     $cmd = Get-Command python -ErrorAction SilentlyContinue
@@ -213,8 +213,8 @@ try {
     Write-Host '[web] NOTE: this path does NO size optimization.'
     Write-Host '[web]   missing: font subset / texture downgrade / bank downgrade /'
     Write-Host '[web]            precompressed sidecars / manifest / music split'
-    Write-Host '[web]   measured: this path 345 MB, Build-Web.cmd 88 MB (same code)'
-    Write-Host '[web]   for a shippable package use: Build-Web.cmd'
+    Write-Host '[web]   measured: this path 345 MB, scripts\Build-Web.cmd 88 MB (same code)'
+    Write-Host '[web]   for a shippable package use: scripts\Build-Web.cmd'
     Write-Host '[web] ============================================================'
     Write-Host ''
 

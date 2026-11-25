@@ -14,7 +14,7 @@ rem 2) 导出 APK（编辑器 / 命令行二选一）
   --headless --path Project\project-keynes --export-debug "Android" Build\ProjectKeynes.apk
 
 rem 3) 装机 + 抓日志
-build_install_android.bat          rem 或 capture_android_log.bat
+scripts/build_install_android.bat          rem 或 scripts/capture_android_log.bat
 ```
 
 要求：
@@ -62,7 +62,7 @@ build_install_android.bat          rem 或 capture_android_log.bat
    `src/economy_change_registry.h` 故意 `throw std::logic_error`（Windows 靠 `/EHsc` 过）。
    `annual_development_host.cpp` 于 2026-10-20 加入后，安卓编译直接报
    `cannot use 'throw' with exceptions disabled` → **再也产不出新 .so，只能一直用 10-16 的旧库**。
-   修法：`gdext/build_android.bat` 传 `disable_exceptions=no`（与 `Build-Web.cmd` 一致），未改 C++。
+   修法：`gdext/build_android.bat` 传 `disable_exceptions=no`（与 `scripts/Build-Web.cmd` 一致），未改 C++。
 2. **旧库与新脚本契约不一致**：旧 arm64 .so 只命中 709 个绑定方法里的 268（缺整个线程化加载 API、
    `run_bake_visual_tile_layer_pass`、`run_resource_deposit_pass`、104 个 `get_*`），
    代码代次比文件时间还老。重建后命中 707/709（余下 2 个是测量地板，与 Windows DLL 一致）。

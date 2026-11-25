@@ -201,8 +201,8 @@ func play_music(key: StringName) -> bool
 ### 4. 构建与侧听
 
 ```bash
-Project.Keynes\Build-FMOD-Banks.cmd      # diagnostic → build → 拷 4 个 bank
-Project.Keynes\Run-FMOD-Demo.cmd         # Godot 4.6.2 里侧听
+Project.Keynes\scripts/Build-FMOD-Banks.cmd      # diagnostic → build → 拷 4 个 bank
+Project.Keynes\scripts/Run-FMOD-Demo.cmd         # Godot 4.6.2 里侧听
 ```
 
 构建脚本会校验后把 bank 同步到

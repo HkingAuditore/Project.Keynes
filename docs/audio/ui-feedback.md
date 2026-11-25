@@ -47,11 +47,11 @@ button.set_meta(&"ui_sound", &"none") # 本控件及子控件不自动发声
 
 原始 CC0 文件、作者、许可链接及校验值见 [来源清单](../../Audio/Sources/UI/README.md)。
 选用 Kenney Interface Sounds 与 StarNinjas 真实翻页录音；处理配方位于
-`tools/audio/prepare_ui_sounds.py`。生成后运行 `Build-FMOD-Banks.cmd`。
+`tools/audio/prepare_ui_sounds.py`。生成后运行 `scripts/Build-FMOD-Banks.cmd`。
 8 个事件保存在原有 Studio 工程的 UI 文件夹和 UI Bank，Click 原 GUID 保持不变；
 正式事件已替换原来的合成测试按钮音。音乐原型不受影响。
 
-`Run-FMOD-Demo.cmd` 可分别试听八种声音与原有分层音乐。素材、元数据、Bank
+`scripts/Run-FMOD-Demo.cmd` 可分别试听八种声音与原有分层音乐。素材、元数据、Bank
 均为小文件，按普通 Git 管理，无 LFS；Studio 本体仍为本地工具。
 
 ## 验证

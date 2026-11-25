@@ -2,7 +2,7 @@
 
 set -u
 
-REPO_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+REPO_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 TOOL_ROOT="$REPO_ROOT/tools/supply-chain-explorer"
 SCENARIO="$TOOL_ROOT/scenario.stone_age.example.json"
 if [ "$#" -gt 0 ]; then

@@ -15,7 +15,7 @@ The script is kept outside the export preset on purpose:
   * it is injected after export, so it does not depend on Godot template
     internals and cannot break the export itself.
 
-``Build-Web.cmd`` calls this after a successful ``--export-release`` /
+``scripts/Build-Web.cmd`` calls this after a successful ``--export-release`` /
 ``--export-debug``; it is also safe to run manually on an existing WebBuild/:
 
     python tools/patch_web_shell.py --web-root WebBuild

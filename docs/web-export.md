@@ -37,7 +37,7 @@ atlas 与材质数组尺寸在生成时选择；要获得对应静态精度，�
 原 `tier=` 是编译档诊断探针，不代表玩家画质。
 
 本文记录 Web 导出的完整链路、两个必须对齐的编译约束，以及当前验证到什么程度。
-一键脚本是仓库根目录的 `Build-Web.cmd`，产物落在 `WebBuild/`。
+一键脚本是仓库根目录的 `scripts/Build-Web.cmd`，产物落在 `WebBuild/`。
 
 > `WebBuild/` **不进版本库**（pck 约 282 MB，超过 GitHub 单文件 100 MiB 硬限制），
 > 已加入 `.gitignore`；发布走 `.github/workflows/web-build.yml` 的 artifact / Release。
@@ -65,10 +65,10 @@ atlas 与材质数组尺寸在生成时选择；要获得对应静态精度，�
 ## 2. 一键导出
 
 ```bat
-Build-Web.cmd                 :: 重编 native release + 导出 release 包
-Build-Web.cmd debug           :: 重编 native debug   + 导出 debug 包
-Build-Web.cmd both            :: 两套都做
-Build-Web.cmd skip-native     :: 只重新导出（复用现有 .wasm）
+scripts/Build-Web.cmd                 :: 重编 native release + 导出 release 包
+scripts/Build-Web.cmd debug           :: 重编 native debug   + 导出 debug 包
+scripts/Build-Web.cmd both            :: 两套都做
+scripts/Build-Web.cmd skip-native     :: 只重新导出（复用现有 .wasm）
 ```
 
 脚本做三件事：
@@ -82,7 +82,7 @@ Build-Web.cmd skip-native     :: 只重新导出（复用现有 .wasm）
 本地起服务：
 
 ```bat
-serve_web.bat          :: = python tools/serve_web.py --port 8060 --root WebBuild
+scripts/serve_web.bat          :: = python tools/serve_web.py --port 8060 --root WebBuild
 ```
 
 `tools/serve_web.py` 会补 `.wasm/.pck` 的 MIME，并发送
@@ -101,13 +101,13 @@ serve_web.bat          :: = python tools/serve_web.py --port 8060 --root WebBuil
 
 两边不一致会让 pthread ABI 对不上，浏览器里表现为 side module 静默加载失败。
 `addons/dots_ext/dots_ext.gdextension` 里 `web.*.threads.wasm32` 与 `web.*.wasm32`
-两条 key 分别对应上面两种产物。`Build-Web.cmd` 默认 `threads=yes`，可用
+两条 key 分别对应上面两种产物。`scripts/Build-Web.cmd` 默认 `threads=yes`，可用
 `PK_WEB_THREADS=no` 临时切回 nothreads。
 
 threads 变体需要页面处于 **cross-origin isolated** 状态（SharedArrayBuffer）：
 `tools/serve_web.py` 已经发 `Cross-Origin-Opener-Policy` + `Cross-Origin-Embedder-Policy`。
 项目的 OA Pages 发布预设开启 PWA，用浏览器的 Service Worker 补齐这两个响应头。
-`Build-Web.cmd` 在导出后调用 `tools/patch_web_shell.py --wait-for-pwa`，等 Service Worker
+`scripts/Build-Web.cmd` 在导出后调用 `tools/patch_web_shell.py --wait-for-pwa`，等 Service Worker
 生效后再刷新一次。上面的本地服务直接提供响应头，可以直接启动。
 
 ### 3.2 必须 `disable_exceptions=no`
@@ -125,7 +125,7 @@ Godot 4.6 的 dlink 主模块自带 wasm exception tag，所以打开异常后�
 
 ## 4. 产物与体积
 
-`Build-Web.cmd` 导出后 `WebBuild/` 约 **345 MB**（本地产物，不提交；体积构成与瘦身方向见
+`scripts/Build-Web.cmd` 导出后 `WebBuild/` 约 **345 MB**（本地产物，不提交；体积构成与瘦身方向见
 [`build-from-source.md` §7.1](./build-from-source.md#71-pck-现在-282-mb-花在哪实测目录明细)）：
 
 | 文件 | 体积 | 说明 |
@@ -177,7 +177,7 @@ Godot 4.6 的 dlink 主模块自带 wasm exception tag，所以打开异常后�
 | 打包打错 | 导出后解析 pck 目录，比对每个 `.fontdata` 的 md5 与子集产物 | 8/8 命中 |
 | 未知缺字 | 源码里出现、但没有任何随包字体能渲染的字符 | 已知 16 个（见下），新增即失败 |
 
-**实测**（2026-10-31，`Build-Web.cmd skip-native`）：
+**实测**（2026-10-31，`scripts/Build-Web.cmd skip-native`）：
 
 | 项 | 前 | 后 |
 | --- | --- | --- |
@@ -218,12 +218,12 @@ Godot 4.6 的 dlink 主模块自带 wasm exception tag，所以打开异常后�
 
 ```bat
 python tools\subset_fonts.py              :: = subset，打印覆盖率，exit 0
-python tools\subset_fonts.py prepare --godot "%GODOT_BIN%"   :: 子集 + 注入（Build-Web.cmd 做的事）
+python tools\subset_fonts.py prepare --godot "%GODOT_BIN%"   :: 子集 + 注入（scripts/Build-Web.cmd 做的事）
 python tools\subset_fonts.py status       :: 看 .godot 是否还残留注入
 python tools\subset_fonts.py restore      :: 手动还原
 ```
 
-**回退**：`set PK_WEB_SKIP_FONT_SUBSET=1` 再跑 `Build-Web.cmd` → 跳过整个步骤，
+**回退**：`set PK_WEB_SKIP_FONT_SUBSET=1` 再跑 `scripts/Build-Web.cmd` → 跳过整个步骤，
 按老样子打全字库（pck 回到 ~282 MB）。构建被强杀导致 `.godot` 残留子集时，下一次
 `prepare` 会先自动还原（`tmp/web_font_subset/pending_restore.json`）。
 
@@ -416,7 +416,7 @@ python tools\verify_web_session.py --url http://127.0.0.1:8060/ProjectKeynes.htm
 [loading-catalog] PREBAKE OK: 860 entries, 8.0s
 ```
 
-`Build-Web.cmd` 在导出前跑的就是这条命令（日志 `tmp/web_prebake.log`），
+`scripts/Build-Web.cmd` 在导出前跑的就是这条命令（日志 `tmp/web_prebake.log`），
 `errorlevel 1` 直接 `exit /b 1` 中止，不导出——宁可构建失败，也不发一个
 "每次新开游戏慢 5 秒"的包。
 
@@ -777,7 +777,7 @@ day barrier 等的 "peer" 其实就是**主线程自己**：INPUT_CAPTURE 需要
 
 **改动**
 
-1. `Build-Web.cmd`：
+1. `scripts/Build-Web.cmd`：
    - `debug` 模式以前是**假的**（编 debug wasm，但 `:export_web` 永远 `--export-release` 到同一
      目录）。现在 `:export_web` 按模式选 `--export-debug` + 输出到 `WebBuildDebug/`；
    - 新增 `skip-native-debug`（只导 debug、复用现成 wasm），release/debug 产物彻底分开。
@@ -1081,7 +1081,7 @@ python tools\pk_web_reload_probe.py --wait 45 --profile tmp\chrome_profile_pk  #
 > > `runtime_web_worker` 导出项 > web 平台默认 `true`。worker 启动失败会自动回退 inline；
 > 如果 side module 缺少 `environment_ring_has_capacity()` 或
 > `runtime_committed_day()`，启动边界也会强制回退 inline，避免旧 Web 包把 worker
-> 停在 `PAUSED` 等不到环境帧并卡住第 1 天。重新执行 `Build-Web.cmd`（不要使用
+> 停在 `PAUSED` 等不到环境帧并卡住第 1 天。重新执行 `scripts/Build-Web.cmd`（不要使用
 > `skip-native`）可恢复 worker 路径。
 > （`web_worker_start_code=inline_fallback`），所以默认开启不是单点风险。
 > 桌面不受影响：桌面本来就跑 worker，`native_daily_inline` 在桌面只看
@@ -1190,7 +1190,7 @@ web 默认可以切到 worker 的依据（见 §9.20.1 结论）。
 
 #### 9.20.2 构建钩子的两个偶发失败（都已自愈，别慌）
 
-`Build-Web.cmd` 现在串了三条 web-only 钩子（纹理降规格 → 字体子集化 → 导出），实测都遇到过一次
+`scripts/Build-Web.cmd` 现在串了三条 web-only 钩子（纹理降规格 → 字体子集化 → 导出），实测都遇到过一次
 **偶发**失败，但都自愈了，遇到时不要以为改坏了：
 
 | 现象 | 原因 | 现在的处理 |
@@ -1200,7 +1200,7 @@ web 默认可以切到 worker 的依据（见 §9.20.1 结论）。
 
 两条都**不能让构建"看起来成功"**：纹理状态不一致会让桌面/编辑器用 lossy 贴图，
 字体注入不完整会让子集 `.fontdata` 留在 `.godot` 里。所以两者的失败路径都是让
-`Build-Web.cmd` 以非零码退出，并打印可直接照抄的修复命令。
+`scripts/Build-Web.cmd` 以非零码退出，并打印可直接照抄的修复命令。
 
 #### 仍未做（按性价比）
 
@@ -1250,7 +1250,7 @@ ProjectKeynes.js:467    at: alloc_static (core/os/memory.cpp:114)
 
 **已落地：页面侧 watchdog（`tools/web/pk_web_watchdog.js`）**
 
-`Build-Web.cmd` 在每次导出成功后调用 `tools/patch_web_shell.py`，把
+`scripts/Build-Web.cmd` 在每次导出成功后调用 `tools/patch_web_shell.py`，把
 `pk_web_watchdog.js` 拷到导出目录并往 `ProjectKeynes.html` 里注入一行
 `<script src="pk_web_watchdog.js"></script>`（幂等，带 `<!-- pk-web-watchdog -->` 标记）。
 它只做页面侧的事，不依赖引擎内部：

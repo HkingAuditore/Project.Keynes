@@ -257,7 +257,7 @@ Music/
 Project/project-keynes/assets/audio/banks/**/*.bank
 ```
 
-配合构建时自动生成（脚本已经会做）。代价是新克隆要跑一次 `Build-FMOD-Banks.cmd`，
+配合构建时自动生成（脚本已经会做）。代价是新克隆要跑一次 `scripts/Build-FMOD-Banks.cmd`，
 收益是仓库不再随音频素材膨胀。
 
 ---
