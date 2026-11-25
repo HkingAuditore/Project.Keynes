@@ -526,7 +526,7 @@ if ($runSuites) {
         $suiteArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $suiteScript,
             '-RepoRoot', $root, '-OutDir', $suiteOut, '-GodotExe', $godot,
             '-TimeoutSeconds', "$TestTimeoutSeconds")
-        $commandText = "pwsh -File tools/runtime/Invoke-RuntimeTests.ps1 -RepoRoot <root> -OutDir $suiteOut -GodotExe <godot> -TimeoutSeconds $TestTimeoutSeconds"
+        $commandText = "pwsh -File tools/runtime/Invoke-RuntimeTests.ps1 -RepoRoot $root -OutDir $suiteOut -GodotExe $godot -TimeoutSeconds $TestTimeoutSeconds"
         $itemStarted = Get-Date
         $outcome = Invoke-NativeCommand -Exe $pwshPath -Arguments $suiteArgs -WorkingDirectory $root
         $elapsed = [math]::Round(((Get-Date) - $itemStarted).TotalSeconds, 2)

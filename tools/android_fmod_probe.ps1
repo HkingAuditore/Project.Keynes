@@ -1,4 +1,4 @@
-# 一次性跑完 Android FMOD 验证：等设备就绪 -> 卸载旧包 -> 安装 -> 启动 -> 抓 logcat。
+﻿# 一次性跑完 Android FMOD 验证：等设备就绪 -> 卸载旧包 -> 安装 -> 启动 -> 抓 logcat。
 #
 # 为什么要有它：模拟器在高负载下会短暂掉 adb / package 服务，逐条 adb 命令敲很容易
 # 撞上 "Can't find service: package"，把失败误读成音频问题。这里统一重试。

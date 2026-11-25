@@ -1,4 +1,4 @@
-# 构建 dots_ext，并先清掉会锁住 DLL 的探针残留进程。
+﻿# 构建 dots_ext，并先清掉会锁住 DLL 的探针残留进程。
 #
 # 为什么需要这个：headless 探针跑完偶尔留下 Godot 进程持有 DLL 句柄，链接就报
 # "拒绝访问"（编译已经过了，只是 link 失败），git status 里那堆 .locked / .bak

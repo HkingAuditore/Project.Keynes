@@ -86,15 +86,9 @@ if ($Build) {
 }
 
 if ($Godot) {
-    if ([string]::IsNullOrWhiteSpace($GodotExe)) {
-        $GodotExe = $env:GODOT_BIN
-    }
-    if ([string]::IsNullOrWhiteSpace($GodotExe)) {
-        $GodotExe = '<GODOT_BIN>'
-    }
-    if (-not (Test-Path -LiteralPath $GodotExe)) {
-        throw "Godot not found: $GodotExe"
-    }
+    # -GodotExe > GODOT_BIN > repo-relative installs > PATH; throws with the tried list.
+    . (Join-Path $root 'tools\runtime\Resolve-GodotBin.ps1')
+    $GodotExe = Resolve-GodotBin -GodotExe $GodotExe
     $tests = @(
         'res://tests/ideology/ideology_content_test.gd',
         'res://tests/ideology/ideology_runtime_test.gd',

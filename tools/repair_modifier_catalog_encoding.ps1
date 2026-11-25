@@ -19,7 +19,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Path = "<repo>\Project\project-keynes\scripts\modifier\modifier_catalog.gd"
+    [string]$Path = (Join-Path (Split-Path $PSScriptRoot -Parent) 'Project\project-keynes\scripts\modifier\modifier_catalog.gd')
 )
 
 $ErrorActionPreference = "Stop"

@@ -19,9 +19,9 @@ $root = (Resolve-Path -LiteralPath $RepoRoot).Path
 $project = Join-Path $root 'Project\project-keynes'
 
 if ($GodotExe -eq '') {
-    $GodotExe = if ($env:GODOT_BIN) { $env:GODOT_BIN } else {
-        '<GODOT_BIN>'
-    }
+    # explicit arg > GODOT_BIN > repo-relative installs > PATH; throws with the tried list.
+    . (Join-Path $PSScriptRoot 'Resolve-GodotBin.ps1')
+    $GodotExe = Resolve-GodotBin
 }
 
 $required = @(

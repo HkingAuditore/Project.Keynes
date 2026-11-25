@@ -53,7 +53,8 @@ func _run() -> int:
 	_report("day0", map)
 	var veg0: PackedByteArray = map.vegetation_arr.duplicate()
 	var moist0: PackedFloat32Array = map.moisture_arr.duplicate()
-	var csv_path := "<repo>/tmp/tile_data_record_zonal_fix_%d.csv" % seed
+	var repo_tmp := ProjectSettings.globalize_path("res://").path_join("../..").simplify_path().path_join("tmp")
+	var csv_path := repo_tmp.path_join("tile_data_record_zonal_fix_%d.csv" % seed)
 	var csv := FileAccess.open(csv_path, FileAccess.WRITE)
 	if csv != null:
 		csv.store_line("cell_index,tick_idx,terrain_arr,is_water_arr,vegetation_arr,base_vegetation_arr,temp_arr,temp_365d_arr,moisture_arr,base_moisture_arr,water_balance_30d_arr,soil_moisture_arr,cell_lat_norm_arr,elevation_arr,vegetation_vitality_arr")

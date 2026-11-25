@@ -11,10 +11,13 @@
 import sys
 import json
 import io
+import os
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-NETWORK = (r"<repo>\Project\project-keynes"
-           r"\data\technology\technology_network.json")
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if not os.path.isfile(os.path.join(_PROJECT_ROOT, "project.godot")):
+    raise SystemExit("找不到 Godot 工程目录: " + _PROJECT_ROOT)
+NETWORK = os.path.join(_PROJECT_ROOT, "data", "technology", "technology_network.json")
 
 NEGATIVE_STATS = ("loss", "death", "cost", "input_factor", "consumption", "attrition")
 POSITIVE_STATS = ("_factor", "efficiency", "output", "capacity", "speed", "generation",

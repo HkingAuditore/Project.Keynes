@@ -27,10 +27,20 @@ function Resolve-GodotBin {
     if ($GodotExe -ne '') { $candidates.Add($GodotExe) }
     if ($env:GODOT_BIN) { $candidates.Add($env:GODOT_BIN) }
 
-    # Known local installs. The directory itself ends in .exe on this machine,
-    # which trips up naive globbing, so both nested names are listed.
-    $candidates.Add('<GODOT_BIN>')
-    $candidates.Add('<GODOT_BIN>')
+    # Known local installs, derived from where this repo actually is: the official
+    # zip is often extracted next to the repo, and a directory named *.exe means the
+    # binary sits one level deeper (and its console build is the one we want).
+    $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+    $bases = @($repo, (Split-Path -Parent $repo), (Split-Path -Parent (Split-Path -Parent $repo)))
+    $zipDir = 'Godot_v4.6.2-stable_win64.exe'
+    # Console builds are tried across every base before the GUI ones, because the
+    # quiet build is what headless runs need.
+    foreach ($name in @('Godot_v4.6.2-stable_win64_console.exe', 'Godot_v4.6.2-stable_win64.exe')) {
+        foreach ($base in $bases) {
+            $candidates.Add((Join-Path $base $name))
+            $candidates.Add((Join-Path (Join-Path $base $zipDir) $name))
+        }
+    }
 
     foreach ($candidate in $candidates) {
         if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
@@ -46,7 +56,7 @@ function Resolve-GodotBin {
     throw @"
 Godot executable not found. Set GODOT_BIN to the console build, e.g.
 
-    `$env:GODOT_BIN = '<GODOT_BIN>'
+    `$env:GODOT_BIN = 'path\to\Godot_v4.6.2-stable_win64_console.exe'
 
 Tried: $($candidates -join '; ')
 "@

@@ -7,7 +7,12 @@ extends SceneTree
 ## When the last user argument is "mobile" the run also repeats both passes at the
 ## phone landscape logical size (1942x873) in compact mode.
 
-const OUTPUT_DIR := "<repo>/tmp/military_ui"
+## 输出目录落在 <repo>/tmp 下，运行时从 res:// 反推，避免把本机绝对路径写进仓库。
+var OUTPUT_DIR := _repo_tmp().path_join("military_ui")
+
+
+static func _repo_tmp() -> String:
+	return ProjectSettings.globalize_path("res://").path_join("../..").simplify_path().path_join("tmp")
 const SCENE := "res://scenes/ui/military_workspace.tscn"
 const PANEL_SCENE := "res://scenes/ui/country_panel.tscn"
 const THEME := "res://assets/themes/player_session_theme.tres"

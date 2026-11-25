@@ -24,21 +24,11 @@ try {
     if (-not (Test-Path -LiteralPath $Fixture -PathType Leaf)) {
         throw "Fixture save not found: $Fixture"
     }
-    # Resolve the Godot console binary: explicit arg > GODOT_BIN > known local
-    # installs on the dev machines this probe runs on.
+    # Resolve the Godot console binary: explicit arg > GODOT_BIN > repo-relative
+    # installs > PATH. The resolver throws with the full list of what it tried.
     if ([string]::IsNullOrWhiteSpace($GodotExe)) {
-        $candidates = @(
-            $env:GODOT_BIN,
-            '<GODOT_BIN>',
-            '<GODOT_BIN>'
-        )
-        foreach ($candidate in $candidates) {
-            if (-not [string]::IsNullOrWhiteSpace($candidate) -and
-                    (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-                $GodotExe = (Resolve-Path -LiteralPath $candidate).Path
-                break
-            }
-        }
+        . (Join-Path $root 'tools\runtime\Resolve-GodotBin.ps1')
+        $GodotExe = Resolve-GodotBin
     }
     $fixturePath = (Resolve-Path -LiteralPath $Fixture).Path
     if ([string]::IsNullOrWhiteSpace($OutDir)) {

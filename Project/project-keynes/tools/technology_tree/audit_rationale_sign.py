@@ -6,12 +6,15 @@
 """
 import re
 import io
+import os
 import sys
 import json
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-NETWORK = (r"<repo>\Project\project-keynes"
-           r"\data\technology\technology_network.json")
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if not os.path.isfile(os.path.join(_PROJECT_ROOT, "project.godot")):
+    raise SystemExit("找不到 Godot 工程目录: " + _PROJECT_ROOT)
+NETWORK = os.path.join(_PROJECT_ROOT, "data", "technology", "technology_network.json")
 
 UP_WORDS = ("提高", "提升", "增加", "增强", "扩大", "加快", "上升", "更多", "加倍")
 DOWN_WORDS = ("减少", "降低", "下降", "减弱", "缩小", "放慢", "更少", "节省")

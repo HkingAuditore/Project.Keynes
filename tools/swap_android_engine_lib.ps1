@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Replace libgodot_android.so inside an exported APK, re-align and re-sign it.
 

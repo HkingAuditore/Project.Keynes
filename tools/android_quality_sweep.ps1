@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Measure the phone's fps at each render quality tier without rebuilding.
 
@@ -19,11 +19,12 @@ param(
     [string]$Package = "com.projectkeynes.game",
     [int]$WarmupSeconds = 25,
     [int]$SampleSeconds = 20,
-    [string]$Out = "<repo>\Build\logs\quality_sweep.log"
+    [string]$Out = (Join-Path (Split-Path $PSScriptRoot -Parent) 'Build\logs\quality_sweep.log')
 )
 
+. (Join-Path $PSScriptRoot 'runtime\Resolve-Adb.ps1')
 $ErrorActionPreference = "Continue"
-$adbExe = "<ADB>"
+$adbExe = Resolve-Adb
 function A { param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)
     if ($Serial) { & $adbExe -s $Serial @Args } else { & $adbExe @Args } }
 

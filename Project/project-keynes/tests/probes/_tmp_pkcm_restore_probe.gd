@@ -5,9 +5,9 @@ extends SceneTree
 
 const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd")
 
-const AUTOSAVE_PKCM := "<repo-parent>/tmp/autosave_pkcm.bin"
-const MANUAL1_PKCM := "<repo-parent>/tmp/manual1_pkcm.bin"
-const MANUAL1_PKGP := "<repo-parent>/tmp/manual1_pkgp.bin"
+## 存档样例放在 <repo>/tmp 下，运行时从 res:// 反推（res:// = <repo>/Project/project-keynes/）。
+static func _repo_tmp() -> String:
+	return ProjectSettings.globalize_path("res://").path_join("../..").simplify_path().path_join("tmp")
 
 
 func _init() -> void:
@@ -32,9 +32,9 @@ func _run() -> void:
 		int(configured.get("catalog_hash", 0)),
 		str(configured.get("stat_count", -1)),
 		str(configured.get("definition_count", -1))])
-	for entry in [[0, AUTOSAVE_PKCM, "autosave.pkcm"],
-			[0, MANUAL1_PKCM, "manual_1.pkcm"],
-			[3, MANUAL1_PKGP, "manual_1.pkgp"]]:
+	for entry in [[0, _repo_tmp().path_join("autosave_pkcm.bin"), "autosave.pkcm"],
+			[0, _repo_tmp().path_join("manual1_pkcm.bin"), "manual_1.pkcm"],
+			[3, _repo_tmp().path_join("manual1_pkgp.bin"), "manual_1.pkgp"]]:
 		var bytes := _read(String(entry[1]))
 		if bytes.is_empty():
 			print("[probe] %s missing" % String(entry[2]))

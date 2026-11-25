@@ -92,7 +92,8 @@ func _run() -> int:
 		push_error("[ns-probe] world generation failed")
 		return 4
 
-	var out_path := "d:/Godot/ProjectKeynes/Project.Keynes/tmp/ns_climate_probe_%s.csv" % label
+	var repo_tmp := ProjectSettings.globalize_path("res://").path_join("../..").simplify_path().path_join("tmp")
+	var out_path := repo_tmp.path_join("ns_climate_probe_%s.csv" % label)
 	var csv := FileAccess.open(out_path, FileAccess.WRITE)
 	if csv == null:
 		push_error("[ns-probe] cannot open output " + out_path)

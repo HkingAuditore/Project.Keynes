@@ -9,8 +9,10 @@ import json
 import os
 import sys
 
-NETWORK = (r"<repo>\Project\project-keynes"
-           r"\data\technology\technology_network.json")
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if not os.path.isfile(os.path.join(_PROJECT_ROOT, "project.godot")):
+    raise SystemExit("找不到 Godot 工程目录: " + _PROJECT_ROOT)
+NETWORK = os.path.join(_PROJECT_ROOT, "data", "technology", "technology_network.json")
 
 data = json.load(open(NETWORK, encoding="utf-8"))
 fixed_add = 0

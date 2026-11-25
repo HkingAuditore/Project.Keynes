@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Points the dots_ext Windows GDExtension mapping at the debug or release DLL.
 

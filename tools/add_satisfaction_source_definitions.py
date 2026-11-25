@@ -14,9 +14,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-CATALOG = Path(
-    r"<repo>\Project\project-keynes\data\modifiers"
-    r"\default_modifier_catalog.tres"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+CATALOG = (
+    _REPO_ROOT / "Project" / "project-keynes" / "data" / "modifiers"
+    / "default_modifier_catalog.tres"
 )
 
 # (sub_resource id stem, definition key, display name, description, terms)

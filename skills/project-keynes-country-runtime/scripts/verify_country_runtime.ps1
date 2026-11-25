@@ -80,10 +80,12 @@ try {
         if (-not $godotExe) { $godotExe = (Get-Command godot4 -ErrorAction SilentlyContinue).Source }
         if (-not $godotExe) { $godotExe = (Get-Command godot -ErrorAction SilentlyContinue).Source }
         if (-not $godotExe) {
-            $defaultGodot = '<GODOT_BIN>'
-            if (Test-Path -LiteralPath $defaultGodot) { $godotExe = $defaultGodot }
+            # GDA_GODOT and the PATH lookups above failed: fall back to GODOT_BIN,
+            # the repo-relative installs and the remaining PATH names, and let the
+            # resolver throw with the full list of what it tried.
+            . (Join-Path $root 'tools\runtime\Resolve-GodotBin.ps1')
+            $godotExe = Resolve-GodotBin
         }
-        if (-not $godotExe) { throw 'Godot executable was not found on PATH.' }
         $tests = @(
             'country/country_reference_trace_test.gd',
             'country/country_runtime_test.gd',

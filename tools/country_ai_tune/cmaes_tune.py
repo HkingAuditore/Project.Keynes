@@ -49,10 +49,22 @@ PROJECT_DIR = REPO_ROOT / "Project" / "project-keynes"
 DEFAULT_CATALOG = "res://data/country/default_country_ai.tres"
 APPLY_SCRIPT = "res://tools/country_ai_tune/apply_params.gd"
 PERF_SCRIPT = "res://tests/game/headless_perf_record.gd"
-DEFAULT_GODOT = os.environ.get(
-    "GODOT_BIN",
-    r"<GODOT_BIN>",
-)
+def _default_godot() -> str:
+    """GODOT_BIN first, then the usual zip layout next to the repo (console build)."""
+    env = os.environ.get("GODOT_BIN", "").strip()
+    if env:
+        return env
+    zip_dir = "Godot_v4.6.2-stable_win64.exe"
+    for name in ("Godot_v4.6.2-stable_win64_console.exe",
+                 "Godot_v4.6.2-stable_win64.exe"):
+        for base in (REPO_ROOT, REPO_ROOT.parent, REPO_ROOT.parent.parent):
+            for path in (base / name, base / zip_dir / name):
+                if path.is_file():
+                    return str(path)
+    return ""
+
+
+DEFAULT_GODOT = _default_godot()
 
 
 # ---------------------------------------------------------------------------

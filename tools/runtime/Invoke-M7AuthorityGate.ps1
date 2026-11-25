@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Runs the M7 authority gate in fail-closed order with per-stage manifests.
 

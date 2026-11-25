@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Runs the runtime headless test suite and archives per-test logs.
 

@@ -23,12 +23,18 @@ param(
     [string]$Abi = 'arm64',
     [string]$Out = '',
     [int]$Attempts = 2,
-    [string]$GodotExe = '<GODOT_BIN>',
+    [string]$GodotExe = '',
     [switch]$SkipStubs
 )
 
-$ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+
+# Godot path: explicit -GodotExe > GODOT_BIN > repo-relative installs > PATH.
+# The resolver throws with the full list of what it tried.
+. (Join-Path $root 'tools\runtime\Resolve-GodotBin.ps1')
+$GodotExe = Resolve-GodotBin -GodotExe $GodotExe
+
+$ErrorActionPreference = 'Continue'
 Push-Location $root
 try {
     $env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk'

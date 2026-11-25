@@ -7,9 +7,20 @@ from pathlib import Path
 
 from .errors import AuthoringError
 
-_CANDIDATES = (
-    r"<GODOT_BIN>",
-    r"<GODOT_BIN>",
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_ABOVE_REPO = _REPO_ROOT.parent
+_GRAND_REPO = _ABOVE_REPO.parent
+_NAMES = ("Godot_v4.6.2-stable_win64_console.exe", "Godot_v4.6.2-stable_win64.exe")
+_ZIP_DIR = "Godot_v4.6.2-stable_win64.exe"
+
+# Known local installs, derived from where this repo actually is: the official zip
+# is often extracted next to the repo, and a directory named *.exe means the binary
+# sits one level deeper. Console builds are listed before the GUI ones.
+_CANDIDATES = tuple(
+    str(base / part)
+    for name in _NAMES
+    for base in (_REPO_ROOT, _ABOVE_REPO, _GRAND_REPO)
+    for part in ((name,), (_ZIP_DIR, name))
 )
 
 # GODOT_BIN is the repo-wide convention; GODOT_EXE stays supported for callers

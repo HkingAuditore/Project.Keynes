@@ -15,9 +15,10 @@ import json
 import sys
 from pathlib import Path
 
-JSON_PATH = Path(
-    r"<repo>\Project\project-keynes"
-    r"\data\economy\family_official_buffs.json"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+JSON_PATH = (
+    _REPO_ROOT / "Project" / "project-keynes" / "data" / "economy"
+    / "family_official_buffs.json"
 )
 
 # Q16 magnitudes for prestige 0 (unranked) then I..V. Multiplied into the

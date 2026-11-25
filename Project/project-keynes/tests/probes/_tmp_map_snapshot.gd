@@ -50,7 +50,8 @@ func _run() -> int:
 	var terr: PackedByteArray = a.get("terrain_arr")
 	var veg: PackedByteArray = a.get("vegetation_arr")
 	var bm: PackedFloat32Array = a.get("base_moisture_arr")
-	var out_dir := "<repo>/tmp"
+	# <repo>/tmp，运行时从 res:// 反推，避免把本机绝对路径写进仓库。
+	var out_dir := ProjectSettings.globalize_path("res://").path_join("../..").simplify_path().path_join("tmp")
 	_save_png(out_dir + "/zonal_fix_base_moisture_%d.png" % seed,
 		width, height, terr, bm)
 	_save_veg_png(out_dir + "/zonal_fix_vegetation_%d.png" % seed,

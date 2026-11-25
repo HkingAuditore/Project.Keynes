@@ -1,11 +1,13 @@
 param(
-    [string]$Godot = "<GODOT_BIN>",
+    [string]$Godot = "",
     [int]$MaxParallel = 1,
     [string[]]$Cards = @()
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)))
+. (Join-Path $root "tools/runtime/Resolve-GodotBin.ps1")
+$Godot = Resolve-GodotBin -GodotExe $Godot
 $project = Join-Path $root "Project/project-keynes"
 $script = "res://tests/ideology/ideology_cell_card_worker_test.gd"
 $logDir = Join-Path $root "tmp/cell-card-worker"

@@ -26,16 +26,17 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Apk = "<repo>\Build\ProjectKeynes-emulator.apk",
+    [string]$Apk = (Join-Path (Split-Path $PSScriptRoot -Parent) 'Build\ProjectKeynes-emulator.apk'),
     [int]$RunSeconds = 90,
     [switch]$Restart,
     [string]$Gpu = "swiftshader_indirect",
     [string]$Serial = "",
-    [string]$Out = "<repo>\Build\logs\android_probe.log"
+    [string]$Out = (Join-Path (Split-Path $PSScriptRoot -Parent) 'Build\logs\android_probe.log')
 )
 
+. (Join-Path $PSScriptRoot 'runtime\Resolve-Adb.ps1')
 $ErrorActionPreference = "Continue"
-$adbExe = "<ADB>"
+$adbExe = Resolve-Adb
 $emu = "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe"
 $avd = "Pixel_3a_API_36_extension_level_17_x86_64"
 $pkg = "com.projectkeynes.game"

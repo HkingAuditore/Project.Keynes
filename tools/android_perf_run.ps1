@@ -49,11 +49,8 @@ $ErrorActionPreference = "Continue"
 
 $repo = Split-Path -Parent $PSScriptRoot
 $pkg = "com.projectkeynes.game"
-$adb = "<ADB>"
-if (-not (Test-Path $adb)) {
-    $found = Get-Command adb -ErrorAction SilentlyContinue
-    if ($found) { $adb = $found.Source } else { throw "adb not found (checked <ADB> and PATH)" }
-}
+. (Join-Path $PSScriptRoot 'runtime\Resolve-Adb.ps1')
+$adb = Resolve-Adb
 
 function Resolve-Serial {
     if ($Serial) { return $Serial }

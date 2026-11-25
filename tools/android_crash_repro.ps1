@@ -21,11 +21,12 @@ param(
     [string]$Serial = "",
     [string]$Package = "com.projectkeynes.game",
     [int]$TimeoutSeconds = 180,
-    [string]$Out = "<repo>\Build\logs\crash_capture"
+    [string]$Out = (Join-Path (Split-Path $PSScriptRoot -Parent) 'Build\logs\crash_capture')
 )
 
+. (Join-Path $PSScriptRoot 'runtime\Resolve-Adb.ps1')
 $ErrorActionPreference = "Continue"
-$adbExe = "<ADB>"
+$adbExe = Resolve-Adb
 function A { param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)
     if ($Serial) { & $adbExe -s $Serial @Args } else { & $adbExe @Args } }
 

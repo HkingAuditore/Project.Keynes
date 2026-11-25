@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Runs the production-path headless soak and archives one summary per run.
 

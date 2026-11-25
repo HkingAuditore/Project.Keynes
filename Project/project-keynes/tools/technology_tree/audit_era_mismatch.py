@@ -16,7 +16,10 @@ import sys
 import collections
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-PROJ = r"<repo>\Project\project-keynes"
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if not os.path.isfile(os.path.join(_PROJECT_ROOT, "project.godot")):
+    raise SystemExit("找不到 Godot 工程目录: " + _PROJECT_ROOT)
+PROJ = _PROJECT_ROOT
 NETWORK = os.path.join(PROJ, "data", "technology", "technology_network.json")
 BUILD_DIR = os.path.join(PROJ, "data", "economy", "buildings")
 GOOD_DIR = os.path.join(PROJ, "data", "goods")

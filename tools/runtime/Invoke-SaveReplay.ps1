@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Replays a player save headlessly for N simulation days and reports the outcome.
 
@@ -28,10 +28,10 @@ Headless speed-up (runtime-fault plan §8.2-A / R5):
   .\tools\runtime\Invoke-SaveReplay.ps1 -Slot autosave -Days 60
 
 .EXAMPLE
-  .\tools\runtime\Invoke-SaveReplay.ps1 -SavePath C:\tmp\day2740.pksv -Days 20 -Speed 10
+  .\tools\runtime\Invoke-SaveReplay.ps1 -SavePath %TEMP%\day2740.pksv -Days 20 -Speed 10
 
 .EXAMPLE
-  .\tools\runtime\Invoke-SaveReplay.ps1 -SavePath C:\tmp\day2740.pksv -UntilDay 2745 -Release -Json
+  .\tools\runtime\Invoke-SaveReplay.ps1 -SavePath %TEMP%\day2740.pksv -UntilDay 2745 -Release -Json
 #>
 param(
     [string]$RepoRoot = (Get-Location).Path,

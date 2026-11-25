@@ -13,8 +13,10 @@ import os
 import re
 import sys
 
-PLANS = (r"<repo>\Project\project-keynes"
-         r"\data\economy\consumption_plans")
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if not os.path.isfile(os.path.join(_PROJECT_ROOT, "project.godot")):
+    raise SystemExit("找不到 Godot 工程目录: " + _PROJECT_ROOT)
+PLANS = os.path.join(_PROJECT_ROOT, "data", "economy", "consumption_plans")
 
 NEED_LEVEL = ["need_ids", "priorities", "base_qty_per_person", "wealth_elasticity_q16",
               "wealth_min_q16", "wealth_max_q16", "price_quantity_elasticity_q16",

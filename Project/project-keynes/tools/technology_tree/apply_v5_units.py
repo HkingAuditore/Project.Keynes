@@ -13,8 +13,10 @@ import json
 import os
 import sys
 
-CATALOG = (r"<repo>\Project\project-keynes"
-           r"\data\military\military_catalog.json")
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if not os.path.isfile(os.path.join(_PROJECT_ROOT, "project.godot")):
+    raise SystemExit("找不到 Godot 工程目录: " + _PROJECT_ROOT)
+CATALOG = os.path.join(_PROJECT_ROOT, "data", "military", "military_catalog.json")
 
 UNITS = [
     {

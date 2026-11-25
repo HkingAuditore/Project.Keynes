@@ -12,7 +12,12 @@ extends SceneTree
 ##   2. 名录必须真的列出国家、两张档案的标题必须是国名/敌名；
 ##   3. 主按钮在 1280 宽下不能被裁掉（页脚宽度够用）。
 
-const OUTPUT_DIR := "<repo>/tmp/diplomacy_ui"
+## 输出目录落在 <repo>/tmp 下，运行时从 res:// 反推，避免把本机绝对路径写进仓库。
+var OUTPUT_DIR := _repo_tmp().path_join("diplomacy_ui")
+
+
+static func _repo_tmp() -> String:
+	return ProjectSettings.globalize_path("res://").path_join("../..").simplify_path().path_join("tmp")
 const SCENE := "res://scenes/ui/diplomacy_workspace.tscn"
 const PANEL_SCENE := "res://scenes/ui/country_panel.tscn"
 const THEME := "res://assets/themes/player_session_theme.tres"

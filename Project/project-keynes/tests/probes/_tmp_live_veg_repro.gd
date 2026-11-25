@@ -71,8 +71,10 @@ func _run() -> int:
 	for i in range(15):
 		await process_frame
 
+	# <repo>/tmp，运行时从 res:// 反推，避免把本机绝对路径写进仓库。
+	var repo_tmp := ProjectSettings.globalize_path("res://").path_join("../..").simplify_path().path_join("tmp")
 	_dump_vis(renderer, "day0")
-	await _shot("<repo>/tmp/_live_repro_day0.png")
+	await _shot(repo_tmp.path_join("_live_repro_day0.png"))
 
 	for day in range(1, PLAY_DAYS + 1):
 		clock.current_day = float(day)
@@ -85,7 +87,7 @@ func _run() -> int:
 	for i in range(90):
 		await process_frame
 	_dump_vis(renderer, "day30_settled_far")
-	await _shot("<repo>/tmp/_live_repro_day30_far.png")
+	await _shot(repo_tmp.path_join("_live_repro_day30_far.png"))
 
 	# 拉近焦对比（同一块区域）
 	cam.zoom = Vector2(1.2, 1.2)
@@ -93,7 +95,7 @@ func _run() -> int:
 	for i in range(10):
 		await process_frame
 	_dump_vis(renderer, "day30_near")
-	await _shot("<repo>/tmp/_live_repro_day30_near.png")
+	await _shot(repo_tmp.path_join("_live_repro_day30_near.png"))
 	print("[REPRO] ==== repro done ====")
 	return 0
 

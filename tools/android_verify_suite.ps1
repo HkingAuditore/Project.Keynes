@@ -30,11 +30,12 @@ param(
     [int]$Seconds = 150,
     [int]$Shots = 3,
     [string]$Package = "com.projectkeynes.game",
-    [string]$OutDir = "<repo>\Build\logs\verify"
+    [string]$OutDir = (Join-Path (Split-Path $PSScriptRoot -Parent) 'Build\logs\verify')
 )
 
+. (Join-Path $PSScriptRoot 'runtime\Resolve-Adb.ps1')
 $ErrorActionPreference = "Continue"
-$adb = "<ADB>"
+$adb = Resolve-Adb
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $logFile = Join-Path $OutDir "logcat_$stamp.log"
