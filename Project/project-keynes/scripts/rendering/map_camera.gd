@@ -25,6 +25,9 @@
 class_name MapCamera
 extends Camera2D
 
+const DrawnFrame = preload("res://scripts/rendering/map_drawn_frame.gd")
+var drawn_frame: DrawnFrame
+
 # 当用户"点按"（而非拖拽/捏合）地图时发出，参数为世界坐标。由 main.gd 连接做选格。
 signal tile_tapped(world_pos: Vector2)
 signal zoom_changed(value: float)
@@ -443,7 +446,7 @@ func _end_press(screen_pos: Vector2) -> void:
 		return
 	_last_tap_time_ms = now
 	_last_tap_screen = screen_pos
-	tile_tapped.emit(_screen_to_world(screen_pos, zoom.x))
+	tile_tapped.emit(safe_screen_to_world(screen_pos))
 
 # ───────────────────────────── 缩放数学 ─────────────────────────────
 
@@ -583,6 +586,13 @@ func _emit_view_changed_if_needed(force: bool = false) -> void:
 
 # ───────────────────────────── 坐标 / 工具 ─────────────────────────────
 
+static func for_layer(layer: CanvasItem) -> Camera2D:
+	if not layer.is_inside_tree():
+		return null
+	var local := layer.get_viewport().get_camera_2d()
+	return local if local != null else layer.get_window().get_camera_2d()
+
+
 func _screen_to_world(screen: Vector2, z: float) -> Vector2:
 	var vp_center := get_viewport_rect().size * 0.5
 	return position + (screen - vp_center) / z
@@ -594,11 +604,15 @@ func _world_to_screen(world: Vector2) -> Vector2:
 ## 屏幕 → 世界的公开入口。悬停取格必须走这里，不能在 UI 侧复制公式：
 ## 坐标系一旦改锚点模式，复制的副本会静默偏移。
 func safe_screen_to_world(screen: Vector2) -> Vector2:
+	if drawn_frame != null and drawn_frame.valid:
+		return drawn_frame.screen_transform(get_viewport_rect().size).affine_inverse() * screen
 	return _screen_to_world(screen, zoom.x)
 
 
 ## 世界 → 屏幕的公开入口，与 safe_screen_to_world 严格互逆（同一套锚点公式）。
 func safe_world_to_screen(world: Vector2) -> Vector2:
+	if drawn_frame != null and drawn_frame.valid:
+		return drawn_frame.screen_transform(get_viewport_rect().size) * world
 	return _world_to_screen(world)
 
 

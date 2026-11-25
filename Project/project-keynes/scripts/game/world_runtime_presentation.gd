@@ -16,6 +16,12 @@ var _building_visual_intel: BuildingVisualIntelCache = BuildingVisualIntelCacheS
 var _building_visual_type_count: int = -1
 var _building_visual_force_full_refresh: bool = false
 var _building_visual_diag_logged: bool = false
+var ui_refresh_enabled := true
+var _held_ui_refreshes: Dictionary[Callable, bool] = {}
+var _ui_from_day := -1
+var ui_presented_day := -1
+var _ui_day := -1
+var _ui_generation := 0
 var _presented_day := -1
 var _pending_from_day := -1
 var _pending_day := -1
@@ -29,6 +35,10 @@ func queue_worker_commit(from_day: int, day: int, generation: int, visual_commit
 	# A restarted executor can publish a lower generation in the same world.
 	if day <= maxi(_presented_day, _pending_day):
 		return
+	if _ui_day < 0:
+		_ui_from_day = from_day
+	_ui_day = day
+	_ui_generation = generation
 	if _pending_day < 0:
 		_pending_from_day = _presented_day if _presented_day >= 0 else from_day
 	_pending_day = day
@@ -36,8 +46,28 @@ func queue_worker_commit(from_day: int, day: int, generation: int, visual_commit
 	if _map_updates.queue(visual_commit):
 		_pending_map_day = day
 
+func publish_ui_view(publish: Callable) -> void:
+	if not ui_refresh_enabled:
+		return
+	if _ui_day >= 0:
+		ui_presented_day = _ui_day
+		_ui_day = -1
+		publish.call(_ui_from_day, ui_presented_day, _ui_generation)
+	if not _held_ui_refreshes.is_empty():
+		var held := _held_ui_refreshes
+		_held_ui_refreshes = {}
+		for refresh: Callable in held:
+			if refresh.is_valid():
+				refresh.call()
+
+## Passive panel timers can expire during a hold, including on a paused day.
+func defer_ui_refresh(refresh: Callable) -> bool:
+	if not ui_refresh_enabled:
+		_held_ui_refreshes[refresh] = true
+	return not ui_refresh_enabled
+
 func publish_worker_view(publish: Callable) -> void:
-	if _pending_day < 0 or _map_updates.has_pending():
+	if _pending_day < 0 or (_map_updates.has_pending() and not _map_updates.needs_recovery):
 		return
 	_presented_day = _pending_day
 	_pending_day = -1
@@ -65,6 +95,11 @@ func presented_worker_day() -> int:
 	return _presented_day
 
 func reset_worker_views() -> void:
+	_held_ui_refreshes.clear()
+	ui_presented_day = -1
+	_ui_day = -1
+	_ui_from_day = -1
+	_ui_generation = 0
 	_presented_day = -1
 	_pending_from_day = -1
 	_pending_day = -1

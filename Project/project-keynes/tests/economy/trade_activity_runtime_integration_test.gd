@@ -35,8 +35,8 @@ func _run() -> void:
 	var host := game.get_node_or_null("RuntimeHost") as WorldRuntimeHost
 	var clock := game.get_node_or_null("WorldClock") as WorldClock
 	var camera := game.get_node_or_null("MapCamera") as MapCamera
-	var renderer := game.get_node_or_null("WorldRoot/HexRenderer") as HexRenderer
-	var activity := game.get_node_or_null("WorldRoot/TradeActivityLayer") as TradeActivityLayer
+	var renderer := game.get_node_or_null("%WorldRoot/HexRenderer") as HexRenderer
+	var activity := game.get_node_or_null("%WorldRoot/TradeActivityLayer") as TradeActivityLayer
 	expect("formal player scene owns the trade batch", activity != null)
 	expect("formal player scene has the runtime host, clock, camera and renderer",
 		host != null and clock != null and camera != null and renderer != null)

@@ -28,7 +28,8 @@ Godot UI / unhandled input
 `configure(camera, highlight, runtime_host, world_clock, ui_manager)` 一次性绑定
 控制器依赖并连接：
 
-- `MapCamera.tile_tapped`：转为当前地图 cell 选择；
+- `MapCamera.tile_tapped` 依据已画地图的镜头换算地块。窗口缩放时沿用当前显示图片的坐标。
+- `simulation_ui_updated` 刷新普通面板和日期。独立地图完成绘制时，`map_view_drawn` 通知选格界面。
 - `WorldClock.day_changed/season_changed/year_changed`：驱动 host tick 和 UI 刷新；
 - `GameUIManager` 的 pause、speed、clear-selection、菜单可见性意图；
 - `CountryFacade.country_committed`：转发给 UI/vision/border 消费者。

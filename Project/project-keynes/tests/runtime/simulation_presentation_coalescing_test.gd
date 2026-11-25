@@ -281,20 +281,18 @@ func _check_failed_map_does_not_block_view() -> bool:
 	host.simulation_view_updated.connect(func(_from, day, _generation): shown.append(day))
 	host._presentation.queue_worker_commit(5, 6, 6, {"display_dirty_cells": PackedInt32Array([4])})
 	host._process(0.0)
-	host._process(0.0)
 	var continued := shown == [6] and source.visual_updates.size() == 1
-	host._presentation.queue_worker_commit(6, 7, 7)
-	host._process(0.0)
-	continued = continued and shown == [6, 7] and source.visual_updates.size() == 1
 	source.map_available = true
-	host._presentation.queue_worker_commit(7, 8, 8, {"display_dirty_cells": PackedInt32Array([9])})
 	host._process(0.0)
 	var recovered := source.visual_updates.size() == 2 and not source.visual_updates[-1].has("display_dirty_cells")
-	host._presentation.queue_worker_commit(8, 9, 9, {"display_dirty_cells": PackedInt32Array([5])})
+	host._presentation.queue_worker_commit(6, 7, 7)
+	host._process(0.0)
+	continued = continued and shown == [6, 7] and source.visual_updates.size() == 2
+	host._presentation.queue_worker_commit(7, 8, 8, {"display_dirty_cells": PackedInt32Array([9])})
 	host._process(0.0)
 	var incremental := source.visual_updates.size() == 3 and source.visual_updates[-1].has("display_dirty_cells")
 	host.free()
-	return continued and recovered and incremental and shown == [6, 7, 8, 9]
+	return continued and recovered and incremental and shown == [6, 7, 8]
 
 
 func _check_map_publisher_without_host() -> bool:
@@ -418,7 +416,7 @@ func _run() -> void:
 	var frame_connections := _check_host_frame_connections()
 	print("Simulation presentation coalescing: ", ok)
 	print("Commit without map keeps held changes: ", kept_map)
-	print("Failed map releases date and only rebuilds on a new map commit: ", recovered_view)
+	print("Failed map releases date and recovers without another commit: ", recovered_view)
 	print("Map publisher receives only the update, map day and start time: ", narrow_publisher)
 	print("Save synchronizes new vision through the host: ", save_boundary)
 	print("Frame callbacks bind to the host and disconnect on exit: ", frame_connections)

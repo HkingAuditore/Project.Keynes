@@ -34,7 +34,7 @@ const LF = LandformType.LF
 const VEG = VegetationType.VEG
 
 ## 三态。UI 门控与迷雾表现都以此为准。
-enum { FOG_UNEXPLORED = 0, FOG_EXPLORED = 1, FOG_VISIBLE = 2 }
+enum { FOG_UNAVAILABLE = -1, FOG_UNEXPLORED = 0, FOG_EXPLORED = 1, FOG_VISIBLE = 2 }
 
 ## 基础视野预算。平原 view_block = 10，所以平地上大约看 4 格。
 const BASE_BUDGET: int = 42
@@ -307,6 +307,35 @@ static func fog_state(map: MapData, cell_idx: int) -> int:
 	if map.visible_arr[cell_idx] != 0:
 		return FOG_VISIBLE
 	return FOG_EXPLORED if map.explored_arr[cell_idx] != 0 else FOG_UNEXPLORED
+
+
+## The player's map surface may still be showing an earlier visibility revision.
+static func displayed_fog_state(map: MapData, cell: int) -> int:
+	var frame := MapDrawnFrame.for_map(map)
+	if frame == null:
+		return fog_state(map, cell)
+	if not frame.valid:
+		return FOG_UNAVAILABLE
+	if cell < 0 or cell >= frame.visible.size() or cell >= frame.explored.size():
+		push_error("Drawn visibility has no entry for cell %d" % cell)
+		return FOG_UNAVAILABLE
+	if frame.visible[cell] != 0:
+		return FOG_VISIBLE
+	return FOG_EXPLORED if frame.explored[cell] != 0 else FOG_UNEXPLORED
+
+
+static func displayed_fields_current(map: MapData) -> bool:
+	var frame := MapDrawnFrame.for_map(map)
+	return frame == null or frame.fields_current(map.vision_revision)
+
+
+## Hover and economy boards require a positive visibility sample even before a world has solved fog.
+static func displayed_cell_visible(map: MapData, cell: int) -> bool:
+	if map == null or cell < 0:
+		return false
+	if MapDrawnFrame.for_map(map) != null:
+		return displayed_fog_state(map, cell) == FOG_VISIBLE
+	return cell < map.visible_arr.size() and map.visible_arr[cell] != 0
 
 
 # --- 内部 -----------------------------------------------------

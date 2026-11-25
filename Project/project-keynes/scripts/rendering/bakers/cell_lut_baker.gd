@@ -704,8 +704,8 @@ static func _publish_cell_table(baker: MapBaker, map: MapData, world: WorldData,
 	var images: Array[Image] = [null, null, null, null]
 	var required_images := [false, false, false, false]
 	if need_all or static_changed:
-		var packed := _cell_table_static_words(map, world, enum_bytes, classes, aux,
-			class_indices, need_all or full_classes)
+		var packed := _cell_table_static_words(map, world, enum_bytes,
+			previous_class.duplicate(), previous_aux.duplicate(), class_indices, need_all or full_classes)
 		classes = packed[0]
 		aux = packed[1]
 		if need_all or classes != previous_class:

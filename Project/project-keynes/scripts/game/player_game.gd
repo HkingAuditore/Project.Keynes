@@ -16,18 +16,18 @@ const DEFAULT_DAY_NIGHT_ENABLED := true
 # 不导出该字段，避免编辑器场景覆盖或热重载残值把新会话静默改成永昼。
 var day_night_enabled: bool = DEFAULT_DAY_NIGHT_ENABLED
 
-@onready var _renderer: HexRenderer = $WorldRoot/HexRenderer
+@onready var _renderer: HexRenderer = $"%WorldRoot/HexRenderer"
 @onready var _camera: MapCamera = $MapCamera
-@onready var _highlight: CellHighlight = $WorldRoot/CellHighlight
-@onready var _cell_highlight_set = $WorldRoot/CellHighlightSet
+@onready var _highlight: CellHighlight = $"%WorldRoot/CellHighlight"
+@onready var _cell_highlight_set = $"%WorldRoot/CellHighlightSet"
 ## Peace-window overlays: candidate outline and the picked draft, separate sets
 ## so a cession pick never repaints the candidates behind it.
-@onready var _peace_candidate_set = $WorldRoot/PeaceCandidateSet
-@onready var _peace_draft_set = $WorldRoot/PeaceDraftSet
-@onready var _map_overlay: DataOverlayLayer = $WorldRoot/DataOverlayLayer
-@onready var _colonization_route: ColonizationRouteLayer = $WorldRoot/ColonizationRouteLayer
-@onready var _map_activity = $WorldRoot/MapActivityLayer
-@onready var _trade_activity = $WorldRoot/TradeActivityLayer
+@onready var _peace_candidate_set = $"%WorldRoot/PeaceCandidateSet"
+@onready var _peace_draft_set = $"%WorldRoot/PeaceDraftSet"
+@onready var _map_overlay: DataOverlayLayer = $"%WorldRoot/DataOverlayLayer"
+@onready var _colonization_route: ColonizationRouteLayer = $"%WorldRoot/ColonizationRouteLayer"
+@onready var _map_activity = $"%WorldRoot/MapActivityLayer"
+@onready var _trade_activity = $"%WorldRoot/TradeActivityLayer"
 @onready var _cell_situations = $UI/UIRoot/HUDLayer/CellSituationLayer
 @onready var _world_clock: WorldClock = $WorldClock
 @onready var _runtime_host: WorldRuntimeHost = $RuntimeHost
@@ -47,7 +47,9 @@ func _ready() -> void:
 	_attach_web_autotest()
 	var modals := _ui_manager.get_node("UIRoot/ModalLayer")
 	var loading := modals.get_node("WorldLoadingOverlay") as WorldLoadingOverlay
-	$WorldRoot.backdrops.assign([loading, modals.get_node("AnnualReportWorkspace/Desk")])
+	%WorldRoot.backdrops.assign([loading, modals.get_node("AnnualReportWorkspace/Desk")])
+	$MapViewport.configure($MapOutput/MapImage, _camera)
+	$MapViewport.map_view_drawn.connect(_player_controller.refresh_selected_map_view)
 	_configure_runtime()
 	var flow: Node = _game_flow()
 	var request: Dictionary = flow.consume_request() if flow != null else {}
@@ -106,6 +108,7 @@ func _refit_after_viewport_resize() -> void:
 func _configure_runtime() -> void:
 	_map_overlay.set_alpha(0.58)
 	_runtime_host.configure(_renderer, _camera, _world_clock, _map_overlay)
+	_ui_manager.publication_views = _runtime_host._presentation
 	_ui_manager.set_diagnostics_source(_runtime_host)
 	_ui_manager.bind_gm_sun_camera(_camera)
 	_ui_manager.bind_player_camera(_camera)
@@ -125,6 +128,9 @@ func _configure_runtime() -> void:
 
 
 func _connect_signals() -> void:
+	_runtime_host.map_fields_received.connect($MapViewport.receive_day)
+	_runtime_host.map_texture_published.connect($MapViewport.stage_map)
+	_runtime_host.presentation_reset.connect($MapViewport.reset)
 	_runtime_host.world_ready.connect(_on_world_ready)
 	_runtime_host.world_generation_failed.connect(_on_world_generation_failed)
 	_runtime_host.generation_progress.connect(_ui_manager.set_generation_progress)
@@ -154,6 +160,7 @@ func _on_world_ready(
 		view_adapter: DCViewAdapter
 ) -> void:
 	var ready_t0 := Time.get_ticks_usec()
+	$MapViewport.bind_map(map, maxi(0, _runtime_host.received_worker_day()))
 	_player_controller.refresh_country_binding()
 	_player_controller.clear_selection()
 	_map_activity.configure(map, _camera, _runtime_host, _player_controller,

@@ -128,8 +128,6 @@ func _process(host, _delta: float) -> void:
 	host._sched_proc_frames += 1
 	host._emit_web_frame_probe(frame_usec)
 	host._emit_web_beat(frame_usec)
-	host._annual_reports.poll()
-	host._web_mark("annual_poll_end")
 	host._web_mark("progress_begin")
 	host._service_runtime_progress(frame_usec)
 	host._web_mark("progress_end")
@@ -137,19 +135,22 @@ func _process(host, _delta: float) -> void:
 
 
 func _service_runtime_progress(host, frame_usec: int) -> void:
-	var segment_usec = Time.get_ticks_usec()
-	host._consume_runtime_commit_if_ready()
-	host._observe_runtime_worker_fault()
-	host._poll_runtime_health()
-	segment_usec = Time.get_ticks_usec()
-	if host.military_map_layers != null \
-			and host.military_map_layers.has_method("poll_snapshot"):
-		host.military_map_layers.poll_snapshot()
-	host._sched_proc_country_visual_ms += host._sched_elapsed_ms(segment_usec)
+	var read_due: bool = host.publication_reader.due(frame_usec)
+	var segment_usec: int
+	if read_due:
+		host._annual_reports.poll()
+		host._web_mark("annual_poll_end")
+		host._consume_runtime_commit_if_ready()
+		host._observe_runtime_worker_fault()
+		host._poll_runtime_health()
+		segment_usec = Time.get_ticks_usec()
+		if host.military_map_layers != null and host.military_map_layers.has_method("poll_snapshot"):
+			host.military_map_layers.poll_snapshot()
+		host._sched_proc_country_visual_ms += host._sched_elapsed_ms(segment_usec)
 	host._service_worker_map_presentation(frame_usec)
 	segment_usec = Time.get_ticks_usec()
 	var now_msec = Time.get_ticks_msec()
-	if now_msec >= host._building_visual_next_poll_msec:
+	if read_due and now_msec >= host._building_visual_next_poll_msec:
 		host._building_visual_next_poll_msec = now_msec + 100
 		host._refresh_building_visual_intel({})
 	host._sched_proc_building_ms += host._sched_elapsed_ms(segment_usec)

@@ -247,6 +247,12 @@ func _process(_delta: float) -> void:
 		_sleep_if_idle(now)
 		return
 
+	if not VisionSolver.displayed_fields_current(_map):
+		if _shown_cell == cell.index and visible:
+			_move_to(screen, safe)
+		else:
+			dismiss(false)
+		return
 	if not _dirty and now - _last_resolve_ms < REVALIDATE_MSEC:
 		_move_to(screen, safe)
 		_sleep_if_idle(now)
@@ -295,11 +301,7 @@ func _is_ui_hit(control: Control) -> bool:
 
 ## 只有当前可见的格子才配一张卡：未探索与"记得但看不见"都会泄露情报。
 func is_cell_available(idx: int) -> bool:
-	if idx < 0 or idx >= _map.visible_arr.size():
-		return false
-	if int(_map.visible_arr[idx]) == 0:
-		return false
-	return VisionSolver.fog_state(_map, idx) == VisionSolver.FOG_VISIBLE
+	return VisionSolver.displayed_cell_visible(_map, idx)
 
 
 func _safe_rect() -> Rect2:

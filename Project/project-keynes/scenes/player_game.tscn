@@ -36,13 +36,36 @@
 
 [ext_resource type="Script" path="res://scripts/rendering/map_draw_visibility.gd" id="38_map_visibility"]
 
+[ext_resource type="Script" path="res://scripts/rendering/player_map_viewport.gd" id="39_map_viewport"]
+
 [node name="PlayerGame" type="Node2D" unique_id=198229795]
 script = ExtResource("1_player")
 
-[node name="WorldRoot" type="Node2D" parent="." unique_id=1950342253]
+[node name="MapOutput" type="CanvasLayer" parent="."]
+layer = -1
+
+[node name="MapImage" type="TextureRect" parent="MapOutput"]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+
+[node name="MapViewport" type="SubViewport" parent="."]
+disable_3d = true
+gui_disable_input = true
+size_2d_override_stretch = true
+render_target_update_mode = 0
+script = ExtResource("39_map_viewport")
+
+[node name="WorldRoot" type="Node2D" parent="MapViewport" unique_id=1950342253]
+unique_name_in_owner = true
 script = ExtResource("38_map_visibility")
 
-[node name="HexRenderer" type="Node2D" parent="WorldRoot" unique_id=1885530707]
+[node name="HexRenderer" type="Node2D" parent="MapViewport/WorldRoot" unique_id=1885530707]
 show_behind_parent = true
 top_level = true
 script = ExtResource("2_renderer")
@@ -102,12 +125,12 @@ water_domain_warp_strength = 2.4
 water_detail_normal_strength = 1.8
 water_detail_normal_scale = 0.6900000000000001
 
-[node name="CellHighlightSet" type="Node2D" parent="WorldRoot" unique_id=1317655148]
+[node name="CellHighlightSet" type="Node2D" parent="MapViewport/WorldRoot" unique_id=1317655148]
 top_level = true
 z_index = 9
 script = ExtResource("31_cell_highlight_set")
 
-[node name="PeaceCandidateSet" type="Node2D" parent="WorldRoot" unique_id=59170965]
+[node name="PeaceCandidateSet" type="Node2D" parent="MapViewport/WorldRoot" unique_id=59170965]
 top_level = true
 z_index = 9
 script = ExtResource("31_cell_highlight_set")
@@ -115,31 +138,31 @@ line_color = Color(0.5, 0.42, 0.2, 0.9)
 line_width = 1.3
 fill_color = Color(0.5, 0.42, 0.2, 0.1)
 
-[node name="PeaceDraftSet" type="Node2D" parent="WorldRoot" unique_id=596587059]
+[node name="PeaceDraftSet" type="Node2D" parent="MapViewport/WorldRoot" unique_id=596587059]
 top_level = true
 z_index = 9
 script = ExtResource("31_cell_highlight_set")
 line_width = 2.2
 
-[node name="CellHighlight" type="Node2D" parent="WorldRoot" unique_id=2013937119]
+[node name="CellHighlight" type="Node2D" parent="MapViewport/WorldRoot" unique_id=2013937119]
 top_level = true
 z_index = 10
 script = ExtResource("5_highlight")
 
-[node name="DataOverlayLayer" type="Node2D" parent="WorldRoot" unique_id=2064388670]
+[node name="DataOverlayLayer" type="Node2D" parent="MapViewport/WorldRoot" unique_id=2064388670]
 script = ExtResource("11_overlay")
 
-[node name="ColonizationRouteLayer" type="Node2D" parent="WorldRoot" unique_id=129430531]
+[node name="ColonizationRouteLayer" type="Node2D" parent="MapViewport/WorldRoot" unique_id=129430531]
 top_level = true
 z_index = 12
 script = ExtResource("24_colonization_route")
 
-[node name="MapActivityLayer" type="Node2D" parent="WorldRoot" unique_id=862143394]
+[node name="MapActivityLayer" type="Node2D" parent="MapViewport/WorldRoot" unique_id=862143394]
 top_level = true
 z_index = 11
 script = ExtResource("29_activity")
 
-[node name="TradeActivityLayer" type="Node2D" parent="WorldRoot" unique_id=2046123638]
+[node name="TradeActivityLayer" type="Node2D" parent="MapViewport/WorldRoot" unique_id=2046123638]
 top_level = true
 z_index = 9
 script = ExtResource("30_trade_activity")

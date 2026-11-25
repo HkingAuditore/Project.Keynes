@@ -61,11 +61,14 @@ POD 与 checkpoint。政治目录内容身份必须与保存内容匹配；旧�
 
 ## 每日结算与每帧显示
 
-逐日读取者接收 `WorldRuntimeHost.simulation_day_records`，同批的记录保留日序。
-`simulation_committed` 通知本次已消费的日期范围，`simulation_view_updated` 驱动最新显示。
-发布队列中的逐日记录和最新显示帧一起消费，让气候、国家、视野、资源和账本使用同一提交边界。
-地图贴图可以延后应用，跨帧积累的变格用最新一批的数据重画。逐日记录、回执与待答事项直接
-从领取路径交付。贴图提交后推进显示日期，提交失败时也释放日期通知，详见[地图显示更新](feature-guides.md#地图显示更新)。
+宿主在处理帧领取后台已发布的结果。默认每帧检查一次，也可给本局的
+`publication_reader.interval_usec` 设置现实时间间隔。到期后的第一个处理帧一次取回积累的记录。
+暂停日历时仍然检查。存档等同步操作可以立即领取。`simulation_day_records` 保留每一日的顺序，
+`simulation_committed` 标记整批范围，操作回执和待答事项随领取交付。
+普通面板监听 `simulation_ui_updated`。地图按自己的节奏合并地块，贴图处理完成后发送
+`simulation_view_updated`。选格和悬停使用地图实际画出的日期、视野和镜头。
+详见[地图显示更新](feature-guides.md#地图显示更新)。
+
 业务命令、逐日计算和待答判定归执行器。
 
 时钟发布允许结算到的日期，1× 时最多放行到已提交日加一。日尾无需前台确认。

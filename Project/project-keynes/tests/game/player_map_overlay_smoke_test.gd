@@ -24,7 +24,7 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 
-	var overlay_layer := game.get_node("WorldRoot/DataOverlayLayer")
+	var overlay_layer := game.get_node("%WorldRoot/DataOverlayLayer")
 	var diag := runtime.map_overlay_diagnostics()
 	var result: Dictionary = diag.get("last_result", {})
 	_expect("overlay is active", bool(diag.get("active", false)))
@@ -126,7 +126,7 @@ func _run() -> void:
 		refresh_delta >= 1 and refresh_delta <= 2)
 	runtime.clear_map_overlay()
 	await create_timer(0.2).timeout
-	_expect("clear hides overlay", not game.get_node("WorldRoot/DataOverlayLayer").visible)
+	_expect("clear hides overlay", not game.get_node("%WorldRoot/DataOverlayLayer").visible)
 	var refresh_after_clear := int(runtime.map_overlay_diagnostics().get("refresh_count", 0))
 	await create_timer(0.12).timeout
 	_expect("closed overlay stops refreshing", int(runtime.map_overlay_diagnostics().get(

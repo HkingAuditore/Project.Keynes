@@ -1,6 +1,9 @@
 extends Node
 class_name WorldRuntimeHost
 
+signal presentation_reset()
+signal map_fields_received(day: int)
+signal map_texture_published(day: int)
 signal world_generation_started()
 signal world_generation_failed(reason: String)
 signal world_ready(map: MapData, world_data: WorldData, generator: MapGenerator, view_adapter: DCViewAdapter)
@@ -10,6 +13,7 @@ signal simulation_day_records(records: Array)
 signal simulation_command_results(results: Array)
 signal player_confirmation_updated(view: Dictionary)
 signal colonization_quotes_ready()
+signal simulation_ui_updated(from_day: int, to_day: int, generation: int)
 signal simulation_view_updated(from_day: int, to_day: int, generation: int)
 signal generation_progress(stage: String, fraction: float)
 signal gm_toggle_changed(toggle_id: String, enabled: bool)
@@ -30,6 +34,7 @@ var _session_prepare_options: Dictionary = {}
 var _generation_request := 0
 
 var _overlay = preload("res://scripts/game/world_runtime_overlay.gd").new()
+var publication_reader := preload("res://scripts/game/runtime_publication_reader.gd").new()
 var _presentation = preload("res://scripts/game/world_runtime_presentation.gd").new()
 
 const HostGmCommands = preload("res://scripts/game/world_runtime_gm_commands.gd")
@@ -148,7 +153,7 @@ var _view_adapter: DCViewAdapter = null
 var _selected_cell: HexCell = null
 # ---- Military layers
 # F owns the military_* map layers. The host only creates the manager node and
-# forwards one per-frame poll (see military_map_layers.gd). Nothing else here.
+# forwards each scheduled publication poll (see military_map_layers.gd). Nothing else here.
 var military_map_layers: Node = null
 # Optional test/tool seam. Null means the manager keeps its native render feed;
 # a test can inject a read-only feed without changing MilitaryCore or save state.
@@ -616,6 +621,20 @@ func uses_worker_day_commits() -> bool:
 	var state := _runtime_control_state()
 	return state.get("simulation_thread_mode", "OFF") == "ACTIVE" and bool(state.get("authority_ready", false))
 
+func reset_presentation() -> void:
+	publication_reader.reset()
+	_presentation.reset_worker_views()
+	presentation_reset.emit()
+
+func ui_worker_day() -> int:
+	if _presentation.ui_presented_day >= 0:
+		return _presentation.ui_presented_day
+	# A new game's UI starts at day zero even when its first delivery is held.
+	return 0 if _runtime_commit_day >= 0 else -1
+
+func received_worker_day() -> int:
+	return _runtime_commit_day
+
 func presented_worker_day() -> int:
 	return _presentation.presented_worker_day()
 
@@ -749,6 +768,7 @@ func _emit_web_beat(frame_usec: int) -> void:
 func _process(_delta: float) -> void:
 	_run_admitted_inline_day()
 	_daily_adapter._process(self, _delta)
+	_presentation.publish_ui_view(simulation_ui_updated.emit)
 	_presentation.publish_worker_view(simulation_view_updated.emit)
 func _service_runtime_progress(frame_usec: int) -> void:
 	_daily_adapter._service_runtime_progress(self, frame_usec)
@@ -801,8 +821,10 @@ func _publish_worker_map(update: Dictionary, day: int, started_usec: int) -> boo
 	var result := _generator.publish_worker_climate_visuals(false, update) \
 		if _generator != null else {"reason": "missing_generator"}
 	if result.get("lut_encode_path", "none") == "none":
-		push_warning("[worker-map] Day %d publication failed: %s" % [day, result.get("reason", "no_encode_path")])
+		if not _presentation._map_updates.needs_recovery:
+			push_warning("[worker-map] Day %d publication failed: %s" % [day, result.get("reason", "no_encode_path")])
 		return false
+	map_texture_published.emit(day)
 	_vision_dirty_indices = PackedInt32Array()
 	if _renderer != null and _world_clock != null:
 		_renderer.set_season_phase(_world_clock.season_phase_for_day(day))

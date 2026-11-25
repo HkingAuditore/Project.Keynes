@@ -40,7 +40,7 @@ func _run() -> void:
 	clock.pause(true)
 	var player = game.get_node("PlayerController")
 	game._ui_manager.set_era_ceremony_suppressed(true)
-	var activity = game.get_node("WorldRoot/MapActivityLayer")
+	var activity = game.get_node("%WorldRoot/MapActivityLayer")
 	var generator = host.get("_generator")
 	var start: Dictionary = generator.gameplay_start_report()
 	_cell = int(start.get("cell", -1))

@@ -1,5 +1,6 @@
 class_name GameUIManager
 extends CanvasLayer
+const PublicationViews := preload("res://scripts/game/world_runtime_presentation.gd")
 const MilitaryActions = preload("res://scripts/ui/game_ui/military_actions.gd")
 
 const TouchMetrics = preload("res://scripts/ui/game_ui/touch_metrics.gd")
@@ -112,6 +113,7 @@ var _world_clock: WorldClock
 ## 年度累计产值账本：国家卷宗与地块档案共用同一份，随已提交经济日推进。
 var _gdp_ledger := EconomyGdpLedger.new()
 var _selected_cell: HexCell
+var _cell_panel := preload("res://scripts/ui/game_ui/selected_cell.gd").new()
 var _selected_fog_state := VisionSolver.FOG_VISIBLE
 var _last_cached_panel_ms: int = 0
 var _last_object_detail_ms: int = 0
@@ -169,6 +171,7 @@ var _country_runtime_facade = null
 var _economy_runtime_facade = null
 var _ideology_runtime_facade = null
 var _country_refresh_queued := false
+var publication_views: PublicationViews
 var _country_refresh_timer_active := false
 var _country_next_refresh_ms := 0
 var _country_open_generation := 0
@@ -339,13 +342,11 @@ func _mark_country_panel_dirty(domains: int, reason: String) -> void:
 	if _country_panel == null or not _country_panel.is_panel_open() \
 			or _country_refresh_queued:
 		return
-	if not _country_ui_event_refresh_enabled:
-		refresh_country_summary()
-		_country_dirty_domains &= ~_country_section_mask(
-			_country_panel.current_section())
-		return
 	_country_refresh_queued = true
-	call_deferred("_flush_country_panel_refresh")
+	if _country_ui_event_refresh_enabled:
+		call_deferred("_flush_country_panel_refresh")
+	else:
+		_flush_country_panel_refresh()
 
 
 func _flush_country_panel_refresh() -> void:
@@ -354,6 +355,14 @@ func _flush_country_panel_refresh() -> void:
 		_country_refresh_timer_active = false
 		return
 	var section_mask := _country_section_mask(_country_panel.current_section())
+	if publication_views != null and publication_views.defer_ui_refresh(_flush_country_panel_refresh):
+		_country_refresh_queued = false
+		return
+	if not _country_ui_event_refresh_enabled:
+		_country_refresh_queued = false
+		refresh_country_summary()
+		_country_dirty_domains &= ~section_mask
+		return
 	if (_country_dirty_domains & section_mask) == 0:
 		_country_refresh_queued = false
 		_country_refresh_timer_active = false
@@ -453,74 +462,11 @@ func toggle_perf_hud() -> void:
 
 
 func show_cell_panel(cell: HexCell) -> void:
-	# 议和窗口开着时地图是交割选格面（PlayerController.select_cell 已经拦过一次，
-	# 这里是第二次兜底：任何把点击送到地块档案的路径都不能把窗口顶掉）。
-	if is_peace_window_open():
-		if cell != null:
-			_peace_window.handle_map_cell(int(cell.index))
-		return
-	if _colonization_panel != null and _colonization_panel.visible:
-		# 派发界面开着时，地图左键一律交给它：先出发城、后目的地，
-		# 不再需要玩家先按面板上的“选点”按钮进入模式。
-		if cell != null:
-			_colonization_panel.handle_map_cell(int(cell.index))
-		_colonization_targeting.clear()
-		return
-	_cancel_inspector_retry()
-	# 地块档案一开，悬停卡就是纯噪音。这里确定性收起，不依赖 visibility_changed：
-	# 面板已可见时再选另一格不会发出该信号。
-	if _cell_hover_card != null:
-		_cell_hover_card.dismiss(true)
-	if _right_panel != null:
-		_right_panel.close_detail(false)
-	_object_detail_context.clear()
-	_military_dossier_context.clear()
-	_military_dossier_pending = false
-	_selected_cell = cell
-	_invalidate_live_revision()
-	_last_cached_panel_ms = Time.get_ticks_msec()
-	if _inspector_view_model == null or _right_panel == null:
-		return
-	if cell == null:
-		hide_cell_panel()
-		return
-	# 只有当前可见的格子才值得开经济追踪：未探索与已探索但看不见的格子都拿不到
-	# 经济页签，追踪它只会让 recorder 白算一份。
-	_selected_fog_state = VisionSolver.fog_state(_map, int(cell.index))
-	_set_inspector_trace_cell(int(cell.index) \
-		if _selected_fog_state == VisionSolver.FOG_VISIBLE else -1)
-	_right_panel.set_model_for_selection(_inspector_view_model.build(cell))
-	# [relayout-on-open 2026-11-02] 面板宽度是按 detail_open() 算的，但以前只在
-	# viewport 尺寸变化时重算；地块档案/家族页打开后内容变宽，宽度还停在关闭档
-	# （460），于是页签与 KPI 行被屏幕右缘切掉（真机 2670x1200 实测）。
-	# 这里在模型换好之后补一次布局。
-	call_deferred("_layout_right_panel")
-	_selection_context = _revision_selection_context(
-		_inspector_view_model.live_patch_revision(cell, _right_panel.current_tab()))
-	if _country_panel != null and _country_panel.is_panel_open():
-		_inspector_suppressed_for_country = true
-		_right_panel.visible = false
-		return
-	if not _right_panel.visible or _right_panel.has_meta("_ui_active_tween"):
-		UIAnimation.fade_slide_in(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_MED)
+	_cell_panel.show_cell_panel(self, cell)
 
 
 func hide_cell_panel() -> void:
-	_cancel_inspector_retry()
-	_selected_cell = null
-	_selection_context = ""
-	_inspector_suppressed_for_country = false
-	_military_dossier_context.clear()
-	_military_dossier_pending = false
-	if _right_panel != null:
-		_right_panel.set_directory_available(true)
-	_invalidate_live_revision()
-	_set_inspector_trace_cell(-1)
-	if _right_panel != null:
-		_right_panel.close_detail(false)
-		call_deferred("_layout_right_panel")
-	if _right_panel != null:
-		UIAnimation.fade_slide_out(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_FAST)
+	_cell_panel.hide_cell_panel(self)
 
 
 ## Web：把检查器日刷的耗时打进事件流（只在 >200ms 时），用来定位"整帧不返回"。
@@ -529,11 +475,12 @@ func _report_inspector_daily_timing(timing: Dictionary, started_usec: int) -> vo
 
 
 func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dictionary:
-	return _country_component.refresh_selected_daily_lines(self, force, day_idx)
+	return _cell_panel.refresh_selected_daily_lines(self, force, day_idx)
 
 
 func refresh_selected_panel() -> void:
-	_country_component.refresh_selected_panel(self)
+	if VisionSolver.displayed_fields_current(_map):
+		_country_component.refresh_selected_panel(self)
 
 
 func _revision_selection_context(revision: Dictionary) -> String:
@@ -1297,6 +1244,10 @@ func consume_country_ui_perf_summary() -> Dictionary:
 	return _country_component.consume_country_ui_perf_summary(self)
 
 func _on_inspector_tab_data_requested(tab_id: String) -> void:
+	if not VisionSolver.displayed_fields_current(_map):
+		_pending_inspector_tab = tab_id
+		_pending_object_request.clear()
+		return
 	_country_component._on_inspector_tab_data_requested(self, tab_id)
 
 func _cancel_inspector_retry() -> void:
@@ -1310,6 +1261,9 @@ func _schedule_inspector_retry() -> void:
 		_retry_inspector_reads.bind(_inspector_retry_generation), CONNECT_ONE_SHOT)
 
 func _retry_inspector_reads(generation: int) -> void:
+	if generation == _inspector_retry_generation and not VisionSolver.displayed_fields_current(_map):
+		_inspector_retry_queued = false
+		return
 	_country_component._retry_inspector_reads(self, generation)
 
 func _on_construction_page_requested(sector: String, search: String,
@@ -1394,13 +1348,17 @@ func _invalidate_live_revision() -> void:
 	_country_component._invalidate_live_revision(self)
 
 func _on_object_details_requested(request: Dictionary) -> void:
+	if not VisionSolver.displayed_fields_current(_map):
+		_pending_object_request = request.duplicate(true)
+		return
 	_country_component._on_object_details_requested(self, request)
 
 func _close_object_detail_dialog() -> void:
 	_country_component._close_object_detail_dialog(self)
 
 func _refresh_object_detail(force: bool = false) -> void:
-	_country_component._refresh_object_detail(self, force)
+	if VisionSolver.displayed_fields_current(_map):
+		_country_component._refresh_object_detail(self, force)
 
 func show_era_reward_offer(offer: Dictionary) -> void:
 	_era_component.show_era_reward_offer(self, offer)
@@ -1453,6 +1411,8 @@ func _queue_era_indicator_refresh() -> void:
 		_refresh_era_indicator())
 
 func _refresh_era_indicator() -> void:
+	if publication_views != null and publication_views.defer_ui_refresh(_refresh_era_indicator):
+		return
 	_era_component._refresh_era_indicator(self)
 
 func _refresh_player_country_status(country_facade, economy_facade, handle: int) -> void:

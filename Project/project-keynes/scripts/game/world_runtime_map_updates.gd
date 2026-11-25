@@ -13,6 +13,7 @@ var _latest: Dictionary = {}
 var _held_dirty: Dictionary = {}
 var _held_classes: Dictionary = {}
 var _full_update := false
+var needs_recovery := false
 
 var _frame_started_usec := 0
 var _last_draw_usec := 0
@@ -69,6 +70,7 @@ func _clear_pending() -> void:
 	_held_dirty.clear()
 	_held_classes.clear()
 	_full_update = false
+	needs_recovery = false
 
 
 func start_frame(usec: int) -> void:
@@ -120,8 +122,8 @@ func applied(frame: int, elapsed_usec: int) -> void:
 
 
 func reject() -> void:
-	_clear_pending()
-	# The next publication's dirty cells are relative to a day we did not draw.
+	# Keep the latest payload so a paused world can recover without another day.
+	needs_recovery = true
 	_full_update = true
 
 
