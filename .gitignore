@@ -111,6 +111,11 @@ gdext/.wip/
 # 本机编译日志。
 gdext/build_*.log
 gdext/*.err.log
+# SCons 生成的 build id 头（文件头自称 "Do not edit; do not commit"）。
+# 生成器已不在 SConstruct 里，残留文件会被 pk_build_id.h 的 __has_include 捡进二进制，
+# 把旧 sha + 旧时间焊进库（2026-11-25 实测：.so 自报 4c02642b0+20261123T144353Z，
+# 而 4c02642b0 不在 master 上）。包标识一律用 apk sha256，不要用 PK_BUILD_ID。
+gdext/src/pk_build_id_generated.h
 
 # ==== 构建产物与验证输出（2026-11-17：从索引移除，只停止跟踪，工作区文件不动）====
 # Gradle 输出与缓存。android/build 里的 templates 源码（build.gradle / src / res）仍要跟踪，
