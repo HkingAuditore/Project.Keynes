@@ -122,6 +122,7 @@ var _max_population_button: Button
 var _preview_hovering := false
 var _planning_identity := ""
 var _identity_pulse_tween: Tween
+var _pending_quote_reads: Dictionary = {}
 
 func _ready() -> void:
 	if _list != null:
@@ -195,7 +196,40 @@ func _ready() -> void:
 	visible = false
 
 func set_player_controller(controller) -> void:
+	if _controller != null and _controller.has_signal("colonization_quotes_ready") \
+			and _controller.colonization_quotes_ready.is_connected(_on_colonization_quotes_ready):
+		_controller.colonization_quotes_ready.disconnect(_on_colonization_quotes_ready)
 	_controller = controller
+	if _controller != null and _controller.has_signal("colonization_quotes_ready") \
+			and not _controller.colonization_quotes_ready.is_connected(_on_colonization_quotes_ready):
+		_controller.colonization_quotes_ready.connect(_on_colonization_quotes_ready)
+
+
+func _await_quote_read(key: StringName, response: Dictionary, retry: Callable) -> bool:
+	var pending := not bool(response.get("ok", false)) and (
+		bool(response.get("pending", false)) or bool(response.get("read_view_pending", false)))
+	if not pending:
+		_pending_quote_reads.erase(key)
+		return false
+	_pending_quote_reads[key] = retry
+	return true
+
+
+func _clear_pending_quote_reads(key: StringName = &"") -> void:
+	if key == &"":
+		_pending_quote_reads.clear()
+	else:
+		_pending_quote_reads.erase(key)
+
+
+func _on_colonization_quotes_ready() -> void:
+	if not visible or _pending_quote_reads.is_empty():
+		return
+	var pending := _pending_quote_reads.duplicate()
+	_pending_quote_reads.clear()
+	for callback in pending.values():
+		if callback is Callable and (callback as Callable).is_valid():
+			(callback as Callable).call()
 
 
 func open_target(target_cell: int, family_filter: int = 0,
@@ -209,6 +243,7 @@ func open_target(target_cell: int, family_filter: int = 0,
 	_directory_mode = target_cell >= 0 and source_filter < 0
 	_selected_expedition = 0
 	_detail_valid = false
+	_clear_pending_quote_reads()
 	_preview_cache.clear()
 	_quote_preview_cache.clear()
 	_local_families.clear()
@@ -268,6 +303,7 @@ func close_panel() -> void:
 	_target_picking = false
 	_source_picking = false
 	_hover_timer.stop()
+	_clear_pending_quote_reads()
 	_selected_quote.clear()
 	route_cleared.emit()
 	_planning_identity = ""
@@ -435,6 +471,7 @@ func _show_quotes() -> void:
 	else:
 		page = _get_source_quotes()
 	_economy_busy = bool(page.get("busy", false))
+	_await_quote_read(&"quotes", page, _show_quotes)
 	if not bool(page.get("ok", false)):
 		var code := String(page.get("code", "command_rejected"))
 		if _transient_query_failure(code, page):
@@ -534,6 +571,7 @@ func _on_quote_row_pressed(quote: Dictionary, row: Button) -> void:
 func _select_quote(quote: Dictionary) -> void:
 	_hover_family = ""
 	_hover_timer.stop()
+	_clear_pending_quote_reads(&"hover")
 	_feedback.text = ""
 	_selected_quote = quote.duplicate(true)
 	_source_filter = int(quote.get("source_cell", _source_filter))
@@ -642,6 +680,7 @@ func _refresh_expedition_detail() -> void:
 func _clear_list() -> void:
 	_hover_family = ""
 	_hover_timer.stop()
+	_clear_pending_quote_reads(&"hover")
 	_quote_row_refs.clear()
 	_source_headers.clear()
 	_display_order.clear()
@@ -751,6 +790,7 @@ func _refresh_selected_kit() -> void:
 	if _controller != null:
 		detail = _controller.get_family_colonization_quote_detail(
 			int(_selected_quote.get("quote_token", 0)), int(_population.value))
+	_await_quote_read(&"detail", detail, _refresh_selected_kit)
 	_economy_busy = _economy_busy or bool(detail.get("busy", false))
 	if not bool(detail.get("ok", false)):
 		_detail_valid = _transient_query_failure(String(detail.get("code", "")), detail)
@@ -1111,6 +1151,7 @@ func begin_target_selection() -> void:
 
 func cancel_target_selection() -> void:
 	_target_picking = false
+	_clear_pending_quote_reads(&"target")
 	_update_start_enabled()
 
 
@@ -1198,6 +1239,11 @@ func try_target_cell(cell: int, quiet: bool = false) -> bool:
 		return false
 	var family := int(_selected_quote.get("family_handle", 0))
 	var page: Dictionary = _controller.get_family_colonization_quotes(cell, family, _source_filter, 0, 256)
+	if _await_quote_read(&"target", page, try_target_cell.bind(cell, quiet)):
+		if not quiet:
+			_set_feedback_line(EconomyStatusCopy.BUSY, UITokens.ARCHIVE_INK_MUTED)
+		_update_start_enabled()
+		return true
 	if not bool(page.get("ok", false)):
 		if not quiet:
 			_set_feedback_line(_reason_text(String(page.get("code", "colonization_target_invalid"))),
@@ -1456,6 +1502,7 @@ func _on_row_preview_exited(row: Button) -> void:
 	if _hover_family == _quote_key(row.get_meta("quote", {})):
 		_hover_family = ""
 		_hover_timer.stop()
+		_clear_pending_quote_reads(&"hover")
 		_show_family_preview(_selected_quote)
 
 
