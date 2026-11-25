@@ -409,7 +409,7 @@ public:
     void attach_military(std::shared_ptr<NativeMilitaryRuntime> military);
     void attach_vision(std::shared_ptr<VisionResearchState> vision);
     bool restore_vision_seed(std::vector<uint8_t> &explored, bool &enabled,
-                             uint64_t &player_handle) const;
+                             uint64_t &player_handle, bool &checkpoint_found) const;
     bool restore_bio_seed(std::vector<int32_t> &occupancy) const;
     std::shared_ptr<const RuntimeVisionFrame> latest_vision() const;
     bool submit_fog_command(bool enabled, int64_t &effective_day);
@@ -1081,6 +1081,7 @@ private:
     const char *stage_ideology_projection(DayExecution &day);
     std::shared_ptr<const RuntimeIdeologyReadView> capture_ideology_read_view() const;
     const char *settle_era_rewards(DayExecution &day);
+    bool suppress_event_popups_on(int64_t day) const;
     const char *player_confirmation_block(int64_t published_day = -1);
     RuntimePlayerConfirmation _player_confirmation;
     uint64_t confirmation_country() const;
@@ -1092,7 +1093,8 @@ private:
     void admit_player_response_through(int64_t day);
     void finish_player_confirmation_day(int64_t day);
     std::vector<uint8_t> encode_player_confirmation(int64_t day) const;
-    void restore_player_confirmation(const std::vector<uint8_t> &bytes, int64_t day);
+    static bool decode_player_confirmation(const std::vector<uint8_t> &bytes, int64_t day,
+                                           RuntimePlayerConfirmation *state);
     bool service_annual_presentations();
     void execute_era_advancement_request(RuntimeEraRewardRequest &request);
     bool install_era_advancement_setup();
@@ -1109,14 +1111,12 @@ private:
     bool service_narrative_requests();
     void request_stop_locked();
     void publish_narrative_boundary(int64_t);
-    const char *narrative_input_block() const;
+    const char *narrative_input_block(bool suppress_popups) const;
     struct NarrativeDay sample_narrative_day(int64_t) const;
     void sample_narrative_military(struct NarrativeCountryView &) const;
     bool prepare_narrative_day(int64_t);
     godot::Dictionary resolve_narrative_choice(int64_t, const godot::Dictionary &);
     bool dispatch_narrative_independence(int64_t);
-    static std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> expand_ideology_opinion(
-        const RuntimeCountryPodSnapshot &, const RuntimeIdeologyOpinionSnapshot &);
     std::shared_ptr<const RuntimeEraRewardView> capture_era_reward() const;
     EffectRuntime *_effect_adapter_runtime = nullptr;
     class NativeCountryRuntime *_effect_adapter_country = nullptr;

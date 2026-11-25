@@ -725,6 +725,7 @@ static void append_runtime_control_state(Dictionary &out,
         out["family_founding_offer"] = view->family_offer.duplicate(true);
         out["ideology_offer_generation"] = view->ideology_generation;
         out["player_popups_suppressed"] = view->hide_popups;
+        out["suppress_event_popups"] = view->suppress_event_popups;
     }
     out["interactive"] = host.interactive;
 }
@@ -736,6 +737,8 @@ Dictionary DCWorldExt::submit_player_confirmation(const String &action, int64_t 
         return _runtime_host->submit_player_confirmation({Kind::DISMISS_IDEOLOGY, value, effective_day});
     if (_runtime_host && action == "popup_policy" && (value == 0 || value == 1))
         return _runtime_host->submit_player_confirmation({Kind::POPUP_POLICY, value, effective_day});
+    if (_runtime_host && action == "event_popup_policy" && (value == 0 || value == 1))
+        return _runtime_host->submit_player_confirmation({Kind::EVENT_POPUP_POLICY, value, effective_day});
     Dictionary out;
     out["ok"] = false;
     out["admitted"] = false;

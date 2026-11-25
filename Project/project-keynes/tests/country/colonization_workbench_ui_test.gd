@@ -142,6 +142,7 @@ class ControllerGuard extends PlayerController:
 	var country := CountryStub.new()
 	func _resolve_player_country() -> Dictionary:
 		_player_country_handle = 10
+		_country_facade = country
 		return {"ok": true, "facade": country}
 
 var _failures := 0

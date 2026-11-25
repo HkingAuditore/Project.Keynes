@@ -193,7 +193,9 @@ Dictionary DCWorldExt::configure_vision_research(const Dictionary &config) {
             state->player_handle = country_view.country_handles[state->player_slot];
         bool fog = config.get("fog_enabled", false);
         std::vector<uint8_t> explored(static_cast<size_t>(n), 0);
-        if (restored && !_runtime_host->restore_vision_seed(explored, fog, state->player_handle)) {
+        bool checkpoint_found = false;
+        if (restored && !_runtime_host->restore_vision_seed(
+                explored, fog, state->player_handle, checkpoint_found)) {
             out["reason"] = "vision_checkpoint_invalid";
             return out;
         }
@@ -206,8 +208,9 @@ Dictionary DCWorldExt::configure_vision_research(const Dictionary &config) {
         state->remote_technology = config.get("remote_technology", -1);
         state->remote = state->remote_technology >= 0 &&
             country_api::has_completed_technology(*country, state->player_handle, state->remote_technology);
-        state->fog_available = static_cast<bool>(config.get("fog_available", false)) &&
-            state->player_handle != 0;
+        // The setting can stay enabled before the player's country is bound.
+        // With no sources the solver publishes zero visibility and colonization stays gated.
+        state->fog_available = static_cast<bool>(config.get("fog_available", false));
         state->fog_enabled = state->fog_available && fog;
         state->all_visible.assign(size_t(n), 1);
         if (_military) state->military_sources = _military->vision_sources(state->player_slot);
@@ -244,6 +247,7 @@ Dictionary DCWorldExt::configure_vision_research(const Dictionary &config) {
         state->frame = std::make_shared<RuntimeVisionFrame>(std::move(work));
         _runtime_host->attach_vision(std::move(state));
         _vision_research_state.reset();
+        out["restored_exploration"] = checkpoint_found;
         out["ok"] = true;
         return out;
     }
@@ -423,9 +427,10 @@ std::vector<uint8_t> NativeSimulationHost::capture_vision_state() const {
 }
 
 bool NativeSimulationHost::restore_vision_seed(std::vector<uint8_t> &explored,
-        bool &enabled, uint64_t &player_handle) const {
-    if (!_has_pending_restore ||
-        (_pending_restore_bundle.section_mask & RUNTIME_SAVE_SECTION_VISION) == 0) return true;
+        bool &enabled, uint64_t &player_handle, bool &checkpoint_found) const {
+    checkpoint_found = _has_pending_restore &&
+        (_pending_restore_bundle.section_mask & RUNTIME_SAVE_SECTION_VISION) != 0;
+    if (!checkpoint_found) return true;
     const auto &bytes = _pending_restore_bundle.vision_bytes;
     CheckpointReader in{bytes.data(), bytes.size()};
     uint8_t fog = 0;
@@ -555,6 +560,17 @@ const char *NativeSimulationHost::stage_vision(DayExecution &day) {
     const auto *country = _country_pod_authority.borrow_state();
     if (!country || country->cell_country_slot.size() != static_cast<size_t>(vision.cell_count))
         return "vision_country_state_unavailable";
+    bool bound_player = false;
+    if (vision.player_handle == 0) {
+        const auto handle = confirmation_country();
+        const auto candidate = static_cast<uint32_t>(handle);
+        if (handle != 0 && candidate < country->country_count && country->country_active[candidate] &&
+                country->country_generation[candidate] == static_cast<uint32_t>(handle >> 32)) {
+            vision.player_handle = handle;
+            vision.player_slot = static_cast<int32_t>(candidate);
+            bound_player = true;
+        }
+    }
     const int32_t slot = vision.player_slot;
     const int32_t tech = vision.remote_technology;
     const bool remote = slot >= 0 && tech >= 0 && uint32_t(slot) < country->country_count &&
@@ -565,7 +581,7 @@ const char *NativeSimulationHost::stage_vision(DayExecution &day) {
     if (!_executor_day_tail) _executor_day_tail = std::make_shared<RuntimeDayTail>();
     auto &tail = *_executor_day_tail;
     auto sources = _executor_military ? _executor_military->vision_sources(slot) : std::vector<int32_t>{};
-    bool dirty = country->cell_country_slot != vision.owners ||
+    bool dirty = bound_player || country->cell_country_slot != vision.owners ||
         remote != vision.remote || sources != vision.military_sources;
     const auto &previous = *vision.frame;
     std::vector<uint8_t> explored;

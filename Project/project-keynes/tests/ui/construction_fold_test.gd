@@ -6,6 +6,7 @@ extends SceneTree
 ## 这个测试直接构造 catalog 列与 entry，验证「全折叠只出档位卡」和
 ## 「全展开后 50 座主粮不重不漏」。故意不依赖 EconomyFacade，只读 .tres。
 
+const StapleGroups = preload("res://scripts/ui/cell_inspector/construction_staple_groups.gd")
 const Construction = preload("res://scripts/ui/cell_inspector/construction.gd")
 const TaxGroupMap = preload("res://scripts/country/tax_group_map.gd")
 const BUILDING_DIR := "res://data/economy/buildings"
@@ -128,7 +129,7 @@ func _init() -> void:
 			if seen_keys.has(key):
 				_expect("crop option unique: %s" % key, false)
 			seen_keys[key] = true
-			var order_index := Construction.CROP_ORDER.find(crop)
+			var order_index := StapleGroups.CROP_ORDER.find(crop)
 			if order_index >= 0:
 				if order_index <= last_index:
 					order_ok = false

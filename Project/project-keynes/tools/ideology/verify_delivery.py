@@ -127,17 +127,6 @@ EXPECTED_FIXTURES = {
     'ideology_card_face_semantics_test': 1881,       # card faces + 52 synergy tooltips
     'ideology_kind14_diagnosis_test': 3,             # the kind-14 target-layer probe
     'ideology_cell_layer_realworld_over32_test': 29,  # the >32 real-map production sample
-    # DELIBERATELY NOT PINNED: `ideology_worker_authority_parity_test` (88 checks) is
-    # timing-sensitive. It builds a real worker world, and the worker's authority mask is
-    # DEFERRED (it reads 0x000 until the pod is ready), so counters like
-    # `cell_layer_rebuild_visits` legitimately vary between runs -- measured 4, 6 and 8
-    # for the same fixture. The worker also faults intermittently (3/3 runs, with the code
-    # varying between `day_wait_peer_stall_timeout`, `market_shape_invariant_broken` and
-    # `unhandled_worker_exception`). A gate that fails one run in three makes the whole
-    # verifier untrustworthy, which is worse than excluding it and saying so.
-    #
-    # Run it by hand:  godot --headless --path Project/project-keynes -s \
-    #                  tests/ideology/ideology_worker_authority_parity_test.gd
     'ideology_effect_metric_publish_test': 278,
     'ideology_runtime_stress_test': 81,
     'ideology_metric_cohort_paging_test': 29,
@@ -238,33 +227,6 @@ EXPECTED_FIXTURES = {
     # NO `worker_import` key, and a real main-thread day leaves the rows and §9.3 dates
     # alone).
     'ideology_save_worker_authority_test': 90,
-    # ── SPLIT AUTHORITY (mask 0xFEF): NOT PINNED HERE, DELIBERATELY ────────────
-    #
-    # IDEOLOGY on the main thread, EFFECT (0x020) + MODIFIER (0x040) on the worker:
-    # `0xFEF = 0xFFF` with only the ideology bit cleared. In that configuration the
-    # main-thread adapter is suppressed (`run_effect_daily`, both halves of the
-    # Modifier handler and `run_modifier_daily` all report `path=EFFECT_WORKER`), so
-    # an EQUIP used to be accepted and never completed -- the worker POD write-back
-    # replaced `_transactions`, `transaction_status_pod` answered 0, and the ideology
-    # ACK path reported `ideology_effect_transition_rejected` (measured over 32 days
-    # with the card still at `locations=[0]`).
-    #
-    # The mechanism is now covered by `settle_split_authority_effects` (see
-    # docs/architecture/current-state.md, "Split authority settle"), but
-    # it is measured by `tests/ideology/ideology_split_authority_effect_worker_probe.gd`
-    # -- a PROBE, like `ideology_worker_authority_parity_test` above, and for the same
-    # reason: it builds worker worlds, and a worker world is timing-sensitive and
-    # faults intermittently. A 90 s gate that fails one run in three makes the whole
-    # verifier untrustworthy, which is worse than excluding it and saying so.
-    #
-    # Measure it by hand (two legs, compared cell by cell outside Godot):
-    #   PK_SPLIT_MASK=FEF godot --headless --path Project/project-keynes -s \
-    #       tests/ideology/ideology_split_authority_effect_worker_probe.gd
-    #   PK_SPLIT_MASK=FFF ... the same command, the reference leg.
-    # Each run prints `[PARITY]` lines: the owned non-water cell list and, per stat
-    # the card writes, per-cell presence and derived add (192 cells on the fixture
-    # map). The split leg must additionally reach an ACKED transaction, never observe
-    # status 0 (MISSING), and carry no `ideology_effect_transition_rejected` receipt.
 }
 
 GODOT = os.environ.get('GODOT_EXE', r'<GODOT_DIR>'

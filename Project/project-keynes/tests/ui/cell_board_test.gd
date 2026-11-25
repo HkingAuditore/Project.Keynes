@@ -62,7 +62,9 @@ func _run() -> void:
 	_test_market_distinct()
 	_test_cohort_ranking()
 	_test_pending()
+	_test_same_published_day()
 	_test_board_widget()
+	_test_narrow_board_layout()
 	_test_same_cell_daily_refresh()
 	_test_card_avoid_rect()
 	_clock.free()
@@ -236,6 +238,45 @@ func _test_pending() -> void:
 	_economy.busy = false
 
 
+func _test_same_published_day() -> void:
+	_clock.current_day = 2.0
+	var population := _population_payload()
+	population["read_view_day"] = 1
+	var market := _market_payload()
+	market["read_view_day"] = 1
+	var mobilization := {"ok": false, "read_view_pending": true}
+	_economy.population_payloads = {0: population}
+	_economy.market_payloads = {0: market}
+	_economy.mobilization_payloads = {0: mobilization}
+	_fresh_view_model()
+	_expect("旧日的人口视图要等当天发布", bool(_view_model.build(0).get("pending", false)))
+	population["read_view_day"] = 2
+	_expect("人口和市场来自同一发布日", bool(_view_model.build(0).get("pending", false)))
+	market["read_view_day"] = 2
+	_expect("当天组织度仍待发布时不缓存空值", bool(_view_model.build(0).get("pending", false)))
+	mobilization.merge({
+		"ok": true, "read_view_pending": false, "read_view_day": 1,
+		"rows": [{"profession": 2, "stage": 2, "mobilization_q16": 13107}],
+	}, true)
+	_expect("不把旧日组织度混入当天", bool(_view_model.build(0).get("pending", false)))
+	mobilization["read_view_day"] = 2
+	var payload := _view_model.build(0)
+	var rows: Array = (payload.get("cohorts", {}) as Dictionary).get("rows", [])
+	var worker := _row_id(rows, 13)
+	_expect("三份视图到齐后显示组织度",
+		bool(payload.get("ok", false)) and worker >= 0
+			and is_equal_approx(float(rows[worker].organization), 13107.0 / 65536.0))
+	_economy.mobilization_payloads.clear()
+
+	var without_mobilization := BoardEconomyWithoutMobilization.new()
+	without_mobilization.population_payloads = {0: population}
+	without_mobilization.market_payloads = {0: market}
+	var optional_view := CellBoardViewModel.new()
+	optional_view.set_context(_map, func() -> Object: return without_mobilization, _inspector, _clock)
+	_expect("没有组织度接口时仍可显示其他读数", bool(optional_view.build(0).get("ok", false)))
+	_clock.current_day = 1.0
+
+
 ## 同一格里 payloads 会被换掉，缓存按 (cell, day) 命中——每个子用例都要一份新实例。
 func _fresh_view_model() -> void:
 	_view_model = CellBoardViewModel.new()
@@ -267,6 +308,21 @@ func _test_board_widget() -> void:
 	_expect("阶层表满五格", _visible_rows(board._cohort_slots) == 5)
 	var first_name := (board._market_slots[0]["name"] as Label).text
 	_expect("行情行写入物资名", first_name == "谷类" or not first_name.is_empty())
+	_expect("储量条显示从零到本轮最大储量的刻度", board._stock_scale.text == "0–900")
+	var refreshed := _market_payload()
+	var stocks: PackedInt64Array = refreshed["stock"]
+	stocks[1] = 200000
+	refreshed["stock"] = stocks
+	_economy.market_payloads[0] = refreshed
+	var previous_day := _clock.current_day
+	_clock.current_day += 1.0
+	board.debug_show_cell(0)
+	var stock_text := (board._market_slots[0]["stock"] as Label).text
+	var fill := board._market_slots[0]["bar"] as ColorRect
+	_expect("储量上限变化时同步更新刻度与条长，并保留精确读数",
+		board._stock_scale.text == "0–200" and stock_text == "100"
+			and is_equal_approx(fill.anchor_right, 0.5))
+	_clock.current_day = previous_day
 	board.apply_available_height(380.0)
 	board.debug_show_cell(0)
 	_expect("窄高度下阶层表压到三行", _visible_rows(board._cohort_slots) <= 3)
@@ -276,6 +332,32 @@ func _test_board_widget() -> void:
 	_expect("hide_board 立即隐藏", not board.visible)
 	root.remove_child(board)
 	board.free()
+
+
+func _test_narrow_board_layout() -> void:
+	_economy.market_payloads = {0: _market_payload()}
+	_economy.population_payloads = {0: _population_payload()}
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(1000, 900)
+	root.add_child(viewport)
+	var board := (load(BOARD_SCENE) as PackedScene).instantiate() as CellBoard
+	viewport.add_child(board)
+	board.configure(_map, func() -> Object: return _economy, _inspector, _clock)
+	var layout := preload("res://scripts/ui/game_hud_layout.gd").new()
+	layout._viewport = viewport
+	layout._cell_board = board
+	layout._layout_cell_board()
+	board.on_hover_cell_changed(0)
+	board._dwell_timer.stop()
+	board._on_resolve_timer_elapsed()
+	_expect("空间充足时显示展板", board.visible)
+	viewport.size = Vector2i(800, 900)
+	layout._layout_cell_board()
+	_expect("空间不能并排容纳悬停卡时收起展板", not board.visible and board.desired_height() == 0.0)
+	viewport.size = Vector2i(1000, 900)
+	layout._layout_cell_board()
+	_expect("扩大窗口后仍悬停同一格可恢复展板", board.visible and board.current_cell_index() == 0)
+	viewport.free()
 
 
 ## 悬停同一格跨日时，展板必须随当日快照刷新，而不能冻死在初次悬停那天。

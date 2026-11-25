@@ -1,6 +1,6 @@
 #include "economy_runtime.h"
 #include "economy_runtime_building_investment_internal.h"
-#include "economy_family_move_cash.h"
+#include "economy_cohort_move_cash.h"
 #include "runtime_switch_registry.h"
 #include <algorithm>
 #include <array>
@@ -93,7 +93,7 @@ bool NativeEconomyRuntime::investment_portfolio_funds_feasible(
                 return false;
             load_families(from);
             // The cash carried by the movers is resolved by the same rule the
-            // commit writes with (economy_family_move_cash.h cohort_move_cash).
+            // commit writes with (economy_cohort_move_cash.h cohort_move_cash).
             // Keeping one definition is what makes this replay a valid
             // certificate for the later write; a second formula here is how a
             // funded prefix used to become a building_investment_capital_

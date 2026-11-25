@@ -1,55 +1,47 @@
-extends "res://tests/ideology/ideology_worker_authority_parity_test.gd"
+extends "res://tests/runtime/background_daily_self_sufficiency_test.gd"
 
-# The production world keeps an Economy epoch open across a domain-mask flip.
-# Reuse the real card/peer fixture, but require the restarted worker to stay healthy.
-func _run() -> int:
-	_run_started_ms = Time.get_ticks_msec()
-	await _phase_k3_k4_k2()
-	_expect("restart scenario executed its card and authority checks", _checks >= 20)
-	if _worlds.is_empty():
-		_fail("restart scenario retains its production world")
-		return 1
-	var world: Dictionary = _worlds.back()
-	var ext: Object = world["ext"]
-	var report: Dictionary = ext.get_runtime_thread_report()
-	_expect("Economy survives the production authority flip without a worker fault",
-		String(report.get("simulation_host_state", "")) != "FAULTED"
-		and int(report.get("worker_fault_count", -1)) == 0,
-		String(report.get("fault_code", "")))
-	_expect("the restarted worker retains the requested domain mask",
-		int(report.get("authoritative_domain_mask", 0)) == MASK_SPLIT_IDEOLOGY_MAIN,
-		str(report.get("authoritative_domain_mask", 0)))
-	var before := int(report.get("simulation_committed_day", -1))
-	_drive_days(world, 4)
-	report = ext.get_runtime_thread_report()
-	_expect("the restarted worker continues committing days",
-		int(report.get("simulation_committed_day", -1)) > before,
-		str(report))
-	var economy: Dictionary = ext.get_economy_report()
-	_expect("the surviving Economy epoch remains healthy",
-		not bool(economy.get("fatal", true)), str(economy.get("fatal_reason", "")))
-	_teardown_all()
-	return 0
 
-func _run_and_finish() -> void:
-	var code := await _run()
-	print("runtime economy worker restart: %d checks, %d failures" % [_checks, _failures])
-	quit(code if code != 0 else (0 if _failures == 0 else 1))
+func _run() -> void:
+	await _run_world(false, true)
+	_finish()
 
-const RestartBoundary = preload("res://tests/runtime/worker_restart_boundary.gd")
 
-func _wait_worker_state(w: Dictionary, wanted: String, timeout_ms: int) -> bool:
-	if wanted == "STOPPED":
-		return RestartBoundary.stopped(w["ext"], timeout_ms)
-	return super._wait_worker_state(w, wanted, timeout_ms)
+func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictionary:
+	var generator := host.get_generator()
+	var economy: EconomyFacade = generator.get_economy_facade()
+	var ext: DCWorldExt = economy.world_ext()
+	clock.set_speed(SPEED)
+	for day in [1, 2]:
+		_publish_day(host, clock, day)
+		var settled := await _wait_golden_read_boundary(host, economy, day)
+		_expect("Economy commits day %d before restarting" % day, settled)
+		if not settled:
+			return {}
 
-## The parent waits for the worker only on suppressed days; Economy authority
-## here also needs the commit on the main-thread-ideology days.
-func _drive_day(w: Dictionary) -> Dictionary:
-	var result := super._drive_day(w)
-	if bool(result.get("ok", false)) and not bool(w.get("last_suppressed", false)):
-		var ext: Object = w["ext"]
-		ext.set_runtime_clock(false, WORKER_SPEED)
-		RestartBoundary.committed(w, 5000, func() -> void: _service_peers(ext, 1))
-		ext.set_runtime_clock(true, WORKER_SPEED)
-	return result
+	clock.pause(true)
+	host._sync_runtime_worker_clock()
+	var before := ext.runtime_committed_day()
+	var stopped := await host._stop_previous_runtime_worker()
+	_expect("the production worker exits", bool(stopped.get("ok", false))
+		and bool(ext.get_runtime_control_state().get("simulation_executor_exited", false)))
+	if not bool(stopped.get("ok", false)):
+		return {}
+	host._start_runtime_executor()
+	var restarted := ext.get_runtime_thread_report()
+	_expect("restart keeps the committed day and full authority",
+		host._web_worker_start_ok and ext.runtime_committed_day() == before
+		and int(restarted.get("authoritative_domain_mask", 0)) == 0xfff)
+	_expect("manual pause survives the restart", clock.paused)
+	clock.pause(false)
+	host._sync_runtime_worker_clock()
+	for day in range(before + 1, before + 5):
+		_publish_day(host, clock, day)
+		var settled := await _wait_golden_read_boundary(host, economy, day)
+		_expect("the same Economy continues with day %d" % day, settled)
+		if not settled:
+			break
+	var report := economy.report()
+	_expect("the resumed economy settles without a fault",
+		not bool(report.get("fatal", true))
+		and int(report.get("last_committed_day", -1)) >= before + 4)
+	return {}

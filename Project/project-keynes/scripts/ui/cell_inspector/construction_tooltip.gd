@@ -74,3 +74,38 @@ static func _construction_tooltip(host, entry: Dictionary, item: Dictionary, mat
 	if not reason_text.is_empty():
 		lines.append("不满足：%s" % reason_text)
 	return "\n".join(lines)
+
+
+## 报价按一栋建筑计算，国库供料之后才向本地市场采购。
+static func _construction_material_status_rows(host, materials: Array,
+		local_stock: Dictionary) -> Array:
+	var h = host
+	var rows: Array = []
+	for raw in materials:
+		var material: Dictionary = raw
+		var good_id := String(material.get("good_id", ""))
+		var required := int(material.get("required", 0))
+		var treasury := int(material.get("treasury", 0))
+		var market_need := int(material.get("market", 0))
+		var market_stock := int(local_stock.get(good_id, 0))
+		var missing := maxi(0, required - treasury - market_need)
+		if local_stock.has(good_id):
+			missing += maxi(0, market_need - market_stock)
+		var sources := PackedStringArray()
+		if treasury > 0:
+			sources.append("国库供料" if treasury == required else "国库 %s" % h._goods_scaled(treasury))
+		if market_need > 0:
+			sources.append("全部市购" if market_need == required else "需市购 %s" % h._goods_scaled(market_need))
+		rows.append({
+			"name": String(material.get("name", "建材")),
+			"good_id": good_id,
+			"icon": String(IconCatalog.good_semantic(good_id)),
+			"text": "%s 单位" % h._goods_scaled(required),
+			"detail": "，".join(sources),
+			"missing": missing > 0,
+			"missing_text": h._goods_scaled(missing),
+			"market_stock_text": h._goods_scaled(market_stock),
+			"market_need_text": h._goods_scaled(market_need),
+			"reason": ("市场无货" if market_stock == 0 else "市场库存不足") if missing > 0 else "",
+		})
+	return rows

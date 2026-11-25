@@ -1,6 +1,10 @@
 class_name CellInspectorViewModel
 extends RefCounted
 
+const MaintenancePresentation = preload("res://scripts/ui/military_maintenance_presentation.gd")
+
+const ConstructionFoldState = preload("res://scripts/ui/cell_inspector/construction_fold_state.gd")
+
 const PopulationPresentation = preload("res://scripts/ui/cell_inspector/population_presentation.gd")
 const FamilyWorkspaceProjection = preload("res://scripts/ui/family_workspace_projection.gd")
 
@@ -628,27 +632,13 @@ func _state_building_economy_quote(facade, building_index: int,
 		held_count: int = 0) -> Dictionary:
 	return _Military_delegate._state_building_economy_quote(self, facade, building_index, building_row, country_handle, cell_idx, _cash_available, standing_row, held_count)
 
-func _state_building_standing_cost(building_row: Dictionary,
-		count: int = 1) -> Dictionary:
-	return _Military_delegate._state_building_standing_cost(self, building_row, count)
 
-func _state_building_upkeep_after_text(build_row: Dictionary,
-		standing_row: Dictionary, held_count: int) -> String:
-	return _Military_delegate._state_building_upkeep_after_text(self, build_row, standing_row, held_count)
 
-func _state_building_upkeep_text(building_row: Dictionary,
-		count: int = 1, existing: bool = true) -> String:
-	return _Military_delegate._state_building_upkeep_text(self, building_row, count, existing)
 
 func _empty_state_building_cost() -> Dictionary:
 	return _Military_delegate._empty_state_building_cost(self)
 
-func _state_building_materials_text(materials: Array) -> String:
-	return _Military_delegate._state_building_materials_text(self, materials)
 
-func _state_building_cost_tooltip(display_name: String, effect: String,
-		cost: Dictionary) -> String:
-	return _Military_delegate._state_building_cost_tooltip(self, display_name, effect, cost)
 
 func _treasury_good_stock() -> Dictionary:
 	return _Military_delegate._treasury_good_stock(self)
@@ -656,11 +646,7 @@ func _treasury_good_stock() -> Dictionary:
 func _country_cash() -> int:
 	return _Military_delegate._country_cash(self)
 
-func _state_building_role_rows(catalog_rows: Array, role: int) -> Array:
-	return _Military_delegate._state_building_role_rows(self, catalog_rows, role)
 
-func _state_building_at_tier(role_rows: Array, tier: int) -> Dictionary:
-	return _Military_delegate._state_building_at_tier(self, role_rows, tier)
 
 func _state_building_pending(catalog_rows: Array, snapshot: Dictionary,
 		role: int) -> Dictionary:
@@ -670,19 +656,12 @@ func _state_building_unlocked(row: Dictionary, researched: PackedStringArray,
 		gate_known: bool) -> bool:
 	return _Military_delegate._state_building_unlocked(self, row, researched, gate_known)
 
-static func _state_building_maintenance_text(row: Dictionary) -> String:
-	return _Military._state_building_maintenance_text(row)
 
-static func _maintenance_days_text(days_cover_x10: int) -> String:
-	return _Military._maintenance_days_text(days_cover_x10)
 
 func _state_building_effect(role_id: String, row: Dictionary,
 		disrepair: bool) -> String:
 	return _Military_delegate._state_building_effect(self, role_id, row, disrepair)
 
-func _state_building_lock_tooltip(role_rows: Array, researched: PackedStringArray,
-		gate_known: bool) -> String:
-	return _Military_delegate._state_building_lock_tooltip(self, role_rows, researched, gate_known)
 
 func _technology_display_name(tech_id: String) -> String:
 	return _Military_delegate._technology_display_name(self, tech_id)
@@ -1096,42 +1075,15 @@ func _construction_page_label(offset: int, count: int, total: int) -> String:
 func _construction_local_stock(market: Dictionary) -> Dictionary:
 	return _Construction_delegate._construction_local_stock(self, market)
 
-## 主粮折叠的展开状态：档位卡展开出作物选项，作物选项展开出具体做法。
-## 只影响本页 rows 的生成，进度与报价仍按真实 type 走。
-var _construction_expanded_ranks: Dictionary = {}
-var _construction_expanded_crops: Dictionary = {}
+var _construction_folds = ConstructionFoldState.new()
 
 
 func _construction_fold_state() -> Dictionary:
-	return {
-		"ranks": _construction_expanded_ranks,
-		"crops": _construction_expanded_crops,
-	}
+	return _construction_folds.snapshot()
 
 
-## 切换一个折叠卡的展开状态；返回 false 表示不是折叠动作。
 func toggle_construction_fold(action: Dictionary) -> bool:
-	var kind := String(action.get("kind", ""))
-	var rank := int(action.get("rank", -1))
-	if kind == "toggle_rank":
-		if _construction_expanded_ranks.has(rank):
-			_construction_expanded_ranks.erase(rank)
-		else:
-			_construction_expanded_ranks[rank] = true
-		return true
-	if kind == "toggle_crop":
-		var key := "%d|%s" % [rank, String(action.get("crop", ""))]
-		if _construction_expanded_crops.has(key):
-			_construction_expanded_crops.erase(key)
-		else:
-			_construction_expanded_crops[key] = true
-		return true
-	return false
-
-
-func collapse_construction_fold() -> void:
-	_construction_expanded_ranks.clear()
-	_construction_expanded_crops.clear()
+	return _construction_folds.toggle(action)
 
 
 func _construction_entries(candidates: PackedInt32Array, quotes: Dictionary,

@@ -338,7 +338,6 @@ var _gm_sequence: int = 1
 var _gm_territory_requests := {}
 var _gm_territory_publication := 0
 var _gm_click_claim_territory_enabled: bool = false
-var _gm_suppress_popups: bool = false
 ## GM UI 诊断开关：隐藏所有玩家界面，但保留 GM 面板本身可操作。
 var _player_confirmation_view: Dictionary = {}
 var _gm_tod_preview_enabled: bool = false
@@ -765,16 +764,19 @@ func _publish_player_confirmation(report: Dictionary) -> void:
 	var view := {
 		"reason": String(report.get("player_block_reason", "")),
 		"hide_popups": bool(report.get("player_popups_suppressed", false)),
+		"suppress_event_popups": bool(report.get("suppress_event_popups", false)),
 		"family_offer": report.get("family_founding_offer", {}),
 		"ideology_generation": int(report.get("ideology_offer_generation", 0)),
 	}
 	if view == _player_confirmation_view:
 		return
-	var old_hidden := bool(_player_confirmation_view.get("hide_popups", false))
+	var old_view := _player_confirmation_view
 	_player_confirmation_view = view
 	player_confirmation_updated.emit(view)
-	if bool(view.hide_popups) != old_hidden:
+	if bool(view.hide_popups) != bool(old_view.get("hide_popups", false)):
 		gm_toggle_changed.emit("ui.hide_all_except_gm", bool(view.hide_popups))
+	if bool(view.suppress_event_popups) != bool(old_view.get("suppress_event_popups", false)):
+		gm_toggle_changed.emit("ui.suppress_popups", bool(view.suppress_event_popups))
 
 func submit_player_confirmation(action: String, value: int) -> Dictionary:
 	if _generator == null or not _runtime_ready_for_ticks:

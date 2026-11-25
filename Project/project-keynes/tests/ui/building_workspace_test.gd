@@ -85,13 +85,18 @@ func _run() -> void:
 		and String(workspace._hover_card._payload.get("tooltip", "")).contains("国库"))
 	_expect("eligible hover hides the empty shortage section",
 		not workspace._hover_card._materials.visible)
+	var hover := workspace._hover_card
 	_expect("hover shows daily inputs, natural resources and outputs",
-		workspace._hover_card._flow.visible
-		and workspace._hover_card._flow_text.text
-			== "投入：原木 0.5/日\n自然资源：水源 0.2/日\n产出：木板 0.25/日")
+		hover._flow.visible
+		and _quantity_row_matches(hover._inputs, 0, "原木", "0.5/日")
+		and _quantity_row_matches(hover._inputs, 1, "水源", "0.2/日")
+		and _quantity_row_matches(hover._outputs, 0, "木板", "0.25/日"))
 	_expect("hover shows owner and employee roles",
-		workspace._hover_card._employment.visible
-		and workspace._hover_card._employment_text.text == "岗位：业主 工匠 ×1 · 雇员 工人 ×3")
+		hover._employment.visible
+		and _quantity_row_matches(hover._employment, 0, "业主 工匠", "×1")
+		and _quantity_row_matches(hover._employment, 1, "雇员 工人", "×3"))
+	_expect("the row renders the quoted material quantity",
+		_quantity_row_matches(eligible_row._materials, 0, "木材", "2.4 单位"))
 	_expect("hover detail stays inside the construction column",
 		host.get_global_rect().grow(0.5).encloses(
 			workspace._hover_card.get_global_rect()))
@@ -100,14 +105,12 @@ func _run() -> void:
 	await process_frame
 	_expect("hover hides sections without recipe or job data",
 		not workspace._hover_card._flow.visible and not workspace._hover_card._employment.visible)
+	var requirement = hover._requirement_list.get_child(0)
 	_expect("blocked hover explains missing amount and market cause",
-		workspace._hover_card._materials.visible
-		and String(workspace._hover_card._material_rows.get_child(0)
-			.get_node("Label").text).contains("还差")
-		and String(workspace._hover_card._material_rows.get_child(0)
-			.get_node("Label").text).contains("市场无货")
-		and (workspace._hover_card._material_rows.get_child(0)
-			.get_node("Icon") as IconBadge).icon_key == &"good.lumber")
+		hover._requirements.visible
+		and String(requirement.get_node("Description/Detail").text).contains("0.6 单位")
+		and String(requirement.get_node("Description/Detail").text).contains("市场无货")
+		and (requirement.get_node("Icon") as IconBadge).icon_key == &"good.lumber")
 	workspace._on_row_hover_ended()
 	_expect("page has no KPI band: sorting chips and rows carry the decisions",
 		workspace.get_node_or_null("%Summary") == null
@@ -237,6 +240,13 @@ func _row(building_id: String, display_name: String, eligible: bool, cash: int,
 		reason: String) -> Dictionary:
 	var production := "\n岗位：业主 工匠 ×1 · 雇员 工人 ×3\n投入：原木 0.5/日\n自然资源：水源 0.2/日\n产出：木板 0.25/日" \
 		if building_id == "weaving" else ""
+	var preview := {}
+	if building_id == "weaving":
+		preview = {
+			"inputs": [{"name": "原木", "text": "0.5/日"}, {"name": "水源", "text": "0.2/日"}],
+			"outputs": [{"name": "木板", "text": "0.25/日"}],
+			"jobs": [{"name": "业主 工匠", "text": "×1"}, {"name": "雇员 工人", "text": "×3"}],
+		}
 	return {
 		"building_id": building_id,
 		"type_id": 1,
@@ -250,15 +260,26 @@ func _row(building_id: String, display_name: String, eligible: bool, cash: int,
 		"cash_required": cash,
 		"cash_text": "%.1f" % (float(cash) / 10000.0),
 		"market_used": 600,
+		"preview": preview,
 		"material_status": [{
 			"name": "木材", "missing": not eligible,
 			"icon": "good.lumber",
+			"text": "2.4 单位", "detail": "国库 1.8，需市购 0.6",
 			"missing_text": "0.6", "reason": "市场无货",
 		}],
 		"cash_blocked": reason == "资金不足",
 		"tooltip": "%s\n木材 · 需 2.4 / 国库 1.8 / 市购 0.6\n合计需现金 %.1f%s" % [
 			display_name, float(cash) / 10000.0, production],
 	}
+
+
+func _quantity_row_matches(section: Control, index: int, name_text: String, quantity: String) -> bool:
+	var rows := section.get_node("List")
+	if index >= rows.get_child_count():
+		return false
+	var row := rows.get_child(index) as Control
+	return row.visible and row.get_node("Description/Name").text == name_text \
+		and row.get_node("Quantity").text == quantity
 
 
 func _model(rows: Array) -> Dictionary:

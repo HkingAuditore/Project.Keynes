@@ -144,7 +144,7 @@ func _run() -> void:
 	get_root().add_child(host)
 	_host = host
 	# A child added during `_init()` is not inside the tree yet, so
-	# `generate_world()` would return silently (runtime_ideology_parity_test:81).
+	# `generate_world()` would return before the world host is ready.
 	await process_frame
 	host.configure(null, null, clock)
 

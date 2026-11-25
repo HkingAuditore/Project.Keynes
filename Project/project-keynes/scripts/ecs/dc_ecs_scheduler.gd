@@ -6,8 +6,7 @@ extends RefCounted
 # ═══════════════════════════════════════════════════════════════════
 #
 # Promoted from `tmp/demo_ecs_scheduler.gd` (DOTS-A2 sandbox). The# algorithm is unchanged; only the class name and header are updated
-# so the scheduler can be referenced from `scripts/main.gd` and other
-# production paths.
+# so production and diagnostic code can use the same scheduler.
 #
 # Algorithm:
 #   1. Collect jobs (registered via `add_job`).

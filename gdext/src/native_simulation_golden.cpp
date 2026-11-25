@@ -299,8 +299,9 @@ uint64_t climate_hash(const RuntimeClimateStore &state, std::string &error) {
     hash.add(state.annual_temperature_drift);
     hash.add(state.rng_state);
     hash.add(state.annual_rng_state);
+    // CLM2 v10 persists the cursor and both running temperatures. Its old
+    // raw history ring never feeds the next day and is reconstructed empty.
     hash.add(state.history_cursor);
-    hash.column(state.temperature_history);
     return hash.value;
 }
 void trace_country(const RuntimeCountryPodSnapshot &state) {
@@ -459,7 +460,7 @@ RuntimeGoldenSnapshot NativeSimulationHost::capture_golden_snapshot(int64_t day)
     if (climate.committed_day >= 0) {
         const uint64_t digest = climate_hash(climate, error);
         if (!error.empty()) return out;
-        add("CLIMATE", "committed_store_lanes_and_physics_v1", climate.committed_day, digest);
+        add("CLIMATE", "committed_store_lanes_and_physics_v2", climate.committed_day, digest);
     }
     if (const auto *country = _country_pod_authority.borrow_state()) {
         trace_country(*country);

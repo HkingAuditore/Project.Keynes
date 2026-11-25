@@ -467,17 +467,17 @@ func _build_tax_section(kind: String, context_value: Variant, row: Dictionary,
 				break
 		if not building_item_id.is_empty():
 			var axes: Array = host.tax_group_axes()
-			var group_box := HBoxContainer.new()
+			var group_box := UIControlParts.h_box_container()
 			group_box.add_theme_constant_override("separation", 8)
-			var axis_picker := OptionButton.new()
+			var axis_picker := UIControlParts.option_button()
 			for axis_index in range(axes.size()):
 				axis_picker.add_item(String((axes[axis_index] as Dictionary).get("label", "")))
 			axis_picker.selected = 0
 			group_box.add_child(axis_picker)
-			var group_note := Label.new()
+			var group_note := UIControlParts.label()
 			group_note.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 			group_box.add_child(group_note)
-			var group_button := Button.new()
+			var group_button := UIControlParts.button()
 			group_button.text = "把当前税率应用到整组"
 			group_box.add_child(group_button)
 			var state := {"ids": PackedStringArray()}
@@ -997,31 +997,6 @@ func _apply_cohort_dossier_data(row: Dictionary, live_patch: bool) -> void:
 		inactive_note.visible = not summary_str.is_empty()
 
 
-func _populate_inline_fact_grid(grid: GridContainer, facts: Array) -> void:
-	if grid == null:
-		return
-	for child in grid.get_children():
-		grid.remove_child(child)
-		child.queue_free()
-	for raw in facts:
-		var fact: Dictionary = raw
-		var cell := FactCellScene.instantiate() as VBoxContainer
-		grid.add_child(cell)
-		var label := cell.get_node("Label") as Label
-		label.text = String(fact.get("label", ""))
-		label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
-		var value := cell.get_node("Value") as Label
-		value.text = String(fact.get("value", "—"))
-		value.clip_text = true
-		value.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		value.autowrap_mode = TextServer.AUTOWRAP_OFF
-		value.custom_minimum_size.y = 18
-		value.add_theme_font_override("font", UITokens.font_with_weight(650))
-		value.add_theme_color_override("font_color",
-			_dossier_accent(fact.get("accent", UITokens.DOSSIER_INK)))
-		_fact_value_labels.append(value)
-
-
 # ─── 其他详情区（建筑/自然资源/家族回退） ───────────────────────────────
 
 func _build_building_details(row: Dictionary, tax_context: Variant = {}) -> void:
@@ -1409,41 +1384,6 @@ func _add_rows_card(title_text: String, icon_key: String, accent: Color,
 		detail_label.visible = not detail.is_empty()
 		var tooltip := String(data.get("tooltip", "")).strip_edges()
 		line.tooltip_text = tooltip if not tooltip.is_empty() else detail
-	return panel
-
-
-func _add_state_card(state: Dictionary) -> Control:
-	var accent := _dossier_accent(state.get("accent", UITokens.WARN))
-	var panel := StateCardScene.instantiate() as PanelContainer
-	_content.add_child(panel)
-	var label := panel.get_node("Box/Label") as Label
-	label.text = String(state.get("label", "经营状态"))
-	label.add_theme_color_override("font_color", accent)
-	var detail := panel.get_node("Box/Detail") as Label
-	detail.text = String(state.get("detail", ""))
-	detail.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
-	var meta_text := String(state.get("meta", ""))
-	var meta := panel.get_node("Box/Meta") as Label
-	meta.text = meta_text
-	meta.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
-	meta.visible = not meta_text.is_empty()
-	return panel
-
-
-func _add_finance_card(finance: Dictionary) -> Control:
-	var panel := _add_fact_grid([
-		{"label": String(finance.get("revenue_label", "本期收入")),
-			"value": String(finance.get("revenue", "—")), "accent": UITokens.DOSSIER_VERDIGRIS},
-		{"label": "本期总成本", "value": String(finance.get("cost", "—")), "accent": UITokens.DOSSIER_OXBLOOD},
-		{"label": "本期盈亏", "value": String(finance.get("profit", "—")),
-			"accent": UITokens.DOSSIER_VERDIGRIS if bool(finance.get("profit_positive", true)) else UITokens.DOSSIER_OXBLOOD},
-	])
-	var breakdown := String(finance.get("breakdown", ""))
-	if not breakdown.is_empty():
-		_add_muted_note(breakdown)
-	var warning := String(finance.get("warning", ""))
-	if not warning.is_empty():
-		_add_muted_note(warning, UITokens.DOSSIER_OXBLOOD)
 	return panel
 
 

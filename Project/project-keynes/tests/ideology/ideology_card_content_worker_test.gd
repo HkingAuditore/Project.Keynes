@@ -11,8 +11,7 @@ extends SceneTree
 ## EFFECT owned by the worker, and the modifier rows arriving back through the
 ## worker transport. This file runs that path.
 ##
-## The fixture is `runtime_ideology_parity_test.gd::_run_production_shadow_parity`
-## (the known-good way to make the worker advance headless days) with one change:
+## The fixture starts the world host and advances its headless executor:
 ## the forwarder is told EFFECT belongs to the worker
 ## (`set_effect_forwarder_authority_for_test(1)`, the seam documented in
 ## `ideology_effect_worker_forward_test.gd`). Everything else stays production:

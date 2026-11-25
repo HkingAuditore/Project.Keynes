@@ -913,9 +913,10 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
     _store = std::move(restored);
     _kernel.invalidate_committed_physics();
     _next = std::move(restored_next);
-    // 继续态一律用当前算法盖章：旧档读完历史 lane 后，后续 plan/commit 只会
-    // 产出不含历史的哈希，若这里沿用旧值就会在下一日对不上。
-    _committed_state_hash = section_abi >= 8u ? restored.state_hash() : 0;
+    // v10 已校验当前格式的哈希。旧档按当前算法从安装完成的状态计算发布哈希。
+    _committed_state_hash = section_abi >= 10u
+        ? expected_hash
+        : (section_abi >= 8u ? _store.state_hash() : 0);
     _catalog = restored_catalog;
     _catalog_ready = catalog_hash != 0;
     _economy_view_cursor = {};
@@ -1101,6 +1102,9 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
             if (legacy_reader.store().state_hash() != authority.store().state_hash()) {
                 return migration_fail("climate_abi9_current_hash_drift");
             }
+            if (legacy_reader.snapshot().state_hash != legacy_reader.store().state_hash()) {
+                return migration_fail("climate_abi9_published_hash_mismatch");
+            }
         }
         if (!check_legacy(8u, 0u, 0u, "climate_abi8")) return false;
         // ABI 7 = 只缺 terrain / cover（2 条 u8 lane），保留 physics。
@@ -1254,6 +1258,10 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
     if (!restored.restore(bytes.data(), bytes.size(), error) ||
         restored.store().state_hash() != authority.store().state_hash()) {
         if (error.empty()) error = "climate_section_roundtrip_failed";
+        return false;
+    }
+    if (restored.snapshot().state_hash != restored.store().state_hash()) {
+        error = "climate_section_published_hash_mismatch";
         return false;
     }
 

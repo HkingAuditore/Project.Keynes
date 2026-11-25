@@ -1,7 +1,6 @@
 #include "native_simulation_host.h"
 
 #include "economy_api.h"
-#include "pk_log.h"
 #include "runtime_checkpoint_wire.h"
 #include "runtime_era_reward.h"
 #include "runtime_narrative.h"
@@ -17,6 +16,8 @@ using Confirmation = RuntimePlayerConfirmationRequest;
 using IdeologyOpcode = RuntimeIdeologyPodOpcode;
 constexpr const char *FAMILY_CHOICE = "family_founding_choice_required";
 constexpr const char *IDEOLOGY_CHOICE = "ideology_choice_required";
+// Legacy sections begin with a boolean (0 or 1).
+constexpr uint8_t PLAYER_CONFIRMATION_SCHEMA_2 = 2;
 
 bool is_player_draw(const RuntimeIdeologyPodCommand &command, uint64_t country) {
     return country != 0 && command.country_handle == country && command.producer_id == 1 &&
@@ -65,6 +66,13 @@ bool NativeSimulationHost::ideology_response_queued(uint32_t generation) const {
     return std::any_of(_ideology_commands.begin(), _ideology_commands.end(), is_response);
 }
 
+bool NativeSimulationHost::suppress_event_popups_on(int64_t day) const {
+    const auto &updates = _player_confirmation.event_popup_updates;
+    const auto until = updates.upper_bound(day);
+    return until == updates.begin() ? _player_confirmation.suppress_event_popups
+                                    : std::prev(until)->second;
+}
+
 const char *NativeSimulationHost::player_confirmation_block(int64_t published_day) {
     const auto previous = std::atomic_load(&_player_confirmation.published);
     if (published_day < 0 && _inline_day_pending.load(std::memory_order_acquire))
@@ -77,9 +85,10 @@ const char *NativeSimulationHost::player_confirmation_block(int64_t published_da
                 return request->offer_generation == int64_t(era->offer.get("offer_generation", 0)) &&
                     request->choice >= 0 && request->choice < 3;
             });
+    const bool suppress_next = suppress_event_popups_on(day + 1);
     const char *reason = era && era->needs_choice && !era_answered
-        ? "era_reward_choice_required" : narrative_input_block();
-    if (!reason && annual_development_enabled() && annual_worker_managed()) {
+        ? "era_reward_choice_required" : narrative_input_block(suppress_next);
+    if (!reason && !suppress_next && annual_development_enabled() && annual_worker_managed()) {
         std::lock_guard<std::mutex> lock(_annual_mutex);
         const auto report = _annual_ledger.ready_report_id();
         // A zero reward may already be settled before the first day of the new year.
@@ -103,6 +112,7 @@ const char *NativeSimulationHost::player_confirmation_block(int64_t published_da
     }
     if (!previous || previous->day != day || previous->reason != reason ||
             previous->hide_popups != _player_confirmation.hide_popups ||
+            previous->suppress_event_popups != _player_confirmation.suppress_event_popups ||
             previous->family_offer_offset != family_offset ||
             previous->ideology_generation != ideology_generation) {
         auto view = std::make_shared<RuntimePlayerConfirmationView>();
@@ -110,6 +120,7 @@ const char *NativeSimulationHost::player_confirmation_block(int64_t published_da
         view->reason = reason;
         view->family_offer_offset = family_offset;
         view->hide_popups = _player_confirmation.hide_popups;
+        view->suppress_event_popups = _player_confirmation.suppress_event_popups;
         view->ideology_generation = ideology_generation;
         if (family_offset >= 0) {
             const auto rows = godot::Array(economy_api::family_founding_offer(
@@ -185,7 +196,8 @@ void NativeSimulationHost::prepare_player_ideology_responses(int64_t day, bool o
 }
 
 godot::Dictionary NativeSimulationHost::submit_player_confirmation(Confirmation request) {
-    int64_t day = request.kind == Confirmation::Kind::POPUP_POLICY ? request.day : 0;
+    const bool policy_request = request.kind != Confirmation::Kind::DISMISS_IDEOLOGY;
+    int64_t day = policy_request ? request.day : 0;
     {
         auto admission = admit_command(day);
         if (!admission.accepted() || !_world_environment || state() == RuntimeWorkerState::STOPPED ||
@@ -204,7 +216,7 @@ godot::Dictionary NativeSimulationHost::submit_player_confirmation(Confirmation 
     else _control_cv.notify_all();
     auto result = confirmation_receipt(true, "queued");
     result["pending"] = true;
-    if (request.kind == Confirmation::Kind::POPUP_POLICY) result["effective_day"] = day;
+    if (policy_request) result["effective_day"] = day;
     return result;
 }
 
@@ -219,6 +231,8 @@ bool NativeSimulationHost::service_player_confirmations() {
     for (const auto &request : requests) {
         if (request.kind == Confirmation::Kind::POPUP_POLICY) {
             _player_confirmation.popup_updates[request.day] = request.value != 0;
+        } else if (request.kind == Confirmation::Kind::EVENT_POPUP_POLICY) {
+            _player_confirmation.event_popup_updates[request.day] = request.value != 0;
         } else {
             const auto generation = player_ideology_offer();
             const bool current = generation != 0 && generation == request.value;
@@ -249,6 +263,19 @@ void NativeSimulationHost::finish_player_confirmation_day(int64_t day) {
         _player_confirmation.hide_popups = std::prev(applied)->second;
         policy.erase(policy.begin(), applied);
     }
+    auto &event_policy = _player_confirmation.event_popup_updates;
+    _player_confirmation.suppress_event_popups = suppress_event_popups_on(day);
+    event_policy.erase(event_policy.begin(), event_policy.upper_bound(day));
+    if (_player_confirmation.suppress_event_popups && annual_development_enabled() &&
+            annual_worker_managed()) {
+        std::lock_guard<std::mutex> lock(_annual_mutex);
+        while (const auto id = _annual_ledger.ready_report_id()) {
+            // A report remains available in history. Only its required prompt is consumed.
+            if (!_annual_ledger.mark_presented(id)) break;
+            _annual_history_changed = true;
+        }
+        if (_annual_history_changed) publish_annual_view_locked();
+    }
     if (player_ideology_offer() != _player_confirmation.dismissed_ideology)
         _player_confirmation.dismissed_ideology = 0;
     auto &grant = _player_confirmation.advance_through;
@@ -269,10 +296,12 @@ void NativeSimulationHost::finish_player_confirmation_day(int64_t day) {
 std::vector<uint8_t> NativeSimulationHost::encode_player_confirmation(int64_t day) const {
     const auto &state = _player_confirmation;
     const int64_t advance = state.advance_through.load(std::memory_order_acquire);
-    if (!state.hide_popups && state.dismissed_ideology == 0 && advance <= day &&
+    const bool event_policy_saved = state.suppress_event_popups || !state.event_popup_updates.empty();
+    if (!event_policy_saved && !state.hide_popups && state.dismissed_ideology == 0 && advance <= day &&
             state.popup_updates.empty() && state.era_selections.empty() &&
             state.era_advancement.empty()) return {};
     CheckpointWriter writer;
+    if (event_policy_saved) writer.field(PLAYER_CONFIRMATION_SCHEMA_2);
     writer.field(uint8_t(state.hide_popups));
     writer.field(state.dismissed_ideology);
     writer.field(advance > day ? advance : int64_t{-1});
@@ -286,7 +315,7 @@ std::vector<uint8_t> NativeSimulationHost::encode_player_confirmation(int64_t da
         wire.field(request->choice);
         wire.field(request->advancement_sequence);
     });
-    if (!state.era_advancement.empty()) {
+    if (event_policy_saved || !state.era_advancement.empty()) {
         writer.rows(state.era_advancement, [](auto &wire, const auto &request) {
             wire.field(static_cast<uint8_t>(request->kind));
             wire.field(request->country_handle);
@@ -299,26 +328,30 @@ std::vector<uint8_t> NativeSimulationHost::encode_player_confirmation(int64_t da
             wire.field(int32_t(policy.get("colonization_share_bp", -1)));
         });
     }
+    if (event_policy_saved) {
+        writer.field(uint8_t(state.suppress_event_popups));
+        writer.rows(state.event_popup_updates, [](auto &wire, const auto &update) {
+            wire.field(update.first);
+            wire.field(uint8_t(update.second));
+        });
+    }
     return std::move(writer.bytes);
 }
 
-void NativeSimulationHost::restore_player_confirmation(const std::vector<uint8_t> &bytes, int64_t day) {
-    auto &state = _player_confirmation;
-    state.hide_popups = false;
-    state.dismissed_ideology = 0;
-    state.advance_through.store(-1, std::memory_order_release);
-    state.popup_updates.clear();
-    state.era_selections.clear();
-    state.era_advancement.clear();
-    if (bytes.empty()) return;
+bool NativeSimulationHost::decode_player_confirmation(const std::vector<uint8_t> &bytes, int64_t day,
+                                                       RuntimePlayerConfirmation *state) {
     CheckpointReader reader{bytes.data(), bytes.size()};
+    const bool versioned = !bytes.empty() && bytes.front() == PLAYER_CONFIRMATION_SCHEMA_2;
+    if (versioned) ++reader.cursor;
     uint8_t hide = 0;
+    uint8_t suppress_events = 0;
+    std::vector<std::pair<int64_t, uint8_t>> event_updates;
     uint32_t dismissed = 0;
     int64_t advance = -1;
     std::vector<std::pair<int64_t, uint8_t>> updates;
     std::deque<std::shared_ptr<RuntimeEraRewardRequest>> selections;
     std::deque<std::shared_ptr<RuntimeEraRewardRequest>> advancement;
-    if (!reader.field(hide) || hide > 1 || !reader.field(dismissed) || !reader.field(advance) ||
+    if (!bytes.empty() && (!reader.field(hide) || hide > 1 || !reader.field(dismissed) || !reader.field(advance) ||
             !reader.rows(updates, [day](auto &wire, auto &update) {
                 return wire.field(update.first) && update.first > day &&
                     wire.field(update.second) && update.second <= 1;
@@ -327,7 +360,7 @@ void NativeSimulationHost::restore_player_confirmation(const std::vector<uint8_t
                 return wire.field(request->effective_day) && request->effective_day > day &&
                     wire.field(request->offer_generation) && wire.field(request->choice) &&
                     wire.field(request->advancement_sequence);
-            }) || (reader.cursor < reader.size && !reader.rows(advancement, [day](auto &wire, auto &request) {
+            }) || ((versioned || reader.cursor < reader.size) && !reader.rows(advancement, [day](auto &wire, auto &request) {
                 using Kind = RuntimeEraRewardRequest::Kind;
                 request = std::make_shared<RuntimeEraRewardRequest>();
                 uint8_t kind = 0;
@@ -344,16 +377,27 @@ void NativeSimulationHost::restore_player_confirmation(const std::vector<uint8_t
                 request->advancement["era_share_bp"] = era;
                 request->advancement["colonization_share_bp"] = colonization;
                 return true;
-            })) || reader.cursor != reader.size) {
-        log_error("player confirmation restore: runtime_bundle_player_confirmation_invalid");
-        return;
+            })) || (versioned &&
+                (!reader.field(suppress_events) || suppress_events > 1 ||
+                 !reader.rows(event_updates, [day](auto &wire, auto &update) {
+                     return wire.field(update.first) && update.first > day &&
+                         wire.field(update.second) && update.second <= 1;
+                 }))) || reader.cursor != reader.size)) {
+        return false;
     }
-    state.hide_popups = hide != 0;
-    state.dismissed_ideology = dismissed;
-    if (advance > day) state.advance_through.store(advance, std::memory_order_release);
-    state.popup_updates.insert(updates.begin(), updates.end());
-    state.era_selections = std::move(selections);
-    state.era_advancement = std::move(advancement);
+    if (std::adjacent_find(event_updates.begin(), event_updates.end(),
+            [](const auto &left, const auto &right) { return left.first >= right.first; }) != event_updates.end())
+        return false;
+    if (state == nullptr) return true;
+    state->hide_popups = hide != 0;
+    state->dismissed_ideology = dismissed;
+    state->advance_through.store(advance > day ? advance : -1, std::memory_order_release);
+    state->popup_updates = {updates.begin(), updates.end()};
+    state->suppress_event_popups = suppress_events != 0;
+    state->event_popup_updates = {event_updates.begin(), event_updates.end()};
+    state->era_selections = std::move(selections);
+    state->era_advancement = std::move(advancement);
+    return true;
 }
 
 } // namespace pk

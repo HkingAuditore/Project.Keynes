@@ -633,20 +633,20 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
             // must not be claimed while a top-up line is still unbought.
             int64_t topup_saturation = 0;
             for (size_t i = 0; i < kit.cargo.size(); ++i) {
-                const FamilyExpeditionCargoLine &line = kit.cargo[i];
+                const auto &line = kit.cargo[i];
                 bool seen = false;
                 for (size_t j = 0; j < i && !seen; ++j)
                     seen = kit.cargo[j].good_id == line.good_id &&
                         kit.cargo[j].flags == line.flags;
                 if (seen) continue;
                 int64_t required = 0;
-                for (const FamilyExpeditionCargoLine &row : kit.cargo)
+                for (const auto &row : kit.cargo)
                     if (row.good_id == line.good_id && row.flags == line.flags)
                         required = saturating_add(required, row.quantity,
                             topup_saturation);
                 int64_t held = 0;
                 for (uint32_t k = cargo_begin; k < cargo_end; ++k) {
-                    const FamilyExpeditionCargoLine &row =
+                    const auto &row =
                         family_expedition_cargo()[k];
                     if (row.good_id == line.good_id && row.flags == line.flags)
                         held = saturating_add(held, row.quantity,

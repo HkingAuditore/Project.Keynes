@@ -12,7 +12,7 @@ extends SceneTree
 ## needs a real `MapData` and a hand-written stub crashes
 ## (`world_ext_economy.cpp:929-930`, `0xC0000005`).
 ##
-## The only route is what `runtime_ideology_parity_test.gd:103` uses:
+## Start with the formal world host:
 ## `host.generate_world(SEED)` and then read the bound `DCWorldExt`. This fixture
 ## does exactly that, but for the cell layer rather than for parity.
 ##
@@ -84,7 +84,7 @@ func _run() -> void:
 	get_root().add_child(host)
 	_host = host
 	# A child added during `_init()` is not inside the tree yet, so
-	# `generate_world()` would return silently (runtime_ideology_parity_test:81).
+	# `generate_world()` would return before the world host is ready.
 	await process_frame
 	host.configure(null, null, clock)
 

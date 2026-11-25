@@ -8,12 +8,12 @@
 
 | Metric | Count |
 | --- | --- |
-| Invariants | 2765 |
+| Invariants | 2767 |
 | kind=fatal | 4 |
-| kind=rejection | 29 |
+| kind=rejection | 30 |
 | kind=backpressure | 0 |
-| kind=unknown | 2732 |
-| status=active | 2765 |
+| kind=unknown | 2733 |
+| status=active | 2767 |
 | status=retired | 0 |
 | entries with witness | 4 |
 | entries with playbook | 36 |
@@ -921,7 +921,7 @@
 | INV-ECON-0894 | `save_building_maintenance_exception_invalid` | rejection | save_restore | economy.persistence | active |
 | INV-ECON-0895 | `save_market_signal_observation_size_invalid` | rejection | save_restore | economy.persistence | active |
 
-### CLIMATE (231)
+### CLIMATE (232)
 
 | ID | reason | kind | stage | owner | status |
 | --- | --- | --- | --- | --- | --- |
@@ -1156,6 +1156,7 @@
 | INV-CLIMATE-0229 | `wind_traj_weights_not_normalized` | unknown | unclassified | climate.unassigned | active |
 | INV-CLIMATE-0230 | `world_ext_not_bound` | unknown | unclassified | climate.unassigned | active |
 | INV-CLIMATE-0231 | `runtime_environment_owned_by_executor` | rejection | host_environment | native.host.environment | active |
+| INV-CLIMATE-0232 | `climate_section_published_hash_mismatch` | unknown | native_self_test | climate.persistence | active |
 
 ### COUNTRY (470)
 
@@ -1756,7 +1757,7 @@
 | INV-MILITARY-0118 | `military_command_not_object` | rejection | military_command_decode | military.parse | active |
 | INV-MILITARY-0119 | `pkmi_bad_budget_envelope` | rejection | save_restore | military.save | active |
 
-### SAVE (127)
+### SAVE (128)
 
 | ID | reason | kind | stage | owner | status |
 | --- | --- | --- | --- | --- | --- |
@@ -1887,6 +1888,7 @@
 | INV-SAVE-0125 | `effect_pod_colonization_lookup_failed` | rejection | effect_pod_restore | effect.persistence | active |
 | INV-SAVE-0126 | `effect_pod_snapshot_dropped_colliding_colonization` | rejection | effect_pod_restore | effect.persistence | active |
 | INV-SAVE-0127 | `effect_pod_snapshot_colonization_remap_invalid` | rejection | effect_pod_restore | effect.persistence | active |
+| INV-SAVE-0128 | `runtime_bundle_player_confirmation_invalid` | rejection | save_restore | native.host.persistence | active |
 
 ### EFFECT (305)
 

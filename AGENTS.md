@@ -6,7 +6,7 @@ A procedural hex-world economy and civilization simulation. Godot 4.6 runs the U
 
 - Clone with submodules: `git clone --recurse-submodules` (godot-cpp is required).
 - Build the native extension: `gdext/rebuild.sh` (macOS), `gdext\rebuild.bat` (Windows). Toolchains and exports: `docs/build-from-source.md`.
-- Open `Project/project-keynes/` in Godot 4.6; main scene `scenes/main.tscn`.
+- Open `Project/project-keynes/` in Godot 4.6; main scene `scenes/main_menu.tscn`.
 
 ## Verify
 

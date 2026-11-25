@@ -340,38 +340,6 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 	return route
 
 
-static func _route_option(technology_ids: Array, building_ids: Array,
-		values: Dictionary) -> Dictionary:
-	var technology_values := PackedStringArray()
-	var building_values := PackedStringArray()
-	for technology_id in technology_ids:
-		technology_values.append(String(technology_id))
-	for building_id in building_ids:
-		building_values.append(String(building_id))
-	var option := {
-		"technology_ids": technology_values,
-		"building_ids": building_values,
-	}
-	for key in values:
-		option[String(key)] = values[key]
-	return option
-
-
-static func _append_many_unique(values: PackedStringArray,
-		candidates: PackedStringArray) -> void:
-	for value in candidates:
-		_append_unique(values, String(value))
-
-
-static func _probe_has_signal(signal_probe: Dictionary, catalog: Dictionary,
-		signal_id: String) -> bool:
-	var ids: PackedStringArray = catalog.get("research_signal_ids", PackedStringArray())
-	var signal_index := ids.find(signal_id)
-	if signal_index < 0:
-		return false
-	return int((signal_probe.get("counts", {}) as Dictionary).get(signal_index, 0)) > 0
-
-
 static func _starter_technologies_revealed(technology_ids: PackedStringArray,
 		signal_probe: Dictionary, catalog: Dictionary) -> bool:
 	for technology_id in technology_ids:
@@ -419,32 +387,6 @@ static func _starter_technology_revealed(technology_index: int,
 			return false
 	visiting.erase(technology_index)
 	return true
-
-
-static func _starter_route_better(candidate: Dictionary, current: Dictionary) -> bool:
-	if int(candidate.get("weakest_supply_coverage_q16", 0)) != int(current.get(
-			"weakest_supply_coverage_q16", 0)):
-		return int(candidate.get("weakest_supply_coverage_q16", 0)) > int(current.get(
-			"weakest_supply_coverage_q16", 0))
-	if int(candidate.get("resource_pressure_q16", 0)) != int(current.get(
-			"resource_pressure_q16", 0)):
-		return int(candidate.get("resource_pressure_q16", 0)) < int(current.get(
-			"resource_pressure_q16", 0))
-	if int(candidate.get("overproduction_quantity", 0)) != int(current.get(
-			"overproduction_quantity", 0)):
-		return int(candidate.get("overproduction_quantity", 0)) < int(current.get(
-			"overproduction_quantity", 0))
-	if int(candidate.get("starter_building_total", 0)) != int(current.get(
-			"starter_building_total", 0)):
-		return int(candidate.get("starter_building_total", 0)) < int(current.get(
-			"starter_building_total", 0))
-	var candidate_buildings: PackedStringArray = candidate.starter_building_ids
-	var current_buildings: PackedStringArray = current.starter_building_ids
-	if candidate_buildings.size() != current_buildings.size():
-		return candidate_buildings.size() < current_buildings.size()
-	# Discovery count is deliberately absent: the opening grant is a fixed
-	# survival core, not a union of every visible starter node.
-	return str(candidate_buildings) < str(current_buildings)
 
 
 static func _append_precious_route(start: Dictionary, precious_resource: String) -> void:
@@ -615,18 +557,6 @@ static func _reveal_condition_met(technology_index: int, signal_counts: Dictiona
 static func _append_unique(values: PackedStringArray, value: String) -> void:
 	if not values.has(value):
 		values.append(value)
-
-
-static func _vicinity_has_signal(map: MapData, cell_idx: int,
-		neighbors: PackedInt32Array, signal_id: String) -> bool:
-	if _cell_has_signal(map, cell_idx, signal_id):
-		return true
-	var base := cell_idx * 6
-	for direction in range(6):
-		var neighbor := int(neighbors[base + direction])
-		if neighbor >= 0 and _cell_has_signal(map, neighbor, signal_id):
-			return true
-	return false
 
 
 static func _cell_has_signal(map: MapData, cell_idx: int, signal_id: String) -> bool:

@@ -86,3 +86,24 @@ static func _on_military_dossier_action_requested(host, action: StringName, payl
 	var fallback := "命令已下达。" if accepted else "命令未生效，请重试。"
 	host._right_panel.set_military_dossier_feedback(
 		String(result.get("message", fallback)), accepted)
+
+
+static func apply_military_command_settled(host, id: StringName, result: Dictionary) -> void:
+	var panel = host._right_panel
+	if panel != null:
+		var ok := bool(result.get("ok", false))
+		var message := String(result.get("message", ""))
+		if id in [&"military.state.build", &"military.state.demolish"]:
+			panel.release_military_ledger_busy()
+			panel.set_military_ledger_feedback(message, ok)
+			panel.set_construction_feedback(message, ok)
+		elif not ok and id in [&"military.army.create", &"military.train"]:
+			panel.set_military_army_feedback(message, false)
+			panel.set_military_ledger_feedback(message, false)
+		elif not ok and id in [&"military.army.move", &"military.army.area_control",
+				&"military.army.explore"]:
+			panel.set_military_dossier_feedback(message, false)
+	host._mark_country_panel_dirty(host.COUNTRY_DIRTY_MILITARY, "military_commit")
+	# 宣战/议和在军事运行时里落地，外交页的战事与关系必须在同一天跟上。
+	host._mark_country_panel_dirty(host.COUNTRY_DIRTY_DIPLOMACY, "military_commit")
+	host._refresh_peace_window()

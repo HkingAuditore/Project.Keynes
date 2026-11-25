@@ -287,6 +287,17 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
                  "budget envelope: the two cores really differ on the envelope");
         ST_CHECK(plain.state_hash() != budgeted.state_hash(),
                  "budget envelope: committed shares change the state hash");
+        MilitaryTerrainInput refreshed = t;
+        ST_CHECK(!refreshed.cover.empty(), "budget envelope: terrain has cover");
+        refreshed.cover[0] = refreshed.cover[0] == 0 ? 1 : 0;
+        ST_CHECK(budgeted.set_terrain(refreshed, error),
+                 "budget envelope: same-topology cover refresh succeeds");
+        const auto &policy = budgeted.policies()[0];
+        ST_CHECK(policy.budget_share_bp == 3000 && policy.budget_wage_bp == 5000 &&
+                     policy.budget_upkeep_bp == 3000 && policy.procurement_share_bp == 2000,
+                 "budget envelope: cover refresh preserves each policy share");
+        ST_CHECK(budgeted.set_terrain(t, error),
+                 "budget envelope: original terrain reinstalls for the restore check");
         ST_CHECK(plain.encode() != budgeted.encode(),
                  "budget envelope: PKMI records non-default shares");
         const std::vector<uint8_t> bytes = budgeted.encode();

@@ -85,27 +85,11 @@ func _run() -> void:
 	options.configure(0x5aa5)
 	_expect(options.value() == 0x5aa5, "event settings retain independent choice and notice switches", failures)
 	options.free()
-	var suppress_on := host.set_gm_toggle("ui.suppress_popups", true)
-	var suppress_state: Dictionary = host.get_gm_toggle_state("ui.suppress_popups")
-	_expect(bool(suppress_on.get("ok", false)) and bool(suppress_state.get("enabled", false)),
-		"popup suppression GM toggle readback", failures)
-	var suppress_off := host.set_gm_toggle("ui.suppress_popups", false)
-	_expect(bool(suppress_off.get("ok", false))
-		and not bool(host.get_gm_toggle_state("ui.suppress_popups").get("enabled", true)),
-		"popup suppression GM toggle restores", failures)
-	var controller := PlayerController.new()
-	root.add_child(controller)
-	controller.set_popups_suppressed(true)
-	controller.set_popups_suppressed(false)
-	controller.free()
-	var hide_all_on := host.set_gm_toggle("ui.hide_all_except_gm", true)
-	var hide_all_state: Dictionary = host.get_gm_toggle_state("ui.hide_all_except_gm")
-	_expect(bool(hide_all_on.get("ok", false)) and bool(hide_all_state.get("enabled", false)),
-		"hide all UI GM toggle readback", failures)
-	var hide_all_off := host.set_gm_toggle("ui.hide_all_except_gm", false)
-	_expect(bool(hide_all_off.get("ok", false))
-		and not bool(host.get_gm_toggle_state("ui.hide_all_except_gm").get("enabled", true)),
-		"hide all UI GM toggle restores", failures)
+	for toggle in ["ui.suppress_popups", "ui.hide_all_except_gm"]:
+		var receipt := host.set_gm_toggle(toggle, true)
+		_expect(receipt.get("code") == "player_confirmation_unavailable"
+			and not bool(host.get_gm_toggle_state(toggle).get("enabled", true)),
+			"%s requires a started backend" % toggle, failures)
 	Engine.remove_meta(&"force_disable_dva_upload")
 	var atlas_off := host.set_gm_toggle("diagnostics.dynamic_visual_atlas_upload", false)
 	_expect(bool(atlas_off.get("ok", false)) and not bool(atlas_off.get("enabled", true))

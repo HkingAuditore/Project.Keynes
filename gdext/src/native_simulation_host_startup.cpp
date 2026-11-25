@@ -1161,8 +1161,12 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         merge_resource_display_patch(_resource_display_patch);
         _executor_resource_display_cells.clear();
     }
-    if (restore_pending || !resuming_previous_lifetime)
-        restore_player_confirmation(_pending_restore_bundle.player_confirmation_bytes, start_day);
+    if ((restore_pending || !resuming_previous_lifetime) &&
+            !decode_player_confirmation(_pending_restore_bundle.player_confirmation_bytes, start_day,
+                                        &_player_confirmation)) {
+        set_fault("runtime_bundle_player_confirmation_invalid");
+        return false;
+    }
     _pending_restore_bundle = RuntimeSaveBundle{};
     for (auto &character : _fault_code) character.store('\0', std::memory_order_relaxed);
     if (!install_era_advancement_setup()) return false;

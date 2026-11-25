@@ -49,27 +49,18 @@ func _ready() -> void:
 	var loading := modals.get_node("WorldLoadingOverlay") as WorldLoadingOverlay
 	$WorldRoot.backdrops.assign([loading, modals.get_node("AnnualReportWorkspace/Desk")])
 	_configure_runtime()
+	_connect_signals()
+	get_viewport().size_changed.connect(_on_viewport_size_changed)
+	loading.retry_requested.connect(_retry_session)
+	loading.return_requested.connect(_return_from_loading_failure)
 	var flow: Node = _game_flow()
 	var request: Dictionary = flow.consume_request() if flow != null else {}
 	if request.is_empty():
 		var fallback := NewGameConfig.create_default()
 		request = {"kind": "new_game", "config": fallback.to_dictionary()}
 	_session_request = request.duplicate(true)
-	var session_result := _runtime_host.configure_session(request)
-	if not bool(session_result.get("ok", false)):
-		# autotest 会话：会话配置失败要立刻进事件流，而不是等 world_ready 超时。
-		WebAutotestScript.report_failure("session_config_failed",
-			{"message": String(session_result.get("message", "")),
-			"code": String(session_result.get("code", ""))})
-		_ui_manager.show_loading(String(session_result.get("message", "会话初始化失败。")))
+	if not _prepare_session(loading):
 		return
-	_connect_signals()
-	get_viewport().size_changed.connect(_on_viewport_size_changed)
-	_push_visual_toggles()
-	_ui_manager.show_loading("正在生成世界...")
-	loading.set_layout_state(_runtime_host.session_config().get("base", {}))
-	loading.retry_requested.connect(_retry_session)
-	loading.return_requested.connect(func() -> void: get_tree().change_scene_to_file(MAIN_MENU_SCENE_PATH))
 	# 让加载画面绘制两帧。开局时钟由 generate_world 接管，不能把这两帧的耗时计入首日天气。
 	var clock_was_processing := _world_clock.is_processing()
 	_world_clock.set_process(false)
@@ -77,6 +68,30 @@ func _ready() -> void:
 	await get_tree().process_frame
 	_world_clock.set_process(clock_was_processing)
 	await _runtime_host.generate_world(-1, _ui_manager.map_safe_area())
+
+
+func _prepare_session(loading: WorldLoadingOverlay) -> bool:
+	var result := _runtime_host.configure_session(_session_request)
+	if not bool(result.get("ok", false)):
+		var flow: Node = _game_flow()
+		if flow != null:
+			flow.report_player_start_failure(result)
+		WebAutotestScript.report_failure("session_config_failed", result)
+		loading.show_failure_detailed(String(result.get("message", "会话初始化失败。")),
+			String(result.get("code", "")))
+		return false
+	_push_visual_toggles()
+	_ui_manager.show_loading("正在生成世界...")
+	loading.set_layout_state(_runtime_host.session_config().get("base", {}))
+	return true
+
+
+func _return_from_loading_failure() -> void:
+	var flow: Node = _game_flow()
+	if flow != null:
+		flow.return_to_main_menu()
+	else:
+		get_tree().change_scene_to_file(MAIN_MENU_SCENE_PATH)
 
 
 ## Web 自动测试：见 scripts/game/web_autotest.gd。只在 URL 带 autotest=1 时挂节点，
@@ -214,6 +229,10 @@ func _on_world_ready(
 				"start_cell": int(start_report.get("cell", -1)),
 				"precious_resource": String(start_report.get("precious_resource", "")),
 			})
+	elif not _runtime_host.is_loading_session():
+		var flow: Node = _game_flow()
+		if flow != null:
+			flow.report_player_start_failure({"ok": false, "code": "player_start_result_missing"})
 	var save: Node = _game_save()
 	if save != null:
 		save.apply_pending_view(map)
@@ -257,15 +276,9 @@ func _retry_session() -> void:
 	_player_controller.clear_selection()
 	_ui_manager.show_loading("正在重试...")
 	await get_tree().process_frame
-	var retry_request: Dictionary = _session_request.duplicate(true)
-	if retry_request.is_empty():
-		retry_request = {"kind": "new_game",
-			"config": NewGameConfig.create_default().to_dictionary()}
-	var prepared: Dictionary = _runtime_host.configure_session(retry_request)
-	if not bool(prepared.get("ok", false)):
-		_ui_manager.show_loading(String(prepared.get("message", "会话初始化失败。")))
+	var loading := _ui_manager.get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay
+	if not _prepare_session(loading):
 		return
-	_ui_manager.show_loading("正在生成世界...")
 	await get_tree().process_frame
 	await get_tree().process_frame
 	await _runtime_host.generate_world(-1, _ui_manager.map_safe_area())
@@ -306,12 +319,7 @@ func _on_day_night_toggled(enabled: bool) -> void:
 
 
 func _on_gm_runtime_toggle_changed(toggle_id: String, enabled: bool) -> void:
-	if toggle_id == "ui.suppress_popups":
-		if _player_controller != null:
-			_player_controller.set_popups_suppressed(enabled)
-		if _ui_manager != null and _ui_manager.has_method("set_popups_suppressed"):
-			_ui_manager.set_popups_suppressed(enabled)
-	elif toggle_id == "simulation.paused":
+	if toggle_id == "simulation.paused":
 		_player_controller.sync_ui()
 	elif toggle_id == "visual.day_night":
 		day_night_enabled = enabled
@@ -320,10 +328,8 @@ func _on_gm_runtime_toggle_changed(toggle_id: String, enabled: bool) -> void:
 func _on_player_confirmation_updated(view: Dictionary) -> void:
 	if _ui_manager != null:
 		# Required responses still need a visible surface while GM hides the HUD.
-		var gm_suppressed: bool = _runtime_host != null and bool(
-			_runtime_host.get_gm_toggle_state("ui.suppress_popups").get("enabled", false))
-		if _ui_manager.has_method("set_popups_suppressed"):
-			_ui_manager.set_popups_suppressed(bool(view.hide_popups) or gm_suppressed)
+		_ui_manager.set_era_ceremony_suppressed(
+			bool(view.hide_popups) or bool(view.get("suppress_event_popups", false)))
 		_ui_manager.set_all_ui_suppressed(bool(view.hide_popups) and String(view.reason).is_empty())
 
 

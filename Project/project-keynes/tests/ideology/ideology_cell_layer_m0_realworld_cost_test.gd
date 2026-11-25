@@ -325,8 +325,7 @@ func _equip_cell_cards(generator) -> int:
 ##   * `service_country_worker_peer_adapter` -- the Country peer adapter,
 ##   * `publish_ideology_worker_inputs`      -- the opinion/ideology input handoff,
 ##   * a clock step via `set_runtime_clock`.
-## The parity gate (`runtime_ideology_parity_test.gd:117-177`) does exactly this
-## and is the reference for the ordering. Omitting them looks like "the worker
+## These steps belong to this fixture. Omitting them looks like "the worker
 ## is slow" and silently ends as FAULTED with an empty ideology snapshot.
 func _run_day() -> void:
 	_day += 1
@@ -515,8 +514,7 @@ func ext_version_probe(generator) -> int:
 	return int(ext.modifier_stat_bucket_version(2, PackedInt32Array([sid])))
 
 func _has_hard_barrier(clock) -> bool:
-	# Mirrors the parity gate's check (`runtime_ideology_parity_test.gd:355-366`):
-	# the barrier set lives on `_simulation_backpressure_sources`, and a renamed
+	# The barrier set lives on `_simulation_backpressure_sources`, and a renamed
 	# key must fail visibly rather than spin forever.
 	var sources := [
 		&"economy_day_barrier",

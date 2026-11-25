@@ -1288,7 +1288,7 @@
         int64_t required = 0;
         int64_t purchased_total = 0;
     };
-    struct CountryProcurementState {
+    struct EconomyProcurementState {
         uint64_t country_handle = 0;
         bool policy_enabled = false;
         int32_t treasury_share_bp = 0;
@@ -1338,7 +1338,7 @@
     std::unique_ptr<ProcurementInbox> _procurement_inbox =
         std::make_unique<ProcurementInbox>();
     // Owner-thread state keyed by generation-safe country handle.
-    std::map<uint64_t, CountryProcurementState> _country_procurement;
+    std::map<uint64_t, EconomyProcurementState> _country_procurement;
     // Research cash per day frozen at epoch open for every country slot: an
     // enabled policy's research share, the profile default shares when the
     // country never sent a policy, 0 when its policy is disabled.
@@ -1394,8 +1394,8 @@
     void refresh_epoch_era_demand();
     void reset_era_procurement_epoch();
     void clear_procurement_runtime_state(bool clear_pending);
-    CountryProcurementState *procurement_state_for_slot(int32_t country);
-    const CountryProcurementState *procurement_state_for_slot(int32_t country) const;
+    EconomyProcurementState *procurement_state_for_slot(int32_t country);
+    const EconomyProcurementState *procurement_state_for_slot(int32_t country) const;
     // Country research demand plus the frozen per-day research budget.
     bool research_procurement_policy_for(int32_t country, bool &enabled,
                                          int64_t &daily_budget,

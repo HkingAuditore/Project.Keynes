@@ -413,20 +413,24 @@ Dictionary RuntimeNarrative::take_due_choice(int64_t day) {
     return std::exchange(_pending_choice, {});
 }
 
-void RuntimeNarrative::queue_automatic_choice(int64_t day) {
-    if (_active.is_empty() || !_pending_choice.is_empty() || stops_for(_active, _pause_mask)) return;
-    const Array options = _active.get("options", Array());
-    if (options.is_empty()) return;
+int64_t RuntimeNarrative::automatic_option_index(const Dictionary &offer) {
+    const Array options = offer.get("options", Array());
     const auto eligible = [&](int64_t index) {
         return index >= 0 && index < options.size() &&
             bool(Dictionary(options[index]).get("eligible", true));
     };
-    int64_t selected = _active.get("default_option_index", 0);
-    if (!eligible(selected)) {
-        selected = 0;
-        while (selected < options.size() && !eligible(selected)) ++selected;
-        if (selected == options.size()) return;
-    }
+    int64_t selected = offer.get("default_option_index", 0);
+    if (eligible(selected)) return selected;
+    for (int64_t i = 0; i < options.size(); ++i)
+        if (eligible(i)) return i;
+    return -1;
+}
+
+void RuntimeNarrative::queue_automatic_choice(int64_t day, bool suppress_popups) {
+    if (_active.is_empty() || !_pending_choice.is_empty() ||
+            (!suppress_popups && stops_for(_active, _pause_mask))) return;
+    const int64_t selected = automatic_option_index(_active);
+    if (selected < 0) return;
     Dictionary choice;
     choice["country"] = static_cast<int64_t>(_country);
     choice["offer_id"] = _active["offer_id"];

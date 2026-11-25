@@ -47,7 +47,7 @@ Economy 新增稀疏的 per-(地块 × 职业) 组织度表（`StratumMobilizati
 - Country：PKCN v16 新增每国 `capital_cell`；bootstrap 包可选 `capital_cells`，缺省回退首块领地；`CREATE_COUNTRY` 把首都设为新格。首都格的组织度封顶在示威（stage 3），不会走独立。
 - Military：每日 ration 发布时顺带 sparse 推送 per-cell 驻军人数到 Economy 的 `_cell_garrison_heads`；割地路径的 `transfer_garrison_owner(from<0)` 修复为"该格全部驻军 lot"。
 - 查询：`get_cell_mobilization_snapshot` / `get_country_mobilization_summary`；GDScript 见 `economy_facade.gd`。
-- M2 玩家链：`get_mobilization_odds` / `apply_mobilization_result`；`scripts/politics/stratum_unrest_service.gd` 投递四阶事件、按 `chain_salt` 掷骰、付让步成本并处理独立队列；地块档案新增「民情」页签，地图告警层新增第 9 个组织度图标，顶栏新增「离心 N」纸签（stage 3+4 计数）。AI 阶段在 native epoch 更新里自动决议（有驻军镇压、否则无视），不依赖时钟暂停。
+- 玩家动荡的判定、叙事与效果由后台执行，国家转移和军事效果按提交日处理。地块档案、地图告警和顶栏展示后台发布的结果。
 - 军事：`MCMD_WAR_DECLARE_FORCED = 43`（跳过攻方必须有兵）与 `MCMD_GARRISON_TRANSFER_CELL = 44`（清 controller、驻军随城转移）；独立后由原主权国强制宣战。
 - 已验证：`country_capital_test.gd` 16/0、`satisfaction_runtime_test.gd` 58/0（含 9 项组织度/概率/结算）、`military_native_binding_test.gd` 自测 PASS（含割地转移与强制宣战）、`narrative_event_runtime_test.gd` 71/0、`stratum_unrest_service_test.gd` 7/0；地块档案与地图层 parse PASS。
 - 未实现：无（长跑平衡校准可作为后续平衡工作）。黄金 v4/v2/v3 与外部位移 v5 已按 5 次捕获更新并通过：`golden_day_hash_test` 176/0、`golden_external_advancers_test` 338/0。详见 [stratum-mobilization.md](../cpp-dots-runtime/stratum-mobilization.md)。

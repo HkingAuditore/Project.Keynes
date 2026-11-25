@@ -1298,7 +1298,6 @@ func _trade_order_tooltip(host, order_id: int, direction: int, counterpart_name:
 		destination_price: int, base_value: int, escrow: int, capacity: int,
 		departure: int, arrival: int, remaining: int, delivered: int,
 		flags: int) -> String:
-	var h = host
 	var lines = PackedStringArray()
 	lines.append("订单 #%d · %s" % [order_id,
 		"运入" if direction > 0 else "运出"])

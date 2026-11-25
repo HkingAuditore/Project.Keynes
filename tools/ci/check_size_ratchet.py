@@ -19,7 +19,6 @@ GROWTH_ALLOWANCE = 0
 # Explicit ownership, not a loose filename heuristic. New orchestrators must
 # be registered here; ordinary leaf files use the language threshold.
 ORCHESTRATORS = {
-    "Project/project-keynes/scripts/main.gd",
     "Project/project-keynes/scripts/game/world_runtime_host.gd",
     "Project/project-keynes/scripts/game/game_save_coordinator.gd",
     "Project/project-keynes/scripts/geography/map_generator.gd",

@@ -13,9 +13,11 @@ var story_cell: int
 var story_day := 0
 
 
-func _start_story(archive: Dictionary, event_ids: Array = [], config: NewGameConfig = null) -> bool:
+func _start_story(archive: Dictionary, event_ids: Array = [], config: NewGameConfig = null,
+		calendar_days: int = 365) -> bool:
 	story_clock = WorldClock.new()
 	story_clock.auto_start = false
+	story_clock.days_per_year_count = calendar_days
 	root.add_child(story_clock)
 	story_clock.set_process(false)
 	story_host = _create_host()
@@ -71,7 +73,7 @@ func _close_story() -> void:
 	story_ext = null
 
 
-func _advance_story(day: int) -> bool:
+func _advance_story(day: int, acknowledge_annual: bool = true) -> bool:
 	while story_day < day:
 		var next_day := story_day + 1
 		_publish_day(story_host, story_clock, next_day)
@@ -82,7 +84,7 @@ func _advance_story(day: int) -> bool:
 		story_service.consume_committed()
 		var report := story_host.annual_report_status()
 		var report_id := int(report.get("ready_report_id", 0))
-		if report_id > 0 and story_day >= report_id * story_clock.days_per_year():
+		if acknowledge_annual and report_id > 0 and story_day >= report_id * story_clock.days_per_year():
 			story_host.mark_annual_report_presented(report_id)
 	return true
 

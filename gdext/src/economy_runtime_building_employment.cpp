@@ -3102,27 +3102,15 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             const BuildingType &type = _building_types[group.type_id];
             if (group.owner_signature_id < 0 ||
                 group.owner_signature_id >= static_cast<int32_t>(_signatures.size())) continue;
-            // Suspended survival-food lots keep owner demand and a discovery
-            // income so empty hunting camps can receive transfers. They are
-            // targets only; sources stay on ACTIVE incumbents.
-            if (group.operating_state == 1) {
-                const int64_t income = owner_mobility_income(
-                    group, _saturation_count);
-                projected_owner_income[g - first] = income;
-                const int64_t owner_target = group_owner_target[g - first];
-                if ((type.kind != 2 || is_merchant_service_post(type)) &&
-                    group.filled_owner < owner_target && income > 0)
-                    owner_job_targets.push_back(g);
-                continue;
-            }
-            const int64_t income = owner_mobility_income(
-                group, _saturation_count);
+            // Suspended survival-food lots can receive owners, but only
+            // active incumbents are sources for the opportunity gradient.
+            const int64_t income = owner_mobility_income(group, _saturation_count);
             projected_owner_income[g - first] = income;
             const int64_t owner_target = group_owner_target[g - first];
             if ((type.kind != 2 || is_merchant_service_post(type)) &&
-                group.filled_owner < owner_target) {
-                if (income > 0) owner_job_targets.push_back(g);
-            }
+                group.filled_owner < owner_target && income > 0)
+                owner_job_targets.push_back(g);
+            if (group.operating_state == 1) continue;
             // Opportunity-gradient sources: any ACTIVE lot that still has an
             // attached owner may lose one person to a higher-opportunity
             // vacancy. The matching loop applies asymmetric hysteresis so two

@@ -209,7 +209,7 @@ void NativeEconomyRuntime::apply_pending_procurement_updates(int64_t day_index) 
         if (_country_runtime == nullptr ||
             !country_reads().valid_handle(static_cast<int64_t>(update.country_handle)))
             continue;
-        CountryProcurementState &state = _country_procurement[update.country_handle];
+        EconomyProcurementState &state = _country_procurement[update.country_handle];
         state.country_handle = update.country_handle;
         if (update.kind == 1) {
             state.policy_enabled = update.flag;
@@ -242,7 +242,7 @@ void NativeEconomyRuntime::apply_pending_procurement_updates(int64_t day_index) 
     }
 }
 
-NativeEconomyRuntime::CountryProcurementState *
+NativeEconomyRuntime::EconomyProcurementState *
 NativeEconomyRuntime::procurement_state_for_slot(int32_t country) {
     if (country < 0 || country >= _epoch_country_count ||
         static_cast<size_t>(country) >= _epoch_country_handles.size()) return nullptr;
@@ -251,7 +251,7 @@ NativeEconomyRuntime::procurement_state_for_slot(int32_t country) {
     return found == _country_procurement.end() ? nullptr : &found->second;
 }
 
-const NativeEconomyRuntime::CountryProcurementState *
+const NativeEconomyRuntime::EconomyProcurementState *
 NativeEconomyRuntime::procurement_state_for_slot(int32_t country) const {
     if (country < 0 || country >= _epoch_country_count ||
         static_cast<size_t>(country) >= _epoch_country_handles.size()) return nullptr;
@@ -279,7 +279,7 @@ void NativeEconomyRuntime::freeze_epoch_procurement_budgets() {
     // Roll per-epoch spend counters first so "last epoch" reads stay stable
     // for the whole following cycle.
     for (auto &entry : _country_procurement) {
-        CountryProcurementState &state = entry.second;
+        EconomyProcurementState &state = entry.second;
         state.era_last_epoch_cash = state.era_cash_epoch;
         state.research_cash_last_epoch = state.research_cash_epoch;
         state.colonization_cash_last_epoch = state.colonization_cash_epoch;
@@ -306,7 +306,7 @@ void NativeEconomyRuntime::freeze_epoch_procurement_budgets() {
     }
     mark_country_ai_colonization_demand(colonization_demand);
     for (int32_t country = 0; country < _epoch_country_count; ++country) {
-        CountryProcurementState *state = procurement_state_for_slot(country);
+        EconomyProcurementState *state = procurement_state_for_slot(country);
         if (state != nullptr && !state->policy_enabled) continue;
         const int64_t cash = std::max<int64_t>(0, country_reads().cash_for_slot(country));
         bool research_enabled = false;
@@ -387,7 +387,7 @@ void NativeEconomyRuntime::ensure_epoch_colonization_budget(
         uint64_t country_handle) {
     const auto found = _country_procurement.find(country_handle);
     if (found == _country_procurement.end()) return;
-    CountryProcurementState &state = found->second;
+    EconomyProcurementState &state = found->second;
     // A party created after the epoch boundary never entered the demand scan,
     // so the freeze left `colonization_daily` at zero and every purchase would
     // be judged over budget for the whole epoch. Recover the same split the
@@ -415,7 +415,7 @@ int64_t NativeEconomyRuntime::colonization_procurement_allowance(
     const auto found = _country_procurement.find(country_handle);
     if (found == _country_procurement.end() || !found->second.policy_enabled)
         return -1;
-    CountryProcurementState &state = found->second;
+    EconomyProcurementState &state = found->second;
     const int64_t daily = std::max<int64_t>(0, state.colonization_daily);
     const int64_t cap = saturating_mul(daily, std::max(1, _epoch_days.get()),
                                        _saturation_count);
@@ -445,7 +445,7 @@ void NativeEconomyRuntime::note_procurement_cash(uint64_t country_handle,
     if (cash <= 0) return;
     const auto found = _country_procurement.find(country_handle);
     if (found == _country_procurement.end()) return;
-    CountryProcurementState &state = found->second;
+    EconomyProcurementState &state = found->second;
     int64_t *slot = kind == PROCUREMENT_CASH_RESEARCH ? &state.research_cash_epoch
         : kind == PROCUREMENT_CASH_ERA ? &state.era_cash_epoch
         : &state.colonization_cash_epoch;
@@ -489,7 +489,7 @@ void NativeEconomyRuntime::refresh_epoch_era_demand() {
         static_cast<size_t>(_cell_count.get());
     const int64_t days = std::max(1, _epoch_days.get());
     for (int32_t country = 0; country < _epoch_country_count; ++country) {
-        const CountryProcurementState *state = procurement_state_for_slot(country);
+        const EconomyProcurementState *state = procurement_state_for_slot(country);
         if (state == nullptr || !state->policy_enabled || !state->era_active ||
             state->era_daily <= 0) continue;
         int64_t budget = std::min(
@@ -673,7 +673,7 @@ bool NativeEconomyRuntime::run_government_era_procurement(std::string &error) {
         const int64_t days = std::max(1, _epoch_days.get());
         bool any = false;
         for (int32_t country = 0; country < _epoch_country_count; ++country) {
-            const CountryProcurementState *state = procurement_state_for_slot(country);
+            const EconomyProcurementState *state = procurement_state_for_slot(country);
             _era_procurement_line_offsets[static_cast<size_t>(country)] =
                 static_cast<int32_t>(_era_procurement_remaining.size());
             if (state == nullptr || !state->policy_enabled || !state->era_active ||
@@ -707,7 +707,7 @@ bool NativeEconomyRuntime::run_government_era_procurement(std::string &error) {
             const int32_t country = _epoch_cell_country[static_cast<size_t>(market)];
             if (country < 0 || country >= _epoch_country_count ||
                 _era_procurement_budgets[static_cast<size_t>(country)] <= 0) continue;
-            const CountryProcurementState *state = procurement_state_for_slot(country);
+            const EconomyProcurementState *state = procurement_state_for_slot(country);
             if (state == nullptr) continue;
             const int32_t base = _era_procurement_line_offsets[static_cast<size_t>(country)];
             for (int32_t line = 0; line < static_cast<int32_t>(state->era_goods.size()); ++line) {
@@ -919,7 +919,7 @@ Dictionary NativeEconomyRuntime::country_procurement_snapshot(int64_t country_ha
     const uint64_t handle = static_cast<uint64_t>(country_handle);
     const int32_t slot = static_cast<int32_t>(handle & 0xffffffffULL);
     const auto found = _country_procurement.find(handle);
-    const CountryProcurementState *state =
+    const EconomyProcurementState *state =
         found == _country_procurement.end() ? nullptr : &found->second;
     bool policy_enabled = state != nullptr && state->policy_enabled;
     int32_t treasury_bp = state != nullptr ? state->treasury_share_bp : 0;

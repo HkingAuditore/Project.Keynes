@@ -1,6 +1,8 @@
 class_name CountryFacade
 extends RefCounted
 
+const TaxOverrideBatch = preload("res://scripts/country/country_tax_override_batch.gd")
+
 signal country_committed(report: Dictionary)
 
 ## 11 个时代的里程碑科技索引，与 technology_network.json 的 eras 顺序一致。
@@ -360,31 +362,7 @@ func set_tax_override_basis_points(handle: int, kind: int, item_id: StringName,
 func set_tax_override_group_basis_points(handle: int, kind: int,
 		building_ids: PackedStringArray, rate_basis_points: int,
 		effective_day: int, sequence: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "country facade is not configured"}
-	if building_ids.is_empty():
-		return {"ok": false, "reason": "empty tax group"}
-	var commands: Array[Dictionary] = []
-	for index in building_ids.size():
-		var item_id := building_ids[index]
-		var item := _tax_item_index(kind, item_id)
-		if item < 0:
-			# 整组一起拒，不留半组改写。
-			return {"ok": false, "reason": "unknown tax item: %s" % String(item_id)}
-		commands.append({
-			"opcode": Opcode.SET_TAX_OVERRIDE,
-			"target_handle": handle,
-			"tax_kind": kind,
-			"tax_item": item,
-			"stable_id": String(item_id),
-			"tax_rate_basis_points": rate_basis_points,
-			"tax_assessment_mode": TAX_MODE_PERCENT_BP,
-			"effective_day": effective_day,
-			"sequence": sequence,
-		})
-	var result := submit(commands)
-	result["group_size"] = commands.size()
-	return result
+	return TaxOverrideBatch.set_tax_override_group_basis_points(self, handle, kind, building_ids, rate_basis_points, effective_day, sequence)
 
 
 func clear_tax_override(handle: int, kind: int, item_id: StringName,
@@ -407,28 +385,7 @@ func clear_tax_override(handle: int, kind: int, item_id: StringName,
 func clear_tax_override_group(handle: int, kind: int,
 		building_ids: PackedStringArray, effective_day: int,
 		sequence: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "country facade is not configured"}
-	if building_ids.is_empty():
-		return {"ok": false, "reason": "empty tax group"}
-	var commands: Array[Dictionary] = []
-	for index in building_ids.size():
-		var item_id := building_ids[index]
-		var item := _tax_item_index(kind, item_id)
-		if item < 0:
-			return {"ok": false, "reason": "unknown tax item: %s" % String(item_id)}
-		commands.append({
-			"opcode": Opcode.CLEAR_TAX_OVERRIDE,
-			"target_handle": handle,
-			"tax_kind": kind,
-			"tax_item": item,
-			"stable_id": String(item_id),
-			"effective_day": effective_day,
-			"sequence": sequence,
-		})
-	var result := submit(commands)
-	result["group_size"] = commands.size()
-	return result
+	return TaxOverrideBatch.clear_tax_override_group(self, handle, kind, building_ids, effective_day, sequence)
 
 
 ## 回滚用：一批命令逐 item 指定各自税率。基线下本来有 override 的 item 用它
@@ -438,30 +395,7 @@ func clear_tax_override_group(handle: int, kind: int,
 func set_tax_overrides_batch(handle: int, kind: int,
 		item_ids: PackedStringArray, rates_basis_points: PackedInt32Array,
 		effective_day: int, sequence: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "country facade is not configured"}
-	if item_ids.is_empty() or item_ids.size() != rates_basis_points.size():
-		return {"ok": false, "reason": "tax batch shape mismatch"}
-	var commands: Array[Dictionary] = []
-	for index in item_ids.size():
-		var item_id := item_ids[index]
-		var item := _tax_item_index(kind, item_id)
-		if item < 0:
-			return {"ok": false, "reason": "unknown tax item: %s" % String(item_id)}
-		commands.append({
-			"opcode": Opcode.SET_TAX_OVERRIDE,
-			"target_handle": handle,
-			"tax_kind": kind,
-			"tax_item": item,
-			"stable_id": String(item_id),
-			"tax_rate_basis_points": int(rates_basis_points[index]),
-			"tax_assessment_mode": TAX_MODE_PERCENT_BP,
-			"effective_day": effective_day,
-			"sequence": sequence,
-		})
-	var result := submit(commands)
-	result["group_size"] = commands.size()
-	return result
+	return TaxOverrideBatch.set_tax_overrides_batch(self, handle, kind, item_ids, rates_basis_points, effective_day, sequence)
 
 
 func tax_policy_snapshot(handle: int) -> Dictionary:

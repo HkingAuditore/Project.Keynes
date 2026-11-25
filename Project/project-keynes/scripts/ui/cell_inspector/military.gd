@@ -1,5 +1,7 @@
 extends RefCounted
 
+const MaintenancePresentation = preload("res://scripts/ui/military_maintenance_presentation.gd")
+
 
 const TEMPERATURE_HISTORY_CAPACITY = 32
 const TEMPERATURE_HISTORY_CACHE_LIMIT = 64
@@ -74,7 +76,6 @@ const MILITARY_UNIT_CLASS_IDS: Array[String] = ["line", "mobile", "artillery"]
 ## `object_id` 是目录 `state_buildings` 的稠密下标，与 `state_building_materials()`
 ## 用的是同一套下标。
 const MAINTENANCE_KIND_BUILDING = 0
-const MAINTENANCE_REASON_TEXT: Array[String] = ["—", "缺货", "预算不足", "运输未到"]
 const CONSTRUCTION_SECTOR_LABELS = {
 	"agriculture": "农业",
 	"extractive": "采掘",
@@ -357,7 +358,7 @@ func _state_building_entry(host, role_def: Dictionary, snapshot: Dictionary,
 	var role = int(role_def.get("role", -1))
 	var role_id = String(role_def.get("id", ""))
 	var label = String(role_def.get("label", ""))
-	var role_rows = host._state_building_role_rows(catalog_rows, role)
+	var role_rows = _state_building_role_rows(host, catalog_rows, role)
 	var best: Dictionary = {}
 	for i in range(role_rows.size() - 1, -1, -1):
 		if host._state_building_unlocked(role_rows[i].row, researched, gate_known):
@@ -384,7 +385,7 @@ func _state_building_entry(host, role_def: Dictionary, snapshot: Dictionary,
 		current_tier = int(snapshot.get("fort_tier" if role_id == "fortification"
 			else "college_tier", -1))
 		count = 1 if current_tier >= 0 else 0
-	var current: Dictionary = host._state_building_at_tier(role_rows, current_tier) \
+	var current: Dictionary = _state_building_at_tier(host, role_rows, current_tier) \
 		if current_tier >= 0 else {}
 	var pending = host._state_building_pending(catalog_rows, snapshot, role)
 	var pending_index = int(pending.get("index", -1))
@@ -442,7 +443,7 @@ func _state_building_entry(host, role_def: Dictionary, snapshot: Dictionary,
 		if built_index >= 0 else {}
 	var disrepair = bool(int(maintenance.get("disrepair", 0)) != 0) \
 		if not maintenance.is_empty() else bool(snapshot.get("disrepair", false))
-	var maintenance_text = host._state_building_maintenance_text(maintenance)
+	var maintenance_text = MaintenancePresentation._state_building_maintenance_text(maintenance)
 	var effect = ""
 	if not display_row.is_empty():
 		effect = host._state_building_effect(role_id, display_row, disrepair)
@@ -470,16 +471,16 @@ func _state_building_entry(host, role_def: Dictionary, snapshot: Dictionary,
 	# （可建造的档位、已建成的档位、在建目标），提示卡就必须写着它。
 	var tooltip = ""
 	if primary_action != "none" or bool(cost.get("blocked", false)):
-		tooltip = host._state_building_cost_tooltip(display_name, effect, cost)
+		tooltip = _state_building_cost_tooltip(host, display_name, effect, cost)
 	# 拆除是独立通道（`can_demolish`），不再占用 `action` 的取值。
 	elif can_demolish:
-		tooltip = host._state_building_cost_tooltip(display_name, effect,
-			host._state_building_standing_cost(display_row, count))
+		tooltip = _state_building_cost_tooltip(host, display_name, effect,
+			_state_building_standing_cost(host, display_row, count))
 	elif action == "building" and not display_row.is_empty():
-		tooltip = host._state_building_cost_tooltip(display_name, effect,
-			host._state_building_standing_cost(display_row, count))
+		tooltip = _state_building_cost_tooltip(host, display_name, effect,
+			_state_building_standing_cost(host, display_row, count))
 	elif action == "locked":
-		tooltip = host._state_building_lock_tooltip(role_rows, researched, gate_known)
+		tooltip = MaintenancePresentation._state_building_lock_tooltip(host, role_rows, researched, gate_known)
 	var reason: String = cost.get("reason_text", "")
 	var status := "已建成" if count > 0 else "未建成"
 	var status_tone := "neutral"
@@ -497,13 +498,13 @@ func _state_building_entry(host, role_def: Dictionary, snapshot: Dictionary,
 		reason = h._construction_military_block_text(snapshot)
 
 	var has_future: bool = is_quoting or action == "building"
-	var current_daily := _state_building_current_upkeep(h, role_id, role_rows, current, snapshot, count)
+	var current_daily := MaintenancePresentation._state_building_current_upkeep(h, role_id, role_rows, current, snapshot, count)
 	var future_daily := -1
 	if has_future:
-		future_daily = building_upkeep(h, display_row)
+		future_daily = MaintenancePresentation.building_upkeep(h, display_row)
 		if role_id == "barracks":
 			future_daily += current_daily
-	var preview := building_hover_preview(h, role_id, display_row,
+	var preview := MaintenancePresentation.building_hover_preview(h, role_id, display_row,
 		disrepair and not has_future, current_daily, future_daily, maintenance)
 	var hover := {
 		"name": display_name, "icon": icon, "role_label": label,
@@ -572,65 +573,10 @@ func _state_building_entry(host, role_def: Dictionary, snapshot: Dictionary,
 	}
 
 
-static func building_upkeep(host, row: Dictionary) -> int:
-	return int(round(maxf(0.0, float(row.get("upkeep", 0.0))) * host.MONEY_SCALE))
 
 
-func _state_building_current_upkeep(host, role: String, tiers: Array, current: Dictionary,
-		snapshot: Dictionary, count: int) -> int:
-	var counts = snapshot.get("barracks_tiers")
-	if role != "barracks" or not counts is PackedInt32Array:
-		return building_upkeep(host, current.get("row", {})) * count
-	var daily := 0
-	for entry: Dictionary in tiers:
-		var tier := int(entry.row.get("tier", -1))
-		if tier >= 0 and tier < counts.size():
-			daily += building_upkeep(host, entry.row) * int(counts[tier])
-	return daily
 
 
-static func building_hover_preview(host, role: String, row: Dictionary, disrepair: bool,
-		current_daily: int, future_daily: int, maintenance: Dictionary = {}) -> Dictionary:
-	var outputs: Array = []
-	if not row.is_empty():
-		match role:
-			"barracks":
-				outputs.append({"name": "驻军名额", "icon": &"military.banner",
-					"text": "+%s 人" % host._count_text(int(row.get("capacity", 0)))})
-			"fortification":
-				var bonus := float(row.get("fort_bonus", 0.0)) * (0.5 if disrepair else 1.0)
-				outputs.append({"name": "守备加成", "icon": &"military.building.fortification",
-					"text": "+%d%%" % int(round(bonus * 100.0))})
-			"war_college":
-				outputs.append({"name": "训练速度", "icon": &"military.plan.training",
-					"text": "×%s" % host._one_decimal(float(row.get("training_speed", 1.0)))})
-
-	var upkeep: Array = []
-	if current_daily > 0:
-		upkeep.append({"name": "当前日维护费", "icon": &"metric.treasury",
-			"text": "%s 金币/日" % host._money_text(current_daily)})
-	if future_daily >= 0 and future_daily != current_daily:
-		upkeep.append({"name": "建成后日维护费", "icon": &"metric.treasury",
-			"text": "%s 金币/日" % host._money_text(future_daily)})
-	if not maintenance.is_empty():
-		var supply := {"name": "物资维护满足率", "icon": &"metric.goods",
-			"text": "%.0f%%" % (clampi(int(maintenance.get("ratio_bp", 0)), 0, 10000) / 100.0)}
-		var issue := int(maintenance.get("shortage_reason", 0))
-		var supply_status := PackedStringArray()
-		if bool(int(maintenance.get("disrepair", 0))):
-			supply_status.append("失修")
-		if issue > 0 and issue < MAINTENANCE_REASON_TEXT.size():
-			supply_status.append(MAINTENANCE_REASON_TEXT[issue])
-		if not supply_status.is_empty():
-			supply["detail"] = " · ".join(supply_status)
-			supply["detail_accent"] = UITokens.DOSSIER_OXBLOOD
-		upkeep.append(supply)
-		var cover := int(maintenance.get("days_cover_x10", -1))
-		if cover >= 0:
-			upkeep.append({"name": "储备可用", "icon": &"system.calendar",
-				"text": _maintenance_days_text(cover)})
-	return {"outputs_title": "建成收益" if future_daily >= 0 else "建筑效果",
-		"outputs": outputs, "upkeep": upkeep}
 
 
 ## 一座官营建筑的建材与工期成本，供行内成本总览与 hover 提示卡使用。
@@ -716,7 +662,7 @@ func _state_building_economy_quote(host, facade, building_index: int,
 		reason = String(h.CONSTRUCTION_REASON_TEXT.get(reason_code, "暂不可营造"))
 	return {
 		"materials": materials,
-		"materials_text": h._state_building_materials_text(materials),
+		"materials_text": _state_building_materials_text(h, materials),
 		"build_days": days,
 		"days_text": "%d 日" % days if days > 0 else "",
 		"cash_required": cash_required,
@@ -724,8 +670,8 @@ func _state_building_economy_quote(host, facade, building_index: int,
 		"reason_text": reason,
 		"reason_code": reason_code,
 		"blocked": not eligible,
-		"upkeep_text": h._state_building_upkeep_text(upkeep_row, effective_held),
-		"upkeep_after_text": h._state_building_upkeep_after_text(building_row,
+		"upkeep_text": _state_building_upkeep_text(h, upkeep_row, effective_held),
+		"upkeep_after_text": _state_building_upkeep_after_text(h, building_row,
 			upkeep_row, effective_held),
 	}
 
@@ -747,7 +693,7 @@ func _state_building_standing_cost(host, building_row: Dictionary,
 		"cash_text": "",
 		"reason_text": "",
 		"blocked": false,
-		"upkeep_text": h._state_building_upkeep_text(building_row, count),
+		"upkeep_text": _state_building_upkeep_text(h, building_row, count),
 		"upkeep_after_text": "",
 	}
 
@@ -804,7 +750,7 @@ func _state_building_upkeep_text(host, building_row: Dictionary,
 
 
 
-func _empty_state_building_cost(host, ) -> Dictionary:
+func _empty_state_building_cost(host) -> Dictionary:
 	var h = host
 	return {
 		"materials": [],
@@ -822,7 +768,7 @@ func _empty_state_building_cost(host, ) -> Dictionary:
 
 ## 行内成本总览：最多三项建材，超出以「等 N 项」收尾。
 ## 与营造目录的 `host._construction_materials_text` 保持同一套排版。## 与营造目录的 `_construction_materials_text` 保持同一套排版。
-## 注意：只有**行内**接受这个截断。hover 提示卡在 `host._state_building_cost_tooltip()` 里## 注意：只有**行内**接受这个截断。hover 提示卡在 `_state_building_cost_tooltip()` 里
+## 注意：只有**行内**接受这个截断。hover 提示卡在 `_state_building_cost_tooltip(host)` 里## 注意：只有**行内**接受这个截断。hover 提示卡在 `_state_building_cost_tooltip()` 里
 ## 自己逐项遍历 `materials`，不复用这份文本——两处各取所需，不要合并。
 
 func _state_building_materials_text(host, materials: Array) -> String:
@@ -904,7 +850,7 @@ func _state_building_cost_tooltip(host, display_name: String, effect: String,
 ## 国库逐物资现货（GOODS_SCALE）。读不到时返回空表：成本会显示成全部市购，
 ## 比编造一个「国库充足」的假象安全。
 
-func _treasury_good_stock(host, ) -> Dictionary:
+func _treasury_good_stock(host) -> Dictionary:
 	var h = host
 	var out = {}
 	if h._generator == null or not h._generator.has_method("get_country_facade"):
@@ -927,7 +873,7 @@ func _treasury_good_stock(host, ) -> Dictionary:
 ## 国库现金（host.MONEY_SCALE 子单位）。读不到时返回 -1：调用方据此跳过资金卡点判断，## 国库现金（MONEY_SCALE 子单位）。读不到时返回 -1：调用方据此跳过资金卡点判断，
 ## 而不是把「未知」当成「没钱」把按钮锁死。
 
-func _country_cash(host, ) -> int:
+func _country_cash(host) -> int:
 	var h = host
 	if h._generator == null or not h._generator.has_method("get_country_facade"):
 		return -1
@@ -1008,76 +954,18 @@ func _state_building_pending(host, catalog_rows: Array, snapshot: Dictionary,
 
 func _state_building_unlocked(host, row: Dictionary, researched: PackedStringArray,
 		gate_known: bool) -> bool:
-	var h = host
 	if not gate_known:
 		return true
 	var tech = String(row.get("unlock_tech_id", ""))
 	return tech.is_empty() or researched.has(tech)
 
 
-## 一行建筑的实物维护读数：「满足 73% · 可用 3.5 日 · 失修 · 缺货」。
-## 没有维护行（旧 DLL / 未建成 / 快照为空）时返回空串，控件据此保持旧版布局，
-## 而不是画一段「满足 0%」把「读不到」说成「没维护」。
-
-static func _state_building_maintenance_text(row: Dictionary) -> String:
-	if row.is_empty():
-		return ""
-	var parts = PackedStringArray()
-	parts.append("满足 %d%%" % (clampi(int(row.get("ratio_bp", 0)), 0, 10000) / 100))
-	var days = int(row.get("days_cover_x10", -1))
-	if days >= 0:
-		parts.append("可用 %s" % _maintenance_days_text(days))
-	if int(row.get("disrepair", 0)) != 0:
-		parts.append("失修")
-	var reason = int(row.get("shortage_reason", 0))
-	if reason > 0 and reason < MAINTENANCE_REASON_TEXT.size():
-		parts.append(MAINTENANCE_REASON_TEXT[reason])
-	return " · ".join(parts)
-
-
-## 可用天数（十分之一日，-1 = 无需求）→ 「3.5 日」。整数运算，不经过浮点。
-
-static func _maintenance_days_text(days_cover_x10: int) -> String:
-	if days_cover_x10 < 0:
-		return "—"
-	if days_cover_x10 % 10 == 0:
-		return "%d 日" % (days_cover_x10 / 10)
-	return "%d.%d 日" % [days_cover_x10 / 10, days_cover_x10 % 10]
-
-
-## 一行建筑的效果：兵营=兵额贡献，城防=守备加成（失修折半，与原生一致），
-## 军校=训练天数倍数。单位只写百分比/倍数，不写货币记号。
-## `disrepair` 由调用方按「建筑类型」判定（D7：同格不同建筑各判各的），
-## 不再是一个国家的单一旗标。
-
 func _state_building_effect(host, role_id: String, row: Dictionary,
 		disrepair: bool) -> String:
-	var h = host
-	match role_id:
-		"barracks":
-			return "兵额 +%s" % h._count_text(int(row.get("capacity", 0)))
-		"fortification":
-			var bonus = float(row.get("fort_bonus", 0.0))
-			if disrepair:
-				bonus *= 0.5
-			return "守备 +%d%%" % int(round(bonus * 100.0))
-		_:
-			var speed = float(row.get("training_speed", 1.0))
-			return "训练 ×%s" % h._one_decimal(speed)
+	return MaintenancePresentation._state_building_effect(host, role_id, row, disrepair)
 
 
 ## 未解锁时 tooltip 指向"差哪项科技"：取最低一档尚未解锁的行。
-
-func _state_building_lock_tooltip(host, role_rows: Array, researched: PackedStringArray,
-		gate_known: bool) -> String:
-	var h = host
-	for entry in role_rows:
-		var tech = String(entry.row.get("unlock_tech_id", ""))
-		if tech.is_empty() or (gate_known and researched.has(tech)):
-			continue
-		var tech_name = host._technology_display_name(tech)
-		return "需 %s" % tech_name if not tech_name.is_empty() else ""
-	return ""
 
 
 

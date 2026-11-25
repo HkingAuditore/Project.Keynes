@@ -494,3 +494,35 @@ static func _configure_displays(context, host) -> void:
 		host._good_display_names = await _load_display_names(context, host.GOOD_PROFILE_DIR)
 		await _load_family_effect_displays(context, host)
 	register_modifier_display_names(host)
+
+
+static func construction_type_columns(catalog: Dictionary, good_names: Dictionary) -> Dictionary:
+	return {
+		"building_type_ids": catalog.get("building_type_ids", PackedStringArray()),
+		"building_economic_sectors": catalog.get(
+			"building_economic_sectors", PackedInt32Array()),
+		"building_construction_days": catalog.get(
+			"building_construction_days", PackedInt32Array()),
+		"building_maturity_ranks": catalog.get(
+			"building_maturity_ranks", PackedInt32Array()),
+		"building_maturity_display_names": catalog.get(
+			"building_maturity_display_names", PackedStringArray()),
+		# Fold key for the construction workspace: the first output good decides
+		# which crop option a building belongs to, and the good's category
+		# (starchy_staple) decides whether it is a staple-crop building at all.
+		# Read here rather than in a UI module so every consumer sees one shape.
+		"building_industry_chain_ids": catalog.get(
+			"building_industry_chain_ids", PackedStringArray()),
+		"building_progression_steps": catalog.get(
+			"building_progression_steps", PackedInt32Array()),
+		"building_output_offsets": catalog.get(
+			"building_output_offsets", PackedInt32Array()),
+		"building_output_good_ids": catalog.get(
+			"building_output_good_ids", PackedInt32Array()),
+		"good_ids": catalog.get("good_ids", PackedStringArray()),
+		"good_category_ids": catalog.get(
+			"good_category_ids", PackedStringArray()),
+		# 税分组的产物轴要给人看的货名。这里只透传已加载的显示名表，
+		# 缺项由分组模块退回 stable id，不新建加载路径。
+		"good_display_names": good_names,
+	}

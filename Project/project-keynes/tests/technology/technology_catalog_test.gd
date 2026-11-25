@@ -193,8 +193,6 @@ func _init() -> void:
 			assert(String(public_route_names[route_index]) \
 				!= String(public_route_tags[route_index]))
 			assert(not String(public_route_names[route_index]).contains("route."))
-		if int(catalog.technology_costs[i]) > 0:
-			researchable += 1
 		assert(not String(catalog.technology_effect_profile_ids[i]).is_empty())
 		assert(String(public_definition.node_role) in ["identification", "handling",
 			"production_system", "power_scale", "institution", "applied_method", "milestone"])
@@ -216,11 +214,16 @@ func _init() -> void:
 			& TechnologyCatalogScript.FLAG_STARTING) != 0
 		var recipe_id := String(catalog.technology_effect_recipe_ids[i])
 		if is_starting:
+			assert(int(catalog.technology_costs[i]) == 0)
 			assert(recipe_id.is_empty())
 			assert(int(catalog.technology_effect_recipe_versions[i]) == 0)
 			assert(int(catalog.technology_modifier_term_offsets[i + 1]) \
 				== int(catalog.technology_modifier_term_offsets[i]))
 		else:
+			# Authored zero costs are possible on regional technologies. They
+			# still consume the minimum unit of research progress.
+			assert(int(public_definition.cost_points_scaled) == maxi(1, int(catalog.technology_costs[i])))
+			researchable += 1
 			assert(not recipe_id.is_empty() and not recipe_ids.has(recipe_id))
 			recipe_ids[recipe_id] = true
 			assert(int(catalog.technology_effect_recipe_versions[i]) == 1)

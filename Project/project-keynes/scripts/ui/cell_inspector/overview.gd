@@ -1,5 +1,7 @@
 extends RefCounted
 
+const OverviewEmployment = preload("res://scripts/ui/cell_inspector/overview_employment.gd")
+
 const FamilyWorkspaceProjection = preload("res://scripts/ui/family_workspace_projection.gd")
 
 const TEMPERATURE_HISTORY_CAPACITY = 32
@@ -215,24 +217,9 @@ func _kpis(host,
 		}]
 	var jobs_capacity = int(population_summary.get("job_capacity", 0))
 	var jobs_filled = int(population_summary.get("jobs_filled", 0))
-	var employed_population = int(population_summary.get("employed_population", 0))
-	var unemployed_population = int(population_summary.get("unemployed_population", 0))
-	if not population_summary.has("employed_population") \
-			and population_summary.has("populations"):
-		var pops: PackedInt64Array = population_summary.get("populations", PackedInt64Array())
-		var owners: PackedInt64Array = population_summary.get(
-			"owner_employed_by_cohort", PackedInt64Array())
-		var employees: PackedInt64Array = population_summary.get(
-			"employee_employed_by_cohort", PackedInt64Array())
-		employed_population = 0
-		unemployed_population = 0
-		for i in range(pops.size()):
-			var cohort_pop = maxi(0, int(pops[i]))
-			var cohort_emp = mini(cohort_pop,
-				(maxi(0, int(owners[i])) if i < owners.size() else 0)
-				+ (maxi(0, int(employees[i])) if i < employees.size() else 0))
-			employed_population += cohort_emp
-			unemployed_population += cohort_pop - cohort_emp
+	var employment := OverviewEmployment.from_snapshot(population_summary)
+	var employed_population := employment[0]
+	var unemployed_population := employment[1]
 	var openings = int(population_summary.get("job_openings", 0))
 	# 页头与全国经济、阶层、城市、年度报告用同一个口径：人口就业率。
 	# 综合不可读时才退回 cell summary 的生存值，并在提示里说明口径。

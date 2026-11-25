@@ -1,5 +1,6 @@
 class_name ColonizationPlannerPanel
 extends PanelContainer
+const ColonizationKitStatusText = preload("res://scripts/ui/components/colonization_kit_status_text.gd")
 
 const PlannerLabels = preload("res://scripts/ui/components/colonization_planner_labels.gd")
 
@@ -41,6 +42,7 @@ var _preview_route: Label
 var _footer_selection: Label
 var _preview_cache: Dictionary = {}
 var _quote_preview_cache: Dictionary = {}
+var _pending_quote_reads: Dictionary = {}
 var _local_families: Dictionary = {}
 var _display_order: Array = []
 var _hover_family := ""
@@ -122,7 +124,6 @@ var _max_population_button: Button
 var _preview_hovering := false
 var _planning_identity := ""
 var _identity_pulse_tween: Tween
-var _pending_quote_reads: Dictionary = {}
 
 func _ready() -> void:
 	if _list != null:
@@ -195,14 +196,21 @@ func _ready() -> void:
 	_layout_left_panel()
 	visible = false
 
+
 func set_player_controller(controller) -> void:
-	if _controller != null and _controller.has_signal("colonization_quotes_ready") \
-			and _controller.colonization_quotes_ready.is_connected(_on_colonization_quotes_ready):
-		_controller.colonization_quotes_ready.disconnect(_on_colonization_quotes_ready)
+	if _controller == controller:
+		return
+	var ready := _on_colonization_quotes_ready
+	if _controller != null and is_instance_valid(_controller) \
+			and _controller.has_signal("colonization_quotes_ready") \
+			and _controller.colonization_quotes_ready.is_connected(ready):
+		_controller.colonization_quotes_ready.disconnect(ready)
+	_pending_quote_reads.clear()
 	_controller = controller
-	if _controller != null and _controller.has_signal("colonization_quotes_ready") \
-			and not _controller.colonization_quotes_ready.is_connected(_on_colonization_quotes_ready):
-		_controller.colonization_quotes_ready.connect(_on_colonization_quotes_ready)
+	if _controller != null and is_instance_valid(_controller) \
+			and _controller.has_signal("colonization_quotes_ready") \
+			and not _controller.colonization_quotes_ready.is_connected(ready):
+		_controller.colonization_quotes_ready.connect(ready)
 
 
 func _await_quote_read(key: StringName, response: Dictionary, retry: Callable) -> bool:
@@ -246,6 +254,7 @@ func open_target(target_cell: int, family_filter: int = 0,
 	_clear_pending_quote_reads()
 	_preview_cache.clear()
 	_quote_preview_cache.clear()
+	_pending_quote_reads.clear()
 	_local_families.clear()
 	_display_order.clear()
 	_hover_family = ""
@@ -300,6 +309,7 @@ func close_panel() -> void:
 	if not visible:
 		return
 	visible = false
+	_pending_quote_reads.clear()
 	_target_picking = false
 	_source_picking = false
 	_hover_timer.stop()
@@ -371,6 +381,7 @@ func refresh_visible() -> void:
 
 func _on_tab_selected(tab_id: String) -> void:
 	if tab_id == "expeditions":
+		_pending_quote_reads.clear()
 		_show_expeditions()
 	else:
 		_show_quotes()
@@ -427,6 +438,7 @@ func _on_source_city_selected(index: int) -> void:
 	if source == _source_filter:
 		_update_start_enabled()
 		return
+	_pending_quote_reads.erase(&"target")
 	_source_filter = source
 	if _directory_mode:
 		_selected_quote.clear()
@@ -470,6 +482,7 @@ func _show_quotes() -> void:
 		page = _load_source_cities()
 	else:
 		page = _get_source_quotes()
+	_await_quote_read(&"page", page, _show_quotes)
 	_economy_busy = bool(page.get("busy", false))
 	_await_quote_read(&"quotes", page, _show_quotes)
 	if not bool(page.get("ok", false)):
@@ -790,7 +803,12 @@ func _refresh_selected_kit() -> void:
 	if _controller != null:
 		detail = _controller.get_family_colonization_quote_detail(
 			int(_selected_quote.get("quote_token", 0)), int(_population.value))
-	_await_quote_read(&"detail", detail, _refresh_selected_kit)
+	if _await_quote_read(&"detail", detail, _refresh_selected_kit):
+		_detail_valid = false
+		_update_start_enabled()
+		_feedback.text = EconomyStatusCopy.BUSY
+		_feedback.add_theme_color_override("font_color", UITokens.ARCHIVE_INK_MUTED)
+		return
 	_economy_busy = _economy_busy or bool(detail.get("busy", false))
 	if not bool(detail.get("ok", false)):
 		_detail_valid = _transient_query_failure(String(detail.get("code", "")), detail)
@@ -829,6 +847,7 @@ func _update_start_enabled() -> void:
 	_population_row.visible = on_quotes and has_selection
 	_start.visible = on_quotes
 	_start.disabled = not has_selection or _target_cell < 0 or _target_picking \
+		or _pending_quote_reads.has(&"target") \
 		or int(_selected_quote.get("quote_token", 0)) <= 0 or not _detail_valid \
 		or int(_population.value) > int(_selected_quote.get("maximum_population", 1))
 	var count := int(_population.value) if has_selection else 0
@@ -925,96 +944,7 @@ static func _expeditions_identity_of(page: Dictionary) -> String:
 
 
 func _preparing_missing_text(handle: int, state: int, snapshot: Dictionary = {}, include_progress: bool = true) -> String:
-	if state != 4 or _controller == null or not _controller.has_method(
-			"get_family_expedition_snapshot"):
-		return ""
-	var snap := snapshot
-	if snap.is_empty():
-		snap = _controller.get_family_expedition_snapshot(handle)
-	if not bool(snap.get("ok", false)):
-		return ""
-	var lines := PackedStringArray()
-	# The party only leaves once both the survival bridge and the whole opening
-	# build plan are funded, so a single percentage has to cover both. Showing
-	# the bridge alone is what used to read 100% while the kit was still short.
-	var bridge_required := int(snap.get("kit_bridge_required_units", 0))
-	var bridge_missing := int(snap.get("kit_bridge_missing_units", 0))
-	var material_required := int(snap.get("kit_material_required_units", 0))
-	var material_missing := int(snap.get("kit_material_missing_units", 0))
-	var required := bridge_required + material_required
-	var missing := bridge_missing + material_missing
-	if required > 0 and include_progress:
-		lines.append("已囤积 %d%%（补给 %d%% / 建材 %d%%），每日自动收进源地可用现货" % [
-			clampi(required - missing, 0, required) * 100 / required,
-			_stock_percent(bridge_required, bridge_missing),
-			_stock_percent(material_required, material_missing)])
-	var blocker := String(snap.get("kit_blocker", ""))
-	match blocker:
-		"UNBUILDABLE":
-			lines.append("源地无法获得开工包所需的某组建材，筹备将中止并退回托管物资")
-		"NO_BUILDINGS":
-			lines.append("目标地块放不下任何开工建筑，筹备无法完成")
-		"READY":
-			lines.append("开工包已齐套，等待出发")
-		"BRIDGE":
-			lines.append("仍缺旅途补给（食品、衣物或必需工具），等源地备货")
-		"MATERIALS":
-			lines.append("仍缺开工建材，等源地产出")
-		"TOPUP":
-			lines.append("开工包总量已达标，仍在按日补买个别物资的差额")
-		"INCOMPLETE":
-			lines.append("开工包尚未凑齐可出发的完整方案，等源地备货")
-	var procurement := _procurement_status_text(snap)
-	if not procurement.is_empty():
-		lines.append(procurement)
-	var ids: PackedInt32Array = snap.get("kit_missing_good_ids", PackedInt32Array())
-	var qtys: PackedInt64Array = snap.get(
-		"kit_missing_good_quantities", PackedInt64Array())
-	if not ids.is_empty():
-		var parts := PackedStringArray()
-		for i in range(ids.size()):
-			var qty := int(qtys[i]) if i < qtys.size() else 0
-			var good_name := "物资#%d" % int(ids[i])
-			if _controller.has_method("good_display_name"):
-				good_name = String(_controller.good_display_name(int(ids[i])))
-			parts.append("%s %s 件" % [good_name,
-				UITokens.format_compact_number_cn(float(qty) / 1000.0, 1)])
-		lines.append("可用替代物资与源地现货：" + "，".join(parts))
-	return "\n".join(lines)
-
-
-func _procurement_status_text(snap: Dictionary) -> String:
-	if bool(snap.get("kit_procurement_blocked_by_peer", false)):
-		return "等待另一支开拓队的国库采购完成"
-	if bool(snap.get("kit_procurement_pending", false)):
-		return "正在用国库采购%s（%s开始）" % [
-			_good_name(int(snap.get("kit_procurement_good_id", -1))),
-			WorldClock.date_text_for_day(int(snap.get("kit_procurement_started_day", 0)))]
-	var reason := String(snap.get("kit_procurement_rejection", ""))
-	if reason.is_empty():
-		return ""
-	return "采购%s被拒（%s）：%s" % [
-		_good_name(int(snap.get("kit_procurement_rejected_good_id", -1))),
-		WorldClock.date_text_for_day(int(snap.get("kit_procurement_rejected_day", 0))),
-		_procurement_reason_text(reason)]
-
-
-func _good_name(good_id: int) -> String:
-	if good_id < 0:
-		return ""
-	if _controller != null and _controller.has_method("good_display_name"):
-		return String(_controller.good_display_name(good_id))
-	return "物资#%d" % good_id
-
-
-static func _procurement_reason_text(reason: String) -> String:
-	return PlannerLabels._procurement_reason_text(reason)
-
-
-static func _stock_percent(required: int, missing: int) -> int:
-	if required <= 0:
-		return 100
-	return clampi(required - missing, 0, required) * 100 / required
+	return ColonizationKitStatusText._preparing_missing_text(_controller, handle, state, snapshot, include_progress)
 
 
 func _expedition_row_tooltip(handle: int, state: int, due_day: int) -> String:
@@ -1022,7 +952,7 @@ func _expedition_row_tooltip(handle: int, state: int, due_day: int) -> String:
 	if not missing.is_empty():
 		return missing
 	if due_day >= 0:
-		return "预计%s抵达" % WorldClock.date_text_for_day(due_day)
+		return "第 %d 日抵达" % due_day
 	return ""
 
 func _quotes_for_source(page: Dictionary) -> Array:
@@ -1163,6 +1093,7 @@ func begin_source_selection() -> void:
 	if _source_first or _source_picking:
 		return
 	_target_picking = false
+	_pending_quote_reads.erase(&"target")
 	_source_picking = true
 	_update_start_enabled()
 	source_selection_requested.emit()
@@ -1195,25 +1126,16 @@ func handle_map_cell(cell: int) -> bool:
 	if not visible or cell < 0:
 		return false
 	if _current_tab != "quotes":
-		# 地图左键始终交给派发工作区（打开期间不弹普通 Inspector）。派遣成功后
-		# 面板会自动切到「派遣进展」，而这里原先直接吃掉点击：玩家在地图上点
-		# 新的目的地毫无反应，表现为「连派多支队伍只有第一支成功」
-		# （2026-11-21 上报）。先回到派发列表，再按原来的步骤规则解释这次点击。
 		_show_quotes()
-		if not visible:
-			return false
 	if map_stage() == &"source":
 		if _select_source_cell(cell):
 			return true
-		# 不是可派遣城市：把这次点按当成“改目的地”，
-		# 省掉“先按按钮才能在地图上选点”的往返。
-		if try_target_cell(cell, true):
+		if try_target_cell(cell, true, handle_map_cell.bind(cell)):
 			return true
 		_set_feedback_line("点地图上的青绿环换出发城；点可见空地改目的地。", UITokens.RISK)
 		return false
-	if try_target_cell(cell):
+	if try_target_cell(cell, false, handle_map_cell.bind(cell)):
 		return true
-	# 目的地不合法，但这格本身是另一个候选出发城 —— 玩家要点的是出发地。
 	if not _source_first and cell != _source_filter and _select_source_cell(cell):
 		_set_feedback_line("已把出发城改为 %s。" % _cell_name(_source_filter),
 			UITokens.ARCHIVE_INK_MUTED)
@@ -1234,27 +1156,34 @@ func _select_source_cell(cell: int) -> bool:
 	return true
 
 
-func try_target_cell(cell: int, quiet: bool = false) -> bool:
+func try_target_cell(cell: int, quiet: bool = false, on_read: Callable = Callable()) -> bool:
 	if _controller == null or cell < 0:
 		return false
 	var family := int(_selected_quote.get("family_handle", 0))
 	var page: Dictionary = _controller.get_family_colonization_quotes(cell, family, _source_filter, 0, 256)
-	if _await_quote_read(&"target", page, try_target_cell.bind(cell, quiet)):
+	var next := on_read if on_read.is_valid() else try_target_cell.bind(cell, quiet)
+	if _await_quote_read(&"target", page, next):
 		if not quiet:
 			_set_feedback_line(EconomyStatusCopy.BUSY, UITokens.ARCHIVE_INK_MUTED)
 		_update_start_enabled()
 		return true
 	if not bool(page.get("ok", false)):
+		_update_start_enabled()
 		if not quiet:
 			_set_feedback_line(_reason_text(String(page.get("code", "colonization_target_invalid"))),
 				UITokens.RISK)
 		return false
 	if family > 0 and int(page.get("total", 0)) <= 0:
+		_update_start_enabled()
 		if not quiet:
 			# total 为 0 有两种完全不同的原因：全国无路可达（水域或不可通行
 			# 地形隔断），或这条路线不收这个家族。补一条「不限城市、不限家族」
 			# 的报价就能分开；只有失败路径才会多发这一次查询。
-			if _any_source_reaches(cell):
+			var probe: Dictionary = _controller.get_family_colonization_quotes(cell, 0, -1, 0, 1)
+			if _await_quote_read(&"target", probe, next):
+				_update_start_enabled()
+				return true
+			if not bool(probe.get("ok", false)) or int(probe.get("total", 0)) > 0:
 				_set_feedback_line("该家族当前无法从此城前往此地，请选择其他目的地。",
 					UITokens.RISK)
 			else:
@@ -1269,15 +1198,6 @@ func try_target_cell(cell: int, quiet: bool = false) -> bool:
 	_show_quotes()
 	_update_start_enabled()
 	return true
-
-
-func _any_source_reaches(cell: int) -> bool:
-	var probe: Dictionary = _controller.get_family_colonization_quotes(cell, 0, -1, 0, 1)
-	# 查询本身失败（结算中、快照未就绪）时不要断言「无路可走」，
-	# 回退到不指明原因的家族文案。
-	if not bool(probe.get("ok", true)):
-		return true
-	return int(probe.get("total", 0)) > 0
 
 
 func _set_feedback_line(message: String, color: Color, tooltip: String = "") -> void:
@@ -1303,7 +1223,7 @@ func _update_workflow() -> void:
 	_workflow.text = "%s → %s → %s" % [source, family, _cell_name(_target_cell)]
 	_footer_selection.text = "已选：%s" % family if not _selected_quote.is_empty() else "点击家族确定派遣对象"
 	_subtitle.text = _stage_hint()
-	_subtitle.visible = _current_tab == "quotes"
+	_subtitle.visible = not _subtitle.text.is_empty()
 	# 目的地这一格显示真实地名：点地图能改，但玩家首先要能确认「现在打的是哪」。
 	_target_button.text = "正在选点" if _target_picking else (
 		_cell_name(_target_cell) if _target_cell >= 0 else "点地图选目的地")
@@ -1330,7 +1250,7 @@ func _stage_hint() -> String:
 		return "点地图上的青绿环选出发城"
 	if _selected_quote.is_empty():
 		return "直接点地图上任意地块改目的地，再从左侧挑选家族"
-	return "出发城与家族已就绪：直接点地图上任意地块改目的地"
+	return ""
 
 
 
