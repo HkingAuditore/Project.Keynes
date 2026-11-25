@@ -108,6 +108,7 @@ func _refit_after_viewport_resize() -> void:
 func _configure_runtime() -> void:
 	_map_overlay.set_alpha(0.58)
 	_runtime_host.configure(_renderer, _camera, _world_clock, _map_overlay)
+	_ui_manager.publication_views = _runtime_host._presentation
 	_ui_manager.set_diagnostics_source(_runtime_host)
 	_ui_manager.bind_gm_sun_camera(_camera)
 	_ui_manager.bind_player_camera(_camera)

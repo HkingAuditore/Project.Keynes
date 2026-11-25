@@ -78,8 +78,17 @@ func _run() -> void:
 	check(receipt_seen, "command receipt arrives while map is held")
 	check(not ui_days.is_empty() and date_before != top._date_label.text, "date updates on the held map")
 	var old_camera_pos := _camera.position
-	_camera.restore_view_state(old_camera_pos + Vector2(94, 48), _camera.zoom * 1.1)
-	_camera.force_update_scroll()
+	var old_zoom := _camera.zoom
+	push_button(MOUSE_BUTTON_RIGHT, sample, true)
+	var drag := InputEventMouseMotion.new()
+	drag.relative = Vector2(80, 0)
+	drag.position = sample + drag.relative
+	drag.button_mask = MOUSE_BUTTON_MASK_RIGHT
+	root.push_input(drag, true)
+	push_button(MOUSE_BUTTON_RIGHT, drag.position, false)
+	push_button(MOUSE_BUTTON_WHEEL_UP, sample, true)
+	check(_camera.position != old_camera_pos and _camera._target_zoom != old_zoom,
+		"the player can drag and zoom while map drawing is held")
 	await RenderingServer.frame_post_draw
 	check(frozen_world.is_equal_approx(_camera.safe_screen_to_world(sample)), "hit uses the drawn transform")
 	check(_camera.drawn_frame.transform == frozen_transform and _camera.drawn_frame.day == frozen_day,
@@ -87,11 +96,7 @@ func _run() -> void:
 	var tapped: Array[Vector2] = []
 	_camera.tile_tapped.connect(func(point): tapped.append(point), CONNECT_ONE_SHOT)
 	for pressed in [true, false]:
-		var click := InputEventMouseButton.new()
-		click.button_index = MOUSE_BUTTON_LEFT
-		click.position = sample
-		click.pressed = pressed
-		root.push_input(click, true)
+		push_button(MOUSE_BUTTON_LEFT, sample, pressed)
 	check(tapped.size() == 1 and tapped[0].is_equal_approx(frozen_world), "tap dispatch matches the visible cell")
 	ui.toggle_pause_menu()
 	await RenderingServer.frame_post_draw
@@ -158,6 +163,8 @@ func check_reloaded_world(previous: PlayerGame) -> void:
 				check(old_map.drawn_frame == null and node._frame != old_frame,
 					"first load draw belongs exclusively to the restored world")
 				check(has_map_pixels(node.get_texture().get_image()), "first restored map contains terrain")
+				check(node.get_parent().get_node("RuntimeHost").ui_worker_day() == saved_day,
+					"the first restored UI date matches the save")
 			, CONNECT_ONE_SHOT)
 	node_added.connect(on_node)
 	var flow := root.get_node("GameFlow")
@@ -195,6 +202,14 @@ func has_map_pixels(img: Image) -> bool:
 func check(ok: bool, label: String) -> void:
 	if not ok:
 		failures.append(label)
+
+
+func push_button(button: MouseButton, point: Vector2, pressed: bool) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = button
+	event.position = point
+	event.pressed = pressed
+	root.push_input(event, true)
 
 
 func save_image(label: String, img: Image) -> void:

@@ -25,6 +25,14 @@ class AnnualReads extends AnnualReportSession:
 		reads += 1
 
 
+class CountingUI extends GameUIManager:
+	var refreshes := 0
+
+	func refresh_country_summary() -> Dictionary:
+		refreshes += 1
+		return {"ran": true}
+
+
 func _init() -> void:
 	var host := WorldRuntimeHost.new()
 	var scene := (load("res://scenes/player_game.tscn") as PackedScene).instantiate()
@@ -39,6 +47,7 @@ func _init() -> void:
 	var presentation = Presentation.new()
 	if presentation.has_method("publish_ui_view"):
 		check_delivery(presentation)
+		check_country_panel(presentation)
 	check_paused_reader()
 	check_drawn_vision()
 	scene.free()
@@ -112,6 +121,35 @@ func check_paused_reader() -> void:
 	host.free()
 	military.free()
 	clock.free()
+
+
+func check_country_panel(presentation) -> void:
+	var ui := CountingUI.new()
+	ui._country_panel = CountryPanel.new()
+	ui.publication_views = presentation
+	for event_driven in [true, false]:
+		ui._country_ui_event_refresh_enabled = event_driven
+		ui._country_next_refresh_ms = 0
+		var before := ui.refreshes
+		presentation.ui_refresh_enabled = false
+		for tick in 2:
+			ui._mark_country_panel_dirty(ui.COUNTRY_DIRTY_ALL, "settled")
+			if event_driven:
+				ui._country_next_refresh_ms = 0
+				ui._flush_country_panel_refresh()
+		check(ui.refreshes == before, "held country panel keeps its displayed model")
+		presentation.ui_refresh_enabled = true
+		presentation.publish_ui_view(func(_from, _day, _generation): pass)
+		check(ui.refreshes == before + 1, "country panel receives one pending refresh while paused")
+	var last_refresh := ui.refreshes
+	presentation.ui_refresh_enabled = false
+	ui._mark_country_panel_dirty(ui.COUNTRY_DIRTY_ALL, "settled")
+	presentation.reset_worker_views()
+	presentation.ui_refresh_enabled = true
+	presentation.publish_ui_view(func(_from, _day, _generation): pass)
+	check(ui.refreshes == last_refresh, "reset discards the previous world's panel refresh")
+	ui._country_panel.free()
+	ui.free()
 
 
 func check_drawn_vision() -> void:

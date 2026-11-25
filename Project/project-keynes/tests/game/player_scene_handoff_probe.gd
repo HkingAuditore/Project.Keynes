@@ -124,14 +124,16 @@ func _run() -> void:
 	_camera_zoom = _camera.zoom
 	_reset_camera()
 	_controller = scene.get_node("PlayerController")
-	var view_connections := _host.simulation_view_updated.get_connections()
-	for connection in view_connections:
-		_host.simulation_view_updated.disconnect(connection.callable)
-	for connection in view_connections:
+	# The same probe also measures older checkouts where UI and map shared a signal.
+	var ui_updates := Signal(_host, &"simulation_ui_updated") if _host.has_signal(&"simulation_ui_updated") else _host.simulation_view_updated
+	var ui_connections := ui_updates.get_connections()
+	for connection in ui_connections:
+		ui_updates.disconnect(connection.callable)
+	for connection in ui_connections:
 		var callback: Callable = connection.callable
 		if callback.get_object() == _controller:
 			callback = _timed_ui.bind(callback)
-		_host.simulation_view_updated.connect(callback, int(connection.flags))
+		ui_updates.connect(callback, int(connection.flags))
 	_host.simulation_view_updated.connect(_record_view)
 	_admit_day = _clock._runtime_calendar_admit
 	_clock._runtime_calendar_admit = _timed_admit
@@ -175,10 +177,11 @@ func _run() -> void:
 		condition = _display_checks.result()
 	_clock.pause(true)
 	_clock._runtime_calendar_admit = _admit_day
-	for connection in _host.simulation_view_updated.get_connections():
-		_host.simulation_view_updated.disconnect(connection.callable)
-	for connection in view_connections:
-		_host.simulation_view_updated.connect(connection.callable, int(connection.flags))
+	_host.simulation_view_updated.disconnect(_record_view)
+	for connection in ui_updates.get_connections():
+		ui_updates.disconnect(connection.callable)
+	for connection in ui_connections:
+		ui_updates.connect(connection.callable, int(connection.flags))
 	var contiguous := true
 	for index in _day_rows.size():
 		contiguous = contiguous and int(_day_rows[index].day) == maxi(0, start) + index + 1

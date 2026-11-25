@@ -1,5 +1,6 @@
 class_name GameUIManager
 extends CanvasLayer
+const PublicationViews := preload("res://scripts/game/world_runtime_presentation.gd")
 const MilitaryActions = preload("res://scripts/ui/game_ui/military_actions.gd")
 
 const TouchMetrics = preload("res://scripts/ui/game_ui/touch_metrics.gd")
@@ -170,6 +171,7 @@ var _country_runtime_facade = null
 var _economy_runtime_facade = null
 var _ideology_runtime_facade = null
 var _country_refresh_queued := false
+var publication_views: PublicationViews
 var _country_refresh_timer_active := false
 var _country_next_refresh_ms := 0
 var _country_open_generation := 0
@@ -340,13 +342,11 @@ func _mark_country_panel_dirty(domains: int, reason: String) -> void:
 	if _country_panel == null or not _country_panel.is_panel_open() \
 			or _country_refresh_queued:
 		return
-	if not _country_ui_event_refresh_enabled:
-		refresh_country_summary()
-		_country_dirty_domains &= ~_country_section_mask(
-			_country_panel.current_section())
-		return
 	_country_refresh_queued = true
-	call_deferred("_flush_country_panel_refresh")
+	if _country_ui_event_refresh_enabled:
+		call_deferred("_flush_country_panel_refresh")
+	else:
+		_flush_country_panel_refresh()
 
 
 func _flush_country_panel_refresh() -> void:
@@ -355,6 +355,13 @@ func _flush_country_panel_refresh() -> void:
 		_country_refresh_timer_active = false
 		return
 	var section_mask := _country_section_mask(_country_panel.current_section())
+	if publication_views != null and publication_views.defer_ui_refresh(_flush_country_panel_refresh):
+		return
+	if not _country_ui_event_refresh_enabled:
+		_country_refresh_queued = false
+		refresh_country_summary()
+		_country_dirty_domains &= ~section_mask
+		return
 	if (_country_dirty_domains & section_mask) == 0:
 		_country_refresh_queued = false
 		_country_refresh_timer_active = false
@@ -1403,6 +1410,8 @@ func _queue_era_indicator_refresh() -> void:
 		_refresh_era_indicator())
 
 func _refresh_era_indicator() -> void:
+	if publication_views != null and publication_views.defer_ui_refresh(_refresh_era_indicator):
+		return
 	_era_component._refresh_era_indicator(self)
 
 func _refresh_player_country_status(country_facade, economy_facade, handle: int) -> void:
