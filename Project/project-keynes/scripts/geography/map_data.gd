@@ -20,7 +20,7 @@ func publish_resource_visual_inputs(flags: int,
 
 var width:  int = 0
 var height: int = 0
-
+var drawn_frame: RefCounted  # Formal player viewport, cleared between worlds.
 # 主存储：cube 坐标 → HexCell
 var _cells: Dictionary = {}
 

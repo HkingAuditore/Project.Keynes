@@ -128,7 +128,7 @@ func _process(delta: float) -> void:
 
 func _rebuild_points() -> void:
 	_points.clear()
-	var camera := get_viewport().get_camera_2d() if is_inside_tree() else null
+	var camera := MapCamera.for_layer(self)
 	var previous_x: float = camera.global_position.x if camera != null else NAN
 	for cell_idx in _route:
 		var point := _cell_world_pos(int(cell_idx), previous_x)
@@ -147,7 +147,7 @@ func _cell_world_pos(cell_idx: int, ref_x: float = NAN) -> Vector2:
 		return Vector2(NAN, NAN)
 	var point := HexUtils.cube_to_world(cell.q, cell.r, _hex_size)
 	if is_nan(ref_x) and is_inside_tree():
-		var camera := get_viewport().get_camera_2d()
+		var camera := MapCamera.for_layer(self)
 		if camera != null:
 			ref_x = camera.global_position.x
 	if not is_nan(ref_x) and _wrap_period > 0.0:
@@ -196,7 +196,7 @@ func _draw() -> void:
 	if points.size() < 2:
 		return
 	# Rebase the whole continuous route to the camera's cylindrical world copy.
-	var camera := get_viewport().get_camera_2d()
+	var camera := MapCamera.for_layer(self)
 	var shift := Vector2.ZERO
 	var unit := 1.0 / maxf(camera.zoom.x, 0.01) if camera != null else 1.0
 	if camera != null:

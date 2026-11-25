@@ -137,19 +137,20 @@ func _process(host, _delta: float) -> void:
 
 
 func _service_runtime_progress(host, frame_usec: int) -> void:
-	var segment_usec = Time.get_ticks_usec()
-	host._consume_runtime_commit_if_ready()
-	host._observe_runtime_worker_fault()
-	host._poll_runtime_health()
-	segment_usec = Time.get_ticks_usec()
-	if host.military_map_layers != null \
-			and host.military_map_layers.has_method("poll_snapshot"):
-		host.military_map_layers.poll_snapshot()
-	host._sched_proc_country_visual_ms += host._sched_elapsed_ms(segment_usec)
+	var read_due: bool = host.publication_reader.due(frame_usec)
+	var segment_usec: int
+	if read_due:
+		host._consume_runtime_commit_if_ready()
+		host._observe_runtime_worker_fault()
+		host._poll_runtime_health()
+		segment_usec = Time.get_ticks_usec()
+		if host.military_map_layers != null and host.military_map_layers.has_method("poll_snapshot"):
+			host.military_map_layers.poll_snapshot()
+		host._sched_proc_country_visual_ms += host._sched_elapsed_ms(segment_usec)
 	host._service_worker_map_presentation(frame_usec)
 	segment_usec = Time.get_ticks_usec()
 	var now_msec = Time.get_ticks_msec()
-	if now_msec >= host._building_visual_next_poll_msec:
+	if read_due and now_msec >= host._building_visual_next_poll_msec:
 		host._building_visual_next_poll_msec = now_msec + 100
 		host._refresh_building_visual_intel({})
 	host._sched_proc_building_ms += host._sched_elapsed_ms(segment_usec)

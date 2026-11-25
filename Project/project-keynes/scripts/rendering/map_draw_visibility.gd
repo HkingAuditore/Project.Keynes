@@ -4,21 +4,11 @@ extends Node2D
 var backdrops: Array[ColorRect] = []
 
 
-func _enter_tree() -> void:
-	# Run before the child renderers prepare their offscreen textures for this draw.
-	RenderingServer.frame_pre_draw.connect(_prepare)
-
-
-func _exit_tree() -> void:
-	RenderingServer.frame_pre_draw.disconnect(_prepare)
-
-
-func _prepare() -> void:
+func covered_by_ui() -> bool:
 	for backdrop in backdrops:
 		if backdrop.is_visible_in_tree() and _covers_viewport(backdrop):
-			visible = false
-			return
-	visible = true
+			return true
+	return false
 
 
 func _covers_viewport(backdrop: ColorRect) -> bool:
@@ -27,7 +17,7 @@ func _covers_viewport(backdrop: ColorRect) -> bool:
 		return false
 	if backdrop.color.a < 1.0 or backdrop.self_modulate.a < 1.0 or backdrop.material != null:
 		return false
-	var view := get_viewport_rect()
+	var view := backdrop.get_viewport_rect()
 	var item: CanvasItem = backdrop
 	while item != null:
 		if item.modulate.a < 1.0:

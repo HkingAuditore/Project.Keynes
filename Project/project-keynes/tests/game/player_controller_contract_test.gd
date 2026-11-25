@@ -144,7 +144,7 @@ func _init() -> void:
 	_expect("player scene mounts one shared colonization planner and Node2D route layer",
 		player != null
 		and player.get_node_or_null("UI/UIRoot/ModalLayer/ColonizationPlannerPanel") != null
-		and player.get_node_or_null("WorldRoot/ColonizationRouteLayer") is Node2D)
+		and player.get_node_or_null("%WorldRoot/ColonizationRouteLayer") is Node2D)
 	_run_colonization_planner_busy_display()
 	_run_colonization_kit_error_copy()
 	_run_colonization_planner_family_cards()

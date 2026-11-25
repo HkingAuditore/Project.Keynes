@@ -13,7 +13,7 @@ func _prepare_world_data(host) -> Dictionary:
 	host._visual_progress = 0.0
 	host._runtime_commit_generation = 0
 	host._runtime_commit_day = -1
-	host._presentation.reset_worker_views()
+	host.reset_presentation()
 	host._player_confirmation_view.clear()
 	host._runtime_last_commit.clear()
 	host._runtime_vision_result.clear()

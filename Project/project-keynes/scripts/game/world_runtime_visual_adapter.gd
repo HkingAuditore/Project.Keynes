@@ -216,6 +216,9 @@ func refresh_country_visuals(host, reason: String) -> Dictionary:
 	var _cv_t3 = Time.get_ticks_usec()
 	if not host._vision_dirty_indices.is_empty():
 		out["lut"] = _republish_cell_luts(host, host._vision_dirty_indices)
+		var map: MapData = host._current_map
+		if map.drawn_frame != null and out.lut.get("lut_encode_path", "none") != "none":
+			map.drawn_frame.stage_vision(map.vision_revision, map.visible_arr, map.explored_arr)
 	host._vision_dirty_indices = PackedInt32Array()
 	host._runtime_vision_result.erase("newly_visible_cells")
 	_cv_phase(host, "lut", _cv_t3)

@@ -449,6 +449,8 @@ func pick_at_world(world: Vector2) -> Dictionary:
 	if not _configured or not _enabled or _map == null or _feed == null \
 			or not bool(_feed.ok):
 		return {}
+	if not VisionSolver.displayed_fields_current(_map):
+		return {}
 	if token_layer != null:
 		var army: Dictionary = token_layer.pick_army_at(world)
 		var handle := int(army.get("handle", 0))
