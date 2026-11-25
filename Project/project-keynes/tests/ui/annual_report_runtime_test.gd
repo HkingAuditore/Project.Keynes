@@ -46,7 +46,13 @@ func _run() -> void:
 	var report: Dictionary = runtime.annual_report_snapshot(1)
 	_expect("first complete new-game year graded", bool(report.get("complete", false)))
 	_expect("annual grant committed before presentation", bool(report.get("reward_settled", false)))
-	_expect("report automatically opens and pauses", ui.is_annual_report_open() and clock.paused)
+	var hold: Dictionary = runtime.generator().get_runtime_control_state()
+	_expect("report automatically opens and holds the worker at the first year boundary",
+		ui.is_annual_report_open() and controller.player_confirmation_reason() == "annual_report_confirmation_required"
+		and hold.get("simulation_host_state") == "PAUSED"
+		and int(hold.get("simulation_committed_day", -1)) == clock.days_per_year())
+	_expect("waiting for the report preserves the player's 50x clock",
+		not clock.paused and is_equal_approx(clock.speed_multiplier, 50.0))
 	if bool(report.get("ok", false)):
 		var totals: Dictionary = report.get("totals", {})
 		print("[annual-runtime] grade=%s reward=%d totals=%s opening=%s" % [String(report.get("grade", "")), int(report.get("reward_q16", 0)), JSON.stringify(totals), JSON.stringify(report.get("opening", {}))])
