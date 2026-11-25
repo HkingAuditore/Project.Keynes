@@ -26,19 +26,24 @@ if (-not $KeepStrays) {
 Push-Location (Join-Path $repo "gdext")
 try {
     # MSVC 把"正在创建库 …lib 和对象 …exp"写到 stderr，这是链接成功的正常输出。
-    # 在 ErrorActionPreference=Stop 下它会被当成异常抛出，所以这一段必须放行，
-    # 由下面的模式匹配来判定成败。
+    # 在 ErrorActionPreference=Stop 下它会被当成异常抛出，所以这一段必须放行。
+    #
+    # 成败只认 scons 的退出码，不看输出字符串：`building terminated because of errors`
+    # 这行以前匹配不到，脚本会对着失败的构建打印 [build] OK。
     $ErrorActionPreference = "Continue"
     $out = & scons platform=windows target=$Target -j8 2>&1
+    $sconsExit = $LASTEXITCODE
     $ErrorActionPreference = "Stop"
 
     $out | Out-String | Write-Host
-    $failed = $out | Select-String -Pattern 'error C\d|error LNK|fatal error|拒绝访问|Access is denied'
-    if ($failed) {
-        Write-Host "[build] FAILED"
+
+    $failed = $out | Select-String -Pattern 'error C\d|error LNK|fatal error|拒绝访问|Access is denied|building terminated because of errors'
+    Write-Host "[build] scons exit=$sconsExit  error-line-match=$([bool]$failed)"
+    if ($sconsExit -ne 0 -or $failed) {
+        Write-Host "[build] FAILED exit=$sconsExit"
         exit 1
     }
-    Write-Host "[build] OK"
+    Write-Host "[build] OK exit=0"
 } finally {
     Pop-Location
 }
