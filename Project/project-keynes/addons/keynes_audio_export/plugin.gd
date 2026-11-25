@@ -62,9 +62,12 @@ class AudioExport extends EditorExportPlugin:
 		var banks := "res://assets/audio/banks/Desktop/"
 		if is_android:
 			banks = "res://assets/audio/banks/Mobile/"
-		for name in DirAccess.get_files_at(banks):
-			if name.ends_with(".bank"):
-				add_file(banks + name, FileAccess.get_file_as_bytes(banks + name), false)
+		if DirAccess.dir_exists_absolute(banks):
+			for name in DirAccess.get_files_at(banks):
+				if name.ends_with(".bank"):
+					add_file(banks + name, FileAccess.get_file_as_bytes(banks + name), false)
+		else:
+			push_warning("[audio-export] missing FMOD bank directory (%s); exported build will run without audio. See docs/bootstrap.md." % banks)
 		if is_web:
 			# web 的导出会把 .gdextension 当文本资源、转成二进制进 PCK，浏览器里的
 			# GDExtensionLibraryLoader 读不了（"Error loading GDExtension configuration
@@ -77,10 +80,13 @@ class AudioExport extends EditorExportPlugin:
 			FileAccess.get_file_as_bytes(ROOT + "FmodGodot.gdextension"), false)
 		if is_windows:
 			var binaries := ROOT + "bin/windows/x86_64/"
-			for name in DirAccess.get_files_at(binaries):
-				if name.ends_with(".dll"):
-					add_shared_object(binaries + name, PackedStringArray(["windows", "x86_64"]),
-						"addons/FmodGodot/bin/windows/x86_64")
+			if DirAccess.dir_exists_absolute(binaries):
+				for name in DirAccess.get_files_at(binaries):
+					if name.ends_with(".dll"):
+						add_shared_object(binaries + name, PackedStringArray(["windows", "x86_64"]),
+							"addons/FmodGodot/bin/windows/x86_64")
+			else:
+				push_warning("[audio-export] missing Windows FMOD binaries (%s); exported build will run without audio. See docs/bootstrap.md." % binaries)
 			return
 		# Android：EditorExportPlatformAndroid::_save_apk_so 只用文件名和 tag 里的 abi，
 		# 把文件写进 APK 的 lib/<abi>/；运行期 OS_Android::open_dynamic_library 找不到

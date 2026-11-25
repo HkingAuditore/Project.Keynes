@@ -25,6 +25,7 @@ GameFlow="*res://scripts/game/game_flow_service.gd"
 [debug]
 
 file_logging/enable_file_logging=true
+file_logging/enable_file_logging.template=false
 file_logging/max_log_files=10
 
 [display]

@@ -21,7 +21,7 @@
 | Web 全流程（推荐） | `scripts/Build-Web.cmd` | `WebBuild/` |
 | Web 只重新导出 | `scripts/Build-Web.cmd skip-native` | `WebBuild/` |
 | 本地预览 WebBuild | `scripts/serve_web.bat` | `http://127.0.0.1:8060/ProjectKeynes.html` |
-| 桌面导出 | Godot 编辑器 → 导出 → `Windows Desktop` 预设 | `Build/ProjectKeynes.exe` |
+| Windows PC 导出（推荐） | `scripts/Build-Windows.cmd`（`debug` / `release` / `skip-native`） | `Build/ProjectKeynes-{debug,release}/` |
 
 ---
 
@@ -244,12 +244,24 @@ python tools\verify_web_session.py --url http://127.0.0.1:8060/ProjectKeynes.htm
 
 ### 5.1 Windows
 
-预设 `Windows Desktop`，输出 `Build/ProjectKeynes.exe`。
-在编辑器里「项目 → 导出」或：
+推荐使用仓库自带的一键脚本（依次完成 `dots_ext` 原生库编译、FMOD 音频资产检查、`--import`、`Windows Desktop` 导出以及无参启动冒烟校验）：
 
 ```bat
-"%GODOT_BIN%" --headless --path Project\project-keynes --export-release "Windows Desktop" Build\ProjectKeynes.exe
+scripts\Build-Windows.cmd                 :: 编 template_debug + 导 Build\ProjectKeynes-debug\
+scripts\Build-Windows.cmd release         :: 编 template_release + 导 Build\ProjectKeynes-release\
+scripts\Build-Windows.cmd skip-native     :: 跳过 C++ 重编，直接导 debug 包
 ```
+
+也可手动在编辑器里「项目 → 导出」或命令行调用：
+
+```bat
+"%GODOT_BIN%" --headless --path Project\project-keynes --export-debug   "Windows Desktop" Build\ProjectKeynes-debug\ProjectKeynes-debug.exe
+"%GODOT_BIN%" --headless --path Project\project-keynes --export-release "Windows Desktop" Build\ProjectKeynes-release\ProjectKeynes.exe
+```
+
+注意事项：
+- **声音资产**：公开仓库不含 FMOD 原生 DLL（`addons/FmodGodot/bin/windows/x86_64/`）和 Desktop `.bank`（`assets/audio/banks/Desktop/`），两者均已在 `.gitignore` 中忽略。若本地未补齐，`scripts/Build-Windows.cmd` 与 `addons/keynes_audio_export/plugin.gd` 会打印告警并继续导出**无声版本**；补齐方式见 `docs/bootstrap.md` §4–§5。
+- **导出包文件日志**：`Project/project-keynes/project.godot` 已设置 `debug/file_logging/enable_file_logging.template=false`（仅对导出模板关闭，编辑器日志不受影响），用于规避 Godot 4.6.2 官方 Windows 导出模板在启动轮转 `user://logs/godot.log` 时的 `signal 11` 崩溃。请勿在导出模板中重新开启。
 
 ### 5.2 Android
 
@@ -266,8 +278,7 @@ Android 预设里的 `godot-lib.*.aar` 已经在仓库中（`android/build/libs/
 
 ## 6. FMOD 音频（可选）
 
-四个 bank（`Master.bank`、`Master.strings.bank`、`Music.bank`、`UI.bank`）**已入库**，
-放在 `Project/project-keynes/assets/audio/banks/Desktop/`。日常构建不用碰 FMOD。
+因 FMOD 第三方授权限制与大体积二进制不入库策略，公共仓库**不再提交** `addons/FmodGodot/bin/` 下的预编译库以及 `Project/project-keynes/assets/audio/banks/Desktop/` 下的 `.bank` 文件（已在 `.gitignore` 忽略）。缺这两项时游戏画面与逻辑完全正常，只是没有声音；补齐与已知限制见 `docs/bootstrap.md` §4–§5。
 
 只有改了 `Audio/ProjectKeynes/ProjectKeynes.fspro` 或音源时才需要：
 

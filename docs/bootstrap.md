@@ -176,8 +176,14 @@ source ./emsdk_env.sh          # Windows: emsdk_env.bat
 ## 已知缺口（不是脚本 bug）
 
 1. **Windows/Android 的 FmodGodot 原生库**：上游 `FMOD-GODOT` 只发 Windows/Android 预编译件，
-   本仓库不能带（FMOD 授权）。要声音就手工从上游取一次。
-2. **`gdext/fmod_bootstrap/SConstruct` 的输出目录**是
+   公共仓库不能带（FMOD 授权），目录 `Project/project-keynes/addons/FmodGodot/bin/` 已加入 `.gitignore`。
+   需要声音时从上游 `FMOD-GODOT` v1.1.3（或团队私有 Release 资产包）放到对应平台的 `bin/` 目录即可。
+2. **Desktop `.bank` 音频包**：总计约 96 MB（8 个 `.bank`），且 `ProjectKeynes.fspro` 存在上述 §5 的 metadata 校验问题，
+   目录 `Project/project-keynes/assets/audio/banks/` 已加入 `.gitignore`。需要声音时可：
+   - 用 FMOD Studio GUI 打开 `Audio/ProjectKeynes/ProjectKeynes.fspro` 重新保存修复后运行 `scripts/Build-FMOD-Banks.cmd`；
+   - 或直接从私有 Release / 本地备份把 8 个 Desktop `.bank` 放回 `Project/project-keynes/assets/audio/banks/Desktop/`。
+   - 使用 `scripts/Build-Windows.cmd` 导出 PC 包时会自动检测这两项并在缺失时给出明确提示（不会静默出无声包）。
+3. **`gdext/fmod_bootstrap/SConstruct` 的输出目录**是
    `Project/project-keynes/addons/fmod_android_bootstrap/bin/android`，而 addon 目录叫
    `0_fmod_bootstrap`。编完如果声音链没生效，先确认这两个名字是否被合并过。
-3. **mac/Linux 不支持 banks**，也没有 FmodGodot 的非 web 原生库 —— 这两项缺了就是没有声音。
+4. **mac/Linux 不支持 banks**，也没有 FmodGodot 的非 web 原生库 —— 这两项缺了就是没有声音。

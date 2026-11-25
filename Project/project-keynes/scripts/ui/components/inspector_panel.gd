@@ -271,9 +271,13 @@ func apply_live_patch(patch: Dictionary) -> void:
 	if patch.is_empty() or _content_box == null:
 		return
 	if patch.has("header"):
-		_apply_header(patch.get("header", {}), true)
+		var header: Dictionary = patch.get("header", {})
+		_model["header"] = header
+		_apply_header(header, true)
 	if patch.has("kpis"):
-		_apply_kpis(patch.get("kpis", []), true)
+		var kpis: Array = patch.get("kpis", [])
+		_model["kpis"] = kpis.duplicate()
+		_apply_kpis(kpis, true)
 	var patch_tab := String(patch.get("tab_id", ""))
 	if not patch.has("category"):
 		return
@@ -287,6 +291,22 @@ func apply_live_patch(patch: Dictionary) -> void:
 	else:
 		_apply_category_patch(category)
 		_publish_population_discontent(category)
+
+
+func apply_published_gdp(gdp_kpi: Dictionary) -> void:
+	if gdp_kpi.is_empty() or _content_box == null:
+		return
+	var kpis: Array = (_model.get("kpis", []) as Array).duplicate()
+	if kpis.is_empty():
+		return
+	var target_id := String(gdp_kpi.get("id", "kpi_gdp"))
+	for i in range(kpis.size()):
+		var item = kpis[i]
+		if item is Dictionary and String((item as Dictionary).get("id", "")) == target_id:
+			kpis[i] = gdp_kpi
+			_model["kpis"] = kpis
+			_apply_kpis(kpis, true)
+			return
 
 
 func set_tab_category(tab_id: String, category: Dictionary) -> void:
