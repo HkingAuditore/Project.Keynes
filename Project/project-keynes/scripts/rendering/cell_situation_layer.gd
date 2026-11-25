@@ -152,7 +152,7 @@ func _process(delta: float) -> void:
     var transform := _map_transform()
     var fog := bool(_host.is_fog_of_war_enabled())
     # 撤销视野立即清掉已绘制命令，不等待下一轮经济批次。
-    if fog or _map.drawn_frame != null:
+    if fog or MapDrawnFrame.for_map(_map) != null:
         for cell in _rows.keys():
             if not _can_show(int(cell)):
                 _rows.erase(cell)
@@ -328,13 +328,14 @@ func _update_weather(cell: int) -> void:
 
 
 func _map_transform() -> Transform2D:
-    if _map != null and _map.drawn_frame != null and _map.drawn_frame.valid:
-        return _map.drawn_frame.screen_transform(get_viewport_rect().size)
+    var frame := MapDrawnFrame.for_map(_map)
+    if frame != null and frame.valid:
+        return frame.screen_transform(get_viewport_rect().size)
     return get_viewport().get_canvas_transform()
 
 
 func _can_show(cell: int) -> bool:
-    if _map != null and _map.drawn_frame != null:
+    if _map != null and MapDrawnFrame.for_map(_map) != null:
         return VisionSolver.displayed_fog_state(_map, cell) == VisionSolver.FOG_VISIBLE
     return _map != null and cell >= 0 and cell < _map.cell_count() and \
         (not _host.is_fog_of_war_enabled() or (cell < _map.visible_arr.size() \

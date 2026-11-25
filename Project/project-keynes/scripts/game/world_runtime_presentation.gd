@@ -67,7 +67,7 @@ func defer_ui_refresh(refresh: Callable) -> bool:
 	return not ui_refresh_enabled
 
 func publish_worker_view(publish: Callable) -> void:
-	if _pending_day < 0 or _map_updates.has_pending():
+	if _pending_day < 0 or (_map_updates.has_pending() and not _map_updates.needs_recovery):
 		return
 	_presented_day = _pending_day
 	_pending_day = -1

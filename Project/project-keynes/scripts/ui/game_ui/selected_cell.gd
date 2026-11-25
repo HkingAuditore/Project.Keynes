@@ -41,7 +41,9 @@ func show_cell_panel(host, cell: HexCell) -> void:
 	_waiting_for_drawn_cell = not VisionSolver.displayed_fields_current(host._map)
 	if _waiting_for_drawn_cell:
 		host._set_inspector_trace_cell(-1)
-		host._right_panel.hide()
+		host._right_panel.set_model_for_selection(host._inspector_view_model.drawn_cell_summary(cell))
+		host._right_panel.visible = not (host._country_panel != null and host._country_panel.is_panel_open())
+		host.call_deferred("_layout_right_panel")
 		return
 	_install_panel(host, cell)
 
@@ -91,7 +93,7 @@ func refresh_selected_daily_lines(host, force: bool = false, day_idx: int = -1) 
 		return {}
 	if _waiting_for_drawn_cell and host._selected_cell != null:
 		_install_panel(host, host._selected_cell)
-	if host._map != null and host._map.drawn_frame != null:
+	if host._map != null and MapDrawnFrame.for_map(host._map) != null:
 		refresh_gdp(host)
 	if not host._pending_inspector_tab.is_empty() or not host._pending_object_request.is_empty():
 		host._schedule_inspector_retry()

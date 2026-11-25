@@ -68,8 +68,7 @@ func _run() -> void:
 	target.draw_enabled = false
 	var date_before: String = top._date_label.text
 	var receipt_seen := false
-	while _host.received_worker_day() < int(command.requested_day) + 1:
-		await RenderingServer.frame_post_draw
+	await wait_for_received_day(int(receipt.effective_day) + 1)
 	for row in _day_rows:
 		for result in row.receipts:
 			if int(result.request_id) == int(command.request_id):
@@ -98,6 +97,10 @@ func _run() -> void:
 	for pressed in [true, false]:
 		push_button(MOUSE_BUTTON_LEFT, sample, pressed)
 	check(tapped.size() == 1 and tapped[0].is_equal_approx(frozen_world), "tap dispatch matches the visible cell")
+	var clicked_cell: HexCell = HexUtils.world_to_wrapped_cell(_host.current_map(), frozen_world, _host.hex_size)
+	check(clicked_cell != null and ui._right_panel.visible and ui._right_panel._cell_index == clicked_cell.index,
+		"frozen map click opens the matching cell inspector")
+	check(ui._right_panel._model.get("tabs", []).is_empty(), "frozen cell summary excludes unpublished details")
 	ui.toggle_pause_menu()
 	await RenderingServer.frame_post_draw
 	await RenderingServer.frame_post_draw
@@ -113,8 +116,7 @@ func _run() -> void:
 	target.draw_enabled = true
 	_clock.pause(false)
 	var resume_day := _host.received_worker_day()
-	while _host.received_worker_day() < resume_day + 2:
-		await RenderingServer.frame_post_draw
+	await wait_for_received_day(resume_day + 2)
 	check(target.draw_count > count and ui_days.size() == notifications, "map draws while ordinary UI is held")
 	check(top._date_label.text == held_ui_date, "ordinary date stays held")
 	check(texture_before.get_data() != target.get_texture().get_image().get_data(), "next map contains new pixels")
@@ -139,7 +141,7 @@ func _run() -> void:
 	var old_map := _host.current_map()
 	image = current_scene.get_node("MapOutput/MapImage")
 	var closed: Dictionary = await _host.close_world()
-	check(closed.get("ok", false) and old_map.drawn_frame == null and not image.visible,
+	check(closed.get("ok", false) and MapDrawnFrame.for_map(old_map) == null and not image.visible,
 		"closing the world detaches the cached picture")
 	for item in failures:
 		printerr(item)
@@ -148,10 +150,20 @@ func _run() -> void:
 	quit(0 if failures.is_empty() else 1)
 
 
+func wait_for_received_day(day: int) -> void:
+	# The normal player process owns receipt delivery, including its polling interval.
+	var generator := _host.generator()
+	while int(generator.get_runtime_control_state().get("simulation_committed_day", -1)) < day or _host.received_worker_day() < day:
+		if _host.is_runtime_fault_paused():
+			check(false, "runtime fault waiting for day %d" % day)
+			return
+		await RenderingServer.frame_post_draw
+
+
 func check_reloaded_world(previous: PlayerGame) -> void:
 	var previous_id := previous.get_instance_id()
 	var old_map := _host.current_map()
-	var old_frame = old_map.drawn_frame
+	var old_frame = MapDrawnFrame.for_map(old_map)
 	var saved_day := _host.received_worker_day()
 	var first_draw: Array[int] = []
 	var on_node := func(node: Node):
@@ -160,7 +172,7 @@ func check_reloaded_world(previous: PlayerGame) -> void:
 				"new scene starts with no displayed map")
 			node.map_view_drawn.connect(func(day: int):
 				first_draw.append(day)
-				check(old_map.drawn_frame == null and node._frame != old_frame,
+				check(MapDrawnFrame.for_map(old_map) == null and node._frame != old_frame,
 					"first load draw belongs exclusively to the restored world")
 				check(has_map_pixels(node.get_texture().get_image()), "first restored map contains terrain")
 				check(node.get_parent().get_node("RuntimeHost").ui_worker_day() == saved_day,

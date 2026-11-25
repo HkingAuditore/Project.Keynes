@@ -1054,6 +1054,9 @@ func _on_day_changed(day_idx: int) -> void:
 func _on_season_changed(season_idx: int) -> void:
 	if _runtime_host != null:
 		_runtime_host.on_season_changed(season_idx)
+	# Runtime dates refresh the selected cell when the matching map is drawn.
+	if _world_clock != null and _world_clock._publishing_runtime_date:
+		return
 	if _ui_manager != null:
 		_ui_manager.refresh_selected_daily_lines(true)
 	sync_ui()
@@ -1062,6 +1065,9 @@ func _on_season_changed(season_idx: int) -> void:
 func _on_year_changed(year_idx: int) -> void:
 	if _runtime_host != null:
 		_runtime_host.on_year_changed(year_idx)
+	# Runtime dates refresh the selected cell when the matching map is drawn.
+	if _world_clock != null and _world_clock._publishing_runtime_date:
+		return
 	if _ui_manager != null:
 		_ui_manager.refresh_selected_daily_lines(true)
 	sync_ui()

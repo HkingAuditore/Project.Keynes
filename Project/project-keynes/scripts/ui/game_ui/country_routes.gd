@@ -1027,7 +1027,7 @@ func record_committed_ledger(host, commit: Dictionary) -> void:
 	host._gdp_ledger.apply_committed_view(commit.gdp)
 	if host._country_view_model != null and commit.has("fiscal_history"):
 		host._country_view_model.fiscal_history().apply_committed_view(commit.fiscal_history)
-	if host._map == null or host._map.drawn_frame == null:
+	if host._map == null or MapDrawnFrame.for_map(host._map) == null:
 		host._cell_panel.refresh_gdp(host)
 
 

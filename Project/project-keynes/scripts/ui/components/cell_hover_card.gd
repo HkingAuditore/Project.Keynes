@@ -248,7 +248,7 @@ func _process(_delta: float) -> void:
 		return
 
 	if not VisionSolver.displayed_fields_current(_map):
-		if _shown_cell == cell.index and _payload.get("day", -1) == _map.drawn_frame.day:
+		if _shown_cell == cell.index and visible:
 			_move_to(screen, safe)
 		else:
 			dismiss(false)

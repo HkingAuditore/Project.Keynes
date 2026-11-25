@@ -148,6 +148,8 @@ func check_country_panel(presentation) -> void:
 	presentation.ui_refresh_enabled = true
 	presentation.publish_ui_view(func(_from, _day, _generation): pass)
 	check(ui.refreshes == last_refresh, "reset discards the previous world's panel refresh")
+	ui._mark_country_panel_dirty(ui.COUNTRY_DIRTY_ALL, "settled")
+	check(ui.refreshes == last_refresh + 1, "a new publication refreshes the panel after reset")
 	ui._country_panel.free()
 	ui.free()
 
@@ -156,7 +158,7 @@ func check_drawn_vision() -> void:
 	var map := MapData.new(2, 1)
 	var camera := MapCamera.new()
 	var frame := preload("res://scripts/rendering/map_drawn_frame.gd").new()
-	map.drawn_frame = frame
+	frame.attach(map)
 	map.visible_arr = PackedByteArray([1, 0])
 	map.explored_arr = PackedByteArray([1, 1])
 	frame.received_day = 1
@@ -166,6 +168,7 @@ func check_drawn_vision() -> void:
 	map.visible_arr = PackedByteArray([0, 1])
 	frame.stage_vision(2, map.visible_arr, map.explored_arr)
 	check(not VisionSolver.displayed_cell_visible(map, 0), "no cell knowledge before the first map draw")
+	check(VisionSolver.displayed_fog_state(map, 0) != VisionSolver.FOG_UNEXPLORED, "a pending frame is distinct from an unexplored cell")
 	frame.present()
 	check(VisionSolver.displayed_cell_visible(map, 0) and not VisionSolver.displayed_cell_visible(map, 1),
 		"a newer same-day vision publication cannot change a submitted frame")
@@ -179,6 +182,7 @@ func check_drawn_vision() -> void:
 	target.bind_map(map, 0)
 	if DisplayServer.get_name() == "headless":
 		check(camera.drawn_frame == null and target._map == null, "headless world has no draw dependency")
+	frame.detach(map)
 	target.free()
 	camera.free()
 

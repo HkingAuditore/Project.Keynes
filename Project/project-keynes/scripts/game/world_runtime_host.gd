@@ -2,6 +2,8 @@ extends Node
 class_name WorldRuntimeHost
 
 signal presentation_reset()
+signal map_fields_received(day: int)
+signal map_texture_published(day: int)
 signal world_generation_started()
 signal world_generation_failed(reason: String)
 signal world_ready(map: MapData, world_data: WorldData, generator: MapGenerator, view_adapter: DCViewAdapter)
@@ -819,11 +821,10 @@ func _publish_worker_map(update: Dictionary, day: int, started_usec: int) -> boo
 	var result := _generator.publish_worker_climate_visuals(false, update) \
 		if _generator != null else {"reason": "missing_generator"}
 	if result.get("lut_encode_path", "none") == "none":
-		push_warning("[worker-map] Day %d publication failed: %s" % [day, result.get("reason", "no_encode_path")])
+		if not _presentation._map_updates.needs_recovery:
+			push_warning("[worker-map] Day %d publication failed: %s" % [day, result.get("reason", "no_encode_path")])
 		return false
-	if _current_map != null and _current_map.drawn_frame != null:
-		_current_map.drawn_frame.staged_day = day
-		_current_map.drawn_frame.stage_vision(_current_map.vision_revision, _current_map.visible_arr, _current_map.explored_arr)
+	map_texture_published.emit(day)
 	_vision_dirty_indices = PackedInt32Array()
 	if _renderer != null and _world_clock != null:
 		_renderer.set_season_phase(_world_clock.season_phase_for_day(day))

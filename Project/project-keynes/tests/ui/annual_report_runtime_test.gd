@@ -26,6 +26,10 @@ func _run() -> void:
 	var saves = root.get_node("GameSave")
 	var previous_autosave: bool = bool(saves.get("_autosave_enabled"))
 	saves.set("_autosave_enabled", false)
+	# Reproduce the world in which a narrative choice precedes the first report.
+	var config := NewGameConfig.create_default()
+	config.base.initial_seed = 251891501
+	root.get_node("GameFlow").set("_pending_request", {"kind": "new_game", "config": config.to_dictionary()})
 	root.add_child(game)
 	await runtime.world_ready
 	await get_tree().process_frame
@@ -36,9 +40,19 @@ func _run() -> void:
 	clock.set_speed(50)
 	clock.pause(false)
 	var deadline: int = Time.get_ticks_msec() + 120000
+	var answered_offer := 0
 	while not ui.is_annual_report_open() and Time.get_ticks_msec() < deadline:
 		if runtime.is_runtime_fault_paused():
 			break
+		if controller.player_confirmation_reason() == "narrative_choice_required":
+			var offer: Dictionary = controller.narrative_service().active_offer()
+			var id := int(offer.get("offer_id", 0))
+			if id > 0 and id != answered_offer:
+				var result: Dictionary = controller.narrative_flow().on_option_chosen(id, int(offer.offer_generation), 0)
+				_expect("pre-year-end narrative choice accepted", result.get("ok", false))
+				if not result.get("ok", false):
+					break
+				answered_offer = id
 		await get_tree().process_frame
 	var state: Dictionary = runtime.annual_report_status()
 	print("[annual-runtime] clock=%d state=%s" % [ clock.day_index(), JSON.stringify(state)])
@@ -46,6 +60,8 @@ func _run() -> void:
 	var report: Dictionary = runtime.annual_report_snapshot(1)
 	_expect("first complete new-game year graded", bool(report.get("complete", false)))
 	_expect("annual grant committed before presentation", bool(report.get("reward_settled", false)))
+	# The native annual confirmation stops admission. The player keeps their playback setting.
+	# See the matched pre-change and post-change year-end runs in feature-status.md.
 	var hold: Dictionary = runtime.generator().get_runtime_control_state()
 	_expect("report automatically opens and holds the worker at the first year boundary",
 		ui.is_annual_report_open() and controller.player_confirmation_reason() == "annual_report_confirmation_required"

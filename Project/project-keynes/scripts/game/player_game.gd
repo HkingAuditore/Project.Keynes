@@ -128,6 +128,8 @@ func _configure_runtime() -> void:
 
 
 func _connect_signals() -> void:
+	_runtime_host.map_fields_received.connect($MapViewport.receive_day)
+	_runtime_host.map_texture_published.connect($MapViewport.stage_map)
 	_runtime_host.presentation_reset.connect($MapViewport.reset)
 	_runtime_host.world_ready.connect(_on_world_ready)
 	_runtime_host.world_generation_failed.connect(_on_world_generation_failed)

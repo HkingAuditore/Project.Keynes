@@ -75,8 +75,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		var old_day: int = host._runtime_commit_day
 		host._runtime_commit_generation = generation
 		host._runtime_commit_day = commit_day
-		if host._current_map != null and host._current_map.drawn_frame != null:
-			host._current_map.drawn_frame.received_day = commit_day
+		host.map_fields_received.emit(commit_day)
 		if commit_day <= old_day or int(commit.get("from_day", -1)) == commit_day:
 			host._generator.get_data_core_world_ext().finish_runtime_display_frame()
 			host._publish_player_confirmation(host._runtime_control_state())
@@ -141,11 +140,9 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		ideology.drain_receipts()
 	host.simulation_committed.emit(from_day, host._runtime_commit_day, host._runtime_commit_generation)
 	ext.finish_runtime_display_frame()
-	if not whole_graph and host._current_map != null and host._current_map.drawn_frame != null:
+	if not whole_graph:
 		# This path publishes the installed map directly, without a queued worker texture.
-		var map: MapData = host._current_map
-		map.drawn_frame.staged_day = commit_day
-		map.drawn_frame.stage_vision(map.vision_revision, map.visible_arr, map.explored_arr)
+		host.map_texture_published.emit(commit_day)
 	host._presentation.queue_worker_commit(from_day,
 			host._runtime_commit_day, host._runtime_commit_generation, commit if whole_graph else {})
 

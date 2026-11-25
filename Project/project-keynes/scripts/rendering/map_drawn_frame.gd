@@ -1,4 +1,18 @@
+class_name MapDrawnFrame
 extends RefCounted
+
+# Frontend lookup for consumers that know which world they are displaying.
+static var _by_map: Dictionary[int, MapDrawnFrame] = {}
+
+static func for_map(map: MapData) -> MapDrawnFrame:
+	return _by_map.get(map.get_instance_id()) if map != null else null
+
+func attach(map: MapData) -> void:
+	_by_map[map.get_instance_id()] = self
+
+func detach(map: MapData) -> void:
+	if for_map(map) == self:
+		_by_map.erase(map.get_instance_id())
 
 ## Records the map that was drawn, independently of the next simulation batch.
 ## Vision arrays in a staged revision are immutable even if MapData is patched.

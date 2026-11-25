@@ -722,3 +722,18 @@ func _moisture_band(host, m: float) -> String:
 	if m < 0.60: return "适中"
 	if m < 0.80: return "湿润"
 	return "极湿"
+
+
+static func drawn_cell_summary(cell: HexCell, unexplored: bool) -> Dictionary:
+	var off := HexUtils.cube_to_offset(cell.q, cell.r)
+	return {
+		"cell_index": int(cell.index),
+		"header": {
+			"kicker": "区域 %d, %d" % [off.x + 1, off.y + 1],
+			"title": "未探索区域" if unexplored else "地图地块",
+			"subtitle": "尚未进入视野" if unexplored else "等待地块资料更新",
+		},
+		"kpis": [],
+		"tabs": [],
+		"categories": {},
+	}

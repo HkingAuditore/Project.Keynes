@@ -356,6 +356,7 @@ func _flush_country_panel_refresh() -> void:
 		return
 	var section_mask := _country_section_mask(_country_panel.current_section())
 	if publication_views != null and publication_views.defer_ui_refresh(_flush_country_panel_refresh):
+		_country_refresh_queued = false
 		return
 	if not _country_ui_event_refresh_enabled:
 		_country_refresh_queued = false
