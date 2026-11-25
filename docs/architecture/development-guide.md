@@ -160,6 +160,8 @@ cd tools/ci && for g in check_size_ratchet.py check_cpp_deps.py check_cross_doma
 | 气候存档 | `check_committed_replay.py --godot … --checkpoint --trace --days 10 --log-dir <新>` | 改 CLM2 或经济发布块 |
 | 军费专用库 | 用 `gdext/tests/SConstruct.military_fiscal_probe` 构建，回归加 `--military-fiscal-probe <绝对路径>` | 改军饷、财政端口 |
 
+`tests/ideology/` 下那批意识形态/气候测试（含 `ideology_boundary_lock_reachability_test.gd`）给 `WorldRuntimeHost` 赋 `runtime_climate_authority_enabled`，该属性在 `project-keynes` 里早已移除（只剩 `scripts/game/climate_authority_policy.gd` 的注释和 `Project/perf-validation` 的旧拷贝），所以它们启动即失败、也不在任何 runner 里。C++ 侧的 `NativeSimulationHost::_economy_authority_boundary_mutex` 仍在，但 GDScript 的可达性测试需要重写，重写前不要把旧文件当回归依据。
+
 黄金场景、回放、矩阵入口都安装 `tests/runtime/replay_cadence.gd`，检查器发现缺失即失败。正式运行的生产、消费和价格固定逐日计算，规划与投资使用配置的固定游戏日周期；实际耗时只作诊断，不改变这些周期。
 
 ## 运行回归与内容变化
@@ -197,6 +199,8 @@ python3 tools/ci/check_golden_determinism.py --godot $(which godot) --log-dir /t
 无界面录制：`godot --headless --path Project/project-keynes --script res://tests/game/headless_perf_record.gd -- days=N speed=50 seed=… width=60 height=40 …`，产出 `tmp/perf_record_*.csv`。结果行是 `[headless-perf/result] … run_ms=… ledger_failures=… fatal=… rows=… expected_rows=… path=…`。有效运行要求 `fatal=false`、`ledger_failures=0`、`rows=expected_rows`；exit 9 只表示 M7 吞吐门槛（≥50 日/秒）没过，不使结果无效。
 
 模拟在 worker 上跑时 `t_sus_ms` 恒为 0，不能用来比较。看这三项：结果行的 `run_ms`；CSV 中 `runtime_graph_worker_time_execute_us` 末行减首行（worker 实际执行时间）；`sched_day_total_ms` 的均值/p95/最大值（每日墙钟）。比较两个版本时，用两个检出（旧版本用 `git worktree` 建、构建并 `--import`），同参数交替运行至少 3 轮，各用独立 `HOME`，取中位数；单次噪声很大。
+
+交互式性能实验不在本工程里：`Project/perf-validation` 是自带 `project.godot` 的独立 Godot 工程，原来 `project-keynes` 里那套 F2/F3/F4/F5/F9/F10/F11/F12 热键（dump GPU 帧剖析、一键关地形 shader、关天气层测帧、atlas 实验、冻结 overlay 重 bake、soak dump、全局诊断日志）现在只在那边有，用 `godot --path Project/perf-validation` 启动。`project-keynes` 只保留正式对局的 GM 控制台（`scripts/ui/debug_console.gd` 的 `PLAYER_GM` 模式，由 `game_ui_manager.gd` 挂载）。
 
 ## 交付要求
 
