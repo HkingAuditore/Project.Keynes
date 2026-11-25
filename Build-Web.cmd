@@ -747,7 +747,6 @@ if defined PY (
         echo [deploy] host and serve it with: python tools\serve_web.py --root ^<dir^> --immutable
         echo [deploy] ^(that sends "public, max-age=31536000, immutable"; without it the server
         echo [deploy] sends "no-cache" + ETag, so a rebuild is picked up on the next refresh^)
-        echo [deploy] OA Pages at https://keynes.pages.example.invalid/ -- run Deploy-Pages.cmd after this
         echo [deploy] ^(whole-site zip; .br/.gz sidecars are dropped, pages serves identity^)
     )
 ) else (
