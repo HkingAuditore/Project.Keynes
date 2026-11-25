@@ -18,6 +18,13 @@ class MilitaryReads extends Node:
 		reads += 1
 
 
+class AnnualReads extends AnnualReportSession:
+	var reads := 0
+
+	func poll() -> void:
+		reads += 1
+
+
 func _init() -> void:
 	var host := WorldRuntimeHost.new()
 	var scene := (load("res://scenes/player_game.tscn") as PackedScene).instantiate()
@@ -82,15 +89,26 @@ func check_delivery(presentation) -> void:
 func check_paused_reader() -> void:
 	var host := ReadHost.new()
 	var military := MilitaryReads.new()
+	var annual := AnnualReads.new()
 	var clock := WorldClock.new()
 	clock.pause(true)
 	host._world_clock = clock
 	host.military_map_layers = military
+	host._annual_reports = annual
 	host.publication_reader.interval_usec = 100000
 	for usec in [50, 50000, 100049, 100050, 350051]:
 		host._service_runtime_progress(usec)
 	check(host.reads == 3 and military.reads == 3 and clock.paused,
 		"paused host and military share the publication schedule")
+	check(annual.reads == 3, "annual report notifications follow the paused publication schedule")
+	host._presentation.ui_refresh_enabled = false
+	host._runtime_commit_day = 3
+	host._presentation.queue_worker_commit(0, 3, 1)
+	host._presentation.publish_ui_view(host.simulation_ui_updated.emit)
+	check(host.ui_worker_day() == 0, "a first held UI batch keeps the initial date")
+	host._presentation.ui_refresh_enabled = true
+	host._presentation.publish_ui_view(host.simulation_ui_updated.emit)
+	check(host.ui_worker_day() == 3, "the first UI delivery advances the date")
 	host.free()
 	military.free()
 	clock.free()

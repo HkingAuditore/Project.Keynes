@@ -625,7 +625,10 @@ func reset_presentation() -> void:
 	presentation_reset.emit()
 
 func ui_worker_day() -> int:
-	return _presentation.ui_presented_day if _presentation.ui_presented_day >= 0 else _runtime_commit_day
+	if _presentation.ui_presented_day >= 0:
+		return _presentation.ui_presented_day
+	# A new game's UI starts at day zero even when its first delivery is held.
+	return 0 if _runtime_commit_day >= 0 else -1
 
 func received_worker_day() -> int:
 	return _runtime_commit_day

@@ -209,6 +209,7 @@ func _prepare_world_simulation(host) -> Dictionary:
 		if bool(restored.get("available", false)):
 			host._runtime_commit_day = int(restored.committed_day)
 			host._runtime_commit_generation = int(restored.generation)
+			host._presentation.ui_presented_day = host._runtime_commit_day
 		var report: Dictionary = host._runtime_control_state()
 		host._apply_climate_writeback_if_authoritative(report)
 		host._publish_player_confirmation(report)

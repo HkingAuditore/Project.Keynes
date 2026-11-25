@@ -128,8 +128,6 @@ func _process(host, _delta: float) -> void:
 	host._sched_proc_frames += 1
 	host._emit_web_frame_probe(frame_usec)
 	host._emit_web_beat(frame_usec)
-	host._annual_reports.poll()
-	host._web_mark("annual_poll_end")
 	host._web_mark("progress_begin")
 	host._service_runtime_progress(frame_usec)
 	host._web_mark("progress_end")
@@ -140,6 +138,8 @@ func _service_runtime_progress(host, frame_usec: int) -> void:
 	var read_due: bool = host.publication_reader.due(frame_usec)
 	var segment_usec: int
 	if read_due:
+		host._annual_reports.poll()
+		host._web_mark("annual_poll_end")
 		host._consume_runtime_commit_if_ready()
 		host._observe_runtime_worker_fault()
 		host._poll_runtime_health()
