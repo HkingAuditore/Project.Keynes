@@ -1,0 +1,72 @@
+# Scheduling Save And Verification
+
+## Schedule
+
+`modifier_daily` priority 90 runs before climate 100, country 255, and economy 260:
+
+Keep it `must_run=false`, but set `use_job_deadline_critical=true` and return `should_run(ctx)` from
+`is_deadline_critical()`. Due commands/expiry must not be skipped while same-day consumers advance.
+
+1. process expiry;
+2. sort due commands by day, producer, sequence, submit order;
+3. mutate instances/buckets;
+4. publish snapshot versions;
+5. let domain consumers read frozen results;
+6. publish journal/report.
+
+Do not mutate a store from a worker or domain pass. SHADOW compares output only.
+
+## Save Order
+
+- PKCM v1: Climate store.
+- PKCN v11: Country state, technology/research-signal identity, and Country store.
+- PKEC v41 / Modifier schema v3: Economy state, family/cell effects,
+  BuildingIdentityStore, exact-good/building stat identity, and Economy store.
+- PKGP v1: Gameplay identities/base plus Gameplay store.
+
+Restore dynamic world -> environment -> PKCM -> clock -> PKCN -> PKEF -> prepare economy -> PKEC ->
+PKGP -> vision/journal/player. Older PKCN/PKEC schemas are rejected. Unknown keys, invalid numeric data,
+bad handles, invalid magnitude, and incompatible normalized terms fail. The current domain restore
+also requires an exact catalog hash; append-only compatibility needs an explicit migration path.
+`persistable=false` is not yet enforced by native serialization.
+
+## Tests
+
+Cover math, magnitude add/factor interpolation, zero factor, non-finite rejection, stack power,
+`SET_MAGNITUDE`, expiry boundary, stale heap node,
+generation reuse, exact removal, target cleanup, global/group/entity, deterministic producer
+ordering, explain recomputation, journal events, domain isolation, climate insertion, economy
+actual/forecast parity, Family/Branch stale-handle rejection, exact-good sparse overrides,
+Gameplay base/effective separation, and all four save round-trips.
+
+Use `Project/project-keynes/tests/effect/modifier_runtime_test.gd` as the focused entry. Also run country,
+building/economy save tests and a Godot project parse.
+
+## Performance
+
+Inspect active/peak/buckets/query/bucket-read/rebuild/snapshot/event/memory arrays, sorted error
+counts, and command/expiry/publish/bucket-update/bucket-rebuild times. A hot consumer should not
+query strings or parent stores per output line. Final acceptance also records exact-good
+shared/non-neutral/override counts and cache bytes, and
+requires same-machine 50+ day baseline/after: median regression <= 3 percent and p95 <= 5 percent.
+
+## World reconstruction (2026-11-10)
+
+`modifier_runtime_lifecycle.cpp` resets world stores, pending requests, journals, identities,
+base values, and the POD observation cursor while retaining rule definitions. Both configure
+and successful Country world reconstruction use this reset; same-world executor restart does
+not. The new Host retains validated definitions and the stable-key to dense-ID map, not old
+instances. Run `runtime_world_rules_rebuild_test.gd` for changed and reused definitions in
+worker and inline modes; assert the authored value and successful snapshot application.
+
+## Worker derived publication
+
+The full-day executor computes the per-cell Ideology fold. The current compatibility bridge
+captures inputs and installs the result, and Economy consumes the completed generation.
+`step_ideology_derived_rebuild` finishes and publishes under one existing input boundary.
+Copy only completed generations, including an empty layer; ordinary instance snapshots
+must neither erase that layer nor be mistaken for publishing it. A new world clears
+it, while a same-world executor restart preserves it. `get_effective_stat_value`
+reports the actual reader and refuses an in-flight day. Verify authored values and
+per-cell parity with `ideology_worker_derived_pump_test.gd`, then cold continuation
+with `check_replay_matrix.py --military`.

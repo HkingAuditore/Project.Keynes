@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project.Keynes Economy Analysis"
+  short_description: "Diagnose recorder CSVs with current runtime code"
+  default_prompt: "Use $project-keynes-economy-analysis to diagnose this economy recorder CSV family against the current runtime code."

@@ -129,3 +129,12 @@ gdext/src/pk_build_id_generated.h
 /Project/project-keynes/addons/dots_ext/bin/macos/*.dylib
 
 /Project/project-keynes/addons/dots_ext/bin/ios/
+
+# 各 AI 工具目录下的 skills/ 由 tools/sync_skills.py link 现场生成，单一源在根目录 skills/
+/.claude/skills/
+/.codex/skills/
+/.cursor/skills/
+/.codebuddy/skills/
+/.workbuddy/skills/
+/.dsh/skills/
+/.agents/skills/

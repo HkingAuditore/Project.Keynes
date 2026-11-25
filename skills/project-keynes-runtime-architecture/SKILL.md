@@ -1,0 +1,338 @@
+---
+name: project-keynes-runtime-architecture
+description: Explains and enforces the current Project.Keynes runtime architecture, scheduler model, DOTS authority boundaries, GDScript/C++ data bridge, native daily graph, and documentation-sync rules. Use when changing runtime systems, simulation mechanisms, scheduling, DataCore slots, GDExtension passes, native daily ACTIVE/SHADOW behavior, MapGenerator orchestration, or when adding/removing/refactoring architecture.
+---
+
+# Project.Keynes Runtime Architecture
+
+Use this skill before changing Project.Keynes runtime simulation, scheduling, DOTS/DataCore architecture, GDExtension C++ passes, GDScript/C++ data flow, native daily graph behavior, fallback retirement, or documentation about those areas.
+
+## Non-Negotiable Rule
+
+If a change adds, removes, renames, migrates, or materially changes any mechanism, architecture boundary, scheduler behavior, pass contract, report field, fallback path, data owner, slot publish path, or module responsibility, update the relevant documentation in the same change.
+
+Do not leave current runtime truth only in chat, temporary notes, test logs, or code comments.
+
+Minimum docs to consider:
+
+- `docs/architecture/README.md`
+- `docs/architecture/current-state.md`
+- `docs/architecture/development-guide.md`
+- `Project.Keynes/docs/cpp-dots-runtime/vision-fog-and-borders.md`
+- `Project.Keynes/references/system-map.md`
+
+## Mandatory Grounding
+
+Before implementation, read the current code path and current docs. Do not proceed from roadmap memory.
+
+For runtime architecture work, inspect:
+
+- `Project.Keynes/references/system-map.md`
+- `docs/architecture/current-state.md`
+- `docs/architecture/development-guide.md`
+- `Project.Keynes/Project/project-keynes/scripts/geography/map_generator.gd`
+- `Project.Keynes/Project/project-keynes/scripts/data_core/dc_system_scheduler.gd`
+- `Project.Keynes/Project/project-keynes/scripts/simulation/sus/sus_scheduler.gd`
+- `Project.Keynes/Project/project-keynes/scripts/simulation/sus/jobs/*.gd`
+- `Project.Keynes/Project/project-keynes/scripts/simulation/systems/*.gd`
+- `Project.Keynes/gdext/src/world_ext*.cpp`
+- `Project.Keynes/gdext/src/world_ext.h`
+- `gdext/src/world_ext_bind_<模块>.cpp`
+- `Project.Keynes/gdext/src/system_schedule.cpp`
+- `Project.Keynes/gdext/src/system_schedule.h`
+- `Project.Keynes/gdext/src/sus_scheduler_ext.cpp`
+
+## Current Layering
+
+Follow the [architecture target](../../../docs/architecture/design.md): the background executor owns
+all simulation decisions, calculations, and state writes. The foreground reads published data,
+forwards requests, and renders or formats the result. The simulation decides when a player reply
+is required, publishes the pending choice, and waits at that point.
+
+Read [current state](../../../docs/architecture/current-state.md) for the production executor and
+the handoffs that still require foreground work. The full-day background path runs through
+`NativeSimulationHost`. The scheduler and pass graph below describe the retained SUS path.
+
+Layer responsibilities:
+
+- `MapGenerator`: host facade, world/map ownership, generate/load lifecycle, public runtime APIs, bridge delegation, weather/native daily/ocean helper facade, and a few local runtime helper functions for scheduler registration/native daily availability/disabled visual reports.
+- `scripts/simulation/bootstrap/*`: not a current production layer. A previous extraction attempt was removed because new bootstrap preloads caused Godot script-resolution failures; do not recreate this layer without validating Godot parse/headless startup.
+- `DCSystemScheduler`: scheduler facade for registered SUS systems. It registers `DCSystem` instances, builds topology from declared reads/writes, and delegates execution/stats to SUS.
+- `SusSchedulerExt`: C++ scheduler shell for priority, policy, frame budget, skip accounting, and log windows. It is not business authority.
+- `DCWorld`: GDScript DataCore world, component slots, dirty mask, and `MapData` mirror binding.
+- `DCWorldExt`: C++ DataCore world, SoA slots, C++ pass kernels, native daily graph state, refresh/flush/snapshot APIs.
+- GDScript/Godot: UI/debug, `ImageTexture`, WeatherFront objects, GPU upload, renderer objects, CSV sampling, and fallback orchestration.
+
+## DOTS Authority Definitions
+
+Do not equate C++ acceleration with DOTS authority.
+
+- C++ acceleration: GDScript chooses a native pass, builds knobs, calls C++, consumes the result, and may still own state and fallback.
+- Slot authority: C++ writes the relevant DataCore slot and publishes it through flush/snapshot/report.
+- Stage-state authority: native owns `_round_active`, cursor, phase lock, reset/abort lifecycle, and progress.
+- Tick authority: native graph decides what advances for a simulation tick or continuation slice.
+- Visible authority: the consumer layer can observe the output through `MapData`, CSV/debug, renderer data, or Godot upload.
+- Full DOTS authority: native graph owns state, reads/writes slots, advances the tick, publishes a graph-level report, and GDScript only observes or performs Godot object/upload boundaries.
+
+For every change, answer: which authority is moving?
+
+- Formula/hot-loop only
+- Slot ownership
+- Stage state machine
+- Tick scheduling
+- Publish/visibility contract
+- Object facade ownership
+- Fallback/default path
+
+## Scheduler Model
+
+The full-day executor owns simulation progression. `DCSystemScheduler` registers the retained
+SUS systems, including presentation and synchronous compatibility work.
+
+SUS scheduler facts:
+
+- The formal clock advances the native admission cursor. `WorldClock.day_changed` announces the published display date. `MapGenerator.sus_tick_daily()` is a split-domain diagnostic entry.
+- `DCSystemScheduler.register_system()` is the SUS registration surface.
+- `SusSchedulerExt` applies policy, priority, dependency, frame-budget, skip, and stats behavior.
+- `frame_budget_ms` decides whether another slice starts; it cannot preempt a native pass already running.
+- `slice_budget_ms` is cooperative and job-local.
+- `must_run=true` is only for simulation work that cannot safely freeze; do not use it to hide poor cadence or overly long native calls.
+- `use_job_should_run=true` is for stateful eligibility that cannot be represented by a policy descriptor.
+
+SUS native daily diagnostics:
+
+- The `NativeDailySimJob` sliced path must call `MapGenerator.run_native_daily_slice_from_job()`.
+- `DCWorldExt::run_native_daily_slice()` owns the native graph continuation cursor and returns `done=false` across slices.
+- `run_native_daily_tick_from_job()` is debug/full-run helper only.
+- `FAMILY_COMMIT` freezes family behavior CSR and publishes FamilyEffect metrics; it does not evaluate effect programs.
+- `run_native_sim_tick_from_job()` is SHADOW/A-B/hash diff helper only.
+
+## Native Daily Graph
+
+`gdext/src/system_schedule.cpp` defines `SCHEDULE_GRAPH`. Current graph order is:
+
+1. `climate_pass_a`
+2. `ocean_water`
+3. `ocean_land`
+4. `climate_pass_b`
+5. `wind_air`
+6. `wind_surface`
+7. `sea_ice`
+8. `transpiration`
+9. `albedo`
+10. `vegetation_dynamics`
+11. `climate_feedback`
+12. `stage_b`
+13. `weather`
+
+Important boundaries:
+
+- `runtime_hydrology` is not currently a `SCHEDULE_GRAPH` node. Treat it as a graph coverage blocker until it is added to the graph or explicitly removed from ACTIVE completion semantics.
+- `stage_b` currently appears before `weather` in the native graph to match the native if-chain. Do not change stage-b/weather/hydrology order without A/B proof.
+- Visual uploads are not native graph nodes. C++ may emit `visual_dirty_intents`; GDScript/Godot still owns `ImageTexture` and renderer object lifetimes.
+- `graph_coverage_state=partial` is expected while GDScript/Godot/fallback boundaries remain.
+
+## GDScript/C++ Data Transfer Contract
+
+Assume no reliable mutable zero-copy between GDScript and C++ after writes. Godot `PackedArray` is Copy-on-Write.
+
+GDScript to C++:
+
+- Use `DCWorldExt.refresh_slots_from_map()` when C++ must see GDScript/MapData writes since the last refresh.
+- Prefer one refresh at graph/round boundaries, not one per native node, unless a GDScript stage wrote data in between.
+- Full or persistent cell state must go through `component_schema.gd` and `component_bind_table.gen.h`.
+
+C++ to GDScript:
+
+- C++ pass writes C++ slots first.
+- If GDScript, `MapData`, renderer, CSV/debug, or fallback must observe the output, flush or snapshot explicitly.
+- Use `_flush_slot_to_map()` / `flush_slots_to_map()` for `MapData` visibility.
+- Use `snapshot_f32/i32/u8` for explicit pull-style debug/A-B reads.
+- Return `published_to_slot=true` when a pass has written/published output so GDScript callers can skip duplicate unpack/copy.
+
+Graph-level publish:
+
+- `published_slots` is a native daily graph-level family report.
+- Scheduler-level `published_to_slot` on `native_daily_sim` means the graph report declared at least one published slot family.
+- It does not replace pass-level `published_to_slot` or visible MapData/render verification.
+- `visual_dirty_intents` means GDScript/Godot should upload or refresh visuals; it does not mean GPU upload is complete.
+
+## Main Functional Modules
+
+Runtime simulation:
+
+- `season_refresh`: `SeasonRefreshSystem`; slow variables, terrain/landform/vegetation/cover/moisture refresh, atlas/detail intents.
+- `refresh_climate_daily`: `ClimateDailySystem`; pass A/B, ocean water/land, wind air/surface, sea ice, transpiration.
+- `native_daily_sim`: `NativeDailySimJob` + `run_native_daily_slice`; partial ACTIVE native graph continuation.
+- `weather_refresh`: `WeatherDCSystem` wrapper around retained `WeatherRefreshJob`; weather fields, fronts, visible publish, weather LUT.
+- `ocean_currents`: `OceanCurrentsSystem` wrapper around retained `OceanCurrentsJob`; SLP, wind, PSI, ocean currents, upwelling, visual raster/commit.
+- `sea_ice_daily`: `SeaIceDailySystem` / climate sea-ice stage; native pass acceleration plus terrain/visual boundary.
+- `native_environment_runtime`: thin SHADOW/probe job unless a concrete system is promoted.
+
+Visual and upload:
+
+- `enum_atlas_upload`: `EnumAtlasUploadSystem`, C++ patch helpers plus GDScript GPU upload.
+- `dynamic_visual_atlas_upload`: `DynamicVisualAtlasUploadSystem`, LUT/atlas stride and catch-up.
+- Weather LUT upload remains tied to weather commit/native visual intents.
+- Godot `ImageTexture`, renderer, WeatherFront objects, MultiMesh/detail scatter remain GDScript/Godot boundaries.
+- `enum_lut` is RGBA8: R/G/B are biome/veg/cover and A is vision fog knowledge
+  `fog_k`. `encode_cell_luts` takes it as an optional `fog_k_arr` argument, and
+  the GDScript fallback encoder must write the same value.
+- The full-day executor computes physical vision and research observations after military
+  settlement. The current bridge prepares inputs and installs the result. `VisionSolver`
+  serves synchronous fallback and parity. `FogOfWarLayer` and `CountryBorderLayer` draw
+  published results and use territory notifications for refresh.
+- `fog_of_war.gdshader` consumes the shared per-pixel `earth_daylight`
+  terminator, so it must declare that include's uniform dependencies
+  (`season_phase`, `day_phase`, `axial_tilt_rad`, `tod_debug_*`, `tod_sun_dir`)
+  before the include. Missing one is a shader compile failure that `--headless`
+  cannot detect.
+- Procedural noise on the zoomable map must fade octaves by screen footprint
+  (`cloud_cumulus_fbm*`'s `lod_px`). Point-sampling sub-pixel octaves aliases the
+  whole layer into flickering grit when zoomed out.
+- **The map wraps east-west, so any full-screen procedural noise must be tileable.**
+  Sample points are folded back into one wrap period, and ordinary noise does not
+  match across the period boundary — the result is a visible vertical seam. Use
+  `cloud_grad_noise_tiled*` / `cloud_cumulus_fbm*`, and snap the domain scale so
+  the wrap period lands on a whole number of lattice cells (see
+  `fog_tileable_scale` in `fog_of_war.gdshader`). Domain-warp sub-frequencies must
+  be negative powers of two or the seam returns through the warp layer.
+- **Do not raymarch a full-screen cloud layer.** It was tried and reverted: a
+  top-down map only ever shows the top surface of the deck, so hundreds of noise
+  taps per pixel buy nothing visible, and the step count you can afford is low
+  enough to undersample. Fog uses a heightfield plus a few sun-direction probes;
+  the scattering primitives (`cloud_phase`, `cloud_beer_ms`, `cloud_powder`) live
+  in `cloud_volume.gdshaderinc`.
+- The terrain fog early-out is only valid while the fog layer paints a constant
+  colour, i.e. its lowest quality tier. `HexRenderer._effective_fog_early_out()`
+  ands the request with `FogOfWarLayer.supports_terrain_early_out()`; keep that
+  guard if you add tiers. q1+ does not even share a base albedo with
+  `unexplored_color`, so the early-out constant cannot match it.
+
+Generation and bake:
+
+- Native world generation base/post-base is C++ authoritative for generated SoA result packages.
+- GDScript still assembles `MapData` / `HexCell` and performs Godot texture/object operations.
+- Native generation publish writes initial runtime slots and flushes/rebinds as needed.
+
+## Fail-Closed Exit Inventory
+
+Before a domain goes ACTIVE, enumerate every fail-closed point the change adds on the
+production path and answer two questions for each:
+
+1. Is this rejection a contract violation or a timing window? If one error string covers
+   both, split it first. Callers can only act on what the string tells them.
+2. For timing windows: does the caller have a fallback — async enqueue, park-and-replay,
+   or documented soft skip? If not, either add one or prove the window is unreachable in
+   production.
+
+This gate exists because D7's cohort-cash sync fast path skipped it: it classified an open
+Country plan window as a contract violation and had no reachable fallback, so a routine
+continuation drove the whole economy runtime into FATAL in a shipped session. Headless
+suites and soaks were green throughout.
+
+Related: a cursor-driven stage can always park by not advancing its cursor. Drain the peer
+queue on the way out so the two sides do not wait on each other.
+
+## Runtime Forensics
+
+Stops and stalls must leave an artifact without the player reproducing them a second time.
+
+- `scripts/game/runtime_forensics.gd` is the shared capture/dump module. Write to
+  `user://diagnostics/<tag>_<stamp>.json` plus a fixed `tmp/runtime_forensics_<tag>.json`
+  for agents to read.
+- `WorldRuntimeHost._observe_economy_fatal` dumps on **any** economy fatal reason, once per
+  reason. `_poll_simulation_stall_watchdog` dumps when the authoritative day stops advancing
+  while the clock runs.
+- A watchdog observes only. Never pause the clock or change authority from it, or the
+  watchdog becomes a behaviour variable in the very scenario it is measuring.
+- Every capture must include `authoritative_domain_mask` and host state. Cross-domain fast
+  paths are selected by that mask; without it a boundary rejection cannot be judged.
+
+## Deletion And Fallback Rules
+
+Use `docs/architecture/current-state.md` before deleting runtime code.
+
+Deletion classes:
+
+- Immediate delete: production/test unreachable and no fallback/debug value.
+- Delete after migration: call sites remain but an equivalent new path exists.
+- Isolate: still useful for A/B, probe, stale DLL, or debug, but must not be scattered in production hot paths.
+- Keep for now: production authority, Godot visible boundary, or unvalidated fallback.
+
+Do not retire fallback before PROBE/A-B and soak evidence. A fallback can be moved or isolated before it is deleted.
+
+## Documentation Sync Rules
+
+Update docs in the same change when any of these change:
+
+- Scheduler registration order, policy, priority, `must_run`, `use_job_should_run`, dependency, skip reason, or report field.
+- Data owner, slot writer, `component_schema.gd`, `component_bind_table.gen.h`, refresh/flush/snapshot behavior.
+- Native pass input/output, report shape, `published_to_slot`, `fallback_reason`, `path`, `fail_stage`, timing fields.
+- Native daily graph nodes, graph order, coverage blockers, `authority_report`, `published_slots`, `visual_dirty_intents`.
+- Fallback/default path, ACTIVE/SHADOW/PROBE gate, readiness condition, or deletion/retirement status.
+- Godot visual boundary, atlas/LUT upload, weather front object behavior, renderer-visible publish.
+- LUT channel layout, renderer `z_index` ordering, PKSV section set, or fog/border visual contracts.
+- Any rename or deletion of job/system/module files.
+
+If code and docs disagree, fix both before reporting completion.
+
+## Verification
+
+Prefer this order:
+
+1. Static `rg` checks for old symbols, method names, report fields, bindings, and docs references.
+2. `git diff --check`.
+3. Build GDExtension debug/release if C++ changed.
+4. Run focused Godot/headless tests if Godot CLI is available.
+5. For authority changes, run PROBE/A-B and inspect slot snapshots, `MapData`, CSV/debug, renderer/LUT.
+6. Inspect 30+ tick logs for `avg/p95/max`, `largest`, fallback count, `frame_budget_exhausted`, `published_to_slot`, and native breakdown fields.
+
+If runtime validation cannot be run, explicitly report the validation gap.
+
+## Reporting Back
+
+When completing runtime architecture work, report:
+
+- Which authority moved and which stayed in GDScript/Godot.
+- Which modules/files changed.
+- Which docs were updated.
+- Whether fallback remains and how it reports.
+- What static/build/runtime validation was run.
+- Any remaining blockers from `docs/architecture/current-state.md` or `docs/architecture/current-state.md`.
+
+## Extensible world architecture (2026-11-03)
+
+Start new systems and migrations from `docs/architecture/design.md`
+and `docs/architecture/development-guide.md`. Distinguish the target from actual
+integration. Worker and inline executor identity/data routing now share
+`RuntimeExecutionContext`; closing live admission must not change the data owner
+inside an in-flight call. State-provider registration uses explicit dependencies
+and unique section ownership through `runtime_module_registry.gd`; new providers
+register before binding a world and own their compatibility policy. Do not grow
+coordinator-specific branches for extension formats.
+
+Legacy persistence now delegates to all 18 adapters in `scripts/game/save_modules/`.
+Only `world_state_bindings.gd` sees the host/generator; it resolves narrow capabilities
+at each call so post-Country Economy replacement cannot leave a stale reference.
+Providers own decoding and declare peer-section reads. Keep module-specific restore
+work out of the coordinator. `RuntimeClockBinding` subscribes to WorldClock changes
+after executor creation and detaches before stop; UI refresh and timed retries are
+not clock-control owners. See the development guide for these concrete APIs.
+
+## Economy boundary and regression follow-up (2026-11-03)
+
+Use `EconomyAuthorityTransfer` for executor/save identity handoff and prepared
+Country asset servicing. Do not restore Host friendship or persistent override
+switches. `EconomyInvariantProbe` owns isolated self-test worlds.
+`EconomyRecordSource` freezes committed rows; the CSV writer must not access the
+runtime or duplicate price formulas. Diagnostic opening uses copied inputs,
+explicit policy and separate pure planning/finance modules under `economy/bootstrap`.
+Investment review cursors finish the current frozen epoch; do not reintroduce a
+second cross-epoch pending list. Preserve first post-restore integer resources
+and precipitation history, collectible income, recruit savings on restart and
+cycle-flow expiry accounting. New tests must declare content-dependent premises
+and keep full ledger, worker/scalar and continuation checks. See the current
+architecture development guide and validation record.
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

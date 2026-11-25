@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project.Keynes Economy Runtime"
+  short_description: "Maintain native cohorts, markets, cadence, and performance"
+  default_prompt: "Use $project-keynes-economy-runtime to design, implement, or review the Project.Keynes cohort and market runtime."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Keynes Country AI Runtime"
+  short_description: "Develop, tune and verify the native foreign-country AI"
+  default_prompt: "Use $project-keynes-country-ai-runtime to implement, tune, or diagnose foreign-country AI research, tax, founding preference, colonization, scheduling, or pkai save behavior."

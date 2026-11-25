@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project.Keynes Climate Runtime"
+  short_description: "Develop and diagnose the native climate runtime"
+  default_prompt: "Use $project-keynes-climate-runtime to inspect and improve the Project.Keynes climate runtime safely."
