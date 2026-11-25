@@ -13,9 +13,9 @@ const HEADER_HEIGHT := 26.0
 const FULL_HEIGHT := 650.0
 const COMPACT_HEIGHT := 510.0
 const MARKET_HEIGHT := 320.0
-const DWELL_SEC := 0.3
-const RETRY_SEC := 0.15
-const SLIDE_IN_SEC := 0.18
+const DWELL_SEC := 0.10
+const RETRY_SEC := 0.05
+const SLIDE_IN_SEC := 0.11
 const SLIDE_OUT_SEC := 0.13
 const SLIDE_OFFSET := Vector2(-20.0, 0.0)
 
@@ -285,7 +285,7 @@ func show_board(animate: bool) -> void:
 	visible = true
 	if animate and not UIAnimation.reduced_motion():
 		UIAnimation.fade_slide_in(_slide, SLIDE_OFFSET, SLIDE_IN_SEC)
-		UIAnimation.stagger_children_in(_column, 0.06, 2, SLIDE_IN_SEC)
+		UIAnimation.stagger_children_in(_column, 0.03, 2, SLIDE_IN_SEC)
 	else:
 		_slide.position = Vector2.ZERO
 

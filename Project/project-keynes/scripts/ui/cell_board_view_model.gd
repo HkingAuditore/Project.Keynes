@@ -95,6 +95,12 @@ func build(cell_index: int) -> Dictionary:
 	var population_ready := bool(population.get("ok", false)) \
 		and population.has("populations") and day_ready
 	if not population_ready:
+		# 已知有人定居的格子在首次订阅人口时一并订阅市场与组织度，
+		# 让后台在同一次 read-view 刷新里把三份快照备齐，省掉一轮串行重试。
+		if _is_settled_hint(cell_index):
+			_economy.market_cell_snapshot(cell_index)
+			if _economy.has_method("cell_mobilization_snapshot"):
+				_economy.cell_mobilization_snapshot(cell_index)
 		return _pending_payload(population, not day_ready)
 	var population_total := int(population.get("population", 0))
 	if population_total <= 0:
@@ -140,6 +146,12 @@ func _pending_payload(snapshot: Dictionary, stale: bool) -> Dictionary:
 
 func _snapshot_pending(snapshot: Dictionary) -> bool:
 	return bool(snapshot.get("busy", false)) or bool(snapshot.get("read_view_pending", false))
+
+
+func _is_settled_hint(cell_index: int) -> bool:
+	if _inspector == null:
+		return false
+	return int(_inspector.population_summary(cell_index).get("population", 0)) > 0
 
 
 # ───────────────────────────── 物资行情 ─────────────────────────────
