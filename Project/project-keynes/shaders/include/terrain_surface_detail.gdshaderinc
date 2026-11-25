@@ -505,7 +505,7 @@ SurfaceParams apply_terrain_micro_surface_impl(
 		return surface;
 	}
 #ifdef PK_TERRAIN_MICRO_ARRAY
-	if (visual_quality <= 0 || terrain_material_micro_layer < 0) {
+	if (visual_quality <= 0 || !terrain_materials_enabled || terrain_material_micro_layer < 0) {
 		return surface;
 	}
 #else

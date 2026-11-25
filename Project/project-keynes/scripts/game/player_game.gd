@@ -389,6 +389,11 @@ func _push_visual_toggles() -> void:
 		_renderer.set_mobile_quality_tier(_shader_quality_define_from_setting(quality_setting))
 	if _renderer.has_method("set_visual_quality"):
 		_renderer.set_visual_quality(visual_quality)
+	# [terrain-materials-runtime 2026-11-25] 地面材质贴图采样从 visual_quality 上拆开：
+	# web 中画质关掉材质 tile 采样而 vq 仍为 1（USE_PBR_BRDF / USE_LINEAR_LIGHTING /
+	# USE_FILMIC_TONEMAP 全部保留）；桌面全档、Web 低/高画质行为不变。
+	if _renderer.has_method("set_terrain_materials_enabled"):
+		_renderer.set_terrain_materials_enabled(_resolved_terrain_materials(quality_setting))
 	if not OS.has_feature("web"):
 		_renderer.set_graphics_details(graphics)
 		_renderer.set_terrain_render_scale(int(graphics["map_render_scale"]), msaa)
@@ -469,6 +474,17 @@ func _resolved_visual_quality(quality: String) -> int:
 		_:
 			# auto：mobile/web 默认 LOW；桌面默认 HIGH。
 			return 0 if DCFeatureFlags.uses_shader_quality_tier() else 2
+
+
+## [terrain-materials-runtime 2026-11-25] 档位 → 是否允许采样地面材质贴图
+## （terrain_material_tex 的 4 层 biome tile + layer4 micro）。
+## 只控制采样，不控制 vq：web 中画质翻 false 时 vq 仍是 1，光照模型一根不动
+## （material_constants.gdshaderinc:33-35 的 USE_PBR_BRDF / USE_LINEAR_LIGHTING /
+## USE_FILMIC_TONEMAP 全部保留）。
+## **只翻 web**：桌面中画质继续返回 true，桌面地面贴图不受影响。
+## 验证走 GM diagnostics.terrain_materials（world_runtime_gm_adapter_part1.gd:610-612）。
+func _resolved_terrain_materials(quality: String) -> bool:
+	return not (quality == "medium" and DCFeatureFlags.is_web())
 
 
 static func msaa_for_quality(quality: String, touch: bool) -> Viewport.MSAA:

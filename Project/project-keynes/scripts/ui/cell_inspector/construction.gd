@@ -812,6 +812,7 @@ func _construction_page_rows(host, entries: Array, quotes: Dictionary,
 			StringName(building_id)) if economy.has_method("building_job_spec") else {}
 		var cash = int(entry.get("cash_required", 0))
 		var material_status = host._construction_material_status_rows(materials, local_stock)
+		var preview := _construction_preview_rows(host, placement, job_spec, unlocked_goods)
 		rows.append({
 			"building_id": building_id,
 			"type_id": type_id,
@@ -829,6 +830,7 @@ func _construction_page_rows(host, entries: Array, quotes: Dictionary,
 			"maturity": maturity,
 			"market_used": int(entry.get("market_used", 0)),
 			"material_status": material_status,
+			"preview": preview,
 		"material_free": eligible and item.has("materials") and materials.is_empty(),
 		"fold": entry.get("fold", {}),
 		"fold_action": entry.get("fold_action", {}),
@@ -908,6 +910,60 @@ func _construction_job_text(host, job_spec: Dictionary) -> String:
 		parts.append("雇员 %s ×%d" % [h._construction_profession_name(
 			String(professions[index])), role_slots])
 	return " · ".join(parts)
+
+
+
+## 悬停卡 Body/Flow + Body/Employment 的结构化数据源。
+##
+## 704de6648 之后卡片只认 payload.preview（building_hover_card.gd:139-145），
+## 而这里原来只把「投入/自然资源/产出/岗位」压成 tooltip 的纯文本，卡片拿到空字典，
+## 于是营造目录的悬停卡永远不显示这几段。取数与 _construction_tooltip 完全同源：
+## 同一份 placement（:1034）与 job_spec（:1036），复用 Recipes 的行构造，不另写一套。
+func _construction_preview_rows(host, placement: Dictionary, job_spec: Dictionary,
+		unlocked_goods: Dictionary) -> Dictionary:
+	var h = host
+	# 数量行的字段是 name / detail / text（building_quantity_list.gd:19-28），
+	# 而 Recipes 的行用的是 "quantity"，所以在这一层做一次映射。
+	var outputs: Array = []
+	for raw in h._construction_recipe_rows(placement, "output_good_ids",
+			"output_quantities", "产出"):
+		var row: Dictionary = raw
+		outputs.append({"name": String(row.get("name", "")), "icon": &"metric.goods",
+			"text": String(row.get("quantity", ""))})
+	var inputs: Array = []
+	for raw in h._construction_input_recipe_rows(placement, unlocked_goods):
+		var row: Dictionary = raw
+		inputs.append({"name": String(row.get("name", "")), "icon": &"metric.goods",
+			"text": String(row.get("quantity", ""))})
+	var resource_ids: PackedStringArray = placement.get("resource_ids", PackedStringArray())
+	var resource_quantities: PackedInt64Array = placement.get(
+		"resource_quantities", PackedInt64Array())
+	var resource_modes: PackedInt32Array = placement.get("resource_modes", PackedInt32Array())
+	for index in range(mini(resource_ids.size(),
+			mini(resource_quantities.size(), resource_modes.size()))):
+		# 与 tooltip 同一口径：承载需求是每栋储量门槛，开采量才是每日消耗。
+		var resource_text := "需有 %s" % h._goods_scaled(resource_quantities[index]) \
+			if resource_modes[index] == 1 \
+			else "%s/日" % h._goods_scaled(resource_quantities[index])
+		inputs.append({"name": h._resource_display_name(resource_ids[index]),
+			"icon": &"metric.goods", "detail": "自然资源", "text": resource_text})
+	var jobs: Array = []
+	if bool(job_spec.get("ok", false)):
+		var owner_slots = int(job_spec.get("owner_slots", 0))
+		if owner_slots > 0:
+			jobs.append({"name": h._construction_profession_name(
+				String(job_spec.get("owner_profession", ""))), "icon": &"metric.population",
+				"detail": "业主", "text": "×%d" % owner_slots})
+		var professions: PackedStringArray = job_spec.get(
+			"employee_professions", PackedStringArray())
+		var slots: PackedInt64Array = job_spec.get("employee_slots", PackedInt64Array())
+		for index in range(professions.size()):
+			var role_slots = int(slots[index]) if index < slots.size() else 0
+			if role_slots <= 0:
+				continue
+			jobs.append({"name": h._construction_profession_name(String(professions[index])),
+				"icon": &"metric.population", "detail": "雇员", "text": "×%d" % role_slots})
+	return {"outputs": outputs, "inputs": inputs, "jobs": jobs}
 
 
 

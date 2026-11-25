@@ -31,6 +31,18 @@ const IDLE_SLEEP_MSEC := 1200
 ## 与 UITokens.MAP_ACTIVITY_MIN_ZOOM 同口径：再小就没有可读的单格了。
 const MIN_ZOOM := 0.35
 
+## ── 移动端触摸长按 ──
+## 按住多久算长按。取 380ms：必须大于相机判 tap 的 tap_max_time（map_camera.gd:48 = 0.35s），
+## 这样够格出卡的那一次按压在松手时必然已经超时，不会再被相机判成一次选格 tap；
+## 又短于 Android 系统长按的 500ms，手感不发钝。
+const TOUCH_LONG_PRESS_MSEC := 380
+## 长按期间手指允许的抖动半径。取 12px：单指静止的真实抖动 3-8px，比鼠标的
+## MOVE_EPSILON_PX(2px) 粗得多；而相机判 tap 的位移上限是 10px（移动端 ×1.8 = 18px）。
+## 12px 正好夹在两者之间：轻微抖动照常出卡，真拖拽先让卡片退场。
+const TOUCH_SLOP_PX := 12.0
+## 卡片底边离按下点的高度：手指接触圆约 22px，留 56px 卡面才不会压住指尖。
+const TOUCH_LIFT_PX := 56.0
+
 const FADE_IN_SEC := 0.14
 const FADE_OUT_SEC := 0.09
 const SETTLE_SCALE := 0.965
@@ -47,6 +59,14 @@ var _safe_area: Callable
 
 var _suppressed := false
 var _saw_touch := false
+## 触摸长按态。_saw_touch 只回答"刚才那次是触摸还是真鼠标"，用来压制悬停路径；
+## 下面这组变量承担长按本身的状态机，只由真实 InputEventScreenTouch 驱动。
+var _touch_ids: Dictionary = {}
+var _touch_press := false
+var _touch_hold := false
+var _touch_down_index := -1
+var _touch_down_at := Vector2.ZERO
+var _touch_down_ms := 0
 var _dirty := true
 var _dismissing := false
 var _shown_key := ""
@@ -97,8 +117,6 @@ func _ready() -> void:
 	size = CARD_SIZE
 	_apply_shadow_style()
 	set_process(false)
-	if OS.has_feature("mobile"):
-		set_process_input(false)
 
 
 func _apply_shadow_style() -> void:
@@ -132,6 +150,8 @@ func reset_for_world() -> void:
 	_shown_cell = -1
 	_dirty = true
 	_saw_touch = false
+	_touch_ids.clear()
+	_abort_touch(false)
 	_pointer_speed = 0.0
 	_last_pointer = Vector2(-1, -1)
 
@@ -139,6 +159,7 @@ func reset_for_world() -> void:
 func set_suppressed(suppressed: bool) -> void:
 	_suppressed = suppressed
 	if suppressed:
+		_abort_touch(false)
 		dismiss(true)
 
 
@@ -171,17 +192,30 @@ func payload() -> Dictionary:
 func _input(event: InputEvent) -> void:
 	if _suppressed:
 		return
-	if event is InputEventScreenTouch or event is InputEventScreenDrag:
-		_saw_touch = true
-		dismiss(true)
+	if event is InputEventScreenTouch:
+		_on_screen_touch(event as InputEventScreenTouch)
+		return
+	if event is InputEventScreenDrag:
+		_on_screen_drag(event as InputEventScreenDrag)
+		return
+	if event is InputEventMagnifyGesture or event is InputEventPanGesture:
+		# 触控板捏合 / 双指拖移：等同"视野在动"。真鼠标不会发这两类事件，
+		# 所以只在触摸态下动作，桌面轨迹一行不改。
+		if _touch_press or _touch_hold:
+			_abort_touch(true)
 		return
 	if event is not InputEventMouseMotion:
 		return
+	if _touch_press or _touch_hold:
+		var probe := event as InputEventMouseMotion
+		# 真鼠标接手：桌面上用 emulate_touch_from_mouse 自测完长按，鼠标一动就交回悬停路径。
+		if probe.device != -1:
+			_abort_touch(true)
 	var motion := event as InputEventMouseMotion
 	# device == -1 是触摸被 emulate_mouse_from_touch 合成的鼠标事件。
 	if motion.device == -1:
 		_saw_touch = true
-		dismiss(true)
+		_on_touch_moved(motion.position)
 		return
 	_saw_touch = false
 	var now := Time.get_ticks_msec()
@@ -197,8 +231,130 @@ func _input(event: InputEvent) -> void:
 		set_process(true)
 
 
+# ───────────────────────────── 触摸长按 ─────────────────────────────
+#
+# 口径：移动端长按出卡，tap 仍归相机（player_controller._unhandled_input 的选格逻辑），
+# 本文件只旁观事件、绝不 set_input_as_handled / accept_event，卡片本身 MOUSE_FILTER_IGNORE。
+
+func _on_screen_touch(t: InputEventScreenTouch) -> void:
+	_saw_touch = true
+	_last_input_ms = Time.get_ticks_msec()
+	if t.pressed:
+		_touch_ids[t.index] = true
+		if _touch_ids.size() > 1:
+			# 第二根手指落下：让给相机做捏合，卡片不上场。
+			_abort_touch(true)
+			return
+		if visible or _touch_hold:
+			# 新一轮触摸按下：上一张钉住的卡先收掉。
+			_touch_hold = false
+			dismiss(true)
+		_touch_press = true
+		_touch_down_index = t.index
+		_touch_down_at = t.position
+		_touch_down_ms = _last_input_ms
+		if not is_processing():
+			set_process(true)
+		return
+	_touch_ids.erase(t.index)
+	if t.index != _touch_down_index:
+		return
+	# 松手：长按已出卡就留着（手指一抬卡就没了等于没做）；没出卡就作废本次按压，
+	# 事件原样留给相机做 tap 判定。
+	_touch_down_index = -1
+	_touch_press = false
+
+
+func _on_screen_drag(d: InputEventScreenDrag) -> void:
+	_saw_touch = true
+	_last_input_ms = Time.get_ticks_msec()
+	if d.index == _touch_down_index:
+		_on_touch_moved(d.position)
+	elif _touch_press or _touch_hold:
+		# 不属于当前按压的那根手指（捏合的另一指）在动：视野在动，卡片退场。
+		_abort_touch(true)
+
+
+## 手指位移判定：超过 TOUCH_SLOP_PX 就是拖拽平移，不是长按。
+func _on_touch_moved(pos: Vector2) -> void:
+	if _touch_down_index < 0 or not (_touch_press or _touch_hold):
+		# 没有进行中的按压：触摸在移，悬停路径没有任何可指向的东西。
+		dismiss(true)
+		return
+	if pos.distance_to(_touch_down_at) > TOUCH_SLOP_PX:
+		_abort_touch(true)
+
+
+func _abort_touch(dismiss_card: bool) -> void:
+	_touch_press = false
+	_touch_hold = false
+	_touch_down_index = -1
+	if dismiss_card:
+		dismiss(true)
+
+
+## 由 _process 在触摸态下调用。单指按住时相机的 _pan_active 恒为真（模拟鼠标按下就会
+## _begin_pan，见 map_camera.gd:331），所以这里不能用 is_panning() 判"手在动"，
+## 只能靠 _on_touch_moved 的位移容差。
+func _process_touch(now: int) -> void:
+	if get_tree().paused or (_blocked.is_valid() and bool(_blocked.call())):
+		_abort_touch(true)
+		return
+	if _map == null or _camera == null or _view_model == null:
+		_abort_touch(true)
+		return
+	if _touch_press:
+		# 按住未到时长：只等计时，不解析、不出卡。
+		if not _safe_rect().has_point(_touch_down_at) or _camera.zoom.x < MIN_ZOOM:
+			_abort_touch(false)
+			return
+		if now - _touch_down_ms < TOUCH_LONG_PRESS_MSEC:
+			return
+		_show_touch_card(now)
+		return
+	if _touch_down_index >= 0:
+		# 手指还按着（长按刚出卡）：这一段相机的 _pan_active 恒为真，不能拿它判"视野在动"，
+		# 手有没有走开已经由 _on_touch_moved 的 TOUCH_SLOP_PX 容差盯着了。
+		return
+	# 手指已抬、卡钉在原处：只认缩放动画；其余（下一次触摸/拖拽/捏合/切世界/暂停）各有入口。
+	if _camera.is_zooming() or _camera.zoom.x < MIN_ZOOM:
+		_abort_touch(true)
+
+
+## 长按出卡：把"按下点"喂进桌面同一条解析链
+## （safe_screen_to_world → world_to_wrapped_cell → is_cell_available → build）。
+func _show_touch_card(now: int) -> void:
+	var anchor := _touch_down_at
+	var safe := _safe_rect()
+	var world := _camera.safe_screen_to_world(anchor)
+	var cell: HexCell = HexUtils.world_to_wrapped_cell(_map, world, _hex_size)
+	if cell == null or int(cell.index) < 0 or not is_cell_available(int(cell.index)):
+		_abort_touch(true)
+		return
+	var built := _view_model.build(cell)
+	if not bool(built.get("ok", false)):
+		_abort_touch(true)
+		return
+	# 一次按压只解析这一帧：手指不动、格子不变，后面几帧保持原样。
+	_touch_press = false
+	_touch_hold = true
+	_dirty = false
+	_last_resolve_ms = now
+	apply_payload(built)
+	var rect := placement_rect_for_touch(anchor, get_viewport_rect().size, safe, size)
+	if rect.size == Vector2.ZERO:
+		_abort_touch(true)
+		return
+	rect.position = avoid_overlap(rect.position, size, _avoid_rect, safe)
+	position = rect.position
+
+
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_MOUSE_EXIT or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		# 失焦时可能永远收不到那根手指的松手事件，触点表必须一起清，否则 _touch_ids
+		# 残留会让下一次单指按下被误判成多指手势、长按从此失效。
+		_touch_ids.clear()
+		_abort_touch(false)
 		dismiss(true)
 
 
@@ -212,6 +368,12 @@ func _process(_delta: float) -> void:
 		return
 	if _blocked.is_valid() and bool(_blocked.call()):
 		dismiss(true)
+		_sleep_if_idle(now)
+		return
+	# 触摸长按态必须排在下一行的 is_panning / _saw_touch 之前分流：单指按住不动时
+	# 相机的 _pan_active 一直为真，走下面那条会把刚出的卡立刻打掉。
+	if _touch_press or _touch_hold:
+		_process_touch(now)
 		_sleep_if_idle(now)
 		return
 	if _saw_touch or _camera == null or _map == null or _view_model == null:
@@ -364,6 +526,29 @@ static func placement_rect(pointer: Vector2, viewport: Vector2, safe: Rect2, car
 		pos.x = pointer.x - card_size.x - POINTER_OFFSET.x
 	if pos.y + card_size.y > safe.end.y:
 		pos.y = pointer.y - card_size.y - POINTER_OFFSET.y
+	pos.x = clampf(pos.x, safe.position.x + EDGE_MARGIN, safe.end.x - card_size.x - EDGE_MARGIN)
+	pos.y = clampf(pos.y, safe.position.y + EDGE_MARGIN, safe.end.y - card_size.y - EDGE_MARGIN)
+	return Rect2(pos, card_size)
+
+
+## 触摸长按专用摆位：水平居中于按下点，并整体抬到按下点上方 TOUCH_LIFT_PX，
+## 让卡面不压住手指（口径 5）。上方放不下就翻到按下点下方；安全区塞不进卡片 = 不出卡。
+## 桌面悬停仍走 placement_rect，本函数只被 _show_touch_card 调用。
+static func placement_rect_for_touch(pointer: Vector2, viewport: Vector2, safe: Rect2,
+		card_size: Vector2 = CARD_SIZE) -> Rect2:
+	if viewport.x <= 0.0 or viewport.y <= 0.0:
+		return Rect2()
+	if safe.size.x < card_size.x + EDGE_MARGIN * 2.0 \
+			or safe.size.y < card_size.y + EDGE_MARGIN * 2.0:
+		return Rect2()
+	var above := pointer.y - TOUCH_LIFT_PX - card_size.y
+	var below := pointer.y + TOUCH_LIFT_PX
+	var fits_above := above >= safe.position.y + EDGE_MARGIN
+	var fits_below := below + card_size.y <= safe.end.y - EDGE_MARGIN
+	var y := above
+	if not fits_above and fits_below:
+		y = below
+	var pos := Vector2(pointer.x - card_size.x * 0.5, y)
 	pos.x = clampf(pos.x, safe.position.x + EDGE_MARGIN, safe.end.x - card_size.x - EDGE_MARGIN)
 	pos.y = clampf(pos.y, safe.position.y + EDGE_MARGIN, safe.end.y - card_size.y - EDGE_MARGIN)
 	return Rect2(pos, card_size)

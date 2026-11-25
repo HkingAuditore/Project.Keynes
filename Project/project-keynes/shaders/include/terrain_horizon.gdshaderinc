@@ -318,9 +318,17 @@ TerrainHorizonSample terrain_horizon_evaluate(vec2 uv, vec3 light_dir) {
 	#if defined(MOBILE_QUALITY_MID) && !defined(PK_WEB_HORIZON)
 	s.direct_visibility = 1.0;
 	#else
+	#if defined(PK_WEB_HORIZON)
+	// [web-horizon-free 2026-11-25] Web 全部档位在生成期已烘焙 horizon 并付了 4 次采样
+	// （:317），运行期不再按 visual_quality 把 direct_visibility 丢回 1.0。新增采样 0 次。
+	if (terrain_horizon_strength <= 0.0) {
+		s.direct_visibility = 1.0;
+	}
+	#else
 	if (visual_quality < 1 || terrain_horizon_strength <= 0.0) {
 		s.direct_visibility = 1.0;
 	}
+	#endif
 	#endif
 	return s;
 #endif

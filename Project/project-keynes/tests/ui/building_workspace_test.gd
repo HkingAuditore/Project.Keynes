@@ -12,6 +12,8 @@ const WORKSPACE_SCENE := "res://scenes/ui/building_workspace.tscn"
 const SESSION_THEME := "res://assets/themes/player_session_theme.tres"
 const PAGE_WIDTH := 424.0
 const PAGE_HEIGHT := 720.0
+## 真实行构造（construction.gd）的入口，用于 preview 回归护栏。
+const CONSTRUCTION_PAGE := preload("res://scripts/ui/cell_inspector/construction.gd")
 
 var _failures := PackedStringArray()
 
@@ -87,16 +89,23 @@ func _run() -> void:
 		not workspace._hover_card._materials.visible)
 	var hover := workspace._hover_card
 	_expect("hover shows daily inputs, natural resources and outputs",
-		hover._flow.visible
-		and _quantity_row_matches(hover._inputs, 0, "原木", "0.5/日")
-		and _quantity_row_matches(hover._inputs, 1, "水源", "0.2/日")
-		and _quantity_row_matches(hover._outputs, 0, "木板", "0.25/日"))
+		workspace._hover_card._flow.visible
+		and _visible_rows(workspace._hover_card._outputs) == 1
+		and _quantity_row(workspace._hover_card._outputs, 0)
+			== PackedStringArray(["木板", "", "0.25/日"])
+		and _visible_rows(workspace._hover_card._inputs) == 2
+		and _quantity_row(workspace._hover_card._inputs, 0)
+			== PackedStringArray(["原木", "", "0.5/日"])
+		and _quantity_row(workspace._hover_card._inputs, 1)
+			== PackedStringArray(["水源", "自然资源", "0.2/日"])
+		and (workspace._hover_card._outputs.get_node("Title") as Label).text == "每栋基础日产")
 	_expect("hover shows owner and employee roles",
-		hover._employment.visible
-		and _quantity_row_matches(hover._employment, 0, "业主 工匠", "×1")
-		and _quantity_row_matches(hover._employment, 1, "雇员 工人", "×3"))
-	_expect("the row renders the quoted material quantity",
-		_quantity_row_matches(eligible_row._materials, 0, "木材", "2.4 单位"))
+		workspace._hover_card._employment.visible
+		and _visible_rows(workspace._hover_card._employment) == 2
+		and _quantity_row(workspace._hover_card._employment, 0)
+			== PackedStringArray(["业主", "工匠", "×1"])
+		and _quantity_row(workspace._hover_card._employment, 1)
+			== PackedStringArray(["雇员", "工人", "×3"]))
 	_expect("hover detail stays inside the construction column",
 		host.get_global_rect().grow(0.5).encloses(
 			workspace._hover_card.get_global_rect()))
@@ -111,7 +120,12 @@ func _run() -> void:
 		and String(requirement.get_node("Description/Detail").text).contains("0.6 单位")
 		and String(requirement.get_node("Description/Detail").text).contains("市场无货")
 		and (requirement.get_node("Icon") as IconBadge).icon_key == &"good.lumber")
+	# 数据层仍在：卡片只是不再把每项建材的市场原因排版出来（报告里单列）。
+	_expect("blocked material still carries the market cause in the payload",
+		String(workspace._hover_card._payload["material_status"][0].get("reason", ""))
+			== "市场无货")
 	workspace._on_row_hover_ended()
+	await _test_real_preview(workspace, eligible_row)
 	_expect("page has no KPI band: sorting chips and rows carry the decisions",
 		workspace.get_node_or_null("%Summary") == null
 		and workspace.get_node_or_null("%KpiRow") == null)
@@ -229,6 +243,30 @@ func _chapter_ids(workspace: BuildingWorkspace) -> PackedStringArray:
 	return ids
 
 
+## 数量段（Body/Flow/Outputs、Body/Employment…）的可见行数：行是 building_quantity_list.gd
+## 预建的，多的只是隐藏，所以要数 visible 不能数 get_child_count。
+func _visible_rows(section: Control) -> int:
+	return _visible_children(section.get_node("List"))
+
+
+func _visible_children(container: Node) -> int:
+	var count := 0
+	for child in container.get_children():
+		if (child as Control).visible:
+			count += 1
+	return count
+
+
+## 一行数量行的三个字段：名称 / 明细 / 数量（building_quantity_list.gd:19-28）。
+func _quantity_row(section: Control, index: int) -> PackedStringArray:
+	var line := section.get_node("List").get_child(index)
+	return PackedStringArray([
+		(line.get_node("Description/Name") as Label).text,
+		(line.get_node("Description/Detail") as Label).text,
+		(line.get_node("Quantity") as Label).text,
+	])
+
+
 func _count_nodes(node: Node) -> int:
 	var count := 1
 	for child in node.get_children():
@@ -240,13 +278,20 @@ func _row(building_id: String, display_name: String, eligible: bool, cash: int,
 		reason: String) -> Dictionary:
 	var production := "\n岗位：业主 工匠 ×1 · 雇员 工人 ×3\n投入：原木 0.5/日\n自然资源：水源 0.2/日\n产出：木板 0.25/日" \
 		if building_id == "weaving" else ""
-	var preview := {}
-	if building_id == "weaving":
-		preview = {
-			"inputs": [{"name": "原木", "text": "0.5/日"}, {"name": "水源", "text": "0.2/日"}],
-			"outputs": [{"name": "木板", "text": "0.25/日"}],
-			"jobs": [{"name": "业主 工匠", "text": "×1"}, {"name": "雇员 工人", "text": "×3"}],
-		}
+	# 704de6648 起卡片改按 preview 的 List 渲染（building_hover_card.gd:139-145），
+	# 原来那张多行 _flow_text 不存在了。preview 与行内 tooltip 必须描述同一组数字。
+	var preview := {} if building_id != "weaving" else {
+		"outputs_title": "每栋基础日产",
+		"outputs": [{"name": "木板", "icon": &"metric.goods", "text": "0.25/日"}],
+		"inputs": [
+			{"name": "原木", "icon": &"metric.goods", "text": "0.5/日"},
+			{"name": "水源", "icon": &"metric.goods", "text": "0.2/日", "detail": "自然资源"},
+		],
+		"jobs": [
+			{"name": "业主", "icon": &"population.crowd", "text": "×1", "detail": "工匠"},
+			{"name": "雇员", "icon": &"population.crowd", "text": "×3", "detail": "工人"},
+		],
+	}
 	return {
 		"building_id": building_id,
 		"type_id": 1,
@@ -320,7 +365,163 @@ func _sorts(selected: String) -> Array:
 	]
 
 
+## 回归护栏：用真实 construction.gd 造一行真实 payload，断言 preview 三键非空，
+## 再把这份真实 payload 喂给真实卡片，逐行核对它渲染出来的投入/自然资源/产出与岗位。
+##
+## 为什么要这条：上面那几条 hover 断言能绿，是因为 fixture 自己塞了 preview。
+## 704de6648 把卡片改成只认 payload.preview，而行构造端当时没有这个键，
+## 于是「卡片结构对了、数据没接上」这种漏接在测试里完全看不见。
+func _test_real_preview(workspace: BuildingWorkspace, source: Control) -> void:
+	GoodProfileRegistry.ensure_loaded()
+	ResourceProfileRegistry.ensure_loaded()
+	var entries := [{
+		"index": 0, "type_id": 0, "building_id": "weaving", "name": "织造工坊",
+		"icon": &"economy.building.workshop", "eligible": true, "reason_code": "ok",
+		"cash_required": 32000, "days": 3,
+	}]
+	var quotes := {"items": [{"materials": []}]}
+	var rows: Array = CONSTRUCTION_PAGE.new()._construction_page_rows(
+		HostStub.new(), entries, quotes, {}, EconomyStub.new(), {}, PackedStringArray(["成熟"]))
+	_expect("real construction row is produced", rows.size() == 1)
+	if rows.is_empty():
+		return
+	var payload: Dictionary = rows[0]
+	var preview: Dictionary = payload.get("preview", {})
+	var outputs: Array = preview.get("outputs", [])
+	var inputs: Array = preview.get("inputs", [])
+	var jobs: Array = preview.get("jobs", [])
+	print("[preview] outputs=%d inputs=%d jobs=%d -> %s" % [
+		outputs.size(), inputs.size(), jobs.size(), preview])
+	_expect("real construction payload carries preview.outputs/inputs/jobs",
+		not outputs.is_empty() and not inputs.is_empty() and not jobs.is_empty())
+	_expect("preview row counts", outputs.size() == 1 and inputs.size() == 2
+		and jobs.size() == 2)
+
+	workspace._on_row_hover_started(payload, source)
+	await process_frame
+	var card = workspace._hover_card
+	_expect("real payload renders the output row",
+		card._flow.visible and _visible_rows(card._outputs) == 1
+		and _quantity_row(card._outputs, 0) == PackedStringArray(["日晒土坯", "", "0.25/日"]))
+	_expect("real payload renders input and natural-resource rows",
+		_visible_rows(card._inputs) == 2
+		and _quantity_row(card._inputs, 0) == PackedStringArray(["原木", "", "0.5/日"])
+		and _quantity_row(card._inputs, 1) == PackedStringArray(["黏土", "自然资源", "0.2/日"]))
+	_expect("real payload renders owner and employee rows",
+		card._employment.visible and _visible_rows(card._employment) == 2
+		and _quantity_row(card._employment, 0) == PackedStringArray(["工匠", "业主", "×1"])
+		and _quantity_row(card._employment, 1) == PackedStringArray(["建筑工人", "雇员", "×3"]))
+	workspace._on_row_hover_ended()
+	await process_frame
+
+
 func _expect(label: String, condition: bool) -> void:
 	print("  [%s] %s" % ["PASS" if condition else "FAIL", label])
 	if not condition:
 		_failures.append(label)
+
+
+# ─────────────────── 真实行构造用的取值桩 ───────────────────
+#
+# 生产里 host 是 CellInspector。这些桩只按生产签名摆出 host 侧的取值函数，
+# 行构造本身（construction.gd:_construction_page_rows）与 Recipes / 两个 registry
+# 全部走真实代码——护栏要抓的正是「行构造没把 preview 交出去」这种漏接。
+
+class FacadeStub extends RefCounted:
+	func profession_display_name(profession_id: StringName) -> String:
+		var names := {"artisan": "工匠", "construction_worker": "建筑工人"}
+		return String(names.get(String(profession_id), String(profession_id)))
+
+
+class GeneratorStub extends RefCounted:
+	func get_economy_facade() -> Object:
+		return FacadeStub.new()
+
+
+class HostStub extends RefCounted:
+	const Recipes := preload("res://scripts/ui/cell_inspector/construction_recipes.gd")
+	const MONEY_SCALE := 10000
+
+	var _generator = null
+
+	func _init() -> void:
+		_generator = GeneratorStub.new()
+
+	func _construction_local_stock(_market: Dictionary) -> Dictionary:
+		return {}
+
+	func _construction_materials_text(_materials: Array) -> String:
+		return ""
+
+	func _construction_material_status_rows(_materials: Array, _stock: Dictionary) -> Array:
+		return []
+
+	func _construction_reason_text(_code: String, _materials: Array,
+			_stock: Dictionary) -> String:
+		return ""
+
+	func _unlocked_good_ids(_snapshot: Dictionary) -> Dictionary:
+		return {}
+
+	func _construction_tooltip(_entry: Dictionary, _item: Dictionary, _materials: Array,
+			_stock: Dictionary, _placement: Dictionary, _job_spec: Dictionary,
+			_unlocked: Dictionary, _days: int, _maturity: String, _reason: String) -> String:
+		return ""
+
+	func _construction_recipe_rows(placement: Dictionary, ids_key: String,
+			quantities_key: String, label: String) -> Array:
+		return Recipes._construction_recipe_rows(self, placement, ids_key, quantities_key, label)
+
+	func _construction_input_recipe_rows(placement: Dictionary, unlocked: Dictionary) -> Array:
+		return Recipes._construction_input_recipe_rows(self, placement, unlocked)
+
+	func _construction_input_candidate_label(placement: Dictionary, input_idx: int,
+			unlocked: Dictionary) -> String:
+		return Recipes._construction_input_candidate_label(self, placement, input_idx, unlocked)
+
+	func _format_input_candidate_label(good_id: String, efficiency_q16: int) -> String:
+		var label := _good_display_name(good_id)
+		if efficiency_q16 != 65536:
+			label += " %.0f%%" % (float(efficiency_q16) * 100.0 / 65536.0)
+		return label
+
+	func _good_display_name(stable_id: String) -> String:
+		var profile = GoodProfileRegistry.profile_by_id(stable_id)
+		return String(profile.display_name) \
+			if profile != null and String(profile.display_name) != "" else stable_id
+
+	func _resource_display_name(stable_id: String) -> String:
+		for profile in ResourceProfileRegistry.ordered():
+			if String(profile.id) == stable_id:
+				return String(profile.display_name) \
+					if String(profile.display_name) != "" else stable_id
+		return stable_id
+
+	func _goods_scaled(value: int) -> String:
+		return Recipes._goods_scaled(self, value)
+
+	func _money_text(subunits: int) -> String:
+		if subunits != 0 and absi(subunits) < 100:
+			return "%.4f" % (float(subunits) / MONEY_SCALE)
+		return UITokens.format_compact_number_cn(float(subunits) / MONEY_SCALE, 2)
+
+	func _construction_profession_name(profession_id: String) -> String:
+		return Recipes._construction_profession_name(self, profession_id)
+
+
+class EconomyStub extends RefCounted:
+	func building_placement_spec(_building_id: StringName) -> Dictionary:
+		return {
+			"output_good_ids": PackedStringArray(["adobe_brick"]),
+			"output_quantities": PackedInt64Array([250]),
+			"input_good_ids": PackedStringArray(["logs"]),
+			"input_quantities": PackedInt64Array([500]),
+			"resource_ids": PackedStringArray(["clay"]),
+			"resource_quantities": PackedInt64Array([200]),
+			"resource_modes": PackedInt32Array([0]),
+		}
+
+	func building_job_spec(_building_id: StringName) -> Dictionary:
+		return {"ok": true, "owner_slots": 1, "owner_profession": "artisan",
+			"employee_professions": PackedStringArray(["construction_worker"]),
+			"employee_slots": PackedInt64Array([3])}

@@ -2,6 +2,8 @@ extends RefCounted
 class_name UIAnimation
 
 const TechnologyRevealShader := preload("res://shaders/ui/technology_page_reveal.gdshader")
+## 触摸档判定（与 mobile_ui_scaling.gd 配对；那个脚本刻意不写 class_name，统一 preload）。
+const TouchUI := preload("res://scripts/ui/touch_ui.gd")
 
 
 ## 材质扫描只在切页/切时代时运行；不移动 Container 管理的坐标。
@@ -236,7 +238,10 @@ static func bind_tactile_button(button: Button, inner_content: Control = null, s
 	button.focus_entered.connect(func() -> void: animate_state.call(true, false))
 	button.focus_exited.connect(func() -> void: animate_state.call(false, false))
 	button.button_down.connect(func() -> void: animate_state.call(true, true))
-	button.button_up.connect(func() -> void: animate_state.call(button.is_hovered(), false))
+	# 触摸档抬手时 is_hovered() 恒为真（exit 不在抬手时到达），直接用会永远回落不到
+	# Color.WHITE。桌面档 is_touch() 恒 false，这一项与改前逐字等价。
+	button.button_up.connect(func() -> void: animate_state.call(
+		button.is_hovered() and not TouchUI.is_touch(), false))
 
 
 static func _kill_hover_tween(control: CanvasItem) -> void:

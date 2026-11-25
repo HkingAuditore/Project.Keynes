@@ -625,7 +625,12 @@ func _handle_touch_gm_gesture(event: InputEvent) -> bool:
 		return false
 	_touch_gm_tap_times.clear()
 	_toggle_gm_from_gesture()
-	return true
+	# 手势生效，但这次抬手不能吞：它是最后一根手指的 release，被 :672 的 if 吞掉后
+	# :677 的 _dispatch_player_input 不会执行，map_camera._handle_screen_touch 的 erase
+	# （map_camera.gd:359）被跳过，_touches 残留一个 index。下一次单指按下就凑成
+	# count>=2（map_camera.gd:361-363），_pinching/_multitouch_guard 锁死且不会自愈：
+	# 单指拖动变成捏合缩放、点按被 :431-432 吞掉。放行后相机自己把 index 擦掉。
+	return false
 
 
 func _toggle_gm_from_gesture() -> void:
