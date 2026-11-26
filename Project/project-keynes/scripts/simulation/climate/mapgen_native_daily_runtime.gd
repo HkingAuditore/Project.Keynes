@@ -57,15 +57,26 @@ func _ensure_maritime_factor(map: MapData, decay_cells: float) -> PackedFloat32A
 
 # _async_pass_a_kernel_pure 的硬校验 lane 列表（gdext/src/runtime_climate_passes.cpp
 # 顶部的维度检查）。任一条 size != n_cells，共享内核直接 return false。
-
 func publish_worker_climate_visuals(defer_upload: bool, commit: Dictionary = {}) -> Dictionary:
 	if _generator._baker == null or _generator._sus_map == null or _generator._last_world == null:
 		return {"lut_encode_path": "none", "reason": "missing_baker_map_or_world"}
+	var frame: Dictionary
+	if commit.has("map_lut_generation"):
+		# The presentation budget admitted this update. Read the ecology for
+		# the same publication that installed climate, vision and classes.
+		frame = _generator._get_map_runtime_bridge().read_runtime_map_lut_frame(
+			_generator._sus_map, int(commit.map_lut_day), int(commit.map_lut_generation))
+		if frame.has("reason"):
+			return {"lut_encode_path": "none", "map_lut_read_failed": true, "reason": frame.reason}
+		commit["cell_lut_frame"] = frame
 	var dirty: PackedInt32Array = commit.get("display_dirty_cells", PackedInt32Array())
-	return DCCellLutBaker.refresh_cell_luts_daily(_generator._baker,
+	var result := DCCellLutBaker.refresh_cell_luts_daily(_generator._baker,
 			_generator._sus_map, _generator._last_world, dirty,
 			not commit.has("display_dirty_cells"), true, defer_upload, commit)
-
+	if frame.has("copy_ns"):
+		result["map_lut_copy"] = {"day": commit.map_lut_day, "ns": frame.copy_ns,
+			"bytes": frame.transition_age.size() + frame.previous_vitality.size()}
+	return result
 
 
 func _temperature_transport_anomaly_knobs(cp_now) -> Dictionary:

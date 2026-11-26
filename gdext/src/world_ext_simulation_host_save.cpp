@@ -1648,6 +1648,7 @@ Dictionary DCWorldExt::restore_runtime_bundle(const PackedByteArray &bytes,
         return out;
     }
     _runtime_host->reset_day_tail_for_world_change();
+    clear_runtime_map_lut_frame();
     _climate_physics_committed.reset();
     _climate_physics_capture_ready = false;
     _climate_writeback_applied_generation = 0;

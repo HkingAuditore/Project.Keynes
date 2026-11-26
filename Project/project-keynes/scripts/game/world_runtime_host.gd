@@ -624,6 +624,8 @@ func uses_worker_day_commits() -> bool:
 func reset_presentation() -> void:
 	publication_reader.reset()
 	_presentation.reset_worker_views()
+	if _generator != null:
+		_generator._get_map_runtime_bridge().clear_runtime_map_lut_frame()
 	presentation_reset.emit()
 
 func ui_worker_day() -> int:
@@ -825,7 +827,11 @@ func _publish_worker_map(update: Dictionary, day: int, started_usec: int) -> boo
 		if _generator != null else {"reason": "missing_generator"}
 	if result.get("lut_encode_path", "none") == "none":
 		if not _presentation._map_updates.needs_recovery:
-			push_warning("[worker-map] Day %d publication failed: %s" % [day, result.get("reason", "no_encode_path")])
+			var message := "[worker-map] Day %d publication failed: %s" % [day, result.get("reason", "no_encode_path")]
+			if result.get("map_lut_read_failed", false):
+				push_error(message)
+			else:
+				push_warning(message)
 		return false
 	map_texture_published.emit(day)
 	_vision_dirty_indices = PackedInt32Array()
