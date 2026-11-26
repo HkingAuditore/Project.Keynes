@@ -46,7 +46,7 @@ The wrapper must fail unless:
 
 - Godot exits with code 0.
 - The result contains a real `tmp/perf_record_*.csv`.
-- The CSV has exactly `Days` data rows.
+- The daily CSV has exactly `Days` rows, in order from the end of warm-up through the last measured day.
 - Required fixed columns such as `tick_idx`, `speed_multiplier`, and `t_sus_ms` exist.
 - The economy reports `economy_configured=true` and a positive opening population.
 - Formal mode reports `formal_start=true` and at least `ForeignCount + 1` countries.
@@ -55,6 +55,10 @@ The wrapper must fail unless:
 Godot's dummy renderer may print RID/resource cleanup warnings after a successful headless run.
 Treat the verified marker, process exit code, CSV checks, and economy validation as authoritative;
 do not report those shutdown-only warnings as a benchmark failure.
+
+The daily CSV records one row per published day. It leaves `t_sus_ms` blank and records
+`commit_interval_ms` from consecutive commit timestamps. For zero warm-up the first interval is blank.
+The companion `publications_*.csv` records frontend and runtime diagnostics sampled for each publication.
 
 ## Replaying a player save (different tool, different question)
 
