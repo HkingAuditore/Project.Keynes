@@ -235,6 +235,7 @@ static func _process(owner: Variant, delta: float) -> void:
 		owner.day_cost_flush()
 
 
+# 任务 2：节流判定——默认每帧发射；当 day_phase_emit_step > 0 时，
 # 累计变化 ≥ step 才发射。特別处理：phase 跳回 0 的跈变，应视为"必发"以避免突变时错过。
 static func _should_emit_day_phase(owner: Variant, dp: float) -> bool:
 	if owner._last_emit_day_phase < 0.0:
@@ -246,6 +247,7 @@ static func _should_emit_day_phase(owner: Variant, dp: float) -> bool:
 	return diff >= owner.day_phase_emit_step
 
 
+# Fast-tick perf opt (D)：season_phase 节流判定，语义同上。
 # season_phase ∈ [0, 4)，回绕临界情况同样会 diff 很大，自动通过阈值。
 static func _should_emit_season_phase(owner: Variant, sp: float) -> bool:
 	if owner._last_emit_season_phase < 0.0:

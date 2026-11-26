@@ -502,11 +502,9 @@ func hour_of_day() -> int:
 	# [cylindrical-earth-daylight] 改读 visual_day_phase，让 UI 小时位与屏幕可见的太阳位置一致。
 	return int(floor(fposmod(visual_day_phase - 0.75, 1.0) * 24.0)) % 24
 
-# 任务 2：节流判定——默认每帧发射；当 day_phase_emit_step > 0 时，
 func _should_emit_day_phase(dp: float) -> bool:
 	return FrameAdvance._should_emit_day_phase(self, dp)
 
-# Fast-tick perf opt (D)：season_phase 节流判定，语义同上。
 func _should_emit_season_phase(sp: float) -> bool:
 	return FrameAdvance._should_emit_season_phase(self, sp)
 
