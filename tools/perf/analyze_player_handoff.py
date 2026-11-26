@@ -89,10 +89,10 @@ def map_read_stats(sample, *, recording_frames=None):
         copy for row in recording_frames for copy in row["map_copies"]]
     if not recorded or any(copy["ns"] < 0 or copy["bytes"] <= 0 for copy in recorded):
         raise ValueError("map copy timing requires an instrumented baseline and candidate")
+    if any(len(row["map_draw_times"]) != len(row["map_draw_lag_days"]) for row in sample):
+        raise ValueError("each actual map draw must have a corresponding published-day lag")
     draws = [usec for row in sample for usec in row["map_draw_times"]]
     lags = sorted(lag for row in sample for lag in row["map_draw_lag_days"])
-    if len(draws) != len(lags) or len(draws) < 2:
-        raise ValueError("need two actual map draws with the corresponding published-day lag")
     feedback = [click["usec"] for row in sample for click in row["panel_feedback"]]
     return {
         "map_reads": len(copies),
@@ -103,7 +103,7 @@ def map_read_stats(sample, *, recording_frames=None):
         "map_draw": timing_stats([after - before for before, after in pairwise(draws)]),
         "map_draw_lag": {"samples": len(lags), "median": median(lags),
                          "p95": lags[math.ceil(0.95 * len(lags)) - 1],
-                         "range": [lags[0], lags[-1]]},
+                         "range": [lags[0], lags[-1]]} if lags else None,
     }
 
 

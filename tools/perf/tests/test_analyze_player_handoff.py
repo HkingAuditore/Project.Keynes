@@ -263,6 +263,11 @@ class DisplayPacingTraceTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no overloaded frame received days"):
             check_display_pacing(self.frames)
 
+    def test_busy_frame_that_flushes_a_staged_upload_does_not_count_as_held(self):
+        self.frames[1].update(staged_publish_us=500, map_copies=[])
+        with self.assertRaisesRegex(ValueError, "need a busy frame"):
+            check_held_map_reads(self.frames, baseline=False)
+
     def test_applying_the_held_batch_separately_is_not_coalescing(self):
         self.frames[2]["presented"] = 42
         with self.assertRaisesRegex(ValueError, "never merged"):
@@ -275,6 +280,25 @@ class DisplayPacingTraceTest(unittest.TestCase):
 
 
 class MapReadStatsTest(unittest.TestCase):
+    def test_held_window_without_map_draws_still_reports_copies_and_feedback(self):
+        held = {"map_copies": [], "panel_feedback": [{"usec": 900}],
+                "map_draw_times": [], "map_draw_lag_days": []}
+        recovery = {"map_copies": [{"bytes": 4800, "ns": 750}],
+                    "panel_feedback": [], "map_draw_times": [3000], "map_draw_lag_days": [4]}
+        result = map_read_stats([held], recording_frames=[held, recovery])
+        self.assertEqual(result["map_reads"], 0)
+        self.assertEqual(result["map_draw"]["samples"], 0)
+        self.assertIsNone(result["map_draw_lag"])
+        self.assertEqual(result["panel_feedback"]["median_ms"], 0.9)
+
+        result = map_read_stats([recovery])
+        self.assertEqual(result["map_draw"]["samples"], 0)
+        self.assertEqual(result["map_draw_lag"],
+                         {"samples": 1, "median": 4, "p95": 4, "range": [4, 4]})
+        recovery["map_draw_lag_days"] = []
+        with self.assertRaisesRegex(ValueError, "each actual map draw"):
+            map_read_stats([recovery])
+
     def test_reports_copies_feedback_and_actual_map_draws_independently(self):
         frames = [
             {"map_copies": [{"bytes": 4800, "ns": 750}], "panel_feedback": [],

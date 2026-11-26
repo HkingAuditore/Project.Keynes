@@ -1399,7 +1399,8 @@ Dictionary DCWorldExt::poll_runtime_commit(int64_t after_generation, bool take_d
     if (publication) {
         out["display_dirty_cells"] = publication->changed_cells;
         out["display_class_cells"] = publication->changed_classes;
-        out["map_lut_pending"] = true;
+        if (commit.day_tail && !commit.day_tail->cell_luts.transition_age.empty())
+            out["map_lut_pending"] = true;
         out["days"] = publication->records;
         out["notice_history"] = publication->notices;
         if (!publication->construction_receipts.is_empty())

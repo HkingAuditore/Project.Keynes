@@ -148,15 +148,19 @@ def compare_recordings(baseline, candidate, windows):
     return results
 
 
+def held_map_update(before, frame):
+    return (frame["overload_us"] > 0 and frame["consumed"] > before["consumed"]
+            and frame["presented"] == before["presented"]
+            and frame["view_updates"] == 0 and frame["received_batches"] > 0
+            and frame["cell_refresh_us"] == 0 and frame["staged_publish_us"] == 0)
+
+
 def check_display_pacing(frames):
     held_day = -1
     held = False
     merged = False
     for before, frame in pairwise(frames):
-        if (frame["overload_us"] > 0 and frame["consumed"] > before["consumed"]
-                and frame["presented"] == before["presented"]
-                and frame["view_updates"] == 0 and frame["received_batches"] > 0
-                and frame["cell_refresh_us"] == 0 and frame["staged_publish_us"] == 0):
+        if held_map_update(before, frame):
             held = True
             if held_day < 0:
                 held_day = frame["consumed"]
@@ -175,10 +179,7 @@ def check_display_pacing(frames):
 
 
 def check_held_map_reads(frames, *, baseline):
-    held = [frame for before, frame in pairwise(frames)
-            if frame["overload_us"] > 0 and frame["consumed"] > before["consumed"]
-            and frame["presented"] == before["presented"] and frame["view_updates"] == 0
-            and frame["received_batches"] > 0 and frame["cell_refresh_us"] == 0]
+    held = [frame for before, frame in pairwise(frames) if held_map_update(before, frame)]
     if not held:
         raise ValueError("need a busy frame that received days and deferred its map update")
     copies = [copy for frame in held for copy in frame["map_copies"]]
