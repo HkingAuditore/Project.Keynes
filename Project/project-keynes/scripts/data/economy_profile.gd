@@ -93,7 +93,7 @@ extends Resource
 @export var wealth_reference_per_capita: int = 100000
 @export var living_cost_base_plan_id: StringName = &"survival_household"
 ## Survival satisfaction reaches full workforce capacity at this caloric/cold-exposure ratio.
-@export_range(1, 65536, 1) var starvation_satisfaction_threshold_q16: int = 32768
+@export_range(1, 65536, 1) var starvation_satisfaction_threshold_q16: int = 49152
 ## Subsistence producers plan and retain enough food for healthy satisfaction, independently
 ## from the lower threshold where starvation mortality begins.
 @export_range(1, 65536, 1) var survival_production_target_q16: int = 65536
@@ -142,27 +142,37 @@ extends Resource
 @export_range(1, 256, 1) var satisfaction_development_variety_target: int = 12
 ## Composite value treated as "fully satisfied" by the birth-rate reduction.
 ## The raw composite is rescaled by this reference before entering
-## `birth_factor = 1 - satisfaction_birth_weight * (1 - birth_input)`, so an
-## early-era cohort with no luxuries, savings, or development does not collapse
-## its own birth rate.
+## `birth_factor = 1 - satisfaction_birth_weight * (1 - birth_input)`.
 ##
-## The reference must stay inside what an early-era cohort can actually reach,
-## otherwise the "early era is not punished" intent above silently fails. A
-## stone-age cohort can only score the dimensions it has goods for
-## (subsistence, basic, tax burden); comfort, luxury, income growth, savings and
-## development all sit near zero. Against the authored dimension weights that
-## ceiling is 0.52 for `worker` (62915+45875+26214 of 240000) and 0.60 for
-## `forager`. The previous 0.70 therefore capped every starter settlement below
-## full fertility — the reference was unreachable by construction. 0.55 sits
-## just above the `worker` ceiling, so a fed, low-tax settlement breeds at the
-## authored 20%/year and only genuinely deprived cohorts fall short.
-@export_range(1, 65536, 1) var satisfaction_birth_reference_q16: int = 36045
+## Deliberately set above the composite an early-era cohort actually reaches, so
+## the difficulty curve starts hard and only opens up with development. A
+## stone-age cohort can only fill the lower satisfaction tiers: it has no goods
+## for comfort, luxury, income growth or savings, and its settlement carries no
+## development score yet, so most of the composite budget stays unearned and
+## full fertility is out of reach until those channels exist.
+##
+## Do not restate that ceiling as a raw weight ratio. The composite divides by
+## the *effective* weights, which the runtime redistributes into fixed category
+## budgets — 0.70 subsistence/basic/comfort/luxury, 0.20 income growth/savings,
+## 0.05 tax burden, 0.05 development — over the dimensions that are applicable
+## (`economy_runtime_satisfaction.cpp:204-231`, divided at `:434-436`). Neither
+## 240000 nor the authored weight sum (233309 for `worker`) is that denominator,
+## and dropping an inapplicable group rescales the rest, so the starter ceiling is
+## a runtime property: read it with `explain_cohort_satisfaction`, do not derive
+## it from weight fractions.
+##
+## History: 0.70 was the original authored value. It was once lowered to 0.55
+## with the claim that "the early era must not be punished", which removed the
+## pressure this reference exists to create; it is restored here on purpose.
+@export_range(1, 65536, 1) var satisfaction_birth_reference_q16: int = 45875
 ## Composite at which the birth multiplier reaches `carrying_sat_cap_q16`.
-## Between the two references the bonus above 1.0 rises linearly, and it fades
-## back to 1.0 as carrying load moves from the soft start to full capacity.
-## This keeps the former 0.70 full-rate threshold as the point where the 1.15x
-## bonus starts instead of discarding it.
-@export_range(1, 65536, 1) var satisfaction_birth_bonus_reference_q16: int = 45875
+## Between the two references the bonus above 1.0 rises linearly — 0.70 → 0.85,
+## the same 0.15 width the 0.55→0.70 pair used, so the ramp shape is unchanged —
+## and it fades back to 1.0 as carrying load moves from the soft start to full
+## capacity. The pair must stay 0.15 apart: the native profile load clamps this
+## to `birth_reference + 1` (`economy_runtime_profile.cpp:540-542`), so equal
+## values would silently collapse the ramp into a step instead of a slope.
+@export_range(1, 65536, 1) var satisfaction_birth_bonus_reference_q16: int = 55705
 ## Composite thresholds (Q16, ascending) separating the five social-pressure
 ## levels. A cell publishes `EVENT_ECONOMY_SOCIAL_PRESSURE` only when its
 ## population-weighted level crosses one of these boundaries.
