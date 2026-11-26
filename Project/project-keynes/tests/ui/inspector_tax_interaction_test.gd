@@ -91,6 +91,10 @@ func _run() -> void:
 		failures.append("deferred detail refresh did not apply after tax edit ended")
 	row_editor = (inspector._object_detail_dialog.tax_editors()[0] as TaxLaneEditor)
 	var base_rate := int(row_editor.lane_data().get("base", -1))
+	# 这一档真实的计税模式：下面 :357 的 _mark_tax_pending 要按它记账，不能写死 0。
+	# 编辑器会在 :354 的 close_detail() 里被释放，所以必须在这里先取。
+	var row_mode := int(row_editor.lane_data().get("mode",
+		TaxLaneEditor.TAX_MODE_PERCENT_BP))
 	row_editor._spin.set_value_no_signal(TaxLaneEditor.basis_points_to_percent(base_rate + 300))
 	row_editor._on_text_submitted("")
 	if not is_equal_approx(row_editor._spin.value,
@@ -348,7 +352,9 @@ func _run() -> void:
 	_assert_object_tax_layer(failures, inspector, 3, "good", "")
 
 	inspector.close_detail()
-	inspector._mark_tax_pending(row_key, base_rate + 1)
+	# 补全 5 个参数：receipt 传空字典（这行不验回执，下面验的是换格子后 pending 被清掉），
+	# op 传 "set"，mode 用该档真实值（上面取的 row_mode）。
+	inspector._mark_tax_pending(row_key, base_rate + 1, {}, "set", row_mode)
 	inspector.set_model_for_selection(_model(6))
 	if not (inspector.get("_pending_tax") as Dictionary).is_empty():
 		failures.append("new cell selection retained stale Inspector pending state")
