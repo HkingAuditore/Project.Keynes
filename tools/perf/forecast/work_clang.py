@@ -6,7 +6,7 @@ import subprocess
 def scan(path, extra):
     driver = "clang" if path.suffix == ".c" else "clang++"
     cmd = [driver, *extra, "-fsyntax-only", "-Xclang", "-analyze", "-Xclang",
-           "-analyzer-checker=debug.DumpCFG", "-fno-color-diagnostics", "-o", "/dev/null", str(path)]
+           "-analyzer-checker=debug.DumpCFG", "-fno-color-diagnostics", str(path)]
     proc = subprocess.run(cmd, text=True, capture_output=True)
     if proc.returncode:
         raise ValueError(proc.stderr.strip())

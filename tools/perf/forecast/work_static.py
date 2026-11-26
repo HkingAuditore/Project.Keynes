@@ -118,10 +118,10 @@ class Counter:
             if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
                 env[n.targets[0].id] = self.expression(n.value, env)
             elif isinstance(n, ast.AugAssign) and isinstance(n.target, ast.Name) and type(n.op) in OPS:
-                a = env[n.target.id]
-                if type(a) not in (int, float):
+                value = env[n.target.id]
+                if type(value) not in (bool, int, float):
                     unsupported(n, "in-place updates of mutable or nonnumeric values")
-                env[n.target.id] = OPS[type(n.op)](a, self.expression(n.value, env))
+                env[n.target.id] = OPS[type(n.op)](value, self.expression(n.value, env))
             elif isinstance(n, ast.If):
                 self.body(n.body if self.expression(n.test, env) else n.orelse, env, name)
             elif isinstance(n, ast.For) and isinstance(n.target, ast.Name):

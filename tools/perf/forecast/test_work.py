@@ -54,6 +54,24 @@ class GeneralWorkTests(unittest.TestCase):
             with self.subTest(src=src), self.assertRaisesRegex(ValueError, "unresolved at line"):
                 Counter(src, opts).record([{"x": [1]}])
 
+    def test_source_only_matches_python_boolean_augmented_assignment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "target.py").write_text("def target(x):\n    x += 1\n    return x\n")
+            profile = folder / "profile.json"
+            profile.write_text(json.dumps({
+                "adapter": "python",
+                "source": "target.py",
+                "metrics": {"entries": "Target function entries"},
+                "options": {"entry": "target", "observe": {"entries": {"function": "target"}}},
+            }))
+            scenario = {"steps": [{"x": True}, {"x": False}]}
+            static = trace(profile, scenario, None, None, source_only=True)
+            actual = trace(profile, scenario, None, None)
+            result = compare(actual, static)
+            self.assertEqual(result["outputs"], "match")
+            self.assertEqual(result["observed_work"], "unchanged")
+
     def test_source_only_ignores_unreached_opaque_call(self):
         from work_static import Counter
         opts = {"entry": "target", "observe": {"enters": {"function": "target"}}}
