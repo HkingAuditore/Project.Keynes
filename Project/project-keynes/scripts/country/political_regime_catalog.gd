@@ -71,9 +71,14 @@ func compile_native_catalog(_country_catalog: Dictionary = {},
 		# a typo fails the world compile instead of silently doing nothing.
 		var modifier_keys := PackedStringArray(definition.modifier_definition_keys)
 		modifier_keys.sort()
+		# [web-fix 2026-11-25] 原来这句是 `if not known_definitions.is_empty() and not ...has(key)`：
+		# 目录为空时整段校验被跳过 —— 等于把该报警的地方关掉了。web 上 native 定义表
+		# 没建起来时这个守卫一声不响，bug 才藏了一整天。有键引用却拿到空目录 = 必须报错。
+		if not modifier_keys.is_empty() and known_definitions.is_empty():
+			return {"ok": false, "reason": "political_regime_modifier_catalog_empty"}
 		for raw_key in modifier_keys:
 			var key := String(raw_key).strip_edges()
-			if not known_definitions.is_empty() and not known_definitions.has(key):
+			if not known_definitions.has(key):
 				return {"ok": false, "reason": "political_regime_modifier_definition_unknown:%s" % key}
 			catalog_hash = _fnv_append(catalog_hash, "@" + key)
 	return {

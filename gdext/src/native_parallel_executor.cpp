@@ -1,6 +1,9 @@
 #include "native_parallel_executor.h"
 
 #include <algorithm>
+#include <cstring>
+
+#include "runtime_switch_registry.h"
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -21,7 +24,29 @@ uint32_t detected_hardware_threads() {
 // 世界生成之后（start_runtime_worker）才落下来的，而执行器可能在更早的
 // configure_runtime_graph 里就已经构造过。置位后即使 worker 已经存在也不再
 // 使用它们。
+//
+// [web-fix 2026-11-25] Web 上默认就要串行，而且必须在这里就置位：
+//   * 本文件按 `hardware_concurrency()-2`（上限 16）spawn worker。浏览器报 32 核
+//     时这一项就是 16 条，而 Emscripten 的 pthread 池只有 export_presets.cfg 的
+//     threads/emscripten_pool_size（当前 16），Godot 自己的 WorkerThreadPool 还要
+//     从同一个池里占一份。池子打满后 pthread_create 逐个阻塞，实测 21 条
+//     "thread pool is exhausted"。
+//   * 真正把 serial 置位的 set_parallel_serial_only() 在
+//     world_ext_simulation_host.cpp 的 start_runtime_worker 里，而执行器早在
+//     mapgen 阶段的第一次 parallel_for_range 就已经构造完了 —— 时序打穿，web 上
+//     白 spawn 16 条注定要等池子的线程。
+//   * 同一个文件里 2026-10-31 的实测也支持串行：worker 模式 2.70 天/秒，inline
+//     模式 9.81 天/秒，web 上串行快 5-8 倍。
+// 真机调试要放出并行器时仍可用 PK_WEB_PARALLEL=1（见下面 override）。
+#if defined(__EMSCRIPTEN__)
+const bool g_pk_web_parallel_override = [] {
+    const char *value = runtime_switch_value(RuntimeSwitch::PK_WEB_PARALLEL);
+    return value != nullptr && std::strcmp(value, "1") == 0;
+}();
+std::atomic<bool> g_parallel_serial_only{!g_pk_web_parallel_override};
+#else
 std::atomic<bool> g_parallel_serial_only{false};
+#endif
 } // namespace
 
 void set_parallel_serial_only(bool enabled) noexcept {

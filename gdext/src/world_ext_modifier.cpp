@@ -1,5 +1,7 @@
-﻿#include "world_ext.h"
+#include "world_ext.h"
 #include <cstdio>
+
+#include "pk_log.h"
 
 #include "country_runtime.h"
 #include "economy_runtime.h"
@@ -52,11 +54,19 @@ Dictionary DCWorldExt::configure_modifiers(const Dictionary &catalog,
     std::string pod_error;
     const bool pod_ok = runtime->export_pod_catalog(pod_catalog, pod_error) &&
         _runtime_host->configure_modifier_pod(pod_catalog, pod_error);
+    size_t key_hash_count = 0;
     if (pod_ok) {
         std::vector<std::pair<uint64_t, int32_t>> key_hashes;
         runtime->export_definition_key_hashes(key_hashes);
         _runtime_host->set_modifier_definition_key_hashes(key_hashes);
+        key_hash_count = key_hashes.size();
     }
+    // [web-fix 2026-11-25] pod 失败时这张定义表是空的，而 result["ok"] 仍来自
+    // runtime->configure() 并为 true：上层只看 ok 就静默放行，直到 worker 第一天
+    // ring 1 应用政体修饰符才炸出 regime_modifier_definition_unknown。把这三项打出来，
+    // 让「表空」自己说话，不再靠推断。
+    pk::log_info("[modifier] pod_ok=%d key_hashes=%zu fallback_reason=%s",
+                 pod_ok ? 1 : 0, key_hash_count, pod_error.c_str());
     result["modifier_pod_ready"] = pod_ok;
     result["modifier_pod_fallback_reason"] = String(pod_error.c_str());
     result["modifier_pod_catalog_hash"] = pod_ok
