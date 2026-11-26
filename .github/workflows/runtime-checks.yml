@@ -28,7 +28,7 @@ jobs:
             /Project/project-keynes/**/*.gd
             /Project/project-keynes/data/native_binding_manifest.json
             /Project/project-keynes/tools/technology_tree/building_distinction_review.json
-            /.*/skills/
+            /skills/
             /docs/architecture/
             /docs/plans/
             /docs/factory/
