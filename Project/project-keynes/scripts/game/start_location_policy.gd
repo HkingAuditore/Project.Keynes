@@ -691,11 +691,12 @@ static func _starter_resource_overlay(map: MapData, cell_idx: int) -> Dictionary
 		overlay[String(resource_id)] = maxf(
 			_raw_reserve(map, String(resource_id), cell_idx), minimum)
 	var precious_id := _precious_for_raw_cell(map, cell_idx)
-	if precious_id.is_empty():
-		precious_id = "gold_ore"
-	overlay[precious_id] = maxf(
-		_raw_reserve(map, precious_id, cell_idx),
-		float(Profile.MINIMUM_RESERVES.get(precious_id, 0.0)))
+	# 防御性写法，不是修复：没有砂金就不该往 overlay 里塞 gold_ore。
+	# 现有规则在选点阶段已要求砂金，所以目前走不到假分支。
+	if not precious_id.is_empty():
+		overlay[precious_id] = maxf(
+			_raw_reserve(map, precious_id, cell_idx),
+			float(Profile.MINIMUM_RESERVES.get(precious_id, 0.0)))
 	return overlay
 
 
