@@ -639,16 +639,32 @@ func _process(delta: float) -> void:
 	# 连续 3 天不推进就打一行，日志里一眼能看到卡在哪一侧。
 	var day := int(_current_day())
 	if day > 3 and int(eco["eco_day"]) >= 0 and day - int(eco["eco_day"]) > 3:
-		print("[economy-stall] day=%d eco_day=%d graph=%s paused=%s speed=%.2f" % [
+		# 新增的 6 项全部来自同一次 report()（每 5 秒一次，绝不进每帧）。
+		# 值域出处：gdext/src/economy_runtime_diagnostics.cpp:1498-1519（epoch_active/
+		# sample_day/last_committed_day/stage）、:2371（newest_state_day）、
+		# :3069-3070（fatal/fatal_reason）、:3180（market_runtime_mode）。
+		# 判「should_run 静默返回 false」只看这一组：
+		#   fatal=false + epoch_active=false + last_committed_day < day → 经济没被排上。
+		#   market_runtime_mode != ACTIVE 或 last_committed_day >= day 时直接坐实。
+		print("[economy-stall] day=%d eco_day=%d graph=%s paused=%s speed=%.2f fatal=%s fatal_reason=%s stage=%s epoch_active=%s sample_day=%d last_committed_day=%d market_runtime_mode=%s" % [
 			day, int(eco["eco_day"]), str(eco["graph"]),
-			str(_world_clock.paused if _world_clock != null else true), _current_speed()])
+			str(_world_clock.paused if _world_clock != null else true), _current_speed(),
+			str(eco["fatal"]), str(eco["fatal_reason"]), str(eco["stage"]),
+			str(eco["epoch_active"]), int(eco["sample_day"]),
+			int(eco["last_committed_day"]), str(eco["market_runtime_mode"])])
 	_sentinel_last_ms = now
 	_sentinel_frames = 0
 
 
 ## 经济日结水位 + 原生图是否在跑。失败时返回 -1 / false，绝不抛错（哨兵不能拖垮主循环）。
 func _economy_probe() -> Dictionary:
-	var out := {"eco_day": -1, "graph": false}
+	# 冻结定案用的标量。除 newest_state_day 外全是 report() 里现成的字段，与 eco_day
+	# 同一个字典取，不额外付第二次跨语言搬运。只在心跳（SENTINEL_HEARTBEAT_MS=5s）
+	# 里调，绝不进每帧。默认值保证宿主缺失时下面那行 print 不炸。
+	var out := {"eco_day": -1, "graph": false, "fatal": false,
+		"fatal_reason": "", "stage": "?", "epoch_active": false,
+		"sample_day": -1, "last_committed_day": -1,
+		"market_runtime_mode": "?"}
 	if _runtime_host == null or not _runtime_host.has_method("get_generator"):
 		return out
 	var generator = _runtime_host.get_generator()
@@ -661,6 +677,17 @@ func _economy_probe() -> Dictionary:
 		if facade != null and facade.has_method("report"):
 			var report: Dictionary = facade.report()
 			out["eco_day"] = int(report.get("newest_state_day", -1))
+			# 方案 A：把经济已结算日喂给日历闸门（world_clock.gd set_economy_settled_day）。
+			# 这里就是 5 秒心跳，不进每帧。
+			if _world_clock != null:
+				_world_clock.set_economy_settled_day(int(out["eco_day"]))
+			out["fatal"] = bool(report.get("fatal", false))
+			out["fatal_reason"] = str(report.get("fatal_reason", ""))
+			out["stage"] = str(report.get("stage", "?"))
+			out["epoch_active"] = bool(report.get("epoch_active", false))
+			out["sample_day"] = int(report.get("sample_day", -1))
+			out["last_committed_day"] = int(report.get("last_committed_day", -1))
+			out["market_runtime_mode"] = str(report.get("market_runtime_mode", "?"))
 	return out
 
 
