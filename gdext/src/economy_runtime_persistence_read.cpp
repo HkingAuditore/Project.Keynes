@@ -391,11 +391,15 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_building_fact_quote_payload_truncated";
                 return false;
             }
+            // A collapsed lot stays in the store as count == 0 until the prune
+            // pass drops its identity; the row itself still carries the cell,
+            // type and owner key, so rejecting zero here made a legally written
+            // row unreadable. Negative counts remain corruption.
             if (!read_le(bytes, cursor, roles) || group.cell < 0 || group.cell >= _cell_count.get() ||
                 group.type_id < 0 || group.type_id >= static_cast<int32_t>(_building_types.size()) ||
                 group.owner_signature_id < 0 ||
                 group.owner_signature_id >= static_cast<int32_t>(_signatures.size()) ||
-                group.count <= 0 || roles != _building_types[group.type_id].employee_count ||
+                group.count < 0 || roles != _building_types[group.type_id].employee_count ||
                 group.last_temperature_fit_q16 < 0 ||
                 group.last_temperature_fit_q16 > Q16_ONE ||
                 group.last_water_fit_q16 < 0 ||
