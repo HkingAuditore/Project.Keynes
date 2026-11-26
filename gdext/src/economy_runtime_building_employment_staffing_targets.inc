@@ -97,8 +97,9 @@
                         static_cast<int32_t>(_building_type_ids.size()) &&
                     _building_type_ids[group.type_id] == "knapping_workshop";
                 if (narrow_knapping_cold_start && !survival_output && derived_only_output &&
-                    !any_real_output_demand && !output_stock_available)
-                    owner_target = 0;
+                    !any_real_output_demand && !output_stock_available) {
+                    owner_target = std::min(owner_target, group.filled_owner);
+                }
                 const int32_t existing_owner_slot = find_cohort_slot(
                     group.cell, group.owner_signature_id);
                 const bool existing_owner_cohort = existing_owner_slot >= 0 &&
