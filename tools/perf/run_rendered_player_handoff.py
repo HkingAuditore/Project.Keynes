@@ -68,7 +68,8 @@ def load_recording(prefix, speed, target):
     return Recording(config, frames, {row["day"]: row for row in records})
 
 
-def run_sample(godot, project, prefix, speed, target, fps_mode, overload, macos_app=None):
+def run_sample(godot, project, prefix, speed, target, fps_mode, overload, macos_app=None,
+               *, map_reads=False):
     arguments = ["--path", str(project), "--windowed", "--resolution", "1600x960",
                "--log-file", f"{prefix}.engine.log",
                "--script", f"res://{PROBE}", "--", f"--speed={speed}", f"--through={target}",
@@ -77,6 +78,8 @@ def run_sample(godot, project, prefix, speed, target, fps_mode, overload, macos_
         arguments.append(f"--fps={fps_mode}")
     if overload:
         arguments.append("--overload")
+    if map_reads:
+        arguments.append("--panel-clicks")
     paths = {"PK_SAVE_DIR": f"{prefix}.saves",
                         "PK_RUNTIME_WATERFALL_CSV": f"{prefix}.waterfall.csv"}
     logfile = prefix.with_suffix(".log")
@@ -171,6 +174,21 @@ def check_display_pacing(frames):
     raise ValueError("the map did not catch up in the recovery interval")
 
 
+def check_held_map_reads(frames, *, baseline):
+    held = [frame for before, frame in pairwise(frames)
+            if frame["overload_us"] > 0 and frame["consumed"] > before["consumed"]
+            and frame["presented"] == before["presented"] and frame["view_updates"] == 0
+            and frame["received_batches"] > 0 and frame["cell_refresh_us"] == 0]
+    if not held:
+        raise ValueError("need a busy frame that received days and deferred its map update")
+    copies = [copy for frame in held for copy in frame["map_copies"]]
+    if baseline and not copies:
+        raise ValueError("the baseline did not copy map columns while holding map updates")
+    if not baseline and copies:
+        raise ValueError("the candidate copied map columns while holding map updates")
+    return {"frames": len(held), "reads": len(copies), "bytes": sum(row["bytes"] for row in copies)}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("baseline", type=Path)
@@ -181,6 +199,8 @@ def main():
     parser.add_argument("--fps", choices=FRAME_LIMITS, action="append", help="frame rate modes to compare")
     parser.add_argument("--overload", action="store_true", help="inject main-thread delay in the 50× case")
     parser.add_argument("--expect-pacing", action="store_true", help="verify hold, merge and recovery on the candidate")
+    parser.add_argument("--map-reads", action="store_true",
+                        help="measure map copies and panel feedback at 50× with an instrumented baseline")
     args = parser.parse_args()
     if (args.overload and not args.fps) or (args.expect_pacing and not args.overload):
         parser.error("--overload requires --fps and --expect-pacing requires --overload")
@@ -196,8 +216,10 @@ def main():
         trials = []
         expected_by_speed = {}
         for fps_mode, (speed, (target, windows)) in product(args.fps or [""], SCENARIOS.items()):
-            if args.overload and speed != 50:
+            if (args.overload or args.map_reads) and speed != 50:
                 continue
+            if args.map_reads:
+                windows = ((25, 75), (41, 55)) if args.overload else ((25, 75),)
             for trial in range(1, 4):
                 order = tuple(projects) if trial % 2 else tuple(reversed(projects))
                 samples = {}
@@ -206,7 +228,7 @@ def main():
                     prefix = output / f"{name}-{speed}x{mode}-{trial}"
                     print(f"Recording {prefix.name}", flush=True)
                     sample = run_sample(args.godot, projects[name], prefix, speed, target, fps_mode,
-                                        args.overload, args.macos_app)
+                                        args.overload, args.macos_app, map_reads=args.map_reads)
                     daily = fingerprint(sample, target)
                     if daily != expected_by_speed.setdefault(speed, daily):
                         raise ValueError(f"{prefix.name} has different daily hashes or receipts")
@@ -214,8 +236,19 @@ def main():
                 baseline, candidate = samples["baseline"], samples["candidate"]
                 if args.expect_pacing:
                     check_display_pacing(candidate.frames)
-                trials.append({"trial": trial, "config": baseline.config,
-                               "windows": compare_recordings(baseline, candidate, windows)})
+                result = {"trial": trial, "config": baseline.config,
+                          "windows": compare_recordings(baseline, candidate, windows)}
+                if args.map_reads:
+                    for window in result["windows"]:
+                        for side in projects:
+                            if window[side].get("panel_feedback", {}).get("samples", 0) == 0:
+                                raise ValueError(f"{side} missing panel feedback in {window['requested_days']}")
+                    if args.overload:
+                        result["held_map_reads"] = {
+                            side: check_held_map_reads(samples[side].frames, baseline=side == "baseline")
+                            for side in projects
+                        }
+                trials.append(result)
         if 1 in expected_by_speed and expected_by_speed[1] != expected_by_speed[50][:SCENARIOS[1][0]]:
             raise ValueError("1× and 50× daily hashes or receipts differ on the shared days")
         summary = output / "summary.json"

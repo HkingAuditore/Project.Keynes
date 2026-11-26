@@ -6,9 +6,9 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from tools.perf.analyze_player_handoff import summarize
+from tools.perf.analyze_player_handoff import map_read_stats, summarize
 from tools.perf.run_rendered_player_handoff import (
-    Recording, check_display_pacing, compare_recordings, load_recording, run_sample,
+    Recording, check_display_pacing, check_held_map_reads, compare_recordings, load_recording, run_sample,
 )
 
 
@@ -190,6 +190,28 @@ class RenderedHandoffComparisonTest(unittest.TestCase):
         self.assertEqual(window["baseline"]["observed_waits"]["calendar_wait"], {"count": 1, "max_ms": 1.0})
         self.assertEqual(window["candidate"]["observed_waits"]["calendar_wait"], {"count": 0, "max_ms": 0.0})
 
+    def test_map_read_comparison_rejects_a_recording_with_no_samples(self):
+        baseline = self.sample([4, 5, 6, 7, 8, 9, 10])
+        candidate = self.sample([4, 5, 6, 7, 8, 9, 10])
+        for sample in (baseline, candidate):
+            for frame in sample.frames:
+                frame.update(map_copies=[], map_draw_times=frame.get("draw_times", []),
+                             map_draw_lag_days=[0] * len(frame.get("draw_times", [])), panel_feedback=[])
+            sample.frames[2]["panel_feedback"] = [{"usec": 900}]
+        candidate.frames[2]["map_copies"] = [{"bytes": 4800, "ns": 750}]
+
+        with self.assertRaisesRegex(ValueError, "requires an instrumented baseline"):
+            compare_recordings(baseline, candidate, [(5, 9)])
+
+        # The candidate recorded a copy after the held window. Zero in the
+        # measured window is now evidence of a hold, not missing instrumentation.
+        baseline.frames[2]["map_copies"] = candidate.frames[2]["map_copies"]
+        candidate.frames[-1]["map_copies"] = candidate.frames[2]["map_copies"]
+        candidate.frames[2]["map_copies"] = []
+        window, = compare_recordings(baseline, candidate, [(5, 9)])
+        self.assertEqual(window["baseline"]["map_reads"], 1)
+        self.assertEqual(window["candidate"]["map_reads"], 0)
+
 
 class RenderedHandoffLaunchTest(unittest.TestCase):
     def test_macos_launch_failure_preserves_system_error(self):
@@ -223,6 +245,18 @@ class DisplayPacingTraceTest(unittest.TestCase):
     def test_receives_during_overload_merges_and_recovers(self):
         check_display_pacing(self.frames)
 
+    def test_held_frame_rejects_a_copy_even_when_no_map_update_was_drawn(self):
+        self.frames[1]["map_copies"] = [{"bytes": 4800, "ns": 900}]
+        self.assertEqual(check_held_map_reads(self.frames, baseline=True),
+                         {"frames": 1, "reads": 1, "bytes": 4800})
+        with self.assertRaisesRegex(ValueError, "candidate copied"):
+            check_held_map_reads(self.frames, baseline=False)
+        self.frames[1]["map_copies"] = []
+        self.assertEqual(check_held_map_reads(self.frames, baseline=False),
+                         {"frames": 1, "reads": 0, "bytes": 0})
+        with self.assertRaisesRegex(ValueError, "baseline did not copy"):
+            check_held_map_reads(self.frames, baseline=True)
+
     def test_receiving_less_often_is_not_display_pacing(self):
         self.frames[1]["consumed"] = 39
         self.frames[1]["received_batches"] = 0
@@ -238,6 +272,29 @@ class DisplayPacingTraceTest(unittest.TestCase):
         self.frames[-1]["presented"] = 46
         with self.assertRaisesRegex(ValueError, "did not catch up"):
             check_display_pacing(self.frames)
+
+
+class MapReadStatsTest(unittest.TestCase):
+    def test_reports_copies_feedback_and_actual_map_draws_independently(self):
+        frames = [
+            {"map_copies": [{"bytes": 4800, "ns": 750}], "panel_feedback": [],
+             "map_draw_times": [1000], "map_draw_lag_days": [0]},
+            {"map_copies": [], "panel_feedback": [{"usec": 900}],
+             "map_draw_times": [3000], "map_draw_lag_days": [4]},
+        ]
+        result = map_read_stats(frames)
+        self.assertEqual(result["map_reads"], 1)
+        self.assertEqual(result["map_copied_bytes"], 4800)
+        self.assertEqual(result["map_copy"]["median_ms"], 0.00075)
+        self.assertEqual(result["panel_feedback"]["median_ms"], 0.9)
+        self.assertEqual(result["map_draw"]["median_ms"], 2.0)
+        self.assertEqual(result["map_draw_lag"], {"samples": 2, "median": 2, "p95": 4, "range": [0, 4]})
+        frames[0]["map_copies"][0]["ns"] = -1
+        with self.assertRaisesRegex(ValueError, "requires an instrumented baseline"):
+            map_read_stats(frames)
+        frames[0]["map_copies"] = []
+        with self.assertRaisesRegex(ValueError, "requires an instrumented baseline"):
+            map_read_stats(frames)
 
 
 if __name__ == "__main__":

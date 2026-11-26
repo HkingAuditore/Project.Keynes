@@ -32,8 +32,12 @@ func queue(commit: Dictionary) -> bool:
 		_add_cells(_held_classes, _latest[CLASSES])
 	_full_update = _full_update or not commit.has(DIRTY)
 	var dirty: PackedInt32Array = commit.get(DIRTY, PackedInt32Array())
-	_latest = {DIRTY: dirty, CLASSES: commit.get(CLASSES, dirty),
-		CELLS: commit.get(CELLS, {})}
+	_latest = {DIRTY: dirty, CLASSES: commit.get(CLASSES, dirty)}
+	if commit.get("map_lut_pending", false):
+		_latest["map_lut_day"] = commit.committed_day
+		_latest["map_lut_generation"] = commit.generation
+	elif commit.has(CELLS):
+		_latest[CELLS] = commit[CELLS]
 	return true
 
 

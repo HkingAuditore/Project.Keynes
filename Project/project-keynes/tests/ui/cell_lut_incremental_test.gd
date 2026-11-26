@@ -40,6 +40,7 @@ func _run() -> void:
 	_test_incremental_lut(ext, dirty_world, map)
 	_test_worker_lut_upload_batch()
 	_test_worker_ecology_frame(ext, map)
+	_test_held_distinct_cells()
 
 
 func _make_map() -> MapData:
@@ -266,6 +267,46 @@ func _test_worker_lut_upload_batch() -> void:
 			int(batched.eco_lut_tex[2]) == 255 - 2 * 18)
 	_expect("an ordinary LUT update and world replacement keep staged bytes ordered",
 			bool(batched.ordered_flush) and bool(batched.replacement_isolated))
+
+
+func _test_held_distinct_cells() -> void:
+	var reference := _encode_distinct_days(false)
+	var held := _encode_distinct_days(true)
+	_expect("recovery processes both earlier-only and latest changed cells",
+		held.processed == 2 and reference.processed == 1)
+	_expect("the merged update produces the same class, dynamic and ecology bytes as daily builds",
+		held.atlas == reference.atlas and held.atlas[2][6] == 237)
+
+
+func _encode_distinct_days(hold: bool) -> Dictionary:
+	var map := _make_map()
+	var ext := DCWorldExt.new()
+	ext.bind_map_data(map)
+	var baker := RecordingBaker.new()
+	baker.set_world_ext(ext)
+	var world := WorldData.new()
+	world.lut_dims = Vector2i(4, 1)
+	baker.bake_cell_luts(map, world)
+	var updates := preload("res://scripts/game/world_runtime_map_updates.gd").new()
+	var report: Dictionary
+	for day in [1, 2]:
+		var cell: int = day - 1
+		if day == 1:
+			ext.write_f32(ext.component_id(&"cell_temp"), cell, 0.8)
+		else:
+			ext.write_u8(ext.component_id(&"cell_vegetation"), cell, int(VegetationType.VEG.TEMPERATE_GRASSLAND))
+		var ages := PackedByteArray([0, 0, 0, 0])
+		ages[1] = 237 if day == 2 else 0
+		updates.queue({"display_dirty_cells": PackedInt32Array([cell]),
+			"display_class_cells": PackedInt32Array([cell]) if day == 2 else PackedInt32Array(),
+			"cell_lut_frame": {"transition_age": ages, "previous_vitality": PackedByteArray([128, 128, 128, 128])}})
+		if not hold or day == 2:
+			var update: Dictionary = updates.collect(PackedInt32Array())
+			report = DCCellLutBaker.refresh_cell_luts_daily(baker, map, world,
+				update.display_dirty_cells, false, true, false, update)
+			updates.applied(day, 0)
+	return {"processed": report.get("processed_cells", -1),
+		"atlas": [baker._cell_enum_lut_bytes_cache, baker._cell_dyn_lut_bytes_cache, baker._cell_eco_lut_bytes_cache]}
 
 
 func _run_worker_lut_days(batch: bool) -> Dictionary:

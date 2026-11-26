@@ -638,6 +638,9 @@ public:
     godot::Dictionary poll_runtime_receipts(int max_items = 128);
     godot::Dictionary set_runtime_qos_threaded(bool interactive);
     godot::Dictionary poll_runtime_commit(int64_t after_generation, bool take_days = false);
+    godot::Dictionary read_runtime_map_lut_frame(godot::Object *map, int64_t day,
+            int64_t generation, int cell_count, bool measure_copy = false) const;
+    void clear_runtime_map_lut_frame();
     godot::Dictionary request_runtime_save(int64_t request_id);
     godot::Dictionary poll_runtime_save(int64_t request_id);
     godot::Dictionary restore_runtime_bundle(const godot::PackedByteArray &bytes,
@@ -667,6 +670,7 @@ public:
     void finish_runtime_display_frame();
     RuntimeCommit _runtime_display_commit;
     std::shared_ptr<const RuntimeResourceDisplayPatch> _runtime_display_resources;
+    std::shared_ptr<const RuntimeCommit> _runtime_map_display_commit;
     // B8 P3: block until the worker has evaluated environment generation
     // `after_environment_generation` (plan attempt, not necessarily a commit).
     // timeout_ms < 0 waits until the condition or a terminal worker state;

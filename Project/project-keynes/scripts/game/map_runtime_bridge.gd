@@ -3,6 +3,7 @@ extends "res://scripts/simulation/generator_context.gd"
 const EconomyTestBootstrapScript = preload("res://scripts/economy/economy_test_bootstrap.gd")
 const IdeologyFacadeScript = preload("res://scripts/ideology/ideology_facade.gd")
 var _main_steps = preload("res://scripts/game/runtime_main_step_diagnostics.gd").new()
+var measure_map_lut_copies := false
 
 ## 第 5 批：保存边界、停止清理与 worker 控制。可变状态仍由 MapGenerator 持有。
 
@@ -154,6 +155,23 @@ func poll_runtime_commit(after_generation: int = 0, take_days: bool = false) -> 
 	if _generator._data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _generator._data_core_world_ext.poll_runtime_commit(after_generation, take_days)
+
+
+func read_runtime_map_lut_frame(map: MapData, day: int, generation: int) -> Dictionary:
+	var ext = _generator._data_core_world_ext
+	if ext == null:
+		return {"reason": "map_lut_extension_unavailable"}
+	if map == null:
+		return {"reason": "map_lut_map_unavailable"}
+	var frame: Dictionary = ext.read_runtime_map_lut_frame(
+		map, day, generation, map.cell_count(), measure_map_lut_copies)
+	return {"reason": "map_lut_publication_unavailable"} if frame.is_empty() else frame
+
+
+func clear_runtime_map_lut_frame() -> void:
+	var ext = _generator._data_core_world_ext
+	if ext != null:
+		ext.clear_runtime_map_lut_frame()
 
 
 func request_runtime_save(request_id: int) -> Dictionary:

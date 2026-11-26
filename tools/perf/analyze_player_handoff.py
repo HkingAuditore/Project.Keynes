@@ -81,6 +81,32 @@ def display_stats(sample, draw_intervals):
     }
 
 
+def map_read_stats(sample, *, recording_frames=None):
+    copies = [copy for row in sample for copy in row["map_copies"]]
+    # A held window can have zero copies. A timed copy elsewhere in the same
+    # recording proves that the instrument was enabled for that run.
+    recorded = copies if recording_frames is None else [
+        copy for row in recording_frames for copy in row["map_copies"]]
+    if not recorded or any(copy["ns"] < 0 or copy["bytes"] <= 0 for copy in recorded):
+        raise ValueError("map copy timing requires an instrumented baseline and candidate")
+    draws = [usec for row in sample for usec in row["map_draw_times"]]
+    lags = sorted(lag for row in sample for lag in row["map_draw_lag_days"])
+    if len(draws) != len(lags) or len(draws) < 2:
+        raise ValueError("need two actual map draws with the corresponding published-day lag")
+    feedback = [click["usec"] for row in sample for click in row["panel_feedback"]]
+    return {
+        "map_reads": len(copies),
+        "map_copied_bytes": sum(copy["bytes"] for copy in copies),
+        "map_copy_total_ms": sum(copy["ns"] for copy in copies) / 1_000_000,
+        "map_copy": timing_stats([copy["ns"] / 1000 for copy in copies]),
+        "panel_feedback": timing_stats(feedback),
+        "map_draw": timing_stats([after - before for before, after in pairwise(draws)]),
+        "map_draw_lag": {"samples": len(lags), "median": median(lags),
+                         "p95": lags[math.ceil(0.95 * len(lags)) - 1],
+                         "range": [lags[0], lags[-1]]},
+    }
+
+
 def summarize(frames, daily, first_day, last_day, *, require_rendered=False):
     if first_day >= last_day or any(day not in daily for day in range(first_day, last_day + 1)):
         raise ValueError(f"missing contiguous daily records for {first_day} through {last_day}")
@@ -122,6 +148,8 @@ def summarize(frames, daily, first_day, last_day, *, require_rendered=False):
             "ui_median_ms": positive_median("ui_us") / 1000}
     if "view_updates" in sample[0]:
         result.update(display_stats(sample, draw_intervals))
+    if require_rendered and any(row.get("panel_feedback") for row in sample[1:]):
+        result.update(map_read_stats(sample[1:], recording_frames=frames))
     return result
 
 

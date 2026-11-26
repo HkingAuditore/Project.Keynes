@@ -1,6 +1,6 @@
 {
   "class": "DCWorldExt",
-  "count": 675,
+  "count": 677,
   "methods": [
     "_debug_poke_f32",
     "_debug_poke_f32_with_flush",
@@ -108,6 +108,7 @@
     "clear_military_cell_stats",
     "clear_modifier_domain",
     "clear_runtime_fault_injection",
+    "clear_runtime_map_lut_frame",
     "clear_trigger_state",
     "climate_main_thread_suppressed",
     "climate_physics_authoritative",
@@ -427,6 +428,7 @@
     "read_economy_save_chunk",
     "read_f32",
     "read_i32",
+    "read_runtime_map_lut_frame",
     "read_u8",
     "reconcile_completed_research_signals",
     "reconcile_ideology_effects_for_test",

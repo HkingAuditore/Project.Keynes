@@ -116,6 +116,7 @@ Dictionary DCWorldExt::configure_country(const Dictionary &catalog,
             static_cast<NativeIdeologyRuntime *>(_ideology_runtime)->clear_state();
         _ideology_opinion_published_revision = 0;
         _runtime_host = std::move(next);
+        clear_runtime_map_lut_frame();
         if (_effect_forwarder)
             _effect_forwarder->attach(static_cast<EffectRuntime *>(_effect_runtime), _runtime_host.get());
         attach_country_ai_to_host();
@@ -605,6 +606,7 @@ bool DCWorldExt::bind_map_data(Object *map_data) {
         UtilityFunctions::push_error("[DCWorldExt] bind_map_data requires a stopped executor");
         return false;
     }
+    clear_runtime_map_lut_frame();
     _native_daily_visual_commit_pending = false;
     _pending_mark_dirty_all = false;
     _pending_visual_dirty_mask = PackedByteArray();

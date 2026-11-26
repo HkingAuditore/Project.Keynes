@@ -223,15 +223,18 @@ func _check_vision_uses_same_frame() -> bool:
 
 func _check_executor_restart_keeps_held_cells() -> bool:
 	var presentation := preload("res://scripts/game/world_runtime_presentation.gd").new()
-	presentation.queue_worker_commit(30, 31, 90, {"display_dirty_cells": PackedInt32Array([4])})
+	presentation.queue_worker_commit(30, 31, 90, {"display_dirty_cells": PackedInt32Array([4]),
+		"map_lut_pending": true, "committed_day": 31, "generation": 90})
 	# The executor can start a new generation sequence within the same world.
-	presentation.queue_worker_commit(31, 32, 1, {"display_dirty_cells": PackedInt32Array([7])})
+	presentation.queue_worker_commit(31, 32, 1, {"display_dirty_cells": PackedInt32Array([7]),
+		"map_lut_pending": true, "committed_day": 32, "generation": 1})
 	var update: Dictionary = presentation._map_updates.collect(PackedInt32Array())
 	var dirty: PackedInt32Array = update.display_dirty_cells
 	var shown: Array[Array] = []
 	presentation._map_updates.applied(1, 2_000)
 	presentation.publish_worker_view(func(from, day, generation): shown.append([from, day, generation]))
-	return shown == [[30, 32, 1]] and 4 in dirty and 7 in dirty
+	return shown == [[30, 32, 1]] and 4 in dirty and 7 in dirty \
+		and update.map_lut_day == 32 and update.map_lut_generation == 1 and not update.has("cell_lut_frame")
 
 
 func _check_commit_without_map_keeps_held_cells() -> bool:
