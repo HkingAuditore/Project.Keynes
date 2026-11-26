@@ -361,8 +361,11 @@ func set_tax_override_basis_points(handle: int, kind: int, item_id: StringName,
 ## 不是因为每个 item 单独成功。内核的 building_type 键数与结算表都不变。
 func set_tax_override_group_basis_points(handle: int, kind: int,
 		building_ids: PackedStringArray, rate_basis_points: int,
-		effective_day: int, sequence: int) -> Dictionary:
-	return TaxOverrideBatch.set_tax_override_group_basis_points(self, handle, kind, building_ids, rate_basis_points, effective_day, sequence)
+		effective_day: int, sequence: int,
+		assessment_mode: int = TAX_MODE_PERCENT_BP) -> Dictionary:
+	return TaxOverrideBatch.set_tax_override_group_basis_points(
+		self, handle, kind, building_ids, rate_basis_points,
+		effective_day, sequence, assessment_mode)
 
 
 func clear_tax_override(handle: int, kind: int, item_id: StringName,

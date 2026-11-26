@@ -54,6 +54,7 @@ const COMMAND_COUNTRY_TAX_SET_DEFAULT = PlayerCommandValidation.COMMAND_COUNTRY_
 const COMMAND_COUNTRY_TAX_SET_OVERRIDE = PlayerCommandValidation.COMMAND_COUNTRY_TAX_SET_OVERRIDE
 const COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP = PlayerCommandValidation.COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP
 const COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE = PlayerCommandValidation.COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE
+const COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE_GROUP = PlayerCommandValidation.COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE_GROUP
 const COMMAND_CELL_TAX_SET_DEFAULT = PlayerCommandValidation.COMMAND_CELL_TAX_SET_DEFAULT
 const COMMAND_CELL_TAX_CLEAR_DEFAULT = PlayerCommandValidation.COMMAND_CELL_TAX_CLEAR_DEFAULT
 const COMMAND_CELL_TAX_SET_OVERRIDE = PlayerCommandValidation.COMMAND_CELL_TAX_SET_OVERRIDE
@@ -117,6 +118,7 @@ const SUPPORTED_COMMANDS := {
 	COMMAND_COUNTRY_TAX_SET_OVERRIDE: true,
 	COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP: true,
 	COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE: true,
+	COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE_GROUP: true,
 	COMMAND_CELL_TAX_SET_DEFAULT: true,
 	COMMAND_CELL_TAX_CLEAR_DEFAULT: true,
 	COMMAND_CELL_TAX_SET_OVERRIDE: true,
@@ -325,13 +327,17 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 				int(args.kind), StringName(args.item_id), _tax_rate_basis_points(args),
 				effective_day, sequence, _tax_assessment_mode(args))
 		COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP:
-			# 整组调税一次成批提交，内核按同批准入；税率只走百分比模式。
 			result = facade.set_tax_override_group_basis_points(_player_country_handle,
 				int(args.kind), args.get("item_ids", PackedStringArray()),
-				_tax_rate_basis_points(args), effective_day, sequence)
+				_tax_rate_basis_points(args), effective_day, sequence,
+				_tax_assessment_mode(args))
 		COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE:
 			result = facade.clear_tax_override(_player_country_handle,
 				int(args.kind), StringName(args.item_id), effective_day, sequence)
+		COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE_GROUP:
+			result = facade.clear_tax_override_group(_player_country_handle,
+				int(args.kind), args.get("item_ids", PackedStringArray()),
+				effective_day, sequence)
 		COMMAND_CELL_TAX_SET_DEFAULT:
 			result = facade.set_cell_tax_default_basis_points(_player_country_handle,
 				int(args.cell), int(args.kind), _tax_rate_basis_points(args),

@@ -139,6 +139,7 @@ custom_minimum_size = Vector2(0, 260)
 script = ExtResource("7_fiscal")
 
 [node name="GoodsHeading" type="HBoxContainer" parent="Viewport/Column/Ledger/LedgerColumn"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 8
 [node name="GoodsTitle" type="Label" parent="Viewport/Column/Ledger/LedgerColumn/GoodsHeading"]
@@ -165,6 +166,21 @@ layout_mode = 2
 toggle_mode = true
 focus_mode = 0
 text = "仅看覆盖项"
+theme_type_variation = &"PKTabButton"
+[node name="GroupAxis" type="OptionButton" parent="Viewport/Column/Ledger/LedgerColumn/Tools"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(132, 34)
+layout_mode = 2
+focus_mode = 0
+tooltip_text = "选择税项的分组折叠方式"
+[node name="ExpandAllGroups" type="Button" parent="Viewport/Column/Ledger/LedgerColumn/Tools"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(96, 34)
+layout_mode = 2
+focus_mode = 0
+text = "全部展开"
 theme_type_variation = &"PKTabButton"
 [node name="TradeViews" type="HBoxContainer" parent="Viewport/Column/Ledger/LedgerColumn/Tools"]
 visible = false
@@ -206,6 +222,26 @@ layout_mode = 2
 horizontal_alignment = 1
 autowrap_mode = 2
 theme_type_variation = &"PKMutedLabel"
+
+[node name="DefaultTaxHost" type="HBoxContainer" parent="Viewport/Column/Ledger/LedgerColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TaxGroupScroll" type="ScrollContainer" parent="Viewport/Column/Ledger/LedgerColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 1.0
+custom_minimum_size = Vector2(0, 100)
+horizontal_scroll_mode = 0
+[node name="TaxGroupList" type="VBoxContainer" parent="Viewport/Column/Ledger/LedgerColumn/TaxGroupScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
 
 [node name="Scroll" type="ScrollContainer" parent="Viewport/Column/Ledger/LedgerColumn"]
 unique_name_in_owner = true

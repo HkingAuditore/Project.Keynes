@@ -95,7 +95,7 @@ static func build(catalog: Dictionary, mode: String = MODE_SECTOR_OWNER) -> Dict
 		return {"ok": false, "reason": "tax_group_empty_catalog"}
 	if sectors.size() != count:
 		return {"ok": false, "reason": "tax_group_sector_column_mismatch"}
-	var needs_owner := mode == MODE_SECTOR_OWNER or mode == MODE_STAPLE_CROP
+	var needs_owner := mode == MODE_SECTOR_OWNER
 	if needs_owner and owners.size() != count:
 		return {"ok": false, "reason": "tax_group_owner_column_mismatch"}
 	if mode == MODE_CHAIN and chains.size() != count:
@@ -364,11 +364,20 @@ const FAMILY_LABELS := {
 const SECTOR_LABELS := {
 	"agriculture": "农业", "extractive": "采掘", "manufacturing": "制造",
 	"energy": "能源", "knowledge": "知识", "military": "军事",
+	"commerce": "商业与贸易", "unemployed": "未就业",
 }
 const PROFESSION_CLASS_LABELS := {
-	"farmer": "农民", "worker": "工人", "technology": "技术",
-	"military": "军事", "general": "未分类", "unemployed": "未就业",
-	"owner": "业主",
+	"farmer": "农民", "worker": "工人", "technology": "技术与学者",
+	"military": "军事", "owner": "商业与业主", "unemployed": "未就业",
+	"general": "其他",
+}
+## 商业与流通职业（如商人兼任矿场业主时，不能因矿场数量多而被归入采掘业）。
+const COMMERCE_PROFESSION_IDS := {
+	"merchant": true, "ship_officer": true, "transport_worker": true,
+}
+const OWNER_PROFESSION_IDS := {
+	"merchant": true, "landlord": true, "industrialist": true,
+	"guild_master": true, "manager": true, "ship_officer": true,
 }
 const LAYER_RAW := "raw"
 const LAYER_INTERMEDIATE := "intermediate"
@@ -463,7 +472,7 @@ const SUBJECT_AXES := {
 			"hint": "同一生产方式档位的全国建筑"},
 	],
 	SUBJECT_GOOD: [
-		{"id": AXIS_LAYER, "label": "按三层",
+		{"id": AXIS_LAYER, "label": "按产品性质",
 			"hint": "原材料 / 中间品 / 制成品"},
 		{"id": AXIS_ERA, "label": "按时代",
 			"hint": "这种货最早能造出来的时代"},
@@ -860,7 +869,14 @@ static func _profession_axis(catalog: Dictionary, axis: String) -> Dictionary:
 			if classes.size() != ids.size():
 				return {"ok": false, "reason": "tax_axis_profession_class_mismatch"}
 			for i in range(ids.size()):
-				keys[i] = String(classes[i])
+				var pid := String(ids[i])
+				var cls := String(classes[i])
+				if pid == "unemployed":
+					keys[i] = "unemployed"
+				elif (cls.is_empty() or cls == "general") and OWNER_PROFESSION_IDS.has(pid):
+					keys[i] = "owner"
+				else:
+					keys[i] = cls
 			return _group_from_keys(SUBJECT_PROFESSION, axis, ids, keys,
 				PROFESSION_CLASS_LABELS)
 		"sector":
@@ -868,8 +884,14 @@ static func _profession_axis(catalog: Dictionary, axis: String) -> Dictionary:
 				"building_economic_sectors", PackedInt32Array())
 			var employers := _profession_employers(catalog)
 			for i in range(ids.size()):
-				keys[i] = _majority_sector(
-					employers.get(i, PackedInt32Array()), sectors)
+				var pid := String(ids[i])
+				if pid == "unemployed":
+					keys[i] = "unemployed"
+				elif COMMERCE_PROFESSION_IDS.has(pid):
+					keys[i] = "commerce"
+				else:
+					keys[i] = _majority_sector(
+						employers.get(i, PackedInt32Array()), sectors)
 			return _group_from_keys(SUBJECT_PROFESSION, axis, ids, keys,
 				SECTOR_LABELS)
 	return {"ok": false, "reason": "unknown_tax_profession_axis: %s" % axis}

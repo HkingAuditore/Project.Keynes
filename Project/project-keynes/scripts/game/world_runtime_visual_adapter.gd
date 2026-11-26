@@ -2,6 +2,8 @@ extends RefCounted
 
 ## Passive visual/vision adapter. Host owns state and signals.
 
+const MapCameraConvexBoundsScript = preload("res://scripts/rendering/map_camera_convex_bounds.gd")
+
 func _bind_renderer_and_camera(host, safe_area: Rect2) -> void:
 	if host._current_map == null or host._world_data == null:
 		return
@@ -93,6 +95,7 @@ func _bind_renderer_and_camera(host, safe_area: Rect2) -> void:
 		if host._camera.has_method("set_horizontal_wrap"):
 			host._camera.set_horizontal_wrap(host.map_wrap_period_x(), true)
 		WebTelemetry.emit("bind_step", {"s": "after_wrap"})
+		_sync_camera_pan_convex_bounds(host)
 		host._camera.fit_to_viewport(1.0, safe_area, true)
 		WebTelemetry.emit("bind_step", {"s": "after_fit"})
 		host._renderer.set_camera_zoom(host._camera.zoom.x)
@@ -235,6 +238,7 @@ func refresh_country_visuals(host, reason: String) -> Dictionary:
 	if host._settlement_label_layer != null:
 		host._settlement_label_layer.set_fog_enabled(host._fog_of_war_enabled)
 		host._settlement_label_layer.mark_visibility_dirty()
+	_sync_camera_pan_convex_bounds(host)
 	return out
 
 
@@ -557,6 +561,7 @@ func apply_runtime_vision_display(host) -> Dictionary:
 		if host._renderer != null:
 			host._renderer.set_fog_of_war_enabled(enabled, host.fog_early_out_enabled)
 		host.gm_toggle_changed.emit("visual.fog_of_war", enabled)
+	_sync_camera_pan_convex_bounds(host)
 	if not revealed.is_empty():
 		map.publish_resource_visual_inputs(MapData.RESOURCE_VISUAL_BANDS |
 			MapData.RESOURCE_VISUAL_CLIMATE | MapData.RESOURCE_VISUAL_GEOMETRY, revealed)
@@ -576,6 +581,24 @@ func _republish_cell_luts(host, dirty_indices: PackedInt32Array = PackedInt32Arr
 		return {"ok": false, "reason": "baker_missing_refresh"}
 	return baker.refresh_cell_luts_daily(
 		host._current_map, host._world_data, dirty_indices, force_full_encode)
+
+
+func _sync_camera_pan_convex_bounds(host) -> void:
+	if host._camera == null:
+		return
+	if not host._fog_of_war_enabled or host._current_map == null:
+		if host._camera.has_method("clear_pan_convex_bounds"):
+			host._camera.clear_pan_convex_bounds()
+		return
+	if not host._camera.has_method("set_pan_convex_bounds"):
+		return
+	var bounds := MapCameraConvexBoundsScript.build_from_explored(
+		host._current_map,
+		host.hex_size,
+		MapCameraConvexBoundsScript.DEFAULT_MARGIN_HEX_RADII,
+		host.map_wrap_period_x()
+	)
+	host._camera.set_pan_convex_bounds(bounds)
 
 
 func _refresh_country_borders(host) -> Dictionary:

@@ -1,0 +1,87 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
+
+[node name="TaxGroup" type="VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="Header" type="PanelContainer" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKArchiveBand"
+
+[node name="Row" type="HBoxContainer" parent="Header"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="Toggle" type="Button" parent="Header/Row"]
+custom_minimum_size = Vector2(180, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+toggle_mode = true
+focus_mode = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"PKDossierSection"
+tooltip_text = "点击展开或折叠组内明细"
+
+[node name="Content" type="HBoxContainer" parent="Header/Row/Toggle"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 4.0
+offset_right = -6.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 8
+
+[node name="Chevron" parent="Header/Row/Toggle/Content" instance=ExtResource("1_icon")]
+custom_minimum_size = Vector2(14, 14)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+
+[node name="GroupIcon" parent="Header/Row/Toggle/Content" instance=ExtResource("1_icon")]
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+
+[node name="Title" type="Label" parent="Header/Row/Toggle/Content"]
+layout_mode = 2
+vertical_alignment = 1
+theme_type_variation = &"PKDossierSectionTitle"
+
+[node name="Meta" type="Label" parent="Header/Row/Toggle/Content"]
+layout_mode = 2
+size_flags_horizontal = 3
+vertical_alignment = 1
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierMuted"
+
+[node name="Lanes" type="HBoxContainer" parent="Header/Row"]
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 4
+theme_override_constants/separation = 12
+
+[node name="MembersMargin" type="MarginContainer" parent="."]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_left = 22
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 8
+
+[node name="Members" type="HFlowContainer" parent="MembersMargin"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 10

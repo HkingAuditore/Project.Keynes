@@ -3,9 +3,16 @@ extends RefCounted
 
 static func set_tax_override_group_basis_points(host, handle: int, kind: int,
 		building_ids: PackedStringArray, rate_basis_points: int,
-		effective_day: int, sequence: int) -> Dictionary:
+		effective_day: int, sequence: int,
+		assessment_mode: int = 0) -> Dictionary:
 	if not host.is_configured():
 		return {"ok": false, "reason": "country facade is not configured"}
+	if kind < host.TaxKind.INCOME or kind > host.TaxKind.EXPORT:
+		return {"ok": false, "reason": "invalid tax kind"}
+	if assessment_mode != host.TAX_MODE_PERCENT_BP and assessment_mode != host.TAX_MODE_ABSOLUTE:
+		return {"ok": false, "reason": "invalid tax assessment mode"}
+	if not host._tax_value_valid(assessment_mode, rate_basis_points):
+		return {"ok": false, "reason": "tax value out of range for assessment mode"}
 	if building_ids.is_empty():
 		return {"ok": false, "reason": "empty tax group"}
 	var commands: Array[Dictionary] = []
@@ -22,7 +29,7 @@ static func set_tax_override_group_basis_points(host, handle: int, kind: int,
 			"tax_item": item,
 			"stable_id": String(item_id),
 			"tax_rate_basis_points": rate_basis_points,
-			"tax_assessment_mode": host.TAX_MODE_PERCENT_BP,
+			"tax_assessment_mode": assessment_mode,
 			"effective_day": effective_day,
 			"sequence": sequence,
 		})
@@ -36,6 +43,8 @@ static func clear_tax_override_group(host, handle: int, kind: int,
 		sequence: int) -> Dictionary:
 	if not host.is_configured():
 		return {"ok": false, "reason": "country facade is not configured"}
+	if kind < host.TaxKind.INCOME or kind > host.TaxKind.EXPORT:
+		return {"ok": false, "reason": "invalid tax kind"}
 	if building_ids.is_empty():
 		return {"ok": false, "reason": "empty tax group"}
 	var commands: Array[Dictionary] = []

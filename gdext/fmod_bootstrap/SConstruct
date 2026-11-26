@@ -31,7 +31,7 @@ sources = ["src/fmod_bootstrap.cpp"]
 
 out_dir = os.path.abspath(os.path.join(
     "..", "..", "Project", "project-keynes", "addons",
-    "fmod_android_bootstrap", "bin", "android"))
+    "0_fmod_bootstrap", "bin", "android"))
 lib_name = "libFmodBootstrap.android.%s.%s%s" % (
     env["target"], env["arch"], env.subst("$SHLIBSUFFIX"))
 

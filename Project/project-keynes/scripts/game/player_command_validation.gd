@@ -20,6 +20,8 @@ const COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP := &"country.tax.set_override_group
 
 const COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE := &"country.tax.clear_override"
 
+const COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE_GROUP := &"country.tax.clear_override_group"
+
 const COMMAND_CELL_TAX_SET_DEFAULT := &"country.tax.cell.set_default"
 
 const COMMAND_CELL_TAX_CLEAR_DEFAULT := &"country.tax.cell.clear_default"
@@ -155,7 +157,8 @@ static func _validate_command_args(
 					return _result(false, "invalid_args", "研究队列位置无效。")
 		COMMAND_COUNTRY_TAX_SET_DEFAULT, COMMAND_COUNTRY_TAX_SET_OVERRIDE, \
 				COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP, \
-				COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE, COMMAND_CELL_TAX_SET_DEFAULT, \
+				COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE, \
+				COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE_GROUP, COMMAND_CELL_TAX_SET_DEFAULT, \
 				COMMAND_CELL_TAX_CLEAR_DEFAULT, COMMAND_CELL_TAX_SET_OVERRIDE, \
 				COMMAND_CELL_TAX_CLEAR_OVERRIDE:
 			var kind := int(args.get("kind", -1))
@@ -184,11 +187,12 @@ static func _validate_command_args(
 				var item_id := StringName(args.get("item_id", &""))
 				if item_id.is_empty() or not _tax_item_exists(facade, kind, item_id):
 					return _result(false, "invalid_tax_item", "税务细项目标无效。")
-			if id == COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP:
+			if id == COMMAND_COUNTRY_TAX_SET_OVERRIDE_GROUP or \
+					id == COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE_GROUP:
 				var group_ids: PackedStringArray = args.get(
 					"item_ids", PackedStringArray())
 				if group_ids.is_empty():
-					return _result(false, "invalid_tax_item", "整组调税缺少目标建筑。")
+					return _result(false, "invalid_tax_item", "整组调税缺少目标项。")
 				for candidate_id in group_ids:
 					if StringName(candidate_id).is_empty() or \
 							not _tax_item_exists(facade, kind, StringName(candidate_id)):

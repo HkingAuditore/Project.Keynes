@@ -134,17 +134,24 @@ static func _tax_content(kind: String) -> Dictionary:
 	match kind:
 		"good":
 			for profile in GoodProfileRegistryScript.ordered():
-				content[String(profile.id)] = _content_entry(
+				var good_entry := _content_entry(
 					profile.id, profile.display_name,
 					String(GoodProfileRegistryScript.icon_key(profile)),
 					profile.technology_tags,
 					bool(profile.trade_enabled) and String(profile.storage_mode) == "stock")
+				good_entry["category_id"] = String(profile.get("category_id"))
+				good_entry["storage_mode"] = String(profile.get("storage_mode"))
+				content[String(profile.id)] = good_entry
 		"profession":
 			for profile in _load_profiles(EconomyCatalogScript.PROFESSION_DIR):
-				content[String(profile.id)] = _content_entry(
+				var prof_entry := _content_entry(
 					profile.id, profile.display_name,
 					String(IconCatalog.profession_semantic(String(profile.id))),
 					profile.technology_tags)
+				prof_entry["profession_class_id"] = String(profile.get("profession_class_id"))
+				prof_entry["entry_savings_days"] = int(profile.get("entry_savings_days"))
+				prof_entry["state_service_only"] = bool(profile.get("state_service_only"))
+				content[String(profile.id)] = prof_entry
 		"building":
 			for profile in _load_profiles(EconomyCatalogScript.BUILDING_DIR):
 				var primary_good := String(profile.output_good_ids[0]) \
@@ -165,6 +172,7 @@ static func _tax_content(kind: String) -> Dictionary:
 				entry["predecessor_building_ids"] = profile.predecessor_building_ids
 				entry["terminal_reason"] = String(profile.terminal_reason)
 				entry["input_good_ids"] = profile.input_good_ids
+				entry["output_good_ids"] = profile.output_good_ids
 				entry["resource_ids"] = profile.resource_ids
 				entry["has_location_conditions"] = not profile.condition_opcodes.is_empty()
 				content[String(profile.id)] = entry

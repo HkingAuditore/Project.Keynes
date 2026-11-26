@@ -118,6 +118,7 @@ var _tax_context: Dictionary = {}
 var _tax_page_cell := -1
 var _tax_editors: Dictionary = {}
 var _page_tax_editors: Array = []
+var _page_tax_lane_summaries: Dictionary = {}
 var _page_tax_section: Control = null
 var _pending_tax: Dictionary = {}
 var _draft_tax: Dictionary = {}
@@ -659,6 +660,7 @@ func _set_list_caption(caption: InspectorNoteList, text: String) -> void:
 ## 三个税种一次全摊开会把页尾拉得很长，玩家通常只调其中一条。
 func _build_page_tax_section(context: Dictionary) -> void:
 	_page_tax_editors.clear()
+	_page_tax_lane_summaries.clear()
 	_page_tax_section = null
 	_reset_tax_button = null
 	_tax_page_cell = int(context.get("cell", -1))
@@ -738,6 +740,7 @@ func _add_page_tax_lane_subsection(parent: VBoxContainer, lane: Dictionary) -> v
 	summary.text = TaxLaneEditor._format_value(int(lane.get("base", 0)),
 		int(lane.get("mode", 0)))
 	summary.visible = not summary.text.is_empty()
+	_page_tax_lane_summaries[kind] = summary
 	header.set_pressed_no_signal(not collapsed)
 	_apply_section_chevron(chevron, collapsed)
 	body.visible = not collapsed
@@ -802,8 +805,9 @@ func _sync_page_tax_visibility() -> void:
 
 
 func _apply_page_tax_patch(context: Dictionary) -> void:
+	var defaults: Array = context.get("default_lanes", [])
 	var by_kind := {}
-	for lane_value in context.get("default_lanes", []):
+	for lane_value in defaults:
 		var lane: Dictionary = lane_value
 		by_kind[String(lane.get("kind", ""))] = lane
 	for editor_value in _page_tax_editors:
@@ -812,8 +816,19 @@ func _apply_page_tax_patch(context: Dictionary) -> void:
 			continue
 		var kind := String(editor.lane_data().get("kind", ""))
 		if by_kind.has(kind):
-			editor.set_data(by_kind[kind])
-			_restore_lane_pending(editor, by_kind[kind])
+			var lane: Dictionary = by_kind[kind]
+			editor.set_data(lane)
+			_restore_lane_pending(editor, lane)
+			var sub_summary := _page_tax_lane_summaries.get(kind) as Label
+			if is_instance_valid(sub_summary):
+				sub_summary.text = TaxLaneEditor._format_value(
+					int(lane.get("base", 0)), int(lane.get("mode", 0)))
+				sub_summary.visible = not sub_summary.text.is_empty()
+	var outer_refs: Dictionary = _section_refs.get("page_tax", {})
+	var outer_summary := outer_refs.get("summary") as Label
+	if is_instance_valid(outer_summary) and not defaults.is_empty():
+		outer_summary.text = _tax_summary(defaults)
+		outer_summary.visible = not outer_summary.text.is_empty()
 
 
 func _register_tax_editors(editors: Array) -> void:
@@ -851,124 +866,14 @@ func tax_group_axes(subject: String = "building") -> Array:
 
 func tax_group_ids_for(mode: String, item_id: String,
 		subject: String = "building") -> Dictionary:
-	if mode == TAX_GROUP_ALL_MODE:
-		return _tax_group_all_ids(item_id)
-	var info: Dictionary = InspectorTaxGroups.tax_group_ids_for(
-		_player_controller, mode, item_id, subject)
-	if info.is_empty():
-		return {}
-	# 目录里有的 id 不一定都在本国税表里，交集之外的 id 会让整批命令被拒
-	# （总面板同一规则，见 economy_workspace.gd 的 _tax_groups_for_page）。
-	var allowed := _tax_snapshot_ids(item_id)
-	if allowed.is_empty():
-		return info
-	var kept := PackedStringArray()
-	for stable_value in info.get("item_ids", PackedStringArray()):
-		var stable := String(stable_value)
-		if allowed.has(stable):
-			kept.append(stable)
-	info["item_ids"] = kept
-	info["count"] = kept.size()
-	return info
+	return InspectorTaxGroups.resolve_group_ids_for(
+		_player_controller, _tax_page_cell, mode, item_id, subject)
 
 
-## item_id 落在哪一份税快照清单里（阶层 / 物资 / 建筑），就把那一份整份给出。
-## 「全部」轴与分组轴的交集都走这里，只读一份快照。
-func _tax_snapshot_list_for(item_id: String) -> Dictionary:
-	if _player_controller == null \
-			or not _player_controller.has_method("get_country_facade"):
-		return {}
-	var facade = _player_controller.get_country_facade()
-	if facade == null or not facade.has_method("tax_policy_snapshot") \
-			or _tax_page_cell < 0 or not facade.has_method("cell_summary"):
-		return {}
-	var summary: Dictionary = facade.cell_summary(_tax_page_cell)
-	var handle := int(summary.get("country_handle", 0))
-	if handle == 0:
-		return {}
-	var policy: Dictionary = facade.tax_policy_snapshot(handle)
-	if not bool(policy.get("ok", false)):
-		return {}
-	var candidates := [
-		{"key": "profession_ids", "id": "all_professions", "label": "全部阶层"},
-		{"key": "good_ids", "id": "all_goods", "label": "全部物资"},
-		{"key": "building_type_ids", "id": "all_buildings", "label": "全部建筑"},
-	]
-	for entry_value in candidates:
-		var entry: Dictionary = entry_value
-		var raw: Variant = policy.get(String(entry["key"]), PackedStringArray())
-		if not (raw is PackedStringArray):
-			continue
-		var ids: PackedStringArray = raw
-		if not ids.has(item_id):
-			continue
-		return {"key": String(entry["key"]), "id": String(entry["id"]),
-			"label": String(entry["label"]), "ids": ids}
-	return {}
-
-
-## 「全部」轴的目标列表：直接取国家税快照里的 item_ids。
-## 目录（construction_type_columns / 内容表）和税表未必是同一份，
-## 拿目录 id 去发整组命令会因为 unknown tax item 整批被拒，所以这里用快照那份。
-func _tax_group_all_ids(item_id: String) -> Dictionary:
-	var found := _tax_snapshot_list_for(item_id)
-	if found.is_empty():
-		return {}
-	var ids: PackedStringArray = found["ids"]
-	return {"ok": true, "mode": TAX_GROUP_ALL_MODE,
-		"group": 0, "group_id": String(found["id"]),
-		"label": String(found["label"]), "item_ids": ids,
-		"count": ids.size(), "group_count": 1}
-
-
-## 分组轴与税快照的交集用：只要 id 列表，不要组信息。
-func _tax_snapshot_ids(item_id: String) -> PackedStringArray:
-	var found := _tax_snapshot_list_for(item_id)
-	if found.is_empty():
-		return PackedStringArray()
-	return found["ids"]
-
-
-## 整组调税：一次命令改动全国一组项目（如全部主粮农场）的营业税。
-## 与单条 override 不同，这里走 country.tax.set_override_group：命令层把 N 条
-## SET_TAX_OVERRIDE 打成一个批次，内核整批准入，不会只生效一半。
-##
-## 但内核 host 队列的单批上限是 256 条（runtime_pod_protocol.h:1350，
-## 检查在 world_ext_country_commands.cpp:76-87），449 项一把提交会整批被拒，
-## 所以这里按 256 切块。每块内部原子；块与块之间可能半成功，结果按批返回，
-## 调用方不该把 failed_chunks > 0 当成全成功。
 func request_tax_group_override(kind: int, item_ids: PackedStringArray,
-		rate_basis_points: int) -> Dictionary:
-	if _player_controller == null or item_ids.is_empty():
-		return {"ok": false, "submitted": 0, "chunks": 0,
-			"failed_chunks": 0, "reason": "empty tax group"}
-	var submitted := 0
-	var chunks := 0
-	var failed := 0
-	var first_reason := ""
-	var index := 0
-	while index < item_ids.size():
-		var end := mini(index + TAX_GROUP_BATCH_LIMIT, item_ids.size())
-		var chunk := PackedStringArray()
-		for cursor in range(index, end):
-			chunk.append(item_ids[cursor])
-		index = end
-		chunks += 1
-		var result: Dictionary = _player_controller.request_command(
-			&"country.tax.set_override_group",
-			{"kind": kind, "item_ids": chunk,
-				"rate_basis_points": rate_basis_points})
-		if bool(result.get("ok", false)):
-			submitted += chunk.size()
-		else:
-			failed += 1
-			if first_reason.is_empty():
-				first_reason = String(result.get("reason", "被拒"))
-	if failed == 0:
-		return {"ok": true, "submitted": submitted, "chunks": chunks,
-			"failed_chunks": 0, "reason": ""}
-	return {"ok": false, "submitted": submitted, "chunks": chunks,
-		"failed_chunks": failed, "reason": first_reason}
+		rate_basis_points: int, assessment_mode: int = 0) -> Dictionary:
+	return InspectorTaxGroups.submit_group_override(
+		_player_controller, kind, item_ids, rate_basis_points, assessment_mode)
 
 
 func _on_tax_override_requested(

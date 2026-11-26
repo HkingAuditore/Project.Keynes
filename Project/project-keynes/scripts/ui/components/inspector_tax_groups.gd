@@ -73,6 +73,10 @@ static func tax_group_ids_for(controller, mode: String, item_id: String,
 	}
 
 
+const TAX_GROUP_ALL_MODE := "all_items"
+const TAX_GROUP_BATCH_LIMIT := 256
+
+
 ## 主体决定读哪一份 id 列（建筑 / 物资 / 职业三套）。
 static func _id_column(subject: String) -> String:
 	match subject:
@@ -81,3 +85,99 @@ static func _id_column(subject: String) -> String:
 		TaxGroupMapScript.SUBJECT_PROFESSION:
 			return "profession_ids"
 	return "building_type_ids"
+
+
+static func resolve_group_ids_for(controller, cell_idx: int, mode: String,
+		item_id: String, subject: String = TaxGroupMapScript.SUBJECT_BUILDING) -> Dictionary:
+	if mode == TAX_GROUP_ALL_MODE:
+		var found := _tax_snapshot_list_for(controller, cell_idx, item_id)
+		if found.is_empty():
+			return {}
+		var ids: PackedStringArray = found["ids"]
+		return {"ok": true, "mode": TAX_GROUP_ALL_MODE,
+			"group": 0, "group_id": String(found["id"]),
+			"label": String(found["label"]), "item_ids": ids,
+			"count": ids.size(), "group_count": 1}
+	var info := tax_group_ids_for(controller, mode, item_id, subject)
+	if info.is_empty():
+		return {}
+	var found := _tax_snapshot_list_for(controller, cell_idx, item_id)
+	var allowed: PackedStringArray = found.get("ids", PackedStringArray()) \
+		if not found.is_empty() else PackedStringArray()
+	if allowed.is_empty():
+		return info
+	var kept := PackedStringArray()
+	for stable_value in info.get("item_ids", PackedStringArray()):
+		var stable := String(stable_value)
+		if allowed.has(stable):
+			kept.append(stable)
+	info["item_ids"] = kept
+	info["count"] = kept.size()
+	return info
+
+
+static func _tax_snapshot_list_for(controller, cell_idx: int, item_id: String) -> Dictionary:
+	if controller == null or not controller.has_method("get_country_facade"):
+		return {}
+	var facade = controller.get_country_facade()
+	if facade == null or not facade.has_method("tax_policy_snapshot") \
+			or cell_idx < 0 or not facade.has_method("cell_summary"):
+		return {}
+	var summary: Dictionary = facade.cell_summary(cell_idx)
+	var handle := int(summary.get("country_handle", 0))
+	if handle == 0:
+		return {}
+	var policy: Dictionary = facade.tax_policy_snapshot(handle)
+	if not bool(policy.get("ok", false)):
+		return {}
+	var candidates := [
+		{"key": "profession_ids", "id": "all_professions", "label": "全部阶层"},
+		{"key": "good_ids", "id": "all_goods", "label": "全部物资"},
+		{"key": "building_type_ids", "id": "all_buildings", "label": "全部建筑"},
+	]
+	for entry_value in candidates:
+		var entry: Dictionary = entry_value
+		var raw: Variant = policy.get(String(entry["key"]), PackedStringArray())
+		if not (raw is PackedStringArray):
+			continue
+		var ids: PackedStringArray = raw
+		if not ids.has(item_id):
+			continue
+		return {"key": String(entry["key"]), "id": String(entry["id"]),
+			"label": String(entry["label"]), "ids": ids}
+	return {}
+
+
+static func submit_group_override(controller, kind: int, item_ids: PackedStringArray,
+		rate_basis_points: int, assessment_mode: int = 0) -> Dictionary:
+	if controller == null or item_ids.is_empty():
+		return {"ok": false, "submitted": 0, "chunks": 0,
+			"failed_chunks": 0, "reason": "empty tax group"}
+	var submitted := 0
+	var chunks := 0
+	var failed := 0
+	var first_reason := ""
+	var index := 0
+	while index < item_ids.size():
+		var end := mini(index + TAX_GROUP_BATCH_LIMIT, item_ids.size())
+		var chunk := PackedStringArray()
+		for cursor in range(index, end):
+			chunk.append(item_ids[cursor])
+		index = end
+		chunks += 1
+		var result: Dictionary = controller.request_command(
+			&"country.tax.set_override_group", {
+				"kind": kind, "item_ids": chunk,
+				"rate_basis_points": rate_basis_points,
+				"tax_assessment_mode": assessment_mode})
+		if bool(result.get("ok", false)):
+			submitted += chunk.size()
+		else:
+			failed += 1
+			if first_reason.is_empty():
+				first_reason = String(result.get("reason", "被拒"))
+	if failed == 0:
+		return {"ok": true, "submitted": submitted, "chunks": chunks,
+			"failed_chunks": 0, "reason": ""}
+	return {"ok": false, "submitted": submitted, "chunks": chunks,
+		"failed_chunks": failed, "reason": first_reason}

@@ -26,6 +26,7 @@ class_name MapCamera
 extends Camera2D
 
 const DrawnFrame = preload("res://scripts/rendering/map_drawn_frame.gd")
+const ConvexBoundsScript = preload("res://scripts/rendering/map_camera_convex_bounds.gd")
 var drawn_frame: DrawnFrame
 
 # 当用户"点按"（而非拖拽/捏合）地图时发出，参数为世界坐标。由 main.gd 连接做选格。
@@ -58,6 +59,7 @@ signal view_changed(world_rect: Rect2, center: Vector2, zoom_value: float)
 @export_range(0.001, 0.10, 0.001) var view_change_zoom_ratio: float = 0.01
 
 var _world_bounds: Rect2 = Rect2()
+var _pan_convex_bounds: ConvexBoundsScript = null
 var _fit_floor_zoom: float = 0.0
 var _horizontal_wrap_enabled: bool = false
 var _horizontal_wrap_period_x: float = 0.0
@@ -128,6 +130,21 @@ func set_world_bounds(bounds: Rect2) -> void:
 	_world_bounds = bounds
 	_clamp_position()
 
+func set_pan_convex_bounds(bounds: ConvexBoundsScript) -> void:
+	_pan_convex_bounds = bounds if (bounds != null and bounds.is_active()) else null
+	_enforce_zoom_bounds()
+	_clamp_position()
+
+func clear_pan_convex_bounds() -> void:
+	if _pan_convex_bounds == null:
+		return
+	_pan_convex_bounds = null
+	_enforce_zoom_bounds()
+	_clamp_position()
+
+func pan_convex_bounds() -> ConvexBoundsScript:
+	return _pan_convex_bounds
+
 func set_horizontal_wrap(period_x: float, enabled: bool = true) -> void:
 	_horizontal_wrap_period_x = maxf(0.0, period_x)
 	_horizontal_wrap_enabled = enabled and _horizontal_wrap_period_x > 0.0001
@@ -156,20 +173,28 @@ func fit_to_viewport(
 	var sx := area.size.x / (_world_bounds.size.x * margin)
 	var sy := area.size.y / (_world_bounds.size.y * margin)
 	var requested_zoom := maxf(sx, sy) if fill_safe_area else minf(sx, sy)
-	var s := clampf(requested_zoom, zoom_min, _maximum_zoom())
+	var world_center := _world_bounds.position + _world_bounds.size * 0.5
 	if fill_safe_area:
 		# [pan-strict 2026-11-03] 铺满的对象是"整块视口"而不是 safe_area：safe_area 永远
 		# 比视口小（顶栏 / 操作栏 / 右侧面板都被挖掉），只按它铺满会在这些栏后面露出
 		# 引擎 clear color（#4a4a4a 灰底）。同时把这个倍率记成最小倍率地板：玩家再缩小
 		# 也到不了"世界比视口小"的态，_clamped_position() 的严格约束就永远有解。
-		s = clampf(maxf(s, _cover_zoom()), zoom_min, _maximum_zoom())
-		_fit_floor_zoom = s
+		# 注意：_fit_floor_zoom 仅记录世界级地板；已探索凸包的动态缩放下限由 _convex_min_zoom() 提供，
+		# 以便随着探索扩张平滑放宽缩小下限。
+		_fit_floor_zoom = clampf(_cover_zoom(), zoom_min, _maximum_zoom())
 	else:
 		_fit_floor_zoom = 0.0
+	if _pan_convex_bounds != null and _pan_convex_bounds.is_active():
+		var csz: Vector2 = _pan_convex_bounds.bounds_size()
+		if csz.x > 0.001 and csz.y > 0.001:
+			var csx := area.size.x / (csz.x * margin)
+			var csy := area.size.y / (csz.y * margin)
+			requested_zoom = minf(csx, csy)
+		world_center = _pan_convex_bounds.center()
+	var s := clampf(requested_zoom, _minimum_zoom(), _maximum_zoom())
 	zoom = Vector2(s, s)
 	_target_zoom = zoom
-	# 让 safe_area 的中心对齐世界 bounds 的中心
-	var world_center := _world_bounds.position + _world_bounds.size * 0.5
+	# 让 safe_area 的中心对齐世界 bounds（或已探索凸包）的中心
 	var vp_center := vp_size * 0.5
 	var area_center := area.position + area.size * 0.5
 	var screen_offset := area_center - vp_center
@@ -217,6 +242,7 @@ func _on_viewport_size_changed() -> void:
 	# [pan-strict 2026-11-03] 窗口放大（窗口化 → 最大化 / 全屏）会让"刚好铺满"失效，
 	# 地板必须跟着抬；否则玩家一改窗口尺寸就能缩小到看见灰底。
 	_refresh_cover_floor()
+	_enforce_zoom_bounds()
 	_clamp_position()
 	_emit_view_changed_if_needed(true)
 
@@ -254,13 +280,22 @@ func _update_inertia(delta: float) -> void:
 		_pan_velocity = Vector2.ZERO
 		return
 	var before := position
-	position += _pan_velocity * delta
-	_clamp_position()
-	# 撞到边界时清除对应方向速度，避免在边界处"粘滞"
-	if not is_equal_approx(position.x, before.x + _pan_velocity.x * delta):
+	var desired := before + _pan_velocity * delta
+	var convex_pos := desired
+	if _pan_convex_bounds != null and _pan_convex_bounds.is_active():
+		convex_pos = _pan_convex_bounds.clamp_point(desired)
+		if _pan_convex_bounds.last_clamped:
+			# 撞到凸包斜边时仅消去外法线方向的速度分量，保留切向滑行手感
+			var n := _pan_convex_bounds.last_outward_normal
+			var vn := _pan_velocity.dot(n)
+			if vn > 0.0:
+				_pan_velocity -= n * vn
+	position = _clamp_world_bounds_only(convex_pos)
+	# 撞到世界矩形边界时清除对应方向速度，避免在边界处"粘滞"
+	if not is_equal_approx(position.x, convex_pos.x):
 		if not _horizontal_wrap_enabled:
 			_pan_velocity.x = 0.0
-	if not is_equal_approx(position.y, before.y + _pan_velocity.y * delta):
+	if not is_equal_approx(position.y, convex_pos.y):
 		_pan_velocity.y = 0.0
 	# 指数衰减
 	_pan_velocity *= exp(-pan_friction * delta)
@@ -459,7 +494,33 @@ func _set_target_zoom(target_scalar: float, screen_anchor: Vector2) -> void:
 	_pan_anim_active = false  # 缩放时取消聚焦动画，避免互相打架
 
 func _minimum_zoom() -> float:
-	return maxf(zoom_min, _fit_floor_zoom)
+	var floor_z := maxf(maxf(zoom_min, _fit_floor_zoom), _convex_min_zoom())
+	return minf(floor_z, _maximum_zoom())
+
+
+## 已探索外拓凸包对应的动态最小缩放下限：保证视口不会缩小到远大于已探索外拓范围，
+## 导致整屏被大片未探索云海占据；随探索扩张平滑下降，最终回到世界级地板。
+func _convex_min_zoom() -> float:
+	if _pan_convex_bounds == null or not _pan_convex_bounds.is_active():
+		return 0.0
+	var sz: Vector2 = _pan_convex_bounds.bounds_size()
+	if sz.x <= 0.001 or sz.y <= 0.001:
+		return 0.0
+	var vp_size := get_viewport_rect().size
+	if vp_size.x <= 0.001 or vp_size.y <= 0.001:
+		return 0.0
+	return clampf(minf(vp_size.x / sz.x, vp_size.y / sz.y), zoom_min, _maximum_zoom())
+
+
+func _enforce_zoom_bounds() -> void:
+	var lo := _minimum_zoom()
+	var hi := _maximum_zoom()
+	var clamped_target := clampf(_target_zoom.x, lo, hi)
+	_target_zoom = Vector2(clamped_target, clamped_target)
+	var clamped_now := clampf(zoom.x, lo, hi)
+	if not is_equal_approx(clamped_now, zoom.x):
+		zoom = Vector2(clamped_now, clamped_now)
+		_emit_zoom_changed_if_needed()
 
 
 ## [pan-strict 2026-11-03] 让世界在当前视口下"刚好铺满"的最小倍率：任一轴铺满，
@@ -538,9 +599,9 @@ func restore_view_state(world_position: Vector2, saved_zoom) -> void:
 
 func _apply_zoom_anchored(new_scalar: float, screen_anchor: Vector2) -> void:
 	# [mobile-zoom-compensate 2026-11-03] 这里是所有缩放写入的最后一道闸：四个调用点
-	# 已经各自 clamp 过，再在这里兜一次上限，任何将来新增的调用方都无法越过有效天花板
-	# （桌面 _maximum_zoom() 恒等于 zoom_max，此句为逐位无变化的 no-op）。
-	new_scalar = minf(new_scalar, _maximum_zoom())
+	# 已经各自 clamp 过，再在这里兜一次上下限，任何将来新增的调用方都无法越过有效区间
+	# （桌面 _maximum_zoom() 恒等于 zoom_max）。
+	new_scalar = clampf(new_scalar, _minimum_zoom(), _maximum_zoom())
 	var old := zoom.x
 	if is_equal_approx(new_scalar, old):
 		return
@@ -650,6 +711,12 @@ func _stop_motion() -> void:
 	_measuring_pan = false
 
 func _clamped_position(p: Vector2) -> Vector2:
+	var out := p
+	if _pan_convex_bounds != null and _pan_convex_bounds.is_active():
+		out = _pan_convex_bounds.clamp_point(out)
+	return _clamp_world_bounds_only(out)
+
+func _clamp_world_bounds_only(p: Vector2) -> Vector2:
 	if _world_bounds.size == Vector2.ZERO:
 		return p
 	var view_size := get_viewport_rect().size / zoom
@@ -677,7 +744,7 @@ func _clamped_position(p: Vector2) -> Vector2:
 	return out
 
 func _clamp_position() -> void:
-	if _world_bounds.size == Vector2.ZERO:
+	if _world_bounds.size == Vector2.ZERO and (_pan_convex_bounds == null or not _pan_convex_bounds.is_active()):
 		return
 	position = _clamped_position(position)
 
