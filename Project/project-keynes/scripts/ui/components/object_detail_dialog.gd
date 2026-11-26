@@ -73,6 +73,12 @@ var _cohort_refs: Dictionary = {}
 var _building_refs: Dictionary = {}
 var _trade_orders_model: Dictionary = {}
 var _trade_orders_signature := ""
+## 「整组设为」的能力宿主（inspector 面板）。与 `_build_tax_section` 的 `host`
+## 分开：那个只决定税节挂到哪一页，这个提供 tax_group_axes / tax_group_ids_for /
+## request_tax_group_override。基线把两件事塞进同一个变量，而三次调用传的都是
+## %OperationsPage 这个 VBoxContainer，守卫里的 has_method 恒假，三个档案的整组
+## 入口从那时起就没渲染过。允许为 null（dialog 复用/重建时宿主可能没就绪）。
+var _tax_group_host: Control = null
 
 
 func _ready() -> void:
@@ -470,10 +476,15 @@ func _build_tax_section(kind: String, context_value: Variant, row: Dictionary,
 	# 不会发出「目录里有、税表里没有」那种会被整批拒的 id。
 	# 与上面的单条编辑作用域不同——单条只改本格，整组改全国一大片。
 	var section_tax_kind := int(TAX_KIND_BY_SECTION.get(kind, -1))
-	if section_tax_kind >= 0 and editable and host != null \
-			and host.has_method("tax_group_axes") \
-			and host.has_method("tax_group_ids_for") \
-			and host.has_method("request_tax_group_override"):
+	# 能力宿主是 inspector 面板（set_tax_group_host），不是这块内容容器。
+	# `editable` 必须留着：格子被锁的时候不给整组入口。
+	# is_instance_valid：dialog 复用/重建时宿主可能已被释放，别在 has_method 上崩。
+	var group_host := _tax_group_host
+	if section_tax_kind >= 0 and editable \
+			and is_instance_valid(group_host) and group_host != null \
+			and group_host.has_method("tax_group_axes") \
+			and group_host.has_method("tax_group_ids_for") \
+			and group_host.has_method("request_tax_group_override"):
 		var target_item_id := ""
 		var prefill_rate := 0
 		for raw_lane in item_lanes:
@@ -486,7 +497,7 @@ func _build_tax_section(kind: String, context_value: Variant, row: Dictionary,
 			break
 		if not target_item_id.is_empty():
 			_add_tax_group_controls(lanes, kind, section_tax_kind,
-				target_item_id, prefill_rate, host)
+				target_item_id, prefill_rate, group_host)
 	lanes.visible = not item_lanes.is_empty()
 
 
@@ -496,8 +507,11 @@ func _build_tax_section(kind: String, context_value: Variant, row: Dictionary,
 func _add_tax_group_controls(parent: VBoxContainer, kind: String,
 		section_tax_kind: int, target_item_id: String, prefill_rate: int,
 		host: Control) -> void:
+	# 这个参数现在只代表「谁来提供分组能力」，与 _build_tax_section 的 host
+	# （挂载父节点）彻底分开——基线把两者混为一谈，整组入口因此从未渲染。
+	var group_host := host
 	var subject := String(TAX_GROUP_SUBJECT_BY_KIND.get(kind, "building"))
-	var axes: Array = host.tax_group_axes(subject)
+	var axes: Array = group_host.tax_group_axes(subject)
 	if axes.is_empty():
 		return
 	var group_box := UIControlParts.h_box_container()
@@ -545,7 +559,7 @@ func _add_tax_group_controls(parent: VBoxContainer, kind: String,
 	var state := {"ids": PackedStringArray(), "label": ""}
 	var refresh := func() -> void:
 		var axis: Dictionary = axes[int(axis_picker.selected)]
-		var info: Dictionary = host.tax_group_ids_for(
+		var info: Dictionary = group_host.tax_group_ids_for(
 			String(axis.get("id", "")), target_item_id, subject)
 		var ids: PackedStringArray = info.get("item_ids", PackedStringArray())
 		state["ids"] = ids
@@ -573,7 +587,7 @@ func _add_tax_group_controls(parent: VBoxContainer, kind: String,
 			TaxLaneEditor.TAX_RATE_MIN_BP, TaxLaneEditor.TAX_RATE_MAX_BP)
 		# 走宿主既有的整组通道（country.tax.set_override_group），
 		# 宿主内部按 256 条切块，并在返回里报清哪几批被拒。
-		var result: Dictionary = host.request_tax_group_override(
+		var result: Dictionary = group_host.request_tax_group_override(
 			section_tax_kind, ids, rate_bp)
 		if bool(result.get("ok", false)):
 			group_note.text = "整组已提交 %s · %d 项（分 %d 批）" % [
@@ -610,6 +624,12 @@ func set_embedded(embedded: bool = true) -> void:
 	_embedded = embedded
 	_apply_embedded_chrome(embedded)
 	update_minimum_size()
+
+
+## 谁来提供「整组设为」的能力（inspector 面板）。传 null 是合法状态：
+## dialog 复用或宿主重建时可能先清空，守卫里还有 is_instance_valid 与 has_method。
+func set_tax_group_host(host: Control) -> void:
+	_tax_group_host = host
 
 
 func _get_minimum_size() -> Vector2:

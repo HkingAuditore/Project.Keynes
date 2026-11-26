@@ -177,6 +177,9 @@ func _ready() -> void:
 		colonization_requested.emit(_model.get("colonization_action", {})))
 	_clear_tax_confirmation.confirmed.connect(_on_category_tax_reset_confirmed)
 	_object_detail_dialog.set_embedded(true)
+	# 「整组设为」的能力宿主是本面板：tax_group_axes / tax_group_ids_for /
+	# request_tax_group_override 都在这里。dialog 里那个 host 只负责挂载父节点。
+	_object_detail_dialog.set_tax_group_host(self)
 	_object_detail_dialog.closed.connect(_on_detail_closed)
 	_object_detail_dialog.colonization_requested.connect(
 		func(family_handle: int, source_cell: int) -> void:
