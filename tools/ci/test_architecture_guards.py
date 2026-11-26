@@ -932,18 +932,31 @@ class GuardsTest(unittest.TestCase):
             self.assertTrue(saves.cpp_section_violations(root))
 
 
-    def test_skill_mirror_ratchet_rejects_new_and_worse_drift(self):
-        same = {".agents": {"SKILL.md": "a"}, ".claude": {"SKILL.md": "a"}}
-        self.assertEqual(skill_mirrors.drift({"s": same}), {})
-        self.assertEqual(skill_mirrors.drift({"s": {".agents": {"SKILL.md": "a"}}}), {})
-        forked = {".agents": {"SKILL.md": "a"}, ".claude": {"SKILL.md": "b"}, ".codex": {}}
-        current = skill_mirrors.drift({"s": forked})
-        self.assertEqual(current, {"s/SKILL.md": 3})
-        self.assertTrue(skill_mirrors.violations(current, {}))
-        self.assertTrue(skill_mirrors.violations(current, {"s/SKILL.md": 2}))
-        self.assertEqual(skill_mirrors.violations(current, {"s/SKILL.md": 3}), [])
-        self.assertTrue(skill_mirrors.violations({}, {"s/SKILL.md": 3}))
-        self.assertTrue(skill_mirrors.violations({"s/SKILL.md": 2}, {"s/SKILL.md": 3}))
+    def test_skill_sources_reject_missing_manifests_and_tracked_mirrors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            self.assertEqual(skill_mirrors.check(root), (0, ["no tracked skills/<name>/SKILL.md files"]))
+
+            source = root / "skills/example/SKILL.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("# Example\n")
+            subprocess.run(["git", "-C", str(root), "add", "skills"], check=True)
+            self.assertEqual(skill_mirrors.check(root), (1, []))
+
+            mirror = root / ".agents/skills/example/SKILL.md"
+            mirror.parent.mkdir(parents=True)
+            mirror.write_text("# Example\n")
+            self.assertEqual(skill_mirrors.check(root), (1, []))
+            subprocess.run(["git", "-C", str(root), "add", "-f", ".agents"], check=True)
+            mirror.unlink()
+            source.unlink()
+            count, problems = skill_mirrors.check(root)
+            self.assertEqual(count, 1)
+            self.assertEqual(problems, [
+                "tracked tool mirror: .agents/skills/example/SKILL.md; edit the source in skills/",
+                "skill source missing from checkout: skills/example/SKILL.md",
+            ])
 
     def script_access_tree(self):
         tmp = tempfile.TemporaryDirectory()
