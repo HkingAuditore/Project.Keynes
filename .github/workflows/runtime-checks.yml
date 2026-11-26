@@ -22,6 +22,7 @@ jobs:
           sparse-checkout: |
             /tools/ci/
             /tools/factory/
+            /tools/perf/
             /gdext/src/
             /gdext/tests/
             /Project/project-keynes/**/*.gd
@@ -56,6 +57,9 @@ jobs:
         run: |
           sudo apt-get install -y -qq zsh >/dev/null
           python -m unittest discover -s tools/factory/tests -v
+      - name: Performance comparison tests
+        if: success() || failure()
+        run: python -m unittest discover -s tools/perf/tests -p 'test_perf_change*.py' -v
   authoring-and-thread-lifetime:
     runs-on: ubuntu-latest
     steps:
