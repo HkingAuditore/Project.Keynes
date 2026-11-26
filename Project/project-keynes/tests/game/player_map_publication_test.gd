@@ -3,6 +3,7 @@ extends "res://tests/game/player_scene_handoff_probe.gd"
 ## Leaves the formal clock and publication reader running while busy frames
 ## prevent the map from using the time left in the frame.
 const WAITING_DAY := 20
+const STORY_EVENT := "evt.citychain.wall"
 const TEST_SPEED := 5.0
 const TEST_FPS := 60
 
@@ -36,8 +37,10 @@ func _run() -> void:
 	config.base.map_height = HEIGHT
 	config.base.initial_seed = SEED
 	config.country.foreign_count = 3
+	node_added.connect(_install_story_fixture)
 	var normal := await _play_to_wait(config, false)
 	var held := await _play_to_wait(config, true)
+	node_added.disconnect(_install_story_fixture)
 	_check(not normal.is_empty() and not held.is_empty() and normal == held,
 		"daily outcomes, ordered receipts, and final map bytes match with and without the hold")
 	if not held.is_empty():
@@ -108,7 +111,7 @@ func _play_to_wait(config: NewGameConfig, hold: bool) -> Dictionary:
 		and control.get("player_block_day") == WAITING_DAY
 		and control.get("player_block_reason") == "narrative_choice_required"
 		and _host.player_confirmation_view().get("reason") == "narrative_choice_required"
-		and offer.get("event_id") == "evt.citychain.wall", "worker and player scene reach the same story choice")
+		and offer.get("event_id") == STORY_EVENT, "worker and player scene reach the same story choice")
 	_check(_commands_settled() and _day_rows.size() == WAITING_DAY,
 		"receives all days and the ordered command receipts through the wait")
 	var generation := _host._runtime_commit_generation
@@ -142,6 +145,22 @@ func _play_to_wait(config: NewGameConfig, hold: bool) -> Dictionary:
 	print("MAP_READ_PHASE=", JSON.stringify({"held": hold, "copies_before_recovery": copies,
 		"texture_days": _texture_days, "ui_days": _ui_days, "player_day": control.get("player_block_day")}))
 	return {"records": records, "atlas": atlas, "offer": offer.get("event_id")}
+
+
+func _install_story_fixture(node: Node) -> void:
+	if not node is PlayerGame:
+		return
+	# Schedule the choice before the scene starts its executor so changes to
+	# the live narrative odds do not move the test's confirmation boundary.
+	var host: WorldRuntimeHost = node.get_node("RuntimeHost")
+	var fixture := preload("res://scripts/game/runtime_session_module.gd").new()
+	fixture.configure("map_publication_story", ["restore"], [], func() -> Dictionary:
+		return host.get_generator().get_gameplay_event_bus().restore_story({
+			"event_pause_mask": 255,
+			"scheduled_events": [{"due_day": WAITING_DAY, "event_id": STORY_EVENT}],
+		}), host._session_noop, host._session_ok)
+	_check(bool(host.register_session_module(fixture).get("ok", false)),
+		"registers a scheduled story before the executor starts")
 
 
 func _attach_scene() -> void:
