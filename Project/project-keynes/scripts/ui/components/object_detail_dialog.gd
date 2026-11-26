@@ -12,7 +12,15 @@ const NoteScene := preload("res://scenes/ui/object_note.tscn")
 const ActionButtonScene := preload("res://scenes/ui/object_action_button.tscn")
 const TaxSectionScene := preload("res://scenes/ui/object_tax_section.tscn")
 ## NativeCountryRuntime::TaxKind：income 0 / transaction 1 / business 2 / import 3 / export 4。
-const BUSINESS_TAX_KIND := 2
+## 整组设值时按「当前这一节是什么」推税种，不再写死营业税（原来写死 2，
+## 阶层和物资的整组入口根本出不来）。
+const TAX_KIND_BY_SECTION := {"cohort": 0, "good": 1, "building": 2}
+## 「全部」分组轴的 id，与 inspector_panel.TAX_GROUP_ALL_MODE 对齐。
+const TAX_GROUP_ALL_MODE := "all_items"
+const TAX_MODE_PERCENT_BP := 0
+## 整组税率输入框：走场景实例化，不在脚本里造控件
+## （ui_scene_structure_test.gd 的静态场景规矩；world_setup.gd:6 同款做法）。
+const RateFieldScene := preload("res://scenes/ui/setup_spin.tscn")
 const TaxLaneScene := preload("res://scenes/ui/object_tax_lane.tscn")
 const GoodDossierScene := preload("res://scenes/ui/object_good_dossier.tscn")
 const CohortDossierScene := preload("res://scenes/ui/object_cohort_dossier.tscn")
@@ -452,65 +460,127 @@ func _build_tax_section(kind: String, context_value: Variant, row: Dictionary,
 			tax_editing_finished.emit())
 		editor.set_data(lane)
 		_tax_editors[editor.editor_key(int(context.get("cell", -1)))] = editor
-	# 建筑税档额外给一个「整组」入口：把当前税率一次写到全国同一组建筑。
-	# 组可以按生产档位 / 产物 / 大类 / 主粮农场取，四轴共用 tax_group_map。
+	# 整组调税：把一条税率一次写到全国同一组项目。
+	# 组从宿主的 tax_group_axes / tax_group_ids_for 取；宿主按国家税快照给 id，
+	# 不会发出「目录里有、税表里没有」那种会被整批拒的 id。
 	# 与上面的单条编辑作用域不同——单条只改本格，整组改全国一大片。
-	if kind == "building" and editable and host != null \
+	var section_tax_kind := int(TAX_KIND_BY_SECTION.get(kind, -1))
+	if section_tax_kind >= 0 and editable and host != null \
 			and host.has_method("tax_group_axes") \
 			and host.has_method("tax_group_ids_for") \
 			and host.has_method("request_tax_group_override"):
-		var building_item_id := ""
+		var target_item_id := ""
+		var prefill_rate := 0
 		for raw_lane in item_lanes:
 			var probe: Dictionary = raw_lane
-			if String(probe.get("kind", "")) == "building":
-				building_item_id = String(probe.get("item_id", ""))
-				break
-		if not building_item_id.is_empty():
-			var axes: Array = host.tax_group_axes()
-			var group_box := UIControlParts.h_box_container()
-			group_box.add_theme_constant_override("separation", 8)
-			var axis_picker := UIControlParts.option_button()
-			for axis_index in range(axes.size()):
-				axis_picker.add_item(String((axes[axis_index] as Dictionary).get("label", "")))
-			axis_picker.selected = 0
-			group_box.add_child(axis_picker)
-			var group_note := UIControlParts.label()
-			group_note.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
-			group_box.add_child(group_note)
-			var group_button := UIControlParts.button()
-			group_button.text = "把当前税率应用到整组"
-			group_box.add_child(group_button)
-			var state := {"ids": PackedStringArray()}
-			var refresh := func() -> void:
-				var axis: Dictionary = axes[int(axis_picker.selected)]
-				var info: Dictionary = host.tax_group_ids_for(
-					String(axis.get("mode", "")), building_item_id)
-				var ids: PackedStringArray = info.get("item_ids", PackedStringArray())
-				state["ids"] = ids
-				var label := String(info.get("label", ""))
-				axis_picker.tooltip_text = String(axis.get("hint", ""))
-				if ids.is_empty():
-					group_note.text = "整组：不可用"
-					group_button.disabled = true
-				else:
-					group_note.text = "整组：%s · %d 座" % [label, ids.size()]
-					group_button.disabled = false
-					group_button.tooltip_text = "改的是全国「%s」这一组 %d 座建筑的营业税，不是这一个城市" % [
-						label, ids.size()]
-			axis_picker.item_selected.connect(func(_index: int) -> void: refresh.call())
-			group_button.pressed.connect(func() -> void:
-				var ids: PackedStringArray = state["ids"]
-				if ids.is_empty():
-					return
-				for value in _tax_editors.values():
-					var lane_editor = value
-					if lane_editor != null and lane_editor.has_method("displayed_rate"):
-						host.request_tax_group_override(int(BUSINESS_TAX_KIND),
-							ids, int(lane_editor.displayed_rate()))
-						return)
-			refresh.call()
-			lanes.add_child(group_box)
+			if String(probe.get("scope", "item")) != "item":
+				continue
+			target_item_id = String(probe.get("item_id", ""))
+			if int(probe.get("mode", TAX_MODE_PERCENT_BP)) == TAX_MODE_PERCENT_BP:
+				prefill_rate = int(probe.get("base", 0))
+			break
+		if not target_item_id.is_empty():
+			_add_tax_group_controls(lanes, kind, section_tax_kind,
+				target_item_id, prefill_rate, host)
 	lanes.visible = not item_lanes.is_empty()
+
+
+## 整组设值那一行：分组轴 + 目标数 + 税率 + 应用 + 结果。
+## 税率是一个看得见、改得动的 SpinBox：原来取「第一个编辑器的显示值」当隐含
+## 参数，玩家既看不出改的是哪个数，也没法改。
+func _add_tax_group_controls(parent: VBoxContainer, kind: String,
+		section_tax_kind: int, target_item_id: String, prefill_rate: int,
+		host: Control) -> void:
+	var axes: Array = host.tax_group_axes()
+	if axes.is_empty():
+		return
+	var group_box := UIControlParts.h_box_container()
+	group_box.name = "TaxGroupBox"
+	group_box.add_theme_constant_override("separation", 8)
+	var axis_picker := UIControlParts.option_button()
+	axis_picker.name = "Axis"
+	axis_picker.custom_minimum_size = Vector2(118.0, 30.0)
+	var default_axis := 0
+	for axis_index in range(axes.size()):
+		var axis: Dictionary = axes[axis_index]
+		axis_picker.add_item(String(axis.get("label", "")))
+		axis_picker.set_item_tooltip(axis_index, String(axis.get("hint", "")))
+		# 建筑页默认按生产档位；阶层/物资页默认落在「全部」轴——
+		# 建筑那四轴对阶层和物资没有意义，默认选中会立刻显示「不可用」。
+		if kind != "building" and String(axis.get("mode", "")) == TAX_GROUP_ALL_MODE:
+			default_axis = axis_index
+	axis_picker.selected = default_axis
+	axis_picker.tooltip_text = String((axes[default_axis] as Dictionary).get("hint", ""))
+	group_box.add_child(axis_picker)
+
+	var group_note := UIControlParts.label()
+	group_note.name = "Note"
+	group_note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	group_note.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
+	group_box.add_child(group_note)
+
+	var rate_spin := RateFieldScene.instantiate() as SpinBox
+	rate_spin.name = "Rate"
+	rate_spin.custom_minimum_size = Vector2(88.0, 30.0)
+	rate_spin.min_value = -1000.0
+	rate_spin.max_value = 100.0
+	rate_spin.step = 0.01
+	rate_spin.suffix = "%"
+	rate_spin.tooltip_text = "整组统一设成这个税率（只支持百分比）"
+	rate_spin.get_line_edit().alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	rate_spin.set_value_no_signal(clampf(
+		TaxLaneEditor.basis_points_to_percent(prefill_rate), -1000.0, 100.0))
+	group_box.add_child(rate_spin)
+
+	var group_button := UIControlParts.button()
+	group_button.name = "Apply"
+	group_button.text = "整组设为"
+	group_box.add_child(group_button)
+
+	var state := {"ids": PackedStringArray(), "label": ""}
+	var refresh := func() -> void:
+		var axis: Dictionary = axes[int(axis_picker.selected)]
+		var info: Dictionary = host.tax_group_ids_for(
+			String(axis.get("mode", "")), target_item_id)
+		var ids: PackedStringArray = info.get("item_ids", PackedStringArray())
+		state["ids"] = ids
+		var label := String(info.get("label", ""))
+		state["label"] = label
+		axis_picker.tooltip_text = String(axis.get("hint", ""))
+		if ids.is_empty():
+			group_note.text = "整组：这一轴没有可分组的项目"
+			group_button.disabled = true
+			return
+		if ids.size() <= 1:
+			group_note.text = "整组：%s · 仅 1 项，直接改上面那一行" % label
+			group_button.disabled = true
+			return
+		group_note.text = "整组：%s · %d 项" % [label, ids.size()]
+		group_button.disabled = false
+		group_button.tooltip_text = "改的是全国「%s」这一组 %d 项的税率，不是这一格" % [
+			label, ids.size()]
+	axis_picker.item_selected.connect(func(_index: int) -> void: refresh.call())
+	group_button.pressed.connect(func() -> void:
+		var ids: PackedStringArray = state["ids"]
+		if ids.is_empty():
+			return
+		var rate_bp := clampi(int(round(rate_spin.value * 100.0)),
+			TaxLaneEditor.TAX_RATE_MIN_BP, TaxLaneEditor.TAX_RATE_MAX_BP)
+		# 走宿主既有的整组通道（country.tax.set_override_group），
+		# 宿主内部按 256 条切块，并在返回里报清哪几批被拒。
+		var result: Dictionary = host.request_tax_group_override(
+			section_tax_kind, ids, rate_bp)
+		if bool(result.get("ok", false)):
+			group_note.text = "整组已提交 %s · %d 项（分 %d 批）" % [
+				TaxLaneEditor._format_value(rate_bp, TaxLaneEditor.TAX_MODE_PERCENT_BP),
+				int(result.get("submitted", 0)), int(result.get("chunks", 1))]
+		else:
+			group_note.text = "整组未全部生效：%d/%d 批被拒（%s），已提交 %d 项" % [
+				int(result.get("failed_chunks", 0)), int(result.get("chunks", 0)),
+				String(result.get("reason", "被拒")),
+				int(result.get("submitted", 0))])
+	refresh.call()
+	parent.add_child(group_box)
 
 
 func _item_tax_lanes(row: Dictionary) -> Array:

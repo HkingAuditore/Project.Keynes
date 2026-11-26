@@ -26,6 +26,12 @@ const MilitaryCellLedgerScene := preload("res://scenes/ui/military_cell_ledger.t
 
 const TAX_KIND_IDS := {"income": 0, "consumption": 1, "business": 2,
 	"import": 3, "export": 4}
+## 「全部」分组轴：取国家税快照自己那份 item 列表（命令层校验的也是这份）。
+const TAX_GROUP_ALL_MODE := "all_items"
+## 整组调税一次能提交多少条：内核 host 队列单批上限 256
+## （gdext/src/runtime_pod_protocol.h:1350；检查在
+## gdext/src/world_ext_country_commands.cpp:76-87），超出整批被拒。
+const TAX_GROUP_BATCH_LIMIT := 256
 const SPLIT_DETAIL_MIN_WIDTH := 800.0
 ## 档案列低于此高度时 KPI 条改为单行，给正文多留约 34px。
 const DENSE_KPI_MAX_HEIGHT := 500.0
@@ -108,6 +114,8 @@ var _kpi_values: Dictionary = {}
 var _player_controller = null
 var _colonization_button: Button
 var _tax_context: Dictionary = {}
+## 页尾税务节所属地块：给「全部」分组轴查国家税快照用。
+var _tax_page_cell := -1
 var _tax_editors: Dictionary = {}
 var _page_tax_editors: Array = []
 var _page_tax_section: Control = null
@@ -643,10 +651,14 @@ func _set_list_caption(caption: InspectorNoteList, text: String) -> void:
 ## 税率编辑收进页尾的折叠「税务」节：默认收起，节头直接给出当前税率，
 ## 展开后才是可编辑的税档。_page_tax_section 指向整个折叠节，
 ## 打开对象详情时整节隐藏（对象详情自带对象级税档）。
+##
+## 多个税档（市场页的交易 / 进口 / 出口）在节内再各占一个可折叠子节：
+## 三个税种一次全摊开会把页尾拉得很长，玩家通常只调其中一条。
 func _build_page_tax_section(context: Dictionary) -> void:
 	_page_tax_editors.clear()
 	_page_tax_section = null
 	_reset_tax_button = null
+	_tax_page_cell = int(context.get("cell", -1))
 	var defaults: Array = context.get("default_lanes", [])
 	if defaults.is_empty():
 		return
@@ -673,13 +685,14 @@ func _build_page_tax_section(context: Dictionary) -> void:
 		hint.text = ""
 		hint.visible = false
 	var lanes := section.get_node("Lanes") as VBoxContainer
-	for raw in defaults:
-		var lane: Dictionary = raw
-		var editor := TaxLaneScene.instantiate() as TaxLaneEditor
-		lanes.add_child(editor)
-		editor.set_data(lane)
-		_restore_lane_pending(editor, lane)
-		_page_tax_editors.append(editor)
+	if defaults.size() <= 1:
+		for raw in defaults:
+			var lane: Dictionary = raw
+			_add_page_tax_lane(lanes, lane)
+	else:
+		for raw in defaults:
+			var lane: Dictionary = raw
+			_add_page_tax_lane_subsection(lanes, lane)
 	lanes.visible = not defaults.is_empty()
 	_reset_tax_button = ActionButtonScene.instantiate() as Button
 	_reset_tax_button.text = "重置本栏税收设置"
@@ -688,6 +701,60 @@ func _build_page_tax_section(context: Dictionary) -> void:
 	body.add_child(_reset_tax_button)
 	_update_reset_tax_button()
 	_sync_page_tax_visibility()
+
+
+## 单条税档：实例化一行并登记，草稿 / 待生效状态沿用既有那一套。
+func _add_page_tax_lane(parent: VBoxContainer, lane: Dictionary) -> void:
+	var editor := TaxLaneScene.instantiate() as TaxLaneEditor
+	parent.add_child(editor)
+	editor.set_data(lane)
+	_restore_lane_pending(editor, lane)
+	_page_tax_editors.append(editor)
+
+
+## 一个税种一个可折叠子节：节头给出该税种当前税率，展开才是可编辑的那一行。
+## 折叠状态按「页签 + page_tax + 税种」记，和其他节的 _section_collapsed 同源。
+func _add_page_tax_lane_subsection(parent: VBoxContainer, lane: Dictionary) -> void:
+	var kind := String(lane.get("kind", ""))
+	var key := "%s:page_tax:%s" % [_current_tab, kind]
+	var collapsed := bool(_section_collapsed.get(key, true))
+	_section_collapsed[key] = collapsed
+	var root := CollapsibleSectionScene.instantiate() as VBoxContainer
+	parent.add_child(root)
+	var header := root.get_node("Header") as Button
+	var chevron := root.get_node("Header/Row/Chevron") as IconBadge
+	var icon := root.get_node("Header/Row/Icon") as IconBadge
+	var label := root.get_node("Header/Row/Label") as Label
+	var summary := root.get_node("Header/Row/Summary") as Label
+	var body := root.get_node("Body") as VBoxContainer
+	var caption := body.get_node_or_null("Caption") as Label
+	if caption != null:
+		caption.visible = false
+	icon.set_semantic(_tax_lane_icon(kind), UITokens.BRASS_HIGHLIGHT)
+	label.text = String(lane.get("kind_label", "")).trim_prefix("此地")
+	summary.text = TaxLaneEditor._format_value(int(lane.get("base", 0)),
+		int(lane.get("mode", 0)))
+	summary.visible = not summary.text.is_empty()
+	header.set_pressed_no_signal(not collapsed)
+	_apply_section_chevron(chevron, collapsed)
+	body.visible = not collapsed
+	header.toggled.connect(func(expanded: bool) -> void:
+		_section_collapsed[key] = not expanded
+		_apply_section_chevron(chevron, not expanded)
+		body.visible = expanded
+	)
+	_add_page_tax_lane(body, lane)
+
+
+func _tax_lane_icon(kind: String) -> StringName:
+	var icons := {
+		"income": &"tax.income",
+		"consumption": &"tax.consumption",
+		"business": &"tax.business",
+		"import": &"tax.tariff",
+		"export": &"tax.tariff",
+	}
+	return StringName(icons.get(kind, &"tax.section"))
 
 
 func _page_tax_title(tab_id: String) -> String:
@@ -770,28 +837,101 @@ func _register_tax_editor(editor: TaxLaneEditor) -> void:
 
 
 func tax_group_axes() -> Array:
-	return InspectorTaxGroups.tax_group_axes()
+	# 复制一份再追加：InspectorTaxGroups 返回的是 const 数组本体。
+	var axes: Array = InspectorTaxGroups.tax_group_axes().duplicate(true)
+	axes.append({"mode": TAX_GROUP_ALL_MODE, "label": "全部",
+		"hint": "该国这个税种下的全部项目"})
+	return axes
 
 
 func tax_group_ids_for(mode: String, item_id: String) -> Dictionary:
+	if mode == TAX_GROUP_ALL_MODE:
+		return _tax_group_all_ids(item_id)
 	return InspectorTaxGroups.tax_group_ids_for(_player_controller, mode, item_id)
+
+
+## 「全部」轴的目标列表：直接取国家税快照里的 item_ids。
+## 目录（construction_type_columns / 内容表）和税表未必是同一份，
+## 拿目录 id 去发整组命令会因为 unknown tax item 整批被拒，所以这里用快照那份。
+func _tax_group_all_ids(item_id: String) -> Dictionary:
+	if _player_controller == null \
+			or not _player_controller.has_method("get_country_facade"):
+		return {}
+	var facade = _player_controller.get_country_facade()
+	if facade == null or not facade.has_method("tax_policy_snapshot") \
+			or _tax_page_cell < 0 or not facade.has_method("cell_summary"):
+		return {}
+	var summary: Dictionary = facade.cell_summary(_tax_page_cell)
+	var handle := int(summary.get("country_handle", 0))
+	if handle == 0:
+		return {}
+	var policy: Dictionary = facade.tax_policy_snapshot(handle)
+	if not bool(policy.get("ok", false)):
+		return {}
+	var candidates := [
+		{"key": "profession_ids", "id": "all_professions", "label": "全部阶层"},
+		{"key": "good_ids", "id": "all_goods", "label": "全部物资"},
+		{"key": "building_type_ids", "id": "all_buildings", "label": "全部建筑"},
+	]
+	for entry_value in candidates:
+		var entry: Dictionary = entry_value
+		var raw: Variant = policy.get(String(entry["key"]), PackedStringArray())
+		if not (raw is PackedStringArray):
+			continue
+		var ids: PackedStringArray = raw
+		if not ids.has(item_id):
+			continue
+		return {"ok": true, "mode": TAX_GROUP_ALL_MODE,
+			"group": 0, "group_id": String(entry["id"]),
+			"label": String(entry["label"]), "item_ids": ids,
+			"count": ids.size(), "group_count": 1}
+	return {}
 
 
 func staple_farm_tax_group_ids() -> PackedStringArray:
 	return InspectorTaxGroups.staple_farm_tax_group_ids(_player_controller)
 
 
-## 整组调税：一次命令改动全国一组建筑（如全部主粮农场）的营业税。
+## 整组调税：一次命令改动全国一组项目（如全部主粮农场）的营业税。
 ## 与单条 override 不同，这里走 country.tax.set_override_group：命令层把 N 条
 ## SET_TAX_OVERRIDE 打成一个批次，内核整批准入，不会只生效一半。
+##
+## 但内核 host 队列的单批上限是 256 条（runtime_pod_protocol.h:1350，
+## 检查在 world_ext_country_commands.cpp:76-87），449 项一把提交会整批被拒，
+## 所以这里按 256 切块。每块内部原子；块与块之间可能半成功，结果按批返回，
+## 调用方不该把 failed_chunks > 0 当成全成功。
 func request_tax_group_override(kind: int, item_ids: PackedStringArray,
-		rate_basis_points: int) -> void:
+		rate_basis_points: int) -> Dictionary:
 	if _player_controller == null or item_ids.is_empty():
-		return
-	_player_controller.request_command(
-		&"country.tax.set_override_group",
-		{"kind": kind, "item_ids": item_ids,
-			"rate_basis_points": rate_basis_points})
+		return {"ok": false, "submitted": 0, "chunks": 0,
+			"failed_chunks": 0, "reason": "empty tax group"}
+	var submitted := 0
+	var chunks := 0
+	var failed := 0
+	var first_reason := ""
+	var index := 0
+	while index < item_ids.size():
+		var end := mini(index + TAX_GROUP_BATCH_LIMIT, item_ids.size())
+		var chunk := PackedStringArray()
+		for cursor in range(index, end):
+			chunk.append(item_ids[cursor])
+		index = end
+		chunks += 1
+		var result: Dictionary = _player_controller.request_command(
+			&"country.tax.set_override_group",
+			{"kind": kind, "item_ids": chunk,
+				"rate_basis_points": rate_basis_points})
+		if bool(result.get("ok", false)):
+			submitted += chunk.size()
+		else:
+			failed += 1
+			if first_reason.is_empty():
+				first_reason = String(result.get("reason", "被拒"))
+	if failed == 0:
+		return {"ok": true, "submitted": submitted, "chunks": chunks,
+			"failed_chunks": 0, "reason": ""}
+	return {"ok": false, "submitted": submitted, "chunks": chunks,
+		"failed_chunks": failed, "reason": first_reason}
 
 
 func _on_tax_override_requested(
@@ -937,6 +1077,7 @@ func _on_category_tax_reset_confirmed() -> void:
 func _apply_category_patch(data: Dictionary) -> void:
 	if data.has("tax_context"):
 		_tax_context = data.get("tax_context", {})
+		_tax_page_cell = int(_tax_context.get("cell", _tax_page_cell))
 		_update_reset_tax_button()
 		_apply_page_tax_patch(_tax_context)
 		_resolve_tax_pending(_tax_context, data)

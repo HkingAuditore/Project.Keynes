@@ -8,6 +8,10 @@ const FiscalBudgetPageScript = preload("res://scripts/ui/components/fiscal_budge
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 const TaxCardScene := preload("res://scenes/ui/economy_tax_card.tscn")
 const TaxLaneScene := preload("res://scenes/ui/economy_tax_lane.tscn")
+## 税制页的分组条：分组筛选 + 整组设值 + 收起明细。
+const TaxGroupBarScript := preload("res://scripts/ui/components/tax_group_bar.gd")
+## 建筑分组与地方面板同源（同一张分组表），两处组名不会对不上。
+const TaxGroupMapScript := preload("res://scripts/country/tax_group_map.gd")
 const TouchValueFieldScript := preload("res://scripts/ui/components/touch_value_field.gd")
 const TreasuryGoodScene := preload("res://scenes/ui/treasury_good_card.tscn")
 const TradeRowScene := preload("res://scenes/ui/economy_trade_row.tscn")
@@ -26,6 +30,11 @@ const PAGE_DEFINITIONS := {
 }
 const TAX_KIND := {"income": 0, "consumption": 1, "business": 2, "import": 3, "export": 4}
 const KIND_LABELS := {"consumption": "交易", "import": "进口", "export": "出口"}
+## 整组设值一次能提交多少条：内核 host 队列的单批上限就是 256
+## （gdext/src/runtime_pod_protocol.h:1350 RUNTIME_COUNTRY_COMMAND_BATCH_CAPACITY；
+## 检查在 gdext/src/world_ext_country_commands.cpp:76-87），超出整批被拒，
+## 所以这里必须切块，不能把 449 项一次塞进去。
+const TAX_GROUP_BATCH_LIMIT := 256
 const TAX_MODE_PERCENT_BP := 0
 const TAX_MODE_ABSOLUTE := 1
 const TAX_ABSOLUTE_MIN := -1000000000
@@ -58,6 +67,15 @@ var _tax_tab_signature := ""
 var _scroll: ScrollContainer
 var _flow: HFlowContainer
 var _empty_label: Label
+## 分组条：只在税制页出现，非税页隐藏（与搜索框同一条可见性纪律）。
+## 不写死类型：分组条自带 configure/set_groups 等方法，按 Node 动态调用。
+var _tax_group_bar = null
+## 当前页可选的分组轴：[{id, label, hint}]，顺序即下拉顺序。
+var _tax_group_axes: Array = []
+## 当前选中的组 id；空串表示「不按组筛」。
+var _tax_group_selection := ""
+## 明细是否收起：只留分组条，卡片全部收起（默认卡仍显示）。
+var _tax_group_collapsed := false
 var _trade_views: HBoxContainer
 var _trade_goods_button: Button
 var _trade_partners_button: Button
@@ -145,6 +163,7 @@ func _ready() -> void:
 		_tax_tabs.tab_selected.connect(_select_page)
 	_search.text_changed.connect(_apply_filter.unbind(1))
 	_overrides_only.toggled.connect(_apply_filter.unbind(1))
+	_build_tax_group_bar(ledger_root)
 	if _trade_goods_button != null:
 		_trade_goods_button.pressed.connect(_select_trade_view.bind("goods"))
 	if _trade_partners_button != null:
@@ -464,6 +483,9 @@ func _select_page(page: String) -> void:
 		page = _page if _is_tax_page(_page) else "income"
 	if _is_tax_page(page):
 		_last_tax_page = page
+	if page != _page:
+		# 换页就展开明细：收起状态只在同一页里跨刷新保留。
+		_tax_group_collapsed = false
 	_page = page
 	_apply_summary_visibility()
 	if _tabs != null:
@@ -476,6 +498,9 @@ func _select_page(page: String) -> void:
 	if _search != null:
 		_search.visible = _is_tax_page(page)
 		_overrides_only.visible = _is_tax_page(page)
+	if _tax_group_bar != null:
+		_tax_group_bar.visible = _is_tax_page(page)
+		_tax_group_bar.set_collapsed(_tax_group_collapsed)
 	if _trade_views != null:
 		_trade_views.visible = page == "trade"
 		_trade_prev.visible = page == "trade"
@@ -574,6 +599,7 @@ func _refresh_page() -> void:
 		return
 	var policy: Dictionary = _model.get("tax_policy", {})
 	if not bool(policy.get("ok", false)):
+		_refresh_tax_groups(policy)
 		_sync_visibility(wanted)
 		_empty_label.visible = false
 		_set_status(String(policy.get("reason", "税收政策暂不可用")))
@@ -641,6 +667,7 @@ func _refresh_page() -> void:
 			String(item.get("icon_key", "")), false, kind_data.keys())
 		_update_card(card, kind_data)
 		wanted["%s:%s" % [_page, stable_id]] = true
+	_refresh_tax_groups(policy)
 	_sync_visibility(wanted)
 	_set_status("")
 	_apply_filter()
@@ -1547,7 +1574,11 @@ func _make_good_card(stable_id: String, icon_key: String) -> Dictionary:
 
 func _apply_filter() -> void:
 	var needle := _search.text.strip_edges().to_lower()
+	var group_ids := _current_group_item_ids()
+	var has_group := not group_ids.is_empty()
 	var visible_count := 0
+	# 项目卡可见数单独记：默认卡恒显示，不能让它把「什么都筛掉了」掩盖掉。
+	var project_visible := 0
 	for row_value in _rows.values():
 		var card: Dictionary = row_value
 		if String(card.get("page", "")) != _page:
@@ -1557,20 +1588,356 @@ func _apply_filter() -> void:
 			control.visible = true
 			visible_count += 1
 			continue
+		# 收起明细：项目卡全收，默认卡留在上面——税率总还是看得见。
+		if _tax_group_collapsed and _is_tax_page(_page):
+			control.visible = false
+			continue
 		var matches := needle.is_empty() or String(card.item_id).to_lower().contains(needle) \
 			or String((card.name as Label).text).to_lower().contains(needle)
 		var any_override := false
 		for kind in (card.overridden as Dictionary).keys():
 			any_override = any_override or bool(card.overridden[kind])
 		var override_ok := not _overrides_only.button_pressed or any_override
-		control.visible = matches and override_ok
+		var group_ok := not has_group or group_ids.has(String(card.item_id))
+		control.visible = matches and override_ok and group_ok
 		if control.visible:
 			visible_count += 1
+			project_visible += 1
 	if visible_count == 0 and needle.is_empty():
 		_empty_label.text = "当前科技未解锁任何项目"
 		_empty_label.visible = true
+	elif project_visible == 0 and not (_tax_group_collapsed and _is_tax_page(_page)):
+		if not needle.is_empty():
+			_empty_label.text = "没有匹配「%s」的项" % _search.text.strip_edges()
+		elif has_group:
+			_empty_label.text = "这一组没有可显示的项"
+		else:
+			_empty_label.text = "没有可显示的项"
+		_empty_label.visible = true
 	else:
 		_empty_label.visible = false
+
+
+## 把「分组条」挂到账本列里：紧贴 Tools 一行之下、StatusLabel 之前。
+## 不进 Tools 那一行（那行已经有搜索框、只看覆盖、贸易翻页，挤不下）。
+func _build_tax_group_bar(ledger_root: String) -> void:
+	if _tax_group_bar != null or _flow == null:
+		return
+	var column := _flow.get_parent().get_parent() as VBoxContainer
+	if column == null:
+		return
+	var bar = TaxGroupBarScript.new()
+	bar.name = "TaxGroupBar"
+	bar.visible = false
+	column.add_child(bar)
+	var tools := column.get_node_or_null("Tools") as Control
+	if tools != null:
+		column.move_child(bar, tools.get_index() + 1)
+	_tax_group_bar = bar
+	bar.axis_changed.connect(_on_tax_group_axis_changed)
+	bar.group_changed.connect(_on_tax_group_changed)
+	bar.apply_requested.connect(_on_tax_group_apply)
+	bar.collapse_toggled.connect(_on_tax_group_collapse)
+
+
+## 当前组包含的 item_id；没选组或不在税制页时为空（等于不按组筛）。
+func _current_group_item_ids() -> PackedStringArray:
+	if _tax_group_bar == null or not bool(_tax_group_bar.visible):
+		return PackedStringArray()
+	return PackedStringArray(_tax_group_bar.selected_item_ids())
+
+
+## 按当前页重算分组轴与组列表，并把这批组灌给分组条。
+## 只在轴集合变了的时候重建下拉，避免每日刷新把玩家选中的组弹回第一项。
+func _refresh_tax_groups(policy: Dictionary) -> void:
+	if _tax_group_bar == null:
+		return
+	var tax_page := _is_tax_page(_page)
+	var ok := tax_page and bool(policy.get("ok", false))
+	_tax_group_bar.visible = ok
+	if not ok:
+		_tax_group_axes = []
+		_tax_group_selection = ""
+		_tax_group_collapsed = false
+		return
+	var axes := _tax_group_axes_for_page(_page)
+	if _axes_signature(axes) != _axes_signature(_tax_group_axes):
+		_tax_group_axes = axes
+		_tax_group_bar.configure(_tax_group_axes)
+		_tax_group_selection = ""
+	var groups := _tax_groups_for_page(_page, String(_tax_group_bar.current_axis_id()))
+	# 空数据：这一页一张项目卡都没有，整条不渲染（不是置灰摆在那里）。
+	# 只有当「有卡片但当前轴分不出组」时才留着，否则玩家没法换轴。
+	if groups.is_empty() and _page_card_ids(_page).is_empty():
+		_tax_group_bar.visible = false
+		_tax_group_selection = ""
+		_tax_group_collapsed = false
+		return
+	_tax_group_bar.set_groups(groups, _tax_group_editable(), _tax_group_reason())
+	_tax_group_bar.set_collapsed(_tax_group_collapsed)
+	# 下拉会自己保住上一项，这里回读一次，保证宿主状态和控件一致。
+	_tax_group_selection = String(_tax_group_bar.current_group_id())
+
+
+func _axes_signature(axes: Array) -> String:
+	var parts := PackedStringArray()
+	for axis_value in axes:
+		parts.append(String((axis_value as Dictionary).get("id", "")))
+	return "|".join(parts)
+
+
+## 分组轴按页给：所得税/物资税只有「税率档」；营业税另有四个建筑分组轴，
+## 与地方面板同源（tax_group_map），组名两边一致。
+func _tax_group_axes_for_page(page: String) -> Array:
+	var axes: Array = [{"id": "rate_band", "label": "按税率档",
+		"hint": "按当前税率把这一页的项目分成几档"}]
+	if page != "business":
+		return axes
+	if _tax_group_columns().is_empty():
+		return axes
+	var building_axes := [
+		{"id": "maturity_rank", "label": "按生产档位", "hint": "同一生产方式档位的全国建筑"},
+		{"id": "output_good", "label": "按产物", "hint": "产出同一件货的全国建筑"},
+		{"id": "sector", "label": "按大类", "hint": "农业/采掘/制造/能源/知识/军事"},
+		{"id": "staple_crop", "label": "按主粮农场", "hint": "全国主粮农场，其余按大类"},
+	]
+	for axis_value in building_axes:
+		axes.append(axis_value)
+	return axes
+
+
+## 分组表：与地方面板取同一份建筑目录（economy facade 的 construction_type_columns）。
+func _tax_group_columns() -> Dictionary:
+	var controller = _player_controller
+	if controller == null or not controller.has_method("get_economy_facade"):
+		return {}
+	var economy = controller.get_economy_facade()
+	if economy == null or not economy.has_method("construction_type_columns"):
+		return {}
+	return economy.construction_type_columns()
+
+
+## 本页已经建出卡片的项目 id，按建卡顺序（默认卡不算）。
+func _page_card_ids(page: String) -> Array:
+	var out: Array = []
+	for key_value in _rows.keys():
+		var key := String(key_value)
+		if not key.begins_with("%s:" % page):
+			continue
+		var card: Dictionary = _rows[key]
+		if bool(card.get("is_default", false)):
+			continue
+		out.append(String(card.get("item_id", "")))
+	return out
+
+
+func _tax_groups_for_page(page: String, axis_id: String) -> Array:
+	if axis_id.is_empty():
+		return []
+	if axis_id == "rate_band":
+		return _rate_band_groups(page)
+	return _building_groups(page, axis_id)
+
+
+## 按税率档分组：全部 / 0% / 0.1%–10% / 10% 以上。
+## 取每张卡第一个税种的权威税率（没有覆盖时就是国家默认）。
+func _rate_band_groups(page: String) -> Array:
+	var all_ids := PackedStringArray()
+	var zero_ids := PackedStringArray()
+	var low_ids := PackedStringArray()
+	var high_ids := PackedStringArray()
+	for item_id in _page_card_ids(page):
+		var card: Dictionary = _rows.get("%s:%s" % [page, item_id], {})
+		if card.is_empty():
+			continue
+		var kinds: Array = card.kinds
+		if kinds.is_empty():
+			continue
+		var kind := String(kinds[0])
+		var rate := int((card.rates as Dictionary).get(kind, 0))
+		all_ids.append(item_id)
+		if rate == 0:
+			zero_ids.append(item_id)
+		elif rate <= 1000:
+			low_ids.append(item_id)
+		else:
+			high_ids.append(item_id)
+	var groups: Array = []
+	var bands := [
+		{"id": "all", "label": "全部项目", "ids": all_ids},
+		{"id": "rate_0", "label": "0%", "ids": zero_ids},
+		{"id": "rate_low", "label": "0.1%–10%", "ids": low_ids},
+		{"id": "rate_high", "label": "10% 以上", "ids": high_ids},
+	]
+	for band_value in bands:
+		var band: Dictionary = band_value
+		var ids: PackedStringArray = band["ids"]
+		if ids.is_empty():
+			continue
+		groups.append({
+			"id": String(band["id"]),
+			"label": String(band["label"]),
+			"item_ids": ids,
+			"count": ids.size(),
+			"overridden": _override_count(page, ids),
+		})
+	return groups
+
+
+## 建筑四轴：直接用 tax_group_map 算组，再与「本页真有卡片的项目」取交集——
+## 目录里有的建筑类型不一定都在本国的税表里，交集之外的 id 会让整批命令被拒。
+func _building_groups(page: String, axis_id: String) -> Array:
+	var columns := _tax_group_columns()
+	if columns.is_empty():
+		return []
+	var building_ids: PackedStringArray = columns.get("building_type_ids", PackedStringArray())
+	if building_ids.is_empty():
+		return []
+	var grouped: Dictionary = TaxGroupMapScript.build(columns, axis_id)
+	if not bool(grouped.get("ok", false)):
+		return []
+	var group_ids: PackedStringArray = grouped.get("group_ids", PackedStringArray())
+	var group_labels: PackedStringArray = grouped.get("group_labels", PackedStringArray())
+	var indices: PackedInt32Array = grouped.get("building_group_indices", PackedInt32Array())
+	var known := {}
+	for item_id in _page_card_ids(page):
+		known[item_id] = true
+	var groups: Array = []
+	for group in group_ids.size():
+		var ids := PackedStringArray()
+		for building in TaxGroupMapScript.buildings_in_group(indices, group):
+			if building < 0 or building >= building_ids.size():
+				continue
+			var stable := String(building_ids[building])
+			if known.has(stable):
+				ids.append(stable)
+		if ids.is_empty():
+			continue
+		groups.append({
+			"id": String(group_ids[group]),
+			"label": String(group_labels[group]) if group < group_labels.size() else String(group_ids[group]),
+			"item_ids": ids,
+			"count": ids.size(),
+			"overridden": _override_count(page, ids),
+		})
+	return groups
+
+
+func _override_count(page: String, ids: PackedStringArray) -> int:
+	var total := 0
+	for item_id in ids:
+		var card: Dictionary = _rows.get("%s:%s" % [page, String(item_id)], {})
+		if card.is_empty():
+			continue
+		for value in (card.overridden as Dictionary).values():
+			if bool(value):
+				total += 1
+				break
+	return total
+
+
+## 整组设值能不能用：命令通道在、税收政策 ok 才允许。
+func _tax_group_editable() -> bool:
+	if _player_controller == null or not _player_controller.has_method("request_command"):
+		return false
+	return bool((_model.get("tax_policy", {}) as Dictionary).get("ok", false))
+
+
+func _tax_group_reason() -> String:
+	if _player_controller == null or not _player_controller.has_method("request_command"):
+		return "税收命令通道不可用，整组设值先放着。"
+	var policy: Dictionary = _model.get("tax_policy", {})
+	if not bool(policy.get("ok", false)):
+		return String(policy.get("reason", "税收政策暂不可用。"))
+	return "当前不可改。"
+
+
+func _on_tax_group_axis_changed(_axis_id: String) -> void:
+	_tax_group_selection = ""
+	_refresh_tax_groups(_model.get("tax_policy", {}) as Dictionary)
+	_apply_filter()
+
+
+func _on_tax_group_changed(group_id: String) -> void:
+	_tax_group_selection = group_id
+	_apply_filter()
+
+
+func _on_tax_group_collapse(collapsed: bool) -> void:
+	_tax_group_collapsed = collapsed
+	_apply_filter()
+
+
+## 整组设值：按页面税种展开 + 按 256 条切块。
+## 切块是必须的：内核 host 队列单批上限 256（runtime_pod_protocol.h:1350），
+## 449 项一把提交会整批被拒（world_ext_country_commands.cpp:76-87）。
+## 每块内部原子；块与块之间可能半成功，所以结果按批报，不当成全成功。
+func _on_tax_group_apply(rate_basis_points: int, item_ids: PackedStringArray) -> void:
+	if item_ids.is_empty():
+		return
+	if _player_controller == null or not _player_controller.has_method("request_command"):
+		_set_status("税收命令通道不可用，整组设值未提交。", true)
+		return
+	_tax_group_bar.set_busy(true)
+	var submitted := 0
+	var chunks_total := 0
+	var chunks_failed := 0
+	var first_reason := ""
+	for kind in _page_kinds(_page):
+		var ids_for_kind := PackedStringArray()
+		for item_id in item_ids:
+			var card: Dictionary = _rows.get("%s:%s" % [_page, String(item_id)], {})
+			if card.is_empty() or bool(card.get("is_default", false)):
+				continue
+			if (card.kinds as Array).has(kind):
+				ids_for_kind.append(String(item_id))
+		if ids_for_kind.is_empty():
+			continue
+		for chunk in _chunk_item_ids(ids_for_kind):
+			chunks_total += 1
+			var result: Dictionary = _player_controller.request_command(
+				&"country.tax.set_override_group", {
+					"kind": int(TAX_KIND[kind]),
+					"item_ids": chunk,
+					"rate_basis_points": rate_basis_points,
+					"tax_assessment_mode": TAX_MODE_PERCENT_BP})
+			if not bool(result.get("ok", false)):
+				chunks_failed += 1
+				if first_reason.is_empty():
+					first_reason = String(result.get("reason", "被拒"))
+				continue
+			submitted += chunk.size()
+			for item_id in chunk:
+				_mark_pending(kind, String(item_id), rate_basis_points, "set",
+					TAX_MODE_PERCENT_BP)
+				_submitted_tax["%s:%s" % [kind, String(item_id)]] = {
+					"rate": rate_basis_points,
+					"mode": TAX_MODE_PERCENT_BP,
+					"has_override": true}
+	_tax_group_bar.set_busy(false)
+	_refresh_page()
+	if chunks_failed == 0:
+		_set_status("整组已设成 %s · 共 %d 项 · 分 %d 批（每批不超过 %d 条）" % [
+			_format_rate(rate_basis_points), submitted, chunks_total,
+			TAX_GROUP_BATCH_LIMIT])
+	else:
+		_set_status("整组设值未全部生效：%d/%d 批被拒（%s），已提交 %d 项。" % [
+			chunks_failed, chunks_total, first_reason, submitted], true)
+
+
+## 按内核单批上限切块。返回值是 PackedStringArray 的数组。
+func _chunk_item_ids(ids: PackedStringArray) -> Array:
+	var out: Array = []
+	var limit := maxi(1, TAX_GROUP_BATCH_LIMIT)
+	var index := 0
+	while index < ids.size():
+		var end := mini(index + limit, ids.size())
+		var chunk := PackedStringArray()
+		for cursor in range(index, end):
+			chunk.append(ids[cursor])
+		out.append(chunk)
+		index = end
+	return out
 
 
 func _set_status(text: String, warn: bool = false) -> void:
