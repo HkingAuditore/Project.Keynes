@@ -2,13 +2,17 @@ name: Runtime quick checks
 
 on:
   pull_request:
+  push:
+    branches:
+      - master
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: runtime-quick-${{ github.event.pull_request.number || github.ref }}
+  # Keep checks for each new commit on master in a separate group.
+  group: runtime-quick-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
   cancel-in-progress: true
 
 jobs:

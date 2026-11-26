@@ -2,52 +2,16 @@
   "version": 1,
   "files": {
     "Project/project-keynes/scripts/game/game_save_coordinator.gd": {
-      "lines": 758,
+      "lines": 736,
       "limit": 600
-    },
-    "Project/project-keynes/scripts/game/world_runtime_daily_adapter_part1.gd": {
-      "lines": 1620,
-      "limit": 800
     },
     "Project/project-keynes/scripts/geography/map_generator.gd": {
       "lines": 784,
       "limit": 600
     },
-    "Project/project-keynes/scripts/main/debug_tools.gd": {
-      "lines": 889,
-      "limit": 800
-    },
-    "Project/project-keynes/scripts/main/diagnostics.gd": {
-      "lines": 809,
-      "limit": 800
-    },
-    "Project/project-keynes/scripts/main.gd": {
-      "lines": 1668,
-      "limit": 600
-    },
-    "Project/project-keynes/scripts/narrative/narrative_event_service.gd": {
-      "lines": 1595,
-      "limit": 800
-    },
     "Project/project-keynes/scripts/rendering/map_baker.gd": {
       "lines": 786,
       "limit": 600
-    },
-    "Project/project-keynes/scripts/ui/components/fiscal_budget_page.gd": {
-      "lines": 804,
-      "limit": 800
-    },
-    "Project/project-keynes/scripts/ui/perf_recorder.gd": {
-      "lines": 966,
-      "limit": 800
-    },
-    "Project/project-keynes/tmp/family_baseline_test.gd": {
-      "lines": 933,
-      "limit": 800
-    },
-    "Project/project-keynes/scripts/rendering/resource_visual_layer.gd": {
-      "lines": 802,
-      "limit": 800
     }
   }
 }

@@ -330,9 +330,10 @@ FMOD Studio 版本固定在 **2.03.15**，命令行工具路径写死在
 
 ## 8. CI（GitHub Actions）
 
-普通 PR 更新运行 `.github/workflows/runtime-checks.yml`（Runtime quick checks）：
-只取地图作者工具、原生源码及测试，运行地图工具测试、两个独立线程检查和气候源码编译检查。
-不下载游戏素材和引擎，不编译完整原生库，不启动游戏；新提交自动取消同一 PR 尚未完成的旧检查。
+`.github/workflows/runtime-checks.yml`（Runtime quick checks）在 PR 更新、`master`
+的新提交和手动触发时运行，覆盖合并与直接推送到主线的最新提交。
+它运行静态护栏、工厂测试、性能工具测试、地图作者工具测试、线程检查和气候源码编译检查。
+新提交自动取消同一 PR 尚未完成的旧检查，每个主线提交有独立的运行分组。
 
 完整 Linux 构建、Godot 导入、默认游戏回归与真实存读档保留在
 `.github/workflows/runtime-full-checks.yml`（Runtime full checks），仅手动触发。
