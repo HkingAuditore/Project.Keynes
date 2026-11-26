@@ -1,5 +1,6 @@
 extends Node
 
+const ArchiveContract = preload("res://scripts/game/save_archive_contract.gd")
 const ExecutionContract = preload("res://scripts/game/save_execution_contract.gd")
 
 const SaveSections = preload("res://scripts/game/save_state_sections.gd")
@@ -11,16 +12,8 @@ signal save_completed(slot_id: String, result: Dictionary)
 signal load_completed(slot_id: String, result: Dictionary)
 signal _slot_verification_completed(slots: Array)
 
-const REQUIRED_SECTIONS := [
-	"new_game_config", "world_clock", "dynamic_world", "environment",
-	"simulation_runtime",
-	"pkcm", "pkcn", "ecp2", "pkgp", "pkfg", "journal",
-	"player_context", "player_view", "preview", "pktr", "pkef", "pkid", "pkai",
-	"pkmi",
-]
-## Providers that an older save may legitimately lack. They restore from an
-## empty section (a fresh runtime) instead of refusing the load.
-const PKMI_SCHEMA := 1
+const REQUIRED_SECTIONS := ArchiveContract.REQUIRED_SECTIONS
+const PKMI_SCHEMA := ArchiveContract.PKMI_SCHEMA
 const SaveRepositoryScript = preload("res://scripts/game/save_repository.gd")
 const ModuleRegistry = preload("res://scripts/game/runtime_module_registry.gd")
 const WorldStateModules = preload("res://scripts/game/world_state_modules.gd")
@@ -31,25 +24,12 @@ const PksrBundleHeaderScript = preload("res://scripts/game/pksr_bundle_header.gd
 const RuntimeForensicsScript = preload("res://scripts/game/runtime_forensics.gd")
 ## 边界等待期间每隔多少帧留一行活体探针。见 _wait_for_safe_boundary()。
 const SAVE_BOUNDARY_PROBE_FRAMES := 30
-const TECHNOLOGY_INDUSTRY_PROVIDER_ID := "technology_industry"
-const TECHNOLOGY_INDUSTRY_REVISION := 2
-## Plan 11.5, the WHOLE-PACKAGE half. The ideology execution-contract identity
-## already travels inside the PKID payload (the native reader refuses a payload
-## stamped by a different contract with `cell_program_execution_contract_mismatch`).
-## It also has to enter the CONTAINER-level compatibility check, so the manifest
-## of every provider is asked whether it can certify the same identity.
-##
-## The refusal code here is deliberately NOT the payload's. The payload code is a
-## native verdict reached after restore has begun; this one is a GDScript
-## pre-flight reached before any provider has touched the world. Sharing one
-## string would make the two layers indistinguishable in a log -- and in a test,
-## where an assertion that "the whole-package gate refused" could be satisfied by
-## the payload reader instead, passing while the new gate did nothing.
-const EXECUTION_CONTRACT_KEY := "execution_contract_hash"
-const EXECUTION_CONTRACT_PROVIDER_ID := "pkid"
-const EXECUTION_CONTRACT_PAYLOAD_CODE := "cell_program_execution_contract_mismatch"
-const EXECUTION_CONTRACT_MANIFEST_CODE := \
-	"cell_program_execution_contract_manifest_mismatch"
+const TECHNOLOGY_INDUSTRY_PROVIDER_ID := ArchiveContract.TECHNOLOGY_INDUSTRY_PROVIDER_ID
+const TECHNOLOGY_INDUSTRY_REVISION := ArchiveContract.TECHNOLOGY_INDUSTRY_REVISION
+const EXECUTION_CONTRACT_KEY := ArchiveContract.EXECUTION_CONTRACT_KEY
+const EXECUTION_CONTRACT_PROVIDER_ID := ArchiveContract.EXECUTION_CONTRACT_PROVIDER_ID
+const EXECUTION_CONTRACT_PAYLOAD_CODE := ArchiveContract.EXECUTION_CONTRACT_PAYLOAD_CODE
+const EXECUTION_CONTRACT_MANIFEST_CODE := ArchiveContract.EXECUTION_CONTRACT_MANIFEST_CODE
 
 var _repository = SaveRepositoryScript.new()
 var _runtime_host: WorldRuntimeHost
@@ -546,7 +526,7 @@ func _can_save() -> Dictionary:
 
 
 func _worker_idle_blocker(thread: Dictionary) -> String:
-	return BoundaryChecks._worker_idle_blocker(self, thread)
+	return BoundaryChecks._worker_idle_blocker(thread)
 
 
 func _collect_sections(saved_paused: bool, saved_speed: float,
@@ -580,7 +560,7 @@ func _manifest_compatible(raw_manifest) -> bool:
 
 
 func _manifest_industry_revision(raw_manifest) -> int:
-	return ExecutionContract._manifest_industry_revision(self, raw_manifest)
+	return ExecutionContract._manifest_industry_revision(raw_manifest)
 
 
 func _running_execution_contract(host = null) -> int:
@@ -592,7 +572,7 @@ func _contract_from_report(report) -> int:
 
 
 func _contract_value(value) -> int:
-	return ExecutionContract._contract_value(self, value)
+	return ExecutionContract._contract_value(value)
 
 
 static func _manifest_entry_for(raw_manifest, provider_id: String) -> Dictionary:
@@ -614,7 +594,7 @@ func _contract_verdict(ok: bool, detail: String, running: int, saved: int,
 
 
 func _contract_verdict_message(detail: String, running: int, saved: int) -> String:
-	return ExecutionContract._contract_verdict_message(self, detail, running, saved)
+	return ExecutionContract._contract_verdict_message(detail, running, saved)
 
 
 func _capture_native_runtime_bundle(generation: int = -1) -> Dictionary:
@@ -742,7 +722,7 @@ func _autosave_year(year: int, generation: int) -> void:
 
 
 static func _result(ok: bool, code: String, message: String) -> Dictionary:
-	return {"ok": ok, "code": code, "message": message}
+	return ArchiveContract.result(ok, code, message)
 
 
 func _clock_restored(year: int) -> void:
@@ -750,9 +730,7 @@ func _clock_restored(year: int) -> void:
 
 ## Preserve the precise save-boundary condition for failure diagnostics.
 static func _blocked_result(code: String, message: String, condition: String) -> Dictionary:
-	var blocked := _result(false, code, message)
-	blocked["blocking_condition"] = condition
-	return blocked
+	return ArchiveContract.blocked_result(code, message, condition)
 
 func _set_pending_view(view: Dictionary) -> void:
 	_pending_view = view

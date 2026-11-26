@@ -1,14 +1,17 @@
 extends RefCounted
 
-const GameSaveCoordinator = preload("res://scripts/game/game_save_coordinator.gd")
+const ArchiveContract = preload("res://scripts/game/save_archive_contract.gd")
+const NativeWorld = preload("res://scripts/data_core/native_world.gd")
+const ModuleRegistry = preload("res://scripts/game/runtime_module_registry.gd")
+const WorldStateModules = preload("res://scripts/game/world_state_modules.gd")
 
 ## Builds and registers the save section providers and their context.
 
 
-static func _collect_sections(owner: GameSaveCoordinator, saved_paused: bool, saved_speed: float,
+static func _collect_sections(owner, saved_paused: bool, saved_speed: float,
 		native_bundle: Dictionary, defer_provider_hashes: bool = false) -> Dictionary:
-	var generator := owner._runtime_host.generator()
-	var context := owner._provider_context(owner._runtime_host, generator, saved_paused, saved_speed)
+	var generator: MapGenerator = owner._runtime_host.generator()
+	var context: Dictionary = owner._provider_context(owner._runtime_host, generator, saved_paused, saved_speed)
 	context["native_runtime_bundle"] = native_bundle.get("bytes", PackedByteArray())
 	context["native_country_pkcn"] = native_bundle.get("country_pkcn", PackedByteArray())
 	context["native_economy_ecp2"] = native_bundle.get("economy_ecp2", PackedByteArray())
@@ -30,7 +33,7 @@ static func _collect_sections(owner: GameSaveCoordinator, saved_paused: bool, sa
 		var provider_sections: Dictionary = written.get("sections", {})
 		for section_id in provider_sections:
 			if sections.has(section_id):
-				return GameSaveCoordinator._result(false, "save_provider_duplicate_section",
+				return ArchiveContract.result(false, "save_provider_duplicate_section",
 					"多个 provider 写入了 section：%s" % section_id)
 			sections[section_id] = provider_sections[section_id]
 		context.current_provider_sections = provider_sections
@@ -50,42 +53,42 @@ static func _collect_sections(owner: GameSaveCoordinator, saved_paused: bool, sa
 				provider.provider_id(), float(profile_hash_start - profile_start) / 1000.0,
 				float(Time.get_ticks_usec() - profile_hash_start) / 1000.0])
 	provider_manifest.append({
-		"provider_id": GameSaveCoordinator.TECHNOLOGY_INDUSTRY_PROVIDER_ID,
-		"schema_version": GameSaveCoordinator.TECHNOLOGY_INDUSTRY_REVISION,
+		"provider_id": ArchiveContract.TECHNOLOGY_INDUSTRY_PROVIDER_ID,
+		"schema_version": ArchiveContract.TECHNOLOGY_INDUSTRY_REVISION,
 		"sections": PackedStringArray(),
 		"content_hash": "",
 	})
-	for required in GameSaveCoordinator.REQUIRED_SECTIONS:
+	for required in ArchiveContract.REQUIRED_SECTIONS:
 		if not sections.has(required):
-			return GameSaveCoordinator._result(false, "save_provider_missing", "运行时缺少 provider：%s" % required)
+			return ArchiveContract.result(false, "save_provider_missing", "运行时缺少 provider：%s" % required)
 	return {"ok": true, "code": "ok", "message": "", "sections": sections,
 		"provider_manifest": provider_manifest, "provider_hash_payloads": provider_hash_payloads}
 
 
 
-static func _economy_checkpoint_format(owner: GameSaveCoordinator) -> Dictionary:
+static func _economy_checkpoint_format(owner) -> Dictionary:
 	if not owner._economy_format.is_empty():
 		return owner._economy_format
 	owner._economy_format = {"schema_version": 53, "abi_version": 2, "hash_version": 1}
 	if ClassDB.class_exists("DCWorldExt"):
-		var probe: DCWorldExt = GameSaveCoordinator.NativeWorld.create()
+		var probe: DCWorldExt = NativeWorld.create()
 		if probe != null:
 			owner._economy_format = probe.get_economy_checkpoint_format()
 	return owner._economy_format
 
 
 
-static func _register_providers(owner: GameSaveCoordinator) -> void:
-	var registered := owner._install_provider_entries(GameSaveCoordinator.WorldStateModules.builtins(
-		int(owner._economy_checkpoint_format().schema_version), GameSaveCoordinator.PKMI_SCHEMA))
+static func _register_providers(owner) -> void:
+	var registered: Dictionary = owner._install_provider_entries(WorldStateModules.builtins(
+		int(owner._economy_checkpoint_format().schema_version), ArchiveContract.PKMI_SCHEMA))
 	if not bool(registered.ok):
 		owner._provider_registration_error = registered
 		push_error(String(registered.message))
 
 
 
-static func _install_provider_entries(owner: GameSaveCoordinator, entries: Array) -> Dictionary:
-	var resolved := GameSaveCoordinator.ModuleRegistry.resolve(entries)
+static func _install_provider_entries(owner, entries: Array) -> Dictionary:
+	var resolved := ModuleRegistry.resolve(entries)
 	if not bool(resolved.ok):
 		return resolved
 	owner._provider_entries = entries.duplicate()
@@ -96,13 +99,13 @@ static func _install_provider_entries(owner: GameSaveCoordinator, entries: Array
 
 ## Register a new persistent module at composition time, before binding a game.
 ## The module supplies its own callbacks; the coordinator needs no new branch.
-static func register_state_module(owner: GameSaveCoordinator, provider, restore_after: PackedStringArray) -> Dictionary:
+static func register_state_module(owner, provider, restore_after: PackedStringArray) -> Dictionary:
 	if is_instance_valid(owner._runtime_host) or owner._busy or not owner._pending_load.is_empty():
-		return GameSaveCoordinator._result(false, "module_registration_session_active", "请在进入游戏前登记模块。")
-	var candidate := owner._provider_entries.duplicate()
-	var entry := GameSaveCoordinator.ModuleRegistry.state_entry(provider, restore_after)
+		return ArchiveContract.result(false, "module_registration_session_active", "请在进入游戏前登记模块。")
+	var candidate: Array = owner._provider_entries.duplicate()
+	var entry := ModuleRegistry.state_entry(provider, restore_after)
 	if entry.is_empty():
-		return GameSaveCoordinator._result(false, "module_descriptor_invalid", "模块缺少保存接口。")
+		return ArchiveContract.result(false, "module_descriptor_invalid", "模块缺少保存接口。")
 	# Player presentation is installed after every business module, including
 	# extensions unknown to the built-in composition.
 	for index in candidate.size():
@@ -114,7 +117,7 @@ static func register_state_module(owner: GameSaveCoordinator, provider, restore_
 
 
 
-static func _provider_context(owner: GameSaveCoordinator, host: WorldRuntimeHost, generator: MapGenerator,
+static func _provider_context(owner, host: WorldRuntimeHost, generator: MapGenerator,
 		saved_paused: bool, saved_speed: float) -> Dictionary:
 	return {
 		"host": host,

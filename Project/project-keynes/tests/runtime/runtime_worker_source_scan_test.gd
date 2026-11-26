@@ -13,6 +13,8 @@ const WORKER_SOURCES := [
 	"gdext/src/runtime_authoritative_domains_environment.cpp",
 	"gdext/src/runtime_climate_kernel.cpp",
 	"gdext/src/runtime_climate_kernel.h",
+	"gdext/src/runtime_climate_passes.cpp",
+	"gdext/src/runtime_climate_passes.h",
 	"gdext/src/runtime_climate_physics.cpp",
 	"gdext/src/runtime_climate_physics.h",
 	"gdext/src/runtime_climate_physics_ocean_solver.cpp",
@@ -67,6 +69,11 @@ func _init() -> void:
 	var project_root := ProjectSettings.globalize_path("res://").path_join("../..").simplify_path()
 	var fragments := RegEx.create_from_string('(?m)^\\s*#include\\s+"([^"\\r\\n]+\\.inc)"')
 	var paths := PackedStringArray(WORKER_SOURCES)
+	var native_source_dir := "gdext/src"
+	# Separate translation units are not reachable through the fragment includes.
+	for file_name in DirAccess.get_files_at(project_root.path_join(native_source_dir)):
+		if file_name.begins_with("runtime_climate_passes_") and file_name.get_extension() in ["cpp", "h"]:
+			paths.append(native_source_dir.path_join(file_name))
 	var index := 0
 	while index < paths.size():
 		var relative_path := paths[index]

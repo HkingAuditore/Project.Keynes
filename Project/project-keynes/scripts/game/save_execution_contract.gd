@@ -1,11 +1,11 @@
 extends RefCounted
 
-const GameSaveCoordinator = preload("res://scripts/game/game_save_coordinator.gd")
+const ArchiveContract = preload("res://scripts/game/save_archive_contract.gd")
 
 ## Validates an incoming save's manifest, runtime schema, and execution contract.
 
 
-static func _manifest_compatible(owner: GameSaveCoordinator, raw_manifest) -> bool:
+static func _manifest_compatible(owner, raw_manifest) -> bool:
 	if not owner._provider_registration_error.is_empty():
 		return false
 	if not raw_manifest is Array:
@@ -15,10 +15,10 @@ static func _manifest_compatible(owner: GameSaveCoordinator, raw_manifest) -> bo
 		if not raw is Dictionary:
 			return false
 		by_id[String(raw.get("provider_id", ""))] = raw
-	var industry_entry: Dictionary = by_id.get(GameSaveCoordinator.TECHNOLOGY_INDUSTRY_PROVIDER_ID, {})
-	if int(industry_entry.get("schema_version", 1)) != GameSaveCoordinator.TECHNOLOGY_INDUSTRY_REVISION:
+	var industry_entry: Dictionary = by_id.get(ArchiveContract.TECHNOLOGY_INDUSTRY_PROVIDER_ID, {})
+	if int(industry_entry.get("schema_version", 1)) != ArchiveContract.TECHNOLOGY_INDUSTRY_REVISION:
 		return false
-	var expected_ids := {GameSaveCoordinator.TECHNOLOGY_INDUSTRY_PROVIDER_ID: true}
+	var expected_ids := {ArchiveContract.TECHNOLOGY_INDUSTRY_PROVIDER_ID: true}
 	for provider in owner._providers:
 		var provider_id := String(provider.provider_id())
 		expected_ids[provider_id] = true
@@ -36,12 +36,12 @@ static func _manifest_compatible(owner: GameSaveCoordinator, raw_manifest) -> bo
 
 
 
-static func _manifest_industry_revision(owner: GameSaveCoordinator, raw_manifest) -> int:
+static func _manifest_industry_revision(raw_manifest) -> int:
 	if not raw_manifest is Array:
 		return 1
 	for raw in raw_manifest:
 		if raw is Dictionary and String(raw.get("provider_id", "")) \
-				== GameSaveCoordinator.TECHNOLOGY_INDUSTRY_PROVIDER_ID:
+				== ArchiveContract.TECHNOLOGY_INDUSTRY_PROVIDER_ID:
 			return int(raw.get("schema_version", 1))
 	return 1
 
@@ -70,7 +70,7 @@ static func _manifest_industry_revision(owner: GameSaveCoordinator, raw_manifest
 ## The identity the LIVE runtime is running, or 0 when it cannot be stated
 ## (no world yet, or ideology unconfigured). 0 is "unknown", never "matches":
 ## the contract itself is a hash, so a zero value is not a contract.
-static func _running_execution_contract(owner: GameSaveCoordinator, host = null) -> int:
+static func _running_execution_contract(owner, host = null) -> int:
 	var target = host if host != null else owner._runtime_host
 	if target == null or not target.has_method("generator"):
 		return 0
@@ -81,7 +81,7 @@ static func _running_execution_contract(owner: GameSaveCoordinator, host = null)
 
 
 
-static func _contract_from_report(owner: GameSaveCoordinator, report) -> int:
+static func _contract_from_report(owner, report) -> int:
 	# The report is IdeologyFacade.report() -> DCWorldExt.get_ideology_report().
 	# `{"configured": false}` means the owner is unconfigured (the facade says so
 	# itself; the native report says so through the same key), and an older
@@ -93,13 +93,13 @@ static func _contract_from_report(owner: GameSaveCoordinator, report) -> int:
 	var configured = report.get("configured", true)
 	if configured is bool and not bool(configured):
 		return 0
-	return owner._contract_value(report.get(GameSaveCoordinator.EXECUTION_CONTRACT_KEY, 0))
+	return owner._contract_value(report.get(ArchiveContract.EXECUTION_CONTRACT_KEY, 0))
 
 
 ## Normalizes an identity read from a dictionary or from the save header.
 ## The header is JSON, and JSON hands a number back as int or float depending on
 ## how it was written, so a raw `int(...)` is not enough to compare identities.
-static func _contract_value(owner: GameSaveCoordinator, value) -> int:
+static func _contract_value(value) -> int:
 	if value is int:
 		return value
 	if value is float:
@@ -150,13 +150,13 @@ static func _pkid_state_present(sections) -> bool:
 ## `cell_program_execution_contract_mismatch` -- is therefore honoured by the
 ## layer that owns the identity, and this gate says out loud that it did not
 ## check instead of pretending it did.
-static func _execution_contract_verdict(owner: GameSaveCoordinator, raw_manifest, running: int,
+static func _execution_contract_verdict(owner, raw_manifest, running: int,
 		state_present: bool) -> Dictionary:
-	var entry := GameSaveCoordinator._manifest_entry_for(raw_manifest, GameSaveCoordinator.EXECUTION_CONTRACT_PROVIDER_ID)
+	var entry := _manifest_entry_for(raw_manifest, ArchiveContract.EXECUTION_CONTRACT_PROVIDER_ID)
 	if entry.is_empty():
 		# Pre-ideology archive: no pkid provider, so no contract-governed state.
 		return owner._contract_verdict(true, "contract_no_provider", 0, 0, false)
-	var saved := owner._contract_value(entry.get(GameSaveCoordinator.EXECUTION_CONTRACT_KEY, 0))
+	var saved: int = owner._contract_value(entry.get(ArchiveContract.EXECUTION_CONTRACT_KEY, 0))
 	if running == 0:
 		return owner._contract_verdict(true, "contract_unverifiable", 0, saved, saved != 0)
 	if saved == 0:
@@ -169,11 +169,11 @@ static func _execution_contract_verdict(owner: GameSaveCoordinator, raw_manifest
 
 
 
-static func _contract_verdict(owner: GameSaveCoordinator, ok: bool, detail: String, running: int, saved: int,
+static func _contract_verdict(owner, ok: bool, detail: String, running: int, saved: int,
 		deferred: bool) -> Dictionary:
 	return {
 		"ok": ok,
-		"code": "" if ok else GameSaveCoordinator.EXECUTION_CONTRACT_MANIFEST_CODE,
+		"code": "" if ok else ArchiveContract.EXECUTION_CONTRACT_MANIFEST_CODE,
 		"detail": detail,
 		"saved": saved,
 		"running": running,
@@ -183,7 +183,7 @@ static func _contract_verdict(owner: GameSaveCoordinator, ok: bool, detail: Stri
 
 
 
-static func _contract_verdict_message(owner: GameSaveCoordinator, detail: String, running: int, saved: int) -> String:
+static func _contract_verdict_message(detail: String, running: int, saved: int) -> String:
 	match detail:
 		"contract_differs":
 			return ("Save was written under a different cell-program execution "
@@ -192,7 +192,7 @@ static func _contract_verdict_message(owner: GameSaveCoordinator, detail: String
 		"contract_unstated":
 			return ("Save predates the pkid execution-contract manifest identity; "
 				+ "the PKID payload remains the authority (%s).") \
-				% GameSaveCoordinator.EXECUTION_CONTRACT_PAYLOAD_CODE
+				% ArchiveContract.EXECUTION_CONTRACT_PAYLOAD_CODE
 		"contract_unstated_no_state":
 			return ("Save carries no ideology state and no execution-contract "
 				+ "identity; nothing can be reinterpreted.")
