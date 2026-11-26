@@ -467,8 +467,8 @@ func _make_fixture(compiled: Dictionary, seed: int, suffix: String,
 	var country = CountryFacadeScript.new()
 	_expect("%s country configures" % suffix,
 		bool(country.configure(ext, 1, seed,
-			load("res://data/country/default_country.tres"), compiled).get(
-			"ok", false)))
+			load("res://data/country/default_country.tres"), compiled, null,
+			modifiers.compiled_catalog()).get("ok", false)))
 	effect.register_domain_adapters(modifiers, country, null)
 
 	var ids: PackedStringArray = compiled.get("technology_ids", PackedStringArray())

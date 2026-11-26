@@ -43,10 +43,16 @@ func _run() -> void:
 	var host := WorldRuntimeHost.new()
 	host.generate_test_economy_data = false
 	root.add_child(host)
+	# Use the proven small start layout from startup_save_boundary_test.
+	# The old 30×20 seed has no eligible opening route with natural flint.
 	var config := NewGameConfig.create_default()
-	config.base.map_width = 30
-	config.base.map_height = 20
-	config.base.initial_seed = 20260718
+	config.base.map_width = 40
+	config.base.map_height = 28
+	config.base.initial_seed = 20260727
+	config.base.num_continents = 2
+	config.base.continent_size = 0.9
+	config.base.sea_level = 0.42
+	config.base.river_count = 8
 	config.country.foreign_count = 1
 	var configured := host.configure_session({
 		"kind": "new_game", "config": config.to_dictionary(),
@@ -55,7 +61,7 @@ func _run() -> void:
 	host.configure(null, null, clock)
 	var added := AddedModule.new()
 	_expect("new system registers through session interface", host.register_session_module(added.adapter(host)).ok)
-	await host.generate_world(20260718)
+	await host.generate_world(int(config.base.initial_seed))
 	var generator := host.get_generator()
 	_expect("world generation completes", generator != null)
 	_expect("extension prepares after world data and before execution", added.prepared_before_execution)

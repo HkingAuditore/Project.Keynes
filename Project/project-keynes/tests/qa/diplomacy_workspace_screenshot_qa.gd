@@ -26,7 +26,6 @@ const PARCHMENT := Color("e4d9bf")
 const CHAPTER_IDS := ["overview", "countries", "wars"]
 
 var _failures := PackedStringArray()
-var _fixture
 
 
 func _init() -> void:
@@ -35,7 +34,6 @@ func _init() -> void:
 
 func _run() -> void:
 	DirAccess.make_dir_recursive_absolute(OUTPUT_DIR)
-	_fixture = HARNESS.new()
 	for size in [Vector2i(1280, 720), Vector2i(1600, 900)]:
 		await _run_size(size)
 	print("diplomacy screenshot qa: %d failures" % _failures.size())
@@ -64,7 +62,7 @@ func _run_size(size: Vector2i) -> void:
 	var workspace := (load(SCENE) as PackedScene).instantiate()
 	frame.add_child(workspace)
 	await process_frame
-	workspace.call("set_model", _fixture.call("fixture_model"))
+	workspace.call("set_model", HARNESS.fixture_model())
 	for chapter_id in CHAPTER_IDS:
 		workspace.call("select_chapter", String(chapter_id))
 		await _capture("diplomacy_%s_%dx%d" % [chapter_id, size.x, size.y])
@@ -77,7 +75,7 @@ func _run_size(size: Vector2i) -> void:
 	var panel := (load(PANEL_SCENE) as PackedScene).instantiate()
 	backdrop.add_child(panel)
 	await process_frame
-	var model: Dictionary = _fixture.call("fixture_model")
+	var model: Dictionary = HARNESS.fixture_model()
 	model["country_name"] = "青川"
 	panel.call("show_section", "diplomacy", model)
 	await process_frame

@@ -9,6 +9,7 @@ extends SceneTree
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const CountryFacadeScript = preload("res://scripts/country/country_facade.gd")
+const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 
 var _checks := 0
 var _failures := 0
@@ -36,10 +37,11 @@ func _run() -> int:
 	if not bool(compiled.get("ok", false)):
 		return 4
 	var ext: Object = DCWorldExt.new()
+	var modifier_catalog: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
 	var country = CountryFacadeScript.new()
 	_expect("country configures", bool(country.configure(
 		ext, 6, 20260910, load("res://data/country/default_country.tres"),
-		compiled).get("ok", false)))
+		compiled, null, modifier_catalog).get("ok", false)))
 	var boot_packet := {
 		"country_ids": PackedStringArray(["country.parity.a", "country.parity.b"]),
 		"country_names": PackedStringArray(["Parity A", "Parity B"]),
