@@ -1,5 +1,6 @@
 extends RefCounted
 
+const KitStatusText = preload("res://scripts/ui/components/colonization_kit_status_text.gd")
 const PreviewCards = preload("res://scripts/ui/components/colonization_preview_cards.gd")
 
 ## Display helpers borrow the host per call; state and signal receivers stay there.
@@ -325,7 +326,7 @@ static func _refresh_expedition_detail(host) -> void:
 		for data in [["total", "总进度", bridge + materials, missing_bridge + missing_materials],
 				["bridge", "旅途补给", bridge, missing_bridge], ["materials", "开工建材", materials, missing_materials]]:
 			if int(data[2]) > 0:
-				var percent = host._stock_percent(int(data[2]), int(data[3]))
+				var percent = KitStatusText._stock_percent(int(data[2]), int(data[3]))
 				meters.append({"id": data[0], "label": data[1], "value": float(percent) / 100.0,
 					"value_text": "%d%%" % percent, "accent": UITokens.DOSSIER_BRASS})
 	host._preview_meters.visible = not meters.is_empty()
