@@ -53,6 +53,8 @@ func _run() -> void:
 	_test_committed_day_export()
 	_test_missing_committed_day()
 	_test_zero_warmup()
+	_test_partial_publication_diagnostics()
+	_test_publication_recorder_row_limit()
 	print("=== perf_recorder test summary: %d checks, %d failures ===" % [_checks, _failures])
 
 
@@ -286,6 +288,72 @@ class _MockMain:
 			},
 		})
 		simulation_day_records.emit(records)
+
+
+class _MockPublicationPoll:
+	extends RefCounted
+
+	var _runtime_commit_day := 0
+	var _runtime_last_commit: Dictionary = {}
+	var has_day_records := true
+	var has_tick_sample := false
+	var next_day := 0
+	var recorder: PerfRecorder
+
+	func _consume_runtime_commit_if_ready() -> void:
+		if next_day <= _runtime_commit_day:
+			return
+		_runtime_commit_day = next_day
+		if not has_day_records:
+			return
+		_runtime_last_commit = {"days": [{"day": next_day, "generation": 100 + next_day}]}
+		if has_tick_sample:
+			recorder.on_fast_tick({
+				"fast_ms": 1.25,
+				"runtime_graph": {"simulation_committed_day": next_day},
+			})
+
+
+func _test_partial_publication_diagnostics() -> void:
+	var publications := HeadlessPerf.PublicationRecorder.new()
+	var host := _MockPublicationPoll.new()
+	host.recorder = publications
+	publications.configure_export("user://stage_c_tests/perf", "partial_publication.csv")
+	publications.start()
+	host.next_day = 6
+	publications.consume_publication(host)
+	publications.consume_publication(host)
+	host.next_day = 7
+	host.has_tick_sample = true
+	publications.consume_publication(host)
+	host.next_day = 8
+	host.has_day_records = false
+	publications.consume_publication(host)
+	_expect(publications.row_count() == 2, "partial and full publications each produce one row")
+	var file := FileAccess.open(publications.stop_and_export(), FileAccess.READ)
+	_expect(file != null, "publication diagnostics CSV exists")
+	if file == null:
+		return
+	var columns := file.get_csv_line()
+	var day_column := columns.find("runtime_graph_simulation_committed_day")
+	var timing_column := columns.find("fast_ms")
+	var partial := file.get_csv_line()
+	var full := file.get_csv_line()
+	_expect(partial[day_column] == "6" and partial[timing_column].is_empty(),
+		"partial publication keeps its date and leaves unmeasured timing blank")
+	_expect(full[day_column] == "7" and full[timing_column] == "1.25",
+		"full publication retains its actual timing sample")
+
+
+func _test_publication_recorder_row_limit() -> void:
+	var publications := HeadlessPerf.PublicationRecorder.new()
+	publications.start()
+	publications._rows.resize(PerfRecorder.HARD_ROW_LIMIT - 1)
+	publications.on_fast_tick({})
+	publications.on_fast_tick({})
+	_expect(publications.hit_limit() and not publications.is_recording() \
+		and publications.row_count() == PerfRecorder.HARD_ROW_LIMIT,
+		"the publication recorder stops at the inherited row limit")
 
 
 func _day_record(day: int) -> Dictionary:

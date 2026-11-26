@@ -37,8 +37,29 @@ const AUTHORITATIVE_THROUGHPUT_CHECKPOINT_DAYS_PER_SEC := 50.0
 
 class PublicationRecorder extends PerfRecorder:
 	func on_fast_tick(sample: Dictionary) -> void:
+		# The inherited append stops recording when it reaches the row limit.
 		if is_recording():
 			_append_row(_build_row(sample, null))
+
+	func consume_publication(host) -> void:
+		var previous_day: int = host._runtime_commit_day
+		var previous_rows := row_count()
+		host._consume_runtime_commit_if_ready()
+		# A partial commit can publish dates without issuing a fast-tick sample.
+		if not is_recording() or row_count() != previous_rows \
+				or host._runtime_commit_day <= previous_day:
+			return
+		var records: Array = host._runtime_last_commit.get("days", [])
+		if records.is_empty():
+			return
+		var last: Dictionary = records.back()
+		var day := int(last["day"])
+		if day != host._runtime_commit_day:
+			return
+		_append_row({
+			"runtime_graph_simulation_committed_day": day,
+			"runtime_graph_simulation_generation": int(last["generation"]),
+		})
 
 
 func _init() -> void:
@@ -425,7 +446,7 @@ func _run() -> int:
 		var writeback_deadline := writeback_window_started + 60000000
 		while Time.get_ticks_usec() < writeback_deadline:
 			var consume_started := Time.get_ticks_usec()
-			host._consume_runtime_commit_if_ready()
+			publications.consume_publication(host)
 			harness_writeback_consume_us += Time.get_ticks_usec() - consume_started
 			harness_writeback_poll_count += 1
 			# The poll emits the ordered records before returning. The worker's
@@ -726,6 +747,9 @@ func _run() -> int:
 			push_error("[headless-perf] CSV days must be ordered from %d through %d" % [
 				first_measured_day, last_measured_day])
 		return 6
+	if publication_path.is_empty() or not FileAccess.file_exists(publication_path):
+		push_error("[headless-perf] publication diagnostics CSV export failed")
+		return 5
 	if fatal or ledger_failures > 0:
 		return 7
 	if climate_authority_on and int(climate_diag.get("writeback_days", 0)) <= 0:
