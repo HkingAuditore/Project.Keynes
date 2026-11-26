@@ -35,6 +35,10 @@ const KIND_LABELS := {"consumption": "交易", "import": "进口", "export": "�
 ## 检查在 gdext/src/world_ext_country_commands.cpp:76-87），超出整批被拒，
 ## 所以这里必须切块，不能把 449 项一次塞进去。
 const TAX_GROUP_BATCH_LIMIT := 256
+## 组下拉顶上固定的「全部项目」伪组：轴换了它也在，用户要的「一眼把所有项设成
+## 同一个值」不因为换轴而丢。它的 id 不会与任何轴的真组 id 撞（轴 id 全是
+## era / branch.* / 货 id / 产业 id / rank_* 这类取值）。
+const TAX_GROUP_ALL_ID := "__all_items__"
 const TAX_MODE_PERCENT_BP := 0
 const TAX_MODE_ABSOLUTE := 1
 const TAX_ABSOLUTE_MIN := -1000000000
@@ -76,6 +80,8 @@ var _tax_group_axes: Array = []
 var _tax_group_selection := ""
 ## 明细是否收起：只留分组条，卡片全部收起（默认卡仍显示）。
 var _tax_group_collapsed := false
+## 税率档筛选：all / rate_0 / rate_low / rate_high（税率档是筛不是分）。
+var _tax_rate_filter := "all"
 var _trade_views: HBoxContainer
 var _trade_goods_button: Button
 var _trade_partners_button: Button
@@ -1599,7 +1605,11 @@ func _apply_filter() -> void:
 			any_override = any_override or bool(card.overridden[kind])
 		var override_ok := not _overrides_only.button_pressed or any_override
 		var group_ok := not has_group or group_ids.has(String(card.item_id))
-		control.visible = matches and override_ok and group_ok
+		# 税率档是筛选：只在税制页生效，默认 all 不过滤。
+		var rate_ok := true
+		if _is_tax_page(_page) and _tax_rate_filter != RATE_FILTER_ALL:
+			rate_ok = _rate_band_of(card) == _tax_rate_filter
+		control.visible = matches and override_ok and group_ok and rate_ok
 		if control.visible:
 			visible_count += 1
 			project_visible += 1
@@ -1636,6 +1646,7 @@ func _build_tax_group_bar(ledger_root: String) -> void:
 	_tax_group_bar = bar
 	bar.axis_changed.connect(_on_tax_group_axis_changed)
 	bar.group_changed.connect(_on_tax_group_changed)
+	bar.filter_changed.connect(_on_tax_rate_filter_changed)
 	bar.apply_requested.connect(_on_tax_group_apply)
 	bar.collapse_toggled.connect(_on_tax_group_collapse)
 
@@ -1686,24 +1697,30 @@ func _axes_signature(axes: Array) -> String:
 	return "|".join(parts)
 
 
-## 分组轴按页给：所得税/物资税只有「税率档」；营业税另有四个建筑分组轴，
-## 与地方面板同源（tax_group_map），组名两边一致。
+## 分组轴按页给（用户定的规格）：营业税按时代/产物/产品线/产业/生产档位；
+## 交易税按三层/时代/产品线/产业；所得税只有阶层与产业——职业的时代横跨多档，
+## 做出来是假分组，所以不做。税率档不在这里，它降级成筛选（见 _rate_band_of）。
+## 轴清单本体在 tax_group_map.gd 的 SUBJECT_AXES：地方面板与对象详情读同一份，
+## 两处不再各写一套。
 func _tax_group_axes_for_page(page: String) -> Array:
-	var axes: Array = [{"id": "rate_band", "label": "按税率档",
-		"hint": "按当前税率把这一页的项目分成几档"}]
-	if page != "business":
-		return axes
-	if _tax_group_columns().is_empty():
-		return axes
-	var building_axes := [
-		{"id": "maturity_rank", "label": "按生产档位", "hint": "同一生产方式档位的全国建筑"},
-		{"id": "output_good", "label": "按产物", "hint": "产出同一件货的全国建筑"},
-		{"id": "sector", "label": "按大类", "hint": "农业/采掘/制造/能源/知识/军事"},
-		{"id": "staple_crop", "label": "按主粮农场", "hint": "全国主粮农场，其余按大类"},
-	]
-	for axis_value in building_axes:
-		axes.append(axis_value)
-	return axes
+	return TaxGroupMapScript.axes_for_subject(_axis_subject_for_page(page))
+
+
+## 这一页的分组主体：建筑 / 物资 / 职业，决定读哪一份 id 列。
+func _axis_subject_for_page(page: String) -> String:
+	if page == "business":
+		return TaxGroupMapScript.SUBJECT_BUILDING
+	if page == "consumption":
+		return TaxGroupMapScript.SUBJECT_GOOD
+	return TaxGroupMapScript.SUBJECT_PROFESSION
+
+
+func _axis_id_column_for_page(page: String) -> String:
+	if page == "business":
+		return "building_type_ids"
+	if page == "consumption":
+		return "good_ids"
+	return "profession_ids"
 
 
 ## 分组表：与地方面板取同一份建筑目录（economy facade 的 construction_type_columns）。
@@ -1731,84 +1748,50 @@ func _page_card_ids(page: String) -> Array:
 	return out
 
 
+## 用 tax_group_map 的通用轴算组，再与「本页真有卡片的项目」取交集——
+## 目录里有的 id 不一定都在本国的税表里，交集之外的 id 会让整批命令被拒。
 func _tax_groups_for_page(page: String, axis_id: String) -> Array:
 	if axis_id.is_empty():
 		return []
-	if axis_id == "rate_band":
-		return _rate_band_groups(page)
-	return _building_groups(page, axis_id)
-
-
-## 按税率档分组：全部 / 0% / 0.1%–10% / 10% 以上。
-## 取每张卡第一个税种的权威税率（没有覆盖时就是国家默认）。
-func _rate_band_groups(page: String) -> Array:
-	var all_ids := PackedStringArray()
-	var zero_ids := PackedStringArray()
-	var low_ids := PackedStringArray()
-	var high_ids := PackedStringArray()
-	for item_id in _page_card_ids(page):
-		var card: Dictionary = _rows.get("%s:%s" % [page, item_id], {})
-		if card.is_empty():
-			continue
-		var kinds: Array = card.kinds
-		if kinds.is_empty():
-			continue
-		var kind := String(kinds[0])
-		var rate := int((card.rates as Dictionary).get(kind, 0))
-		all_ids.append(item_id)
-		if rate == 0:
-			zero_ids.append(item_id)
-		elif rate <= 1000:
-			low_ids.append(item_id)
-		else:
-			high_ids.append(item_id)
-	var groups: Array = []
-	var bands := [
-		{"id": "all", "label": "全部项目", "ids": all_ids},
-		{"id": "rate_0", "label": "0%", "ids": zero_ids},
-		{"id": "rate_low", "label": "0.1%–10%", "ids": low_ids},
-		{"id": "rate_high", "label": "10% 以上", "ids": high_ids},
-	]
-	for band_value in bands:
-		var band: Dictionary = band_value
-		var ids: PackedStringArray = band["ids"]
-		if ids.is_empty():
-			continue
-		groups.append({
-			"id": String(band["id"]),
-			"label": String(band["label"]),
-			"item_ids": ids,
-			"count": ids.size(),
-			"overridden": _override_count(page, ids),
-		})
-	return groups
-
-
-## 建筑四轴：直接用 tax_group_map 算组，再与「本页真有卡片的项目」取交集——
-## 目录里有的建筑类型不一定都在本国的税表里，交集之外的 id 会让整批命令被拒。
-func _building_groups(page: String, axis_id: String) -> Array:
 	var columns := _tax_group_columns()
 	if columns.is_empty():
 		return []
-	var building_ids: PackedStringArray = columns.get("building_type_ids", PackedStringArray())
-	if building_ids.is_empty():
+	var subject := _axis_subject_for_page(page)
+	var id_column := _axis_id_column_for_page(page)
+	var member_ids: PackedStringArray = columns.get(id_column, PackedStringArray())
+	if member_ids.is_empty():
 		return []
-	var grouped: Dictionary = TaxGroupMapScript.build(columns, axis_id)
+	var grouped: Dictionary = TaxGroupMapScript.build_axis(columns, axis_id, subject)
 	if not bool(grouped.get("ok", false)):
 		return []
 	var group_ids: PackedStringArray = grouped.get("group_ids", PackedStringArray())
 	var group_labels: PackedStringArray = grouped.get("group_labels", PackedStringArray())
-	var indices: PackedInt32Array = grouped.get("building_group_indices", PackedInt32Array())
+	var member_groups: PackedInt32Array = grouped.get(
+		"member_group_indices", PackedInt32Array())
 	var known := {}
 	for item_id in _page_card_ids(page):
-		known[item_id] = true
+		known[String(item_id)] = true
 	var groups: Array = []
+	# 「全部项目」固定在组下拉顶上：它是伪组，只包「本页真有卡片的全部项目」，
+	# 与当前轴无关——换轴不会把它弄丢，「一眼全设成同一个值」始终可达。
+	# 449 座这一档正好越过 TAX_GROUP_BATCH_LIMIT(256)，所以分块提交的路径也由它兜着。
+	var all_ids := PackedStringArray()
+	for item_id in _page_card_ids(page):
+		all_ids.append(String(item_id))
+	if not all_ids.is_empty():
+		groups.append({
+			"id": TAX_GROUP_ALL_ID,
+			"label": "全部项目",
+			"item_ids": all_ids,
+			"count": all_ids.size(),
+			"overridden": _override_count(page, all_ids),
+		})
 	for group in group_ids.size():
 		var ids := PackedStringArray()
-		for building in TaxGroupMapScript.buildings_in_group(indices, group):
-			if building < 0 or building >= building_ids.size():
+		for member in TaxGroupMapScript.members_in_group(member_groups, group):
+			if member < 0 or member >= member_ids.size():
 				continue
-			var stable := String(building_ids[building])
+			var stable := String(member_ids[member])
 			if known.has(stable):
 				ids.append(stable)
 		if ids.is_empty():
@@ -1821,6 +1804,27 @@ func _building_groups(page: String, axis_id: String) -> Array:
 			"overridden": _override_count(page, ids),
 		})
 	return groups
+
+
+## 税率档：从「分组轴」降级成「筛选」。取每张卡第一个税种的权威税率
+## （没有覆盖时就是国家默认），返回 all / rate_0 / rate_low / rate_high。
+const RATE_FILTER_ALL := "all"
+const RATE_FILTER_ZERO := "rate_0"
+const RATE_FILTER_LOW := "rate_low"
+const RATE_FILTER_HIGH := "rate_high"
+
+
+func _rate_band_of(card: Dictionary) -> String:
+	var kinds: Array = card.kinds
+	if kinds.is_empty():
+		return RATE_FILTER_ALL
+	var kind := String(kinds[0])
+	var rate := int((card.rates as Dictionary).get(kind, 0))
+	if rate == 0:
+		return RATE_FILTER_ZERO
+	if rate <= 1000:
+		return RATE_FILTER_LOW
+	return RATE_FILTER_HIGH
 
 
 func _override_count(page: String, ids: PackedStringArray) -> int:
@@ -1865,6 +1869,11 @@ func _on_tax_group_changed(group_id: String) -> void:
 
 func _on_tax_group_collapse(collapsed: bool) -> void:
 	_tax_group_collapsed = collapsed
+	_apply_filter()
+
+
+func _on_tax_rate_filter_changed(filter_id: String) -> void:
+	_tax_rate_filter = filter_id
 	_apply_filter()
 
 

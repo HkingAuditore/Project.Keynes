@@ -17,6 +17,8 @@ extends HBoxContainer
 signal axis_changed(axis_id: String)
 ## 组换了：宿主据此重新过滤卡片。
 signal group_changed(group_id: String)
+## 税率档筛选换了：宿主据此重新过滤卡片（税率档是筛不是分）。
+signal filter_changed(filter_id: String)
 ## 玩家点了「整组设为」：宿主负责校验、分块、提交。
 signal apply_requested(rate_basis_points: int, item_ids: PackedStringArray)
 ## 收起 / 展开明细。
@@ -37,6 +39,7 @@ const RateFieldScene := preload("res://scenes/ui/setup_spin.tscn")
 var _axis_picker: OptionButton = null
 var _group_picker: OptionButton = null
 var _summary: Label = null
+var _filter_picker: OptionButton = null
 var _mode_picker: OptionButton = null
 var _rate_spin: SpinBox = null
 var _apply_button: Button = null
@@ -89,6 +92,28 @@ func _build() -> void:
 	_summary.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_summary.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	add_child(_summary)
+
+	# 税率档是「筛选」而不是「分组」：分组按自然分类（时代/产物/产品线/产业），
+	# 税率档只用来把当前视图收窄，所以它跟分组轴分开摆。
+	var filter_caption := UIControlParts.label()
+	filter_caption.name = "FilterCaption"
+	filter_caption.text = "筛选"
+	filter_caption.add_theme_font_size_override("font_size", 12)
+	filter_caption.add_theme_color_override("font_color", UITokens.ARCHIVE_INK_MUTED)
+	filter_caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	add_child(filter_caption)
+
+	_filter_picker = UIControlParts.option_button()
+	_filter_picker.name = "RateFilter"
+	_filter_picker.custom_minimum_size = Vector2(104.0, 30.0)
+	_filter_picker.tooltip_text = "按当前税率把卡片收窄；不改变分组"
+	_filter_picker.add_item("全部税率", 0)
+	_filter_picker.add_item("0%", 1)
+	_filter_picker.add_item("0.1%–10%", 2)
+	_filter_picker.add_item("10% 以上", 3)
+	_filter_picker.select(0)
+	_filter_picker.item_selected.connect(_on_filter_selected)
+	add_child(_filter_picker)
 
 	_mode_picker = UIControlParts.option_button()
 	_mode_picker.name = "Mode"
@@ -295,6 +320,34 @@ func _on_axis_selected(_index: int) -> void:
 	if _applying:
 		return
 	axis_changed.emit(current_axis_id())
+
+
+## 税率档筛选的当前值：all / rate_0 / rate_low / rate_high。
+func current_filter_id() -> String:
+	if _filter_picker == null:
+		return "all"
+	match _filter_picker.selected:
+		1: return "rate_0"
+		2: return "rate_low"
+		3: return "rate_high"
+	return "all"
+
+
+func set_filter_id(filter_id: String) -> void:
+	if _filter_picker == null:
+		return
+	var index := 0
+	match filter_id:
+		"rate_0": index = 1
+		"rate_low": index = 2
+		"rate_high": index = 3
+	_filter_picker.select(index)
+
+
+func _on_filter_selected(_index: int) -> void:
+	if _applying:
+		return
+	filter_changed.emit(current_filter_id())
 
 
 func _on_group_selected(_index: int) -> void:

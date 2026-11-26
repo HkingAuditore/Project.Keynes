@@ -15,6 +15,11 @@ const TaxSectionScene := preload("res://scenes/ui/object_tax_section.tscn")
 ## 整组设值时按「当前这一节是什么」推税种，不再写死营业税（原来写死 2，
 ## 阶层和物资的整组入口根本出不来）。
 const TAX_KIND_BY_SECTION := {"cohort": 0, "good": 1, "building": 2}
+## 被查看的对象决定整组轴的主体：建筑给时代/产物/产品线/产业/生产档位，
+## 物资给三层/时代/产品线/产业，阶层给阶层/产业（tax_group_map.gd 的 SUBJECT_AXES）。
+const TAX_GROUP_SUBJECT_BY_KIND := {
+	"cohort": "profession", "good": "good", "building": "building",
+}
 ## 「全部」分组轴的 id，与 inspector_panel.TAX_GROUP_ALL_MODE 对齐。
 const TAX_GROUP_ALL_MODE := "all_items"
 const TAX_MODE_PERCENT_BP := 0
@@ -491,7 +496,8 @@ func _build_tax_section(kind: String, context_value: Variant, row: Dictionary,
 func _add_tax_group_controls(parent: VBoxContainer, kind: String,
 		section_tax_kind: int, target_item_id: String, prefill_rate: int,
 		host: Control) -> void:
-	var axes: Array = host.tax_group_axes()
+	var subject := String(TAX_GROUP_SUBJECT_BY_KIND.get(kind, "building"))
+	var axes: Array = host.tax_group_axes(subject)
 	if axes.is_empty():
 		return
 	var group_box := UIControlParts.h_box_container()
@@ -500,15 +506,14 @@ func _add_tax_group_controls(parent: VBoxContainer, kind: String,
 	var axis_picker := UIControlParts.option_button()
 	axis_picker.name = "Axis"
 	axis_picker.custom_minimum_size = Vector2(118.0, 30.0)
+	# 默认选第一条轴：建筑是第一轴「按时代」，物资是「按三层」，阶层是「按阶层」。
+	# 轴表已经按被查看的对象给（TAX_GROUP_SUBJECT_BY_KIND），不会再出现
+	# 「默认选中一个对本对象没意义的轴、一进来就显示不可用」。
 	var default_axis := 0
 	for axis_index in range(axes.size()):
 		var axis: Dictionary = axes[axis_index]
 		axis_picker.add_item(String(axis.get("label", "")))
 		axis_picker.set_item_tooltip(axis_index, String(axis.get("hint", "")))
-		# 建筑页默认按生产档位；阶层/物资页默认落在「全部」轴——
-		# 建筑那四轴对阶层和物资没有意义，默认选中会立刻显示「不可用」。
-		if kind != "building" and String(axis.get("mode", "")) == TAX_GROUP_ALL_MODE:
-			default_axis = axis_index
 	axis_picker.selected = default_axis
 	axis_picker.tooltip_text = String((axes[default_axis] as Dictionary).get("hint", ""))
 	group_box.add_child(axis_picker)
@@ -541,7 +546,7 @@ func _add_tax_group_controls(parent: VBoxContainer, kind: String,
 	var refresh := func() -> void:
 		var axis: Dictionary = axes[int(axis_picker.selected)]
 		var info: Dictionary = host.tax_group_ids_for(
-			String(axis.get("mode", "")), target_item_id)
+			String(axis.get("id", "")), target_item_id, subject)
 		var ids: PackedStringArray = info.get("item_ids", PackedStringArray())
 		state["ids"] = ids
 		var label := String(info.get("label", ""))

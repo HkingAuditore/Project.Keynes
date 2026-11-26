@@ -525,4 +525,33 @@ static func construction_type_columns(catalog: Dictionary, good_names: Dictionar
 		# 税分组的产物轴要给人看的货名。这里只透传已加载的显示名表，
 		# 缺项由分组模块退回 stable id，不新建加载路径。
 		"good_display_names": good_names,
+		# --- 只增列：税收分组的时代 / 产品线 / 物资三层 / 职业阶层与产业 ---
+		# 全部是 economy 编译产物里已有的列，这里只透传，不改任何已有列的
+		# 语义和顺序。科技表的三列来自 technology_catalog（economy_catalog.gd
+		# 把整张技术目录合并进 _catalog），建筑的技术标签走 CSR：offsets 长度
+		# 是建筑数 + 1。
+		"building_technology_tag_offsets": catalog.get(
+			"building_technology_tag_offsets", PackedInt32Array()),
+		"building_technology_tags": catalog.get(
+			"building_technology_tags", PackedStringArray()),
+		"technology_ids": catalog.get("technology_ids", PackedStringArray()),
+		"technology_era_ids": catalog.get(
+			"technology_era_ids", PackedStringArray()),
+		"technology_layout_lanes": catalog.get(
+			"technology_layout_lanes", PackedStringArray()),
+		# 物资三层要的投入边（生产图的反向边）。
+		"building_input_offsets": catalog.get(
+			"building_input_offsets", PackedInt32Array()),
+		"building_input_good_ids": catalog.get(
+			"building_input_good_ids", PackedInt32Array()),
+		# 职业产业要的雇主列：业主 + 雇员（雇员是 CSR）。
+		"profession_ids": catalog.get("profession_ids", PackedStringArray()),
+		"profession_class_ids": catalog.get(
+			"profession_class_ids", PackedStringArray()),
+		"building_owner_profession_ids": catalog.get(
+			"building_owner_profession_ids", PackedInt32Array()),
+		"building_employee_offsets": catalog.get(
+			"building_employee_offsets", PackedInt32Array()),
+		"building_employee_profession_ids": catalog.get(
+			"building_employee_profession_ids", PackedInt32Array()),
 	}

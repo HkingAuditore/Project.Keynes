@@ -836,24 +836,42 @@ func _register_tax_editor(editor: TaxLaneEditor) -> void:
 			"rate", editor.lane_data().get("base", 0))))
 
 
-func tax_group_axes() -> Array:
-	# 复制一份再追加：InspectorTaxGroups 返回的是 const 数组本体。
-	var axes: Array = InspectorTaxGroups.tax_group_axes().duplicate(true)
-	axes.append({"mode": TAX_GROUP_ALL_MODE, "label": "全部",
+## 对象详情 / 地方面板的整组轴：与总面板同源（tax_group_map.gd 的 SUBJECT_AXES），
+## 末尾再挂一条「全部」——它直接取国家税快照的整份 id，不经过目录。
+## subject 由调用方按被查看的对象给：建筑 / 物资 / 职业各一组轴。
+func tax_group_axes(subject: String = "building") -> Array:
+	var axes: Array = InspectorTaxGroups.tax_group_axes(subject)
+	axes.append({"id": TAX_GROUP_ALL_MODE, "label": "全部",
 		"hint": "该国这个税种下的全部项目"})
 	return axes
 
 
-func tax_group_ids_for(mode: String, item_id: String) -> Dictionary:
+func tax_group_ids_for(mode: String, item_id: String,
+		subject: String = "building") -> Dictionary:
 	if mode == TAX_GROUP_ALL_MODE:
 		return _tax_group_all_ids(item_id)
-	return InspectorTaxGroups.tax_group_ids_for(_player_controller, mode, item_id)
+	var info: Dictionary = InspectorTaxGroups.tax_group_ids_for(
+		_player_controller, mode, item_id, subject)
+	if info.is_empty():
+		return {}
+	# 目录里有的 id 不一定都在本国税表里，交集之外的 id 会让整批命令被拒
+	# （总面板同一规则，见 economy_workspace.gd 的 _tax_groups_for_page）。
+	var allowed := _tax_snapshot_ids(item_id)
+	if allowed.is_empty():
+		return info
+	var kept := PackedStringArray()
+	for stable_value in info.get("item_ids", PackedStringArray()):
+		var stable := String(stable_value)
+		if allowed.has(stable):
+			kept.append(stable)
+	info["item_ids"] = kept
+	info["count"] = kept.size()
+	return info
 
 
-## 「全部」轴的目标列表：直接取国家税快照里的 item_ids。
-## 目录（construction_type_columns / 内容表）和税表未必是同一份，
-## 拿目录 id 去发整组命令会因为 unknown tax item 整批被拒，所以这里用快照那份。
-func _tax_group_all_ids(item_id: String) -> Dictionary:
+## item_id 落在哪一份税快照清单里（阶层 / 物资 / 建筑），就把那一份整份给出。
+## 「全部」轴与分组轴的交集都走这里，只读一份快照。
+func _tax_snapshot_list_for(item_id: String) -> Dictionary:
 	if _player_controller == null \
 			or not _player_controller.has_method("get_country_facade"):
 		return {}
@@ -881,15 +899,31 @@ func _tax_group_all_ids(item_id: String) -> Dictionary:
 		var ids: PackedStringArray = raw
 		if not ids.has(item_id):
 			continue
-		return {"ok": true, "mode": TAX_GROUP_ALL_MODE,
-			"group": 0, "group_id": String(entry["id"]),
-			"label": String(entry["label"]), "item_ids": ids,
-			"count": ids.size(), "group_count": 1}
+		return {"key": String(entry["key"]), "id": String(entry["id"]),
+			"label": String(entry["label"]), "ids": ids}
 	return {}
 
 
-func staple_farm_tax_group_ids() -> PackedStringArray:
-	return InspectorTaxGroups.staple_farm_tax_group_ids(_player_controller)
+## 「全部」轴的目标列表：直接取国家税快照里的 item_ids。
+## 目录（construction_type_columns / 内容表）和税表未必是同一份，
+## 拿目录 id 去发整组命令会因为 unknown tax item 整批被拒，所以这里用快照那份。
+func _tax_group_all_ids(item_id: String) -> Dictionary:
+	var found := _tax_snapshot_list_for(item_id)
+	if found.is_empty():
+		return {}
+	var ids: PackedStringArray = found["ids"]
+	return {"ok": true, "mode": TAX_GROUP_ALL_MODE,
+		"group": 0, "group_id": String(found["id"]),
+		"label": String(found["label"]), "item_ids": ids,
+		"count": ids.size(), "group_count": 1}
+
+
+## 分组轴与税快照的交集用：只要 id 列表，不要组信息。
+func _tax_snapshot_ids(item_id: String) -> PackedStringArray:
+	var found := _tax_snapshot_list_for(item_id)
+	if found.is_empty():
+		return PackedStringArray()
+	return found["ids"]
 
 
 ## 整组调税：一次命令改动全国一组项目（如全部主粮农场）的营业税。
