@@ -143,3 +143,10 @@ gdext/src/pk_build_id_generated.h
 # 本地补齐方式见 docs/bootstrap.md。
 /Project/project-keynes/addons/FmodGodot/bin/
 /Project/project-keynes/assets/audio/banks/
+
+# ==== 构建产物与导出备份（2026-11-26 补：可重新生成，一律不入库）====
+# 本地构建输出、导出时留下的配置备份、以及任何 *.bak.* 备份文件。
+/_builds/
+/Project/project-keynes/addons/*/bin/
+/Project/project-keynes/export_presets.cfg.bak.*
+*.bak.*
