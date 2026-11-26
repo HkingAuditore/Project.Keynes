@@ -27,6 +27,10 @@ class OpeningSnapshotHost extends WorldRuntimeHost:
 
 var _checks := 0
 var _failures := 0
+var _annual_last_presented := 0
+var _family_sequence := 0
+var _family_answered := {}
+var _family_invites := 0
 
 
 func _initialize() -> void:
@@ -141,8 +145,14 @@ func _run() -> void:
 				str(report.get("goods_error", "missing"))])
 			break
 		completed_days = day
+		if completed_days % 365 == 0:
+			var year_population: Dictionary = await _await_population_snapshot(
+				economy, start_cell, "year-%d" % completed_days)
+			print("SOAK_YEAR day=%d pop=%s" % [completed_days,
+				str(year_population.get("population", "na"))])
 		if completed_days in CHECKPOINT_DAYS:
-			var population_snapshot: Dictionary = economy.population_cell_snapshot(start_cell)
+			var population_snapshot: Dictionary = await _await_population_snapshot(
+				economy, start_cell, "%d-day" % completed_days)
 			var market_snapshot: Dictionary = economy.market_cell_snapshot(start_cell)
 			var building_snapshot: Dictionary = economy.building_cell_snapshot(start_cell)
 			_expect("%d-day checkpoint reaches an exact committed boundary" % completed_days,
@@ -152,7 +162,8 @@ func _run() -> void:
 				and _variant_is_finite(market_snapshot) \
 				and _variant_is_finite(building_snapshot))
 			_expect("%d-day checkpoint starter population stays above the survival floor" % completed_days,
-				int(population_snapshot.get("population", 0)) >= 20)
+				not population_snapshot.is_empty()
+				and int(population_snapshot.get("population", 0)) >= 20)
 	_expect("every completed starter settlement day conserves all ledgers",
 		completed_days == soak_days and all_commits_conserved)
 	_expect("every completed starter settlement day contains only finite values",
@@ -160,6 +171,7 @@ func _run() -> void:
 	_expect("starter session closes and releases its executor", bool((await host.close_world()).get("ok", false)))
 	host.free()
 	clock.free()
+	print("SOAK_FAMILY_TOTAL=%d" % _family_invites)
 	_finish()
 
 
@@ -173,6 +185,76 @@ func _configured_int(name: String, fallback: int) -> int:
 	return int(value) if value.is_valid_int() else fallback
 
 
+## 无头会话没有年报 UI，年界会一直挂着 annual_report_commit_barrier。
+## 同一份年报只确认一次，避免重复提交。
+func _dismiss_annual_reports(host, day: int) -> void:
+	if not host.has_method("annual_report_status"):
+		return
+	var status: Dictionary = host.annual_report_status()
+	if not bool(status.get("ok", false)):
+		return
+	var report_id := int(status.get("ready_report_id", 0))
+	if report_id <= 0 or report_id == _annual_last_presented:
+		return
+	_annual_last_presented = report_id
+	var result: Dictionary = host.mark_annual_report_presented(report_id)
+	print("SOAK_ANNUAL day=%d id=%d presented=%s reward_pending=%s" % [
+		day, report_id, str(result.get("ok", false)),
+		str(status.get("reward_pending", "na"))])
+
+
+## 读视图可能正好压在边界上，population_cell_snapshot 会回 economy_busy_retry。
+## 逐帧重试到拿到真快照为止；连续拿不到才算失败（不跳过、不放宽）。
+func _await_population_snapshot(economy, cell: int, label: String) -> Dictionary:
+	var last: Dictionary = {}
+	for _attempt in range(MAX_SLICES_PER_DAY):
+		var snapshot: Dictionary = economy.population_cell_snapshot(cell)
+		if snapshot.has("population") and bool(snapshot.get("ok", true)):
+			return snapshot
+		last = snapshot
+		await process_frame
+	print("soak snapshot unavailable %s code=%s reason=%s read_view_pending=%s" % [
+		label, str(last.get("code", "")), str(last.get("reason", "")),
+		str(last.get("read_view_pending", ""))])
+	return {}
+
+
+## 无头会话同样没有建家 UI：家族建家邀请会让 player_confirmation 一直挂着。
+## 像玩家一样选第一张卡；选项数从 offer.candidates 读，拿不到就报错返回，不猜索引。
+func _answer_family_offers(economy, day: int) -> void:
+	var ext = economy.world_ext()
+	if ext == null or not ext.has_method("get_family_founding_offers"):
+		return
+	var listing: Dictionary = ext.get_family_founding_offers(0, 16)
+	if not bool(listing.get("ok", false)):
+		return
+	for row in listing.get("offers", []):
+		var offer: Dictionary = row
+		if String(offer.get("status", "")) != "OPEN":
+			continue
+		if not bool(offer.get("player_choice", false)):
+			continue
+		var offer_id := int(offer.get("offer_id", 0))
+		if offer_id <= 0 or _family_answered.has(offer_id):
+			continue
+		var generation := int(offer.get("generation", 0))
+		var candidates: Array = offer.get("candidates", [])
+		if generation <= 0 or candidates.is_empty():
+			push_error("starter soak family offer unexpected: %s" % str(offer))
+			return
+		var choice_index := 0
+		_family_sequence += 1
+		var reply: Dictionary = ext.submit_family_founding_choice(
+			offer_id, generation, choice_index, day, _family_sequence)
+		if not bool(reply.get("ok", false)):
+			# 边界未就绪时会被拒，下一片重试即可；不记成已应答。
+			continue
+		_family_answered[offer_id] = true
+		_family_invites += 1
+		print("SOAK_FAMILY day=%d offer_id=%d generation=%d choice_index=%d candidates=%d" % [
+			day, offer_id, generation, choice_index, candidates.size()])
+
+
 func _run_day(host: WorldRuntimeHost, economy, clock: WorldClock, day: int) -> Dictionary:
 	var generator := host.get_generator()
 	clock.current_day = float(day + 1)
@@ -183,6 +265,9 @@ func _run_day(host: WorldRuntimeHost, economy, clock: WorldClock, day: int) -> D
 	host.finish_daily_tick(0.0, {})
 	for _slice in range(MAX_SLICES_PER_DAY):
 		host._process(0.0)
+		if _slice % 64 == 0:
+			_dismiss_annual_reports(host, day)
+			_answer_family_offers(economy, day)
 		var runtime: Dictionary = generator.get_runtime_thread_report()
 		if String(runtime.get("simulation_host_state", "")) == "FAULTED":
 			return {"fatal": true, "fatal_reason": runtime.get("fault_code", "worker_fault")}
