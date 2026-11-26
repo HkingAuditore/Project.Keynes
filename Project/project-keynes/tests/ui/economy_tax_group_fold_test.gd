@@ -71,8 +71,14 @@ func _check_axes_and_merchant_classification() -> void:
 	_expect("goods layer axis renamed to 按产品性质", labels.has("按产品性质") and not labels.has("按三层"))
 	_expect("rate_band axis removed from grouping axes", not labels.has("按当前税率"))
 	var catalog := {
-		"profession_ids": PackedStringArray(["merchant", "miner", "forager", "unemployed"]),
-		"profession_class_ids": PackedStringArray(["general", "worker", "farmer", "general"]),
+		"profession_ids": PackedStringArray([
+			"merchant", "miner", "forager", "unemployed",
+			"landlord", "industrialist", "guild_master", "manager", "ship_officer",
+		]),
+		"profession_class_ids": PackedStringArray([
+			"general", "worker", "farmer", "general",
+			"general", "general", "general", "general", "general",
+		]),
 		"building_economic_sectors": PackedInt32Array([1, 1, 1, 1, 0]),
 		"building_owner_profession_ids": PackedInt32Array([0, 0, 0, 0, 2]),
 		"building_employee_offsets": PackedInt32Array([0, 1, 2, 3, 4, 4]),
@@ -84,9 +90,27 @@ func _check_axes_and_merchant_classification() -> void:
 		String((by_sector.group_ids as PackedStringArray)[m_group]) == "commerce"
 		and String((by_sector.group_labels as PackedStringArray)[m_group]) == "商业与贸易")
 	var by_class := TaxGroupMapScript.build_axis(catalog, "profession_class", "profession")
-	var m_class := int((by_class.member_group_indices as PackedInt32Array)[0])
-	_expect("merchant placed in owner class instead of unclassified",
-		String((by_class.group_ids as PackedStringArray)[m_class]) == "owner")
+	var class_gids: PackedStringArray = by_class.group_ids
+	var class_labels: PackedStringArray = by_class.group_labels
+	var class_idx: PackedInt32Array = by_class.member_group_indices
+	_expect("merchant placed in commerce class",
+		class_gids[class_idx[0]] == "commerce" and class_labels[class_idx[0]] == "商业")
+	_expect("ship_officer placed in commerce class",
+		class_gids[class_idx[8]] == "commerce")
+	_expect("landlord and industrialist placed in major_owner class",
+		class_gids[class_idx[4]] == "major_owner"
+		and class_gids[class_idx[5]] == "major_owner"
+		and class_labels[class_idx[4]] == "大业主")
+	_expect("guild_master and manager placed in small_owner class",
+		class_gids[class_idx[6]] == "small_owner"
+		and class_gids[class_idx[7]] == "small_owner"
+		and class_labels[class_idx[6]] == "小业主")
+	var fam_labels: Dictionary = TaxGroupMapScript.family_label_map()
+	_expect("branch family tax labels use concise names",
+		String(fam_labels.get("backbone.food_storage", "")) == "食品业"
+		and String(fam_labels.get("branch.textile_fibers", "")) == "纺织服装"
+		and String(fam_labels.get("branch.heavy_industry", "")) == "重工业"
+		and String(fam_labels.get("branch.forest_biomass", "")) == "林业与造纸")
 
 
 func _check_goods_group_fold_and_independent_kinds() -> void:
@@ -139,6 +163,29 @@ func _check_goods_group_fold_and_independent_kinds() -> void:
 	_expect("group title label has visible non-zero width",
 		not (raw_entry.title as Label).text.is_empty()
 		and (raw_entry.title as Label).size.x >= 20.0)
+	# 模拟不暂停游戏时持续 tick 刷新：默认税率卡与组头输入框正在输入时，焦点与文本不能被刷掉。
+	var default_card: Dictionary = (workspace.get("_rows") as Dictionary)["consumption:__default__"]
+	var default_line := ((default_card.spins as Dictionary)["consumption"] as SpinBox).get_line_edit()
+	default_line.grab_focus()
+	await process_frame
+	default_line.text = "12"
+	var group_line := ((raw_entry.spins as Dictionary)["consumption"] as SpinBox).get_line_edit()
+	var tick_model := model.duplicate(true)
+	tick_model["current_day"] = 2
+	workspace.set_model(tick_model)
+	await process_frame
+	_expect("live tick refresh preserves focus and draft text on default tax card",
+		default_line.has_focus() and default_line.text == "12")
+	group_line.grab_focus()
+	await process_frame
+	group_line.text = "9.5"
+	tick_model["current_day"] = 3
+	workspace.set_model(tick_model)
+	await process_frame
+	_expect("live tick refresh preserves focus and draft text on group header spin",
+		group_line.has_focus() and group_line.text == "9.5")
+	group_line.release_focus()
+	await process_frame
 	_expect("group starts collapsed by default", not (raw_entry.members_margin as Control).visible)
 	# 在折叠状态下直接修改组头的「交易税」，验证只发 kind=1，不动进口/出口。
 	controller.commands.clear()

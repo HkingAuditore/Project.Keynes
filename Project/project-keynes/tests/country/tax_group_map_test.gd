@@ -194,3 +194,16 @@ func _run_real_catalog() -> void:
 		_expect("output_good leaves most buildings on a real good",
 			fallback < int(good_built["building_count"]))
 		print("    output groups=%d no_output=%d" % [int(good_built["group_count"]), fallback])
+
+	# 商品大类轴：全目录 171 种商品应全部落入已命名大类（0 未分类），且食物拆分为 4 个大类。
+	var good_cat_axis: Dictionary = TaxGroupMap.build_axis(
+		compiled, TaxGroupMap.AXIS_GOOD_CATEGORY, TaxGroupMap.SUBJECT_GOOD)
+	_expect("good_category axis builds on real catalog", bool(good_cat_axis.get("ok", false)))
+	if bool(good_cat_axis.get("ok", false)):
+		var cat_gids: PackedStringArray = good_cat_axis["group_ids"]
+		_expect("good_category covers all goods with zero unclassified",
+			not cat_gids.has(TaxGroupMap.UNCLASSIFIED_ID))
+		_expect("good_category splits food into staple/meat/processed/beverages",
+			cat_gids.has("staple_food") and cat_gids.has("meat_seafood")
+			and cat_gids.has("processed_food") and cat_gids.has("beverages_spices"))
+		print("    good_category groups=%d" % int(good_cat_axis["group_count"]))

@@ -173,14 +173,21 @@ func sync_groups(page: String, wanted: Dictionary, default_host: Control,
 		refresh_toolbar(page, axis_picker, expand_button)
 		return
 	if default_host != null:
+		var d_ctrl: Control = default_card.control as Control if not default_card.is_empty() else null
+		# 只把其他页残留的默认卡移回 flow；当前页默认卡若已在 default_host 内，
+		# 绝不可先移出再移回，否则每日 tick 刷新会剥夺 SpinBox 焦点、刷掉玩家正在输入的数值。
 		for child in default_host.get_children():
-			_reparent_card(child as Control, flow)
-		if not default_card.is_empty():
-			var d_ctrl := default_card.control as Control
-			_reparent_card(d_ctrl, default_host)
+			if child != d_ctrl:
+				_reparent_card(child as Control, flow)
+		if d_ctrl != null:
+			if d_ctrl.get_parent() != default_host:
+				_reparent_card(d_ctrl, default_host)
 			d_ctrl.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-			d_ctrl.visible = true
-		default_host.visible = not default_card.is_empty()
+			if not d_ctrl.visible:
+				d_ctrl.visible = true
+		var show_default := d_ctrl != null
+		if default_host.visible != show_default:
+			default_host.visible = show_default
 	if group_list != null:
 		group_list.visible = true
 		var g_scroll := group_list.get_parent() as Control
@@ -373,6 +380,7 @@ func _ensure_group(key: String, page: String, group_id: String, label: String,
 		"kinds": kinds, "item_ids": PackedStringArray(),
 		"lane_states": {},
 	}
+	preload("res://scripts/ui/components/touch_tax_card_binder.gd").bind_group(self, key, entry)
 	_groups_by_key[key] = entry
 	_apply_group_expanded_ui(entry, bool(_expanded_by_key.get(key, false)))
 	return entry
