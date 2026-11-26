@@ -881,7 +881,7 @@
 	"res://scripts/data/country_profile.gd": "ce73b68c1642b48445f84e69c2d5bfd6cd4f23a3f93a3dd48fbeb2ccef7998d7",
 	"res://scripts/data/decoration_manifest.gd": "48551335d43062429614233a6d36d5ddc9efd2c1d8a90de0f234875422b69ea6",
 	"res://scripts/data/detail_scatter_change_set.gd": "e90b32818825f2deca37bb46a3edbd14e5856b45ee93f9fbba46515294371d17",
-	"res://scripts/data/economy_profile.gd": "204d99e30d37e4aa74935b18029ca01c3d6fc71b98a60fc99162dd6623df35ea",
+	"res://scripts/data/economy_profile.gd": "cd2fd09cf71dac1b68bf7ea450d74d29bd844723fda57ac8761e363410b3cedf",
 	"res://scripts/data/environment_demand_curve_profile.gd": "e55e297b0db6b026bf12f5180f00bcc76ea1cc21847fe6f570c613411cacab9c",
 	"res://scripts/data/ethnicity_profile.gd": "7efbae23fc19bd9f18bff81763a2b795ac32e51222e602765c87070e192472be",
 	"res://scripts/data/family_culture_group_profile.gd": "91b562d0c17b7fb62c7e32d863f8cc9cae2df397f2282b5efd3c0d89d1bb264f",
