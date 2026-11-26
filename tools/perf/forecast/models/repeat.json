@@ -1,0 +1,7 @@
+{
+  "metric": "modeled time per batch (ms)",
+  "kind": "estimate", "better": "lower",
+  "parameters": {"uses": "positive_int", "setup_ms": "nonnegative", "lookup_ms": "nonnegative", "common_ms": "nonnegative"},
+  "before": "uses * (setup_ms + common_ms)",
+  "after": "setup_ms + uses * (lookup_ms + common_ms)"
+}

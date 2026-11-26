@@ -1,0 +1,5 @@
+{
+  "model": "repeat",
+  "inputs": {"uses": [1, 100, 2400], "setup_ms": 0.005, "lookup_ms": 0.0001, "common_ms": 0.001},
+  "basis": {"uses": "示例批次内实际查询次数", "setup_ms": "示例假设，每次整理目录的时间", "lookup_ms": "示例假设，共享目录带来的额外查询时间", "common_ms": "示例假设，两个版本都要做的逐格工作"}
+}

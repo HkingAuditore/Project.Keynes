@@ -131,13 +131,13 @@ gdext/src/pk_build_id_generated.h
 /Project/project-keynes/addons/dots_ext/bin/ios/
 
 # 各 AI 工具目录下的 skills/ 由 tools/sync_skills.py link 现场生成，单一源在根目录 skills/
-/.claude/skills/
-/.codex/skills/
-/.cursor/skills/
-/.codebuddy/skills/
-/.workbuddy/skills/
-/.dsh/skills/
-/.agents/skills/
+/.claude/skills
+/.codex/skills
+/.cursor/skills
+/.codebuddy/skills
+/.workbuddy/skills
+/.dsh/skills
+/.agents/skills
 
 # FMOD 原生库（闭源第三方授权）与烘出的 .bank（约 96 MB 二进制产物），公共仓库不入库。
 # 本地补齐方式见 docs/bootstrap.md。

@@ -1,0 +1,7 @@
+{
+  "metric": "simulation throughput ceiling (days/second)",
+  "kind": "upper_bound", "better": "higher",
+  "parameters": {"fps": "positive", "days_per_frame": "positive_int", "before_worker_ms": "positive", "after_worker_ms": "positive"},
+  "before": "min(fps * days_per_frame, 1000 / before_worker_ms)",
+  "after": "min(fps * days_per_frame, 1000 / after_worker_ms)"
+}
