@@ -1,0 +1,40 @@
+{
+  "adapter": "command",
+  "source": "../../../../Project/project-keynes/scripts/rendering/land_base_cache.gd",
+  "command": [
+    "{python}",
+    "../adapters/keynes_cache.py"
+  ],
+  "metrics": {
+    "invalidate_inputs": "Invalidate shader inputs",
+    "key_changed": "Change of render key",
+    "clean_return_path": "Clean cache early exit",
+    "copy_one_uniform": "Parameter copied to one material",
+    "request_texture_update": "Requested update of one texture",
+    "build_completed": "Completed land cache build"
+  },
+  "proof": {
+    "files": [
+      "../scenario/CacheProof.lean",
+      "../scenario/WorkModel.lean"
+    ],
+    "inputs": [
+      {
+        "key": "revision",
+        "as": "int"
+      },
+      {
+        "key": "tint",
+        "as": "optional_symbol"
+      }
+    ],
+    "metrics": [
+      "build_completed",
+      "request_texture_update"
+    ]
+  },
+  "assumptions": [
+    "进入本轮前原生材质已成功配置，视口、网格和相机保持不变。只改变地表版本与配色。",
+    "底图更新计数表示提交请求，GPU 耗时和最终画面未采样。"
+  ]
+}

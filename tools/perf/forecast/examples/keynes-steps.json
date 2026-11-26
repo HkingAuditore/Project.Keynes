@@ -1,0 +1,28 @@
+{
+  "steps": [
+    {
+      "revision": 1
+    },
+    {
+      "revision": 1
+    },
+    {
+      "revision": 1
+    },
+    {
+      "revision": 1,
+      "tint": 0.7
+    },
+    {
+      "revision": 1,
+      "tint": 0.7
+    },
+    {
+      "revision": 2,
+      "tint": 0.5
+    },
+    {
+      "revision": 2
+    }
+  ]
+}

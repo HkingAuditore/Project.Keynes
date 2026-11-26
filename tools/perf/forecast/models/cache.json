@@ -1,0 +1,7 @@
+{
+  "metric": "mean modeled land-drawing cost (ms/frame)",
+  "kind": "estimate", "better": "lower",
+  "parameters": {"stable_frames": "positive_int", "direct_ms": "nonnegative", "read_ms": "nonnegative", "build_ms": "nonnegative"},
+  "before": "direct_ms",
+  "after": "(direct_ms + (stable_frames - 1) * read_ms + min(stable_frames - 1, 1) * build_ms) / stable_frames"
+}

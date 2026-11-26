@@ -1,0 +1,41 @@
+{
+  "adapter": "python",
+  "source": "after.py",
+  "metrics": {
+    "catalog_read": "Calls entering read_entry for a catalog item",
+    "lookup": "Calls entering lookup for an order"
+  },
+  "options": {
+    "entry": "quote",
+    "observe": {
+      "catalog_read": {
+        "function": "read_entry"
+      },
+      "lookup": {
+        "function": "lookup"
+      }
+    }
+  },
+  "proof": {
+    "files": [
+      "After.lean"
+    ],
+    "inputs": [
+      {
+        "key": "prices",
+        "as": "length"
+      },
+      {
+        "key": "orders",
+        "as": "length"
+      }
+    ],
+    "metrics": [
+      "catalog_read",
+      "lookup"
+    ]
+  },
+  "assumptions": [
+    "同一价格表在一个批次内固定。计数覆盖目录读取与订单查询，返回值为订单总价。"
+  ]
+}

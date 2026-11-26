@@ -1,0 +1,10 @@
+{
+  "model": {
+    "metric": "memory for five demand columns (MiB)", "kind": "estimate", "better": "lower",
+    "parameters": {"total_cells": "positive_int", "used_cells": "positive_int", "bytes_per_row": "positive_int"},
+    "before": "total_cells * bytes_per_row / 1048576",
+    "after": "used_cells * bytes_per_row / 1048576"
+  },
+  "inputs": {"total_cells": 6400, "used_cells": 4, "bytes_per_row": 15336},
+  "basis": {"total_cells": "地图 100 × 64", "used_cells": "四国样本每日实际写入 4 格，假设新实现恰好保留这 4 行", "bytes_per_row": "该内容版本每行 15336 字节。只预测五列数据的容量"}
+}

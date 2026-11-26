@@ -1,0 +1,5 @@
+{
+  "model": "gate", "target": 100,
+  "inputs": {"fps": 24, "days_per_frame": 1, "before_worker_ms": 12, "after_worker_ms": [6, 3, 0.1]},
+  "basis": {"fps": "Keynes 2026-11-17 的旧窗口样本约 24 帧/秒，假设改后仍维持该速度", "days_per_frame": "当时的版本两次绘制之间最多结算一天", "before_worker_ms": "示例假设", "after_worker_ms": "示例假设，比较三种后台提速幅度"}
+}

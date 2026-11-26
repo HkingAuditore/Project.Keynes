@@ -1,0 +1,30 @@
+{
+  "adapter": "gdscript",
+  "source": "../../../../Project/project-keynes/scripts/simulation/climate/climate_math.gd",
+  "metrics": {
+    "sample": "Annual loop calls the daily insolation calculation",
+    "polar_night": "Daily insolation exits early for polar night"
+  },
+  "options": {
+    "entry": "compute_annual_insolation_mean",
+    "arguments": [
+      "ny",
+      "tilt",
+      "amp",
+      "samples"
+    ],
+    "observe": {
+      "sample": {
+        "function": "compute_annual_insolation_mean",
+        "statement": "acc += compute_daily_insolation(ny, phase, axial_tilt_deg, insolation_daylen_amp)"
+      },
+      "polar_night": {
+        "function": "compute_daily_insolation",
+        "statement": "return 0.0"
+      }
+    }
+  },
+  "assumptions": [
+    "独立调用年度日照函数；统计采样循环调用与极夜提前退出，不包含游戏其他模块。"
+  ]
+}

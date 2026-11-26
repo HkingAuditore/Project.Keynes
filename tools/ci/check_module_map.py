@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MAP = "docs/architecture/module-map.md"
-PREFIXES = ("gdext/", "Project/", "tools/", "docs/", ".github/", ".agents/")
+PREFIXES = ("gdext/", "Project/", "tools/", "docs/", "skills/", ".github/", ".agents/")
 
 
 def violations(root: Path = ROOT) -> list[str]:

@@ -47,6 +47,8 @@ TESTS = (
     "tests/game/world_session_test.gd",
     "tests/game/world_runtime_host_values_test.gd",
     "tests/game/world_runtime_presentation_test.gd",
+    "tests/game/perf_recorder_test.gd",
+    "tests/game/perf_recorder_publication_test.gd",
     "tests/game/independent_presentation_test.gd",
     "tests/runtime/simulation_presentation_coalescing_test.gd",
     "tests/game/world_runtime_preparation_test.gd",

@@ -1,10 +1,10 @@
 # AI skill 目录
 
-本仓库只在 **`skills/`** 放一份 skill，36 个，每个是 `skills/<name>/SKILL.md`（可带 `references/`）。其它 AI 工具目录里的 `skills/` 都是指向它的链接，不进版本控制。
+本仓库只在 **`skills/`** 放一份 skill，每个是 `skills/<name>/SKILL.md`（可带 `references/`）。其它 AI 工具目录里的 `skills/` 都是指向它的链接，不进版本控制。
 
 ## 为什么这么放
 
-旧仓库里 7 个工具目录各存一份副本，内容完全一样（36 个 skill、111 个 blob 逐一比对无差异），但**覆盖不全**：24 个 skill 六份齐全，3 个只有三份，9 个只有两份，其中 8 个只活在 `.agents` + `.codex`，`project-keynes-narrative-event-writing` 只活在 `.agents` + `.dsh` —— 等于 12 个 skill 在别的工具里根本读不到。现在统一从 `skills/` 分发，36 个对所有工具一致可见。
+旧仓库里 7 个工具目录各存一份副本，内容完全一样（36 个 skill、111 个 blob 逐一比对无差异），但**覆盖不全**：24 个 skill 六份齐全，3 个只有三份，9 个只有两份，其中 8 个只活在 `.agents` + `.codex`，`project-keynes-narrative-event-writing` 只活在 `.agents` + `.dsh` —— 等于 12 个 skill 在别的工具里根本读不到。现在统一从 `skills/` 分发，各工具都能看到同一组 skill。
 
 ## 各工具读哪个路径
 
@@ -27,7 +27,7 @@
 ```bash
 git clone <repo-url> Project.Keynes && cd Project.Keynes
 python tools/sync_skills.py link      # 建链接
-python tools/sync_skills.py check     # 应输出 36/36，任何工具缺 skill 时退出码 1
+python tools/sync_skills.py check     # 各工具的可见数应等于仓库总数，缺 skill 时退出码 1
 ```
 
 `check` 的退出码可以直接进 CI 或 pre-commit。要铺到用户主目录（不限于在仓库里工作）：

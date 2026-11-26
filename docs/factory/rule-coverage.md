@@ -23,7 +23,7 @@
 | GDScript 拆分保留公开接口和字面量 | development-guide.md | Qodo：GDScript splits |
 | 新文件行数不超限，基线内文件最多比记录多 50 行且增长告警，基线只收紧 | module-boundaries.md | 护栏：`check_size_ratchet.py` |
 | 模块地图里的路径存在 | module-map.md | 护栏：`check_module_map.py` |
-| skill 改权威副本再同步 | development-guide.md | 护栏：`check_skill_mirrors.py` |
+| skill 源文件统一放在 `skills/`，各工具目录的副本不进版本库 | development-guide.md | 护栏：`check_skill_mirrors.py` |
 | 脚本接口绑定归属正确 | development-guide.md | 护栏：`world_ext_bindings.py`、`check_world_ext_bindings.py` |
 | 国库建造检查体制能力位 | development-guide.md | Qodo：treasury construction |
 | Shader 少用 if，优化按 GPU 实际工作量判断 | AGENTS.md、用户 2026-11-19 | Qodo：shaders keep if-branches few（warning） |
