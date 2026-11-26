@@ -111,6 +111,16 @@ func _ready() -> void:
 	IconButton.apply(compact_close, &"action.close", IconButton.SMALL, "关闭国家事务")
 	compact_close.pressed.connect(close_from_player)
 	UIAnimation.bind_tactile_button(compact_close)
+	var rail_close := get_node_or_null("%RailClose") as Button
+	if rail_close != null:
+		IconButton.apply_with_text(rail_close, &"action.close", "返回", IconButton.SMALL, "返回地图")
+		rail_close.add_theme_color_override("font_color", Color("#3a2414"))
+		rail_close.add_theme_color_override("font_hover_color", Color("#3a2414"))
+		rail_close.add_theme_color_override("font_pressed_color", Color("#fff0c8"))
+		rail_close.pressed.connect(close_from_player)
+		UIAnimation.bind_tactile_button(rail_close)
+	if not _mobile_nav.resized.is_connected(_sync_mobile_nav_width):
+		_mobile_nav.resized.connect(_sync_mobile_nav_width)
 	_economy_dossier.locate_cell_requested.connect(func(cell): locate_cell_requested.emit(cell))
 	if _politics_workspace.has_signal("target_cells_requested"):
 		_politics_workspace.target_cells_requested.connect(
@@ -154,6 +164,7 @@ func show_section(section_id: String, model: Dictionary) -> void:
 	_model = model
 	var was_open := visible and not has_meta("_ui_active_tween")
 	_section_id = _normalized_section(section_id)
+	_update_responsive_layout()
 	_apply_section()
 	visible = true
 	if was_open:
@@ -450,46 +461,70 @@ func _sync_mobile_nav_width() -> void:
 	buttons.custom_minimum_size.x = maxf(_mobile_nav.size.x, need)
 
 
+func _apply_rail_density(compact_rail: bool) -> void:
+	if _nav_rail == null or _nav_column == null:
+		return
+	_nav_rail.custom_minimum_size.x = 132.0 if compact_rail else 196.0
+	var brand := _nav_column.get_node_or_null("Brand") as Control
+	var rule := _nav_column.get_node_or_null("BrandRule") as Control
+	if brand != null:
+		brand.visible = not compact_rail
+	if rule != null:
+		rule.visible = not compact_rail
+	for button in _nav_buttons.values():
+		var btn := button as Button
+		if btn == null:
+			continue
+		btn.custom_minimum_size.y = 50.0 if compact_rail else 52.0
+		var row := btn.get_node_or_null("Row") as Control
+		if row != null:
+			row.offset_left = 14.0 if compact_rail else 28.0
+			row.offset_right = -10.0 if compact_rail else -18.0
+	var rail_close := get_node_or_null("%RailClose") as Control
+	if rail_close != null:
+		rail_close.visible = compact_rail
+
+
 func _update_responsive_layout() -> void:
 	if _dialog == null or _center == null:
 		return
 	var viewport_size := get_viewport_rect().size
-	var available_height := viewport_size.y - PlayerTopBar.BAR_HEIGHT \
-		- CountryActionBar.BAR_HEIGHT - UITokens.ARCHIVE_EDGE_INSET * 2.0
-	# Docking narrows the shell, so the responsive decision has to be made
-	# against the width the shell actually gets — not the window's.
-	var shell_width := viewport_size.x
+	var touch := TouchUI.is_touch()
+	# 触摸全屏模式（未停靠定位）：面板直接贴齐安全区铺满可视区，压住外围重复底栏与顶栏，
+	# 把上下 170 设计像素的黄金纵向空间全数归还给国家工作区。桌面档保持原边距零变化。
 	if _docked:
-		shell_width = viewport_size.x - docked_offset_left(viewport_size.x)
-		# The 16/80/-16/-90 offsets live on `Center`, not on `Dialog`: Center is
-		# the full-rect margin row that positions the shell, and Dialog simply
-		# fills it. Writing the offset on Dialog does nothing at all.
 		_center.offset_left = docked_offset_left(viewport_size.x)
+		_center.offset_top = 8.0 if touch else 80.0
+		_center.offset_right = -8.0 if touch else -16.0
+		_center.offset_bottom = -8.0 if touch else -90.0
+	elif touch:
+		_center.offset_left = 8.0
+		_center.offset_top = 8.0
+		_center.offset_right = -8.0
+		_center.offset_bottom = -8.0
 	else:
 		_center.offset_left = 16.0
-	# 字号缩放后的逻辑高度不足时折叠书脊，避免其最小高度把窗口顶进 HUD。
-	# 触摸档同样折叠：手机的**逻辑宽度有 1942**（2670/1.375），纯宽度断点会判成宽屏，
-	# 于是留下一列 19dp 高的竖排书脊导航 —— 手指根本按不准。
+		_center.offset_top = 80.0
+		_center.offset_right = -16.0
+		_center.offset_bottom = -90.0
+	var available_height := viewport_size.y - _center.offset_top + _center.offset_bottom
+	var shell_width := viewport_size.x - _center.offset_left + _center.offset_right
 	_compact = shell_width < 900.0 or available_height < 520.0 or TouchUI.is_short_viewport()
 	_dialog.custom_minimum_size = Vector2.ZERO
-	# [pc-fit 2026-11-17] 「用竖排书脊还是手机横排导航」不再等于「是否紧凑版式」。
-	# fit 档下逻辑高 960，is_short_viewport 为 false ⇒ _compact 为 false，但手机依然
-	# 不该出现一列给鼠标点的书脊（196 宽、按钮窄）。所以导航形态独立按平台判定：
-	#   触摸档 → 恒用 MobileNav（横向，可滚动）；桌面 → 恒用 NavRail。
-	# _compact 仍然只负责「版式是否收紧」（工作台收卡、隐藏页头）。
-	var mobile_nav_mode := _compact or TouchUI.is_touch()
+	# 20:9 手机横屏全屏打开时（shell_width >= 900），横向极宽而纵向极缺：
+	# 启用 132px 紧凑左竖向书脊 + 隐藏顶部桌面 Header，使纵向导航开销降为 0px！
+	# 仅在停靠半屏（_docked）或窄窗口（shell_width < 900）下切换为顶部单行 MobileHeader。
+	var use_touch_rail := touch and not _docked and shell_width >= 900.0
+	var mobile_nav_mode := not use_touch_rail and (_compact or touch)
 	_nav_rail.visible = not mobile_nav_mode
+	_apply_rail_density(use_touch_rail)
 	_mobile_nav.visible = mobile_nav_mode
 	(_mobile_nav.get_parent() as Control).visible = mobile_nav_mode
-	# CompactClose 是给「页头被隐藏」时用的替代关闭键；页头还在时由它自己的按钮负责。
 	var compact_close := get_node_or_null("%CompactClose") as Control
 	if compact_close != null:
-		compact_close.visible = _compact
-	# ScrollContainer 只按子节点的**最小尺寸**摆，不会把它撑满 —— 所以 5 个 112 宽的
-	# 章节按钮会挤在左边 576 像素里。把 HBox 的宽度对齐到滚动区宽（不滚动时），
-	# 按钮的 size_flags=EXPAND 才会均分；窗口比 576 窄时保持最小宽，交给横向滚动。
+		compact_close.visible = mobile_nav_mode
 	_sync_mobile_nav_width.call_deferred()
-	_header_panel.visible = not _compact
+	_header_panel.visible = not _compact and not use_touch_rail
 	_country_title.add_theme_font_size_override("font_size", 22 if _compact else 30)
 	var country_block := _country_title.get_parent() as Control
 	if country_block != null:

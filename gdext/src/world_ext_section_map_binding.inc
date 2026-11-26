@@ -8,6 +8,7 @@ bool DCWorldExt::bind_map_data(Object *map_data) {
         UtilityFunctions::push_error("[DCWorldExt] bind_map_data requires a stopped executor");
         return false;
     }
+    clear_runtime_map_lut_frame();
     _native_daily_visual_commit_pending = false;
     _pending_mark_dirty_all = false;
     _pending_visual_dirty_mask = PackedByteArray();

@@ -52,6 +52,7 @@ static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreig
 		return _error("starter_capability_unsatisfied",
 			"没有找到气候与通行条件合格的出生地。")
 	CandidateOrder.rank_for_player(candidates, map)
+	var flint_candidates := _real_flint_candidate_count(map, candidates)
 	var chosen: Dictionary = {}
 	# 玩家落点两趟：第一趟跳过所在大陆不足 MIN_PLAYER_LANDMASS_LAND_CELLS 格的碎岛；
 	# 若第一趟被筛空（全池都是小岛），第二趟不带门槛重跑同一循环，
@@ -63,12 +64,17 @@ static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreig
 			if landmass_gate_active and _skips_small_landmass(
 					map, player_landmass_land_cells, int(candidate.cell)):
 				continue
+			if not _has_real_flint(map, int(candidate.cell)):
+				continue
 			if _close_candidate_route(map, world, neighbors, starter_catalog, candidate):
 				chosen = candidate
 				break
 		if not chosen.is_empty():
 			break
 	if chosen.is_empty():
+		if flint_candidates == 0:
+			return _error("starter_flint_unavailable",
+				"所有候选出生格都没有真实燧石储量，无法满足出生格必有燧石的硬条件。")
 		return _error("starter_capability_unsatisfied",
 			"没有找到能以真实本地资源和可见地理信号闭合生存核心开局的出生地。")
 	var top_count := maxi(1, candidates.size() / 4)
@@ -263,6 +269,21 @@ static func _relax_minimum_distances(map: MapData, neighbors: PackedInt32Array,
 			tail += 1
 
 
+## 玩家出生格必须是真燧石格。这里必须用 _raw_reserve：_starter_resource_overlay
+## 会把燧石补到 MINIMUM_RESERVES["flint"] = 120000，改用 _reserve 判定会恒真。
+static func _has_real_flint(map: MapData, cell_idx: int) -> bool:
+	return _raw_reserve(map, "flint", cell_idx) > 0.0
+
+
+static func _real_flint_candidate_count(map: MapData,
+		candidates: Array[Dictionary]) -> int:
+	var total := 0
+	for candidate in candidates:
+		if _has_real_flint(map, int(candidate.cell)):
+			total += 1
+	return total
+
+
 static func _close_candidate_route(map: MapData, world: WorldData,
 		neighbors: PackedInt32Array, starter_catalog: Dictionary,
 		candidate: Dictionary) -> bool:
@@ -296,11 +317,11 @@ static func _starter_resource_overlay(map: MapData, cell_idx: int) -> Dictionary
 		overlay[String(resource_id)] = maxf(
 			_raw_reserve(map, String(resource_id), cell_idx), minimum)
 	var precious_id := _precious_for_raw_cell(map, cell_idx)
-	if precious_id.is_empty():
-		precious_id = "gold_ore"
-	overlay[precious_id] = maxf(
-		_raw_reserve(map, precious_id, cell_idx),
-		float(Profile.MINIMUM_RESERVES.get(precious_id, 0.0)))
+	# 只有首都格确实存在砂金时，才补充对应储量与开局发现信号。
+	if not precious_id.is_empty():
+		overlay[precious_id] = maxf(
+			_raw_reserve(map, precious_id, cell_idx),
+			float(Profile.MINIMUM_RESERVES.get(precious_id, 0.0)))
 	return overlay
 
 
@@ -472,6 +493,7 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 		return _error("starter_capability_unsatisfied",
 			"没有找到气候与通行条件合格的出生地。")
 	CandidateOrder.rank_for_player(candidates, map)
+	var flint_candidates := _real_flint_candidate_count(map, candidates)
 	var chosen: Dictionary = {}
 	# 与同步版同一套两趟逻辑：第一趟带大陆格数门槛，被筛空则第二趟不带门槛重跑。
 	var player_landmass_land_cells := _landmass_land_cell_counts(map)
@@ -486,12 +508,17 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 			if landmass_gate_active and _skips_small_landmass(
 					map, player_landmass_land_cells, int(candidate.cell)):
 				continue
+			if not _has_real_flint(map, int(candidate.cell)):
+				continue
 			if _close_candidate_route(map, world, neighbors, starter_catalog, candidate):
 				chosen = candidate
 				break
 		if not chosen.is_empty():
 			break
 	if chosen.is_empty():
+		if flint_candidates == 0:
+			return _error("starter_flint_unavailable",
+				"所有候选出生格都没有真实燧石储量，无法满足出生格必有燧石的硬条件。")
 		return _error("starter_capability_unsatisfied",
 			"没有找到能以真实本地资源和可见地理信号闭合生存核心开局的出生地。")
 	var top_count := maxi(1, candidates.size() / 4)

@@ -14,10 +14,11 @@ signal hover_started(row: Dictionary, source: Control)
 signal hover_ended()
 signal fold_toggled(action: Dictionary)
 
-## 触摸档判定（与 mobile_ui_scaling.gd 配对；那个脚本刻意不写 class_name，统一 preload）。
 const TouchUI := preload("res://scripts/ui/touch_ui.gd")
+const TouchInspectable := preload("res://scripts/ui/components/touch_inspectable.gd")
 const CASH_FONT_SIZE := 17
 const PENDING_TEXT := "营造中…"
+const TOUCH_TAP_SLOP := 12.0
 
 var building_id := ""
 var _row_data: Dictionary = {}
@@ -25,8 +26,8 @@ var _fold_action: Dictionary = {}
 
 var _blocked := false
 var _pending := false
-## 触摸档：本次按压已经出过卡，等抬手收（桌面档恒 false，不参与任何判断）。
 var _touch_press := false
+var _touch_press_pos := Vector2.ZERO
 
 # 路径必须与 scenes/ui/building_option_row.tscn 的实际节点一致：704de6648 把布局改成
 # Row/Info/Summary/... 之后这几条没跟上，行在 _ready 就断（全平台，含桌面）。
@@ -48,12 +49,11 @@ func _ready() -> void:
 	_build.pressed.connect(_on_build_pressed)
 	mouse_entered.connect(_on_mouse_entered)
 	mouse_exited.connect(_on_mouse_exited)
-	set_process_input(TouchUI.is_touch())
+	set_process_input(false)
 	if TouchUI.is_touch():
-		# 本行可点的只有两处：自身 PanelContainer 底（子控件全是 MOUSE_FILTER_IGNORE）
-		# 与 BuildButton。两处各接一次按下，抬手统一在 _input 里收。
 		gui_input.connect(_on_touch_gui_input)
-		_build.gui_input.connect(_on_touch_gui_input)
+		TouchInspectable.bind_disabled_reason(_build, "暂不可营造",
+			func() -> String: return String(_row_data.get("reason_text", "")))
 	_apply_button_state()
 
 
@@ -185,51 +185,18 @@ func _on_mouse_exited() -> void:
 
 
 # ───────────────────────────── 触摸档 ─────────────────────────────
-#
-# 成对管理：按下出卡、抬手收卡，两个方向都不问引擎要 enter/exit。
-# 同一行连点第二次因为没有 exit 也就没有新的 enter，靠这条独立路径才能再弹卡。
+# 轻点本行常驻展开/收起旁侧报价详情卡（拖动列表不误触闪烁）。
 
 func _on_touch_gui_input(event: InputEvent) -> void:
-	if event is InputEventScreenTouch:
-		if (event as InputEventScreenTouch).pressed:
-			_start_touch_card()
+	var mb := event as InputEventMouseButton
+	if mb == null or mb.button_index != MOUSE_BUTTON_LEFT:
 		return
-	if event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed:
-			_start_touch_card()
-
-
-func _start_touch_card() -> void:
-	if _touch_press or _row_data.is_empty():
+	if mb.pressed:
+		_touch_press = true
+		_touch_press_pos = mb.position
 		return
-	_touch_press = true
-	hover_started.emit(_row_data, self)
-
-
-## 抬手不一定落回本行（手指可能滑出去），所以收卡挂在 _input 上，
-## 不要求本行还能接到 release。
-func _input(event: InputEvent) -> void:
-	if not _touch_press:
-		return
-	if event is InputEventScreenTouch:
-		if not (event as InputEventScreenTouch).pressed:
-			_end_touch_card()
-		return
-	if event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_LEFT and not mb.pressed:
-			_end_touch_card()
-
-
-func _end_touch_card() -> void:
 	if not _touch_press:
 		return
 	_touch_press = false
-	hover_ended.emit()
-
-
-func _notification(what: int) -> void:
-	# 抬手事件可能永远不来（切后台 / 被系统手势打断），别把卡留在屏幕上。
-	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
-		_end_touch_card()
+	if mb.position.distance_to(_touch_press_pos) <= TOUCH_TAP_SLOP and not _row_data.is_empty():
+		hover_started.emit(_row_data, self)

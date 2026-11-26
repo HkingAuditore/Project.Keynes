@@ -206,6 +206,8 @@ func uses_worker_day_commits() -> bool:
 func reset_presentation() -> void:
 	publication_reader.reset()
 	_presentation.reset_worker_views()
+	if _generator != null:
+		_generator._get_map_runtime_bridge().clear_runtime_map_lut_frame()
 	presentation_reset.emit()
 
 func ui_worker_day() -> int:

@@ -1,5 +1,7 @@
 extends RefCounted
 
+const TouchTaxCardBinder := preload("res://scripts/ui/components/touch_tax_card_binder.gd")
+
 ## Builds and updates the country tax cards and their editable controls.
 
 
@@ -24,22 +26,23 @@ static func _set_spin_basis_points(owner: EconomyWorkspace, spin: SpinBox, rate_
 		mode: int = EconomyWorkspace.TAX_MODE_PERCENT_BP) -> void:
 	if spin == null:
 		return
+	var line := spin.get_line_edit()
+	if line != null and line.has_focus():
+		return
 	owner._configure_spin_for_mode(spin, mode)
 	if mode == EconomyWorkspace.TAX_MODE_ABSOLUTE:
 		spin.set_value_no_signal(
 			TaxLaneEditor.absolute_amount_to_currency(rate_basis_points))
-		var line := spin.get_line_edit()
-		if line != null and not line.has_focus():
+		if line != null:
 			line.text = TaxLaneEditor._format_value(rate_basis_points, mode, false)
 		return
 	spin.set_value_no_signal(TaxLaneEditor.basis_points_to_percent(rate_basis_points))
-	var line := spin.get_line_edit()
 	if line == null:
 		return
 	var percent := TaxLaneEditor.basis_points_to_percent(rate_basis_points)
 	var shown := "%d" % int(round(percent)) \
 		if is_equal_approx(percent, round(percent)) else "%.2f" % percent
-	if not line.has_focus() and not String(spin.suffix).is_empty():
+	if not String(spin.suffix).is_empty():
 		shown = "%s %s" % [shown, spin.suffix]
 	if line.text != shown:
 		line.text = shown
@@ -182,6 +185,7 @@ static func _ensure_card(owner: EconomyWorkspace, page: String, item_id: String,
 	owner._rows[key] = result
 	owner._apply_card_frame(result, false)
 	owner._watch_card_hover(panel)
+	TouchTaxCardBinder.bind_card(owner, key, result)
 	return result
 
 
@@ -229,21 +233,20 @@ static func _update_card(owner: EconomyWorkspace, card: Dictionary, kind_data: D
 				mode_button.select(select_index)
 		var pending := owner._pending.has("%s:%s" % [kind, String(card.item_id)])
 		((card.pendings as Dictionary)[kind] as Control).visible = pending
-		if pending:
-			var pending_entry: Dictionary = owner._pending.get(
-				"%s:%s" % [kind, String(card.item_id)], {})
-			var spin := (card.spins as Dictionary)[kind] as SpinBox
-			if pending_entry.has("rate"):
-				var pending_rate := int(pending_entry.rate)
-				var pending_mode := int(pending_entry.get("mode", mode))
-				owner._set_spin_basis_points(spin, pending_rate, pending_mode)
-			continue
 		var spin := (card.spins as Dictionary)[kind] as SpinBox
 		var line_edit := spin.get_line_edit()
 		var draft_key := owner._item_draft_key(kind, String(card.item_id))
 		if line_edit.has_focus() or spin.has_focus() or owner._draft_overrides.has(draft_key):
 			(card.rates as Dictionary)[kind] = int(data.get("base", 0))
 			(card.overridden as Dictionary)[kind] = bool(data.get("has_override", false))
+			continue
+		if pending:
+			var pending_entry: Dictionary = owner._pending.get(
+				"%s:%s" % [kind, String(card.item_id)], {})
+			if pending_entry.has("rate"):
+				var pending_rate := int(pending_entry.rate)
+				var pending_mode := int(pending_entry.get("mode", mode))
+				owner._set_spin_basis_points(spin, pending_rate, pending_mode)
 			continue
 		var base := int(data.get("base", 0))
 		var effective := int(data.get("effective", base))
@@ -256,12 +259,13 @@ static func _update_card(owner: EconomyWorkspace, card: Dictionary, kind_data: D
 		((card.resets as Dictionary)[kind] as Button).visible = overridden
 		(card.overridden as Dictionary)[kind] = overridden
 		(card.rates as Dictionary)[kind] = base
-		if (card.kinds as Array).size() == 1 and not bool(card.is_default):
+		if not bool(card.is_default) and (card.kinds as Array).size() == 1:
 			var sub := card.sub as Label
 			sub.visible = visual_rate == base and effective != base \
 				and mode == EconomyWorkspace.TAX_MODE_PERCENT_BP
 			if sub.visible:
 				sub.text = "修正后 %s" % owner._format_rate(effective)
+	TouchTaxCardBinder.sync_card(owner, card)
 	owner._refresh_override_frame(card)
 
 

@@ -712,9 +712,8 @@ static func _density_tier(host) -> int:
 # 只切"密度 / 每格上限 / 每层上限"这三项；尺寸档与 lobe 档仍按移动端原判定，
 # 避免在 web 上额外改变植株大小（那属于另一条视觉口径）。
 
-static func _limited_platform_density_tier(host) -> bool:
-
-	return DCFeatureFlags.uses_shader_quality_tier()
+static func _limited_platform_density_tier(_host) -> bool:
+	return DCFeatureFlags.is_limited_render_platform()
 
 
 

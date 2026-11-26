@@ -413,7 +413,7 @@ static func _shader_quality_define_prefix(host, force_far_only: bool = false) ->
 	var tiled = _visual_tiles_active(host, )
 	if OS.has_feature("web"):
 		var web_prefix = host.web_define_prefix(host.WEB_SHADER_QUALITY_TIER, tiled, host._world != null, force_far_only,
-			host._visual_quality >= 2 and bool(Engine.get_meta("pk_web_pc_high_boot", false)))
+			host._visual_quality >= 2 and HexRenderer.RendererShaderWater.web_pc_high_boot_enabled())
 		if host._cloud_shadow_direct:
 			web_prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
 		return web_prefix
@@ -534,7 +534,7 @@ static func _apply_profile_uniforms(host) -> void:
 		var sc = cfg.get("shadow_color")
 		host._shadow_material.set_shader_parameter("shadow_color", sc if sc is Color else Color(0.05, 0.06, 0.08, 1.0))
 		var shadow_strength = host._profile_float(&"shadow_strength", 0.32)
-		if DCFeatureFlags.uses_shader_quality_tier() and host.ShrubScatter._active_quality_tier(host) >= 2:
+		if DCFeatureFlags.is_limited_render_platform() and host.ShrubScatter._active_quality_tier(host) >= 2:
 			shadow_strength *= 0.5
 		host._shadow_strength_base = shadow_strength
 		host.Chunk_nodes._push_shadow_strength(host)

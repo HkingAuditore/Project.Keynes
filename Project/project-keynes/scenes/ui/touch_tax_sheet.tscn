@@ -1,0 +1,303 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/touch_tax_sheet.gd" id="1_script"]
+[ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="2_theme"]
+
+[node name="TouchTaxSheet" type="Control"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+focus_mode = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+
+[node name="Shade" type="ColorRect" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.03, 0.02, 0.015, 0.5)
+
+[node name="Drawer" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(480, 0)
+layout_mode = 1
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -496.0
+offset_top = 12.0
+offset_right = -12.0
+offset_bottom = -12.0
+grow_horizontal = 0
+grow_vertical = 2
+theme_type_variation = &"PKArchivePanel"
+
+[node name="Margin" type="MarginContainer" parent="Drawer"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 16
+
+[node name="Column" type="VBoxContainer" parent="Drawer/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="Drawer/Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Drawer/Margin/Column/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKSectionTitle"
+theme_override_font_sizes/font_size = 24
+text_overrun_behavior = 3
+
+[node name="CloseButton" type="Button" parent="Drawer/Margin/Column/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(42, 42)
+layout_mode = 2
+focus_mode = 0
+text = "×"
+theme_type_variation = &"PKIconButton"
+theme_override_font_sizes/font_size = 22
+
+[node name="LaneRow" type="HBoxContainer" parent="Drawer/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Lane0" type="Button" parent="Drawer/Margin/Column/LaneRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="Lane1" type="Button" parent="Drawer/Margin/Column/LaneRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="Lane2" type="Button" parent="Drawer/Margin/Column/LaneRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="ReadingBox" type="PanelContainer" parent="Drawer/Margin/Column"]
+layout_mode = 2
+theme_type_variation = &"PKPaperCard"
+
+[node name="ReadingMargin" type="MarginContainer" parent="Drawer/Margin/Column/ReadingBox"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="ReadingCol" type="VBoxContainer" parent="Drawer/Margin/Column/ReadingBox/ReadingMargin"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ValueRow" type="HBoxContainer" parent="Drawer/Margin/Column/ReadingBox/ReadingMargin/ReadingCol"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="KindCaption" type="Label" parent="Drawer/Margin/Column/ReadingBox/ReadingMargin/ReadingCol/ValueRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+vertical_alignment = 1
+theme_type_variation = &"PKMutedLabel"
+theme_override_font_sizes/font_size = 18
+
+[node name="MoneyIcon" type="TextureRect" parent="Drawer/Margin/Column/ReadingBox/ReadingMargin/ReadingCol/ValueRow"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+size_flags_vertical = 4
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ValueLabel" type="Label" parent="Drawer/Margin/Column/ReadingBox/ReadingMargin/ReadingCol/ValueRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 36
+theme_override_colors/font_color = Color(0.14, 0.09, 0.04, 1)
+
+[node name="UnitLabel" type="Label" parent="Drawer/Margin/Column/ReadingBox/ReadingMargin/ReadingCol/ValueRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 8
+theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(0.4, 0.31, 0.22, 0.92)
+
+[node name="HintLabel" type="Label" parent="Drawer/Margin/Column/ReadingBox/ReadingMargin/ReadingCol"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+autowrap_mode = 3
+
+[node name="ModeRow" type="HBoxContainer" parent="Drawer/Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ModePercent" type="Button" parent="Drawer/Margin/Column/ModeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "按百分比 (%)"
+theme_type_variation = &"PKPrimaryButton"
+
+[node name="ModeAbsolute" type="Button" parent="Drawer/Margin/Column/ModeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "按定额 (金币)"
+theme_type_variation = &"PKIconButton"
+
+[node name="PresetLabel" type="Label" parent="Drawer/Margin/Column"]
+layout_mode = 2
+text = "常用档位"
+theme_type_variation = &"PKMutedLabel"
+
+[node name="PresetRow" type="HBoxContainer" parent="Drawer/Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Preset0" type="Button" parent="Drawer/Margin/Column/PresetRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 46)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="Preset1" type="Button" parent="Drawer/Margin/Column/PresetRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 46)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="Preset2" type="Button" parent="Drawer/Margin/Column/PresetRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 46)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="Preset3" type="Button" parent="Drawer/Margin/Column/PresetRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 46)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="Preset4" type="Button" parent="Drawer/Margin/Column/PresetRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 46)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="StepRow" type="HBoxContainer" parent="Drawer/Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Minus5" type="Button" parent="Drawer/Margin/Column/StepRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "-5"
+theme_type_variation = &"PKIconButton"
+
+[node name="Minus1" type="Button" parent="Drawer/Margin/Column/StepRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "-1"
+theme_type_variation = &"PKIconButton"
+
+[node name="Plus1" type="Button" parent="Drawer/Margin/Column/StepRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "+1"
+theme_type_variation = &"PKIconButton"
+
+[node name="Plus5" type="Button" parent="Drawer/Margin/Column/StepRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "+5"
+theme_type_variation = &"PKIconButton"
+
+[node name="KeypadButton" type="Button" parent="Drawer/Margin/Column/StepRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 48)
+layout_mode = 2
+focus_mode = 0
+text = "键盘…"
+theme_type_variation = &"PKIconButton"
+
+[node name="Spacer" type="Control" parent="Drawer/Margin/Column"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Footer" type="HBoxContainer" parent="Drawer/Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ResetButton" type="Button" parent="Drawer/Margin/Column/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "恢复默认"
+theme_type_variation = &"PKIconButton"
+
+[node name="ConfirmButton" type="Button" parent="Drawer/Margin/Column/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "确定生效"
+theme_type_variation = &"PKPrimaryButton"

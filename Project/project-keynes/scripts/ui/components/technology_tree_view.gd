@@ -8,6 +8,7 @@ signal technology_activated(index: int)
 signal portal_requested(index: int)
 
 const LayoutScript = preload("res://scripts/ui/technology_tree_layout.gd")
+const PinchScript = preload("res://scripts/ui/components/technology_tree_pinch.gd")
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const VIEW_PADDING := 34.0
 const DRAG_THRESHOLD := 8.0
@@ -30,17 +31,11 @@ const ERA_SCROLL_HEIGHT := 28.0
 const LANE_RIBBON_HEIGHT := 19.0
 const THREAD_UNDERLAY := Color(0.99, 0.96, 0.88, 0.70)
 const STATE_NAMES := ["未知", "已揭示", "可研究", "研究队列", "待生效", "已掌握"]
-# Names and effects are shown only when the node is researchable or later.
-# State 1 (revealed, hard prerequisites incomplete) stays fogged like unknown.
 const PRESENTED_MIN_STATE := 2
-
 
 static func presents_state(state: int) -> bool:
 	return state >= PRESENTED_MIN_STATE
 
-
-## Era milestones are internal era tokens now (granted by era advancement),
-## never player-facing research nodes.
 static func is_retired_definition(definition: Dictionary) -> bool:
 	return bool(definition.get("is_milestone", false))
 
@@ -70,6 +65,7 @@ var _chain_down := {}
 var _domain_id := ""
 var _focus_era := 0
 var _offset := Vector2.ZERO
+var _pinch := PinchScript.new()
 var _panning := false
 var _press_active := false
 var _press_pos := Vector2.ZERO
@@ -109,8 +105,6 @@ func set_catalog(definitions: Array, eras: Array, domains: Array,
 	_id_to_index.clear()
 	for index in range(definitions.size()):
 		_id_to_index[String((definitions[index] as Dictionary).get("id", ""))] = index
-	# Topology is enough for fog and focus geometry; full bezier bake waits until
-	# layout_report() so opening the available-research desk stays cheap.
 	_layout = LayoutScript.build_topology(definitions, visual_edges, true)
 	_layout_baked = false
 	_soft_edges = LayoutScript.index_soft_edges(visual_edges,
@@ -318,11 +312,9 @@ func _rebuild_focus(recenter: bool = true) -> void:
 		_portal_slots[cursor] = int(side_counts.get(group, 0))
 		side_counts[group] = int(side_counts.get(group, 0)) + 1
 	if recenter or not had_focus:
+		_pinch.reset()
 		_center_content()
 	else:
-		# State patches can arrive several times per second at high simulation
-		# speed. Keep the player's atlas viewport stable while only the node
-		# visibility and edge geometry change underneath it.
 		_offset = previous_offset
 		_clamp_offset()
 	queue_redraw()
@@ -376,6 +368,15 @@ func _rebuild_chains(index: int) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
+	var pinch_res: Dictionary = _pinch.handle_input(self, event, _offset)
+	if bool(pinch_res.get("cancel_pan", false)):
+		_press_active = false
+		_panning = false
+	if bool(pinch_res.get("handled", false)):
+		_offset = pinch_res.get("offset", _offset)
+		_clamp_offset()
+		accept_event()
+		return
 	if event is InputEventMouseButton:
 		_handle_button(event as InputEventMouseButton)
 		return
@@ -464,7 +465,7 @@ func _portal_tooltip(index: int) -> String:
 
 
 func _node_at(position: Vector2) -> int:
-	var content := position - _offset
+	var content := (position - _offset) / maxf(_pinch.zoom, 0.01)
 	var nodes: Array = _focus_layout.get("nodes", [])
 	for cursor in range(nodes.size() - 1, -1, -1):
 		var node: Dictionary = nodes[cursor]
@@ -490,7 +491,7 @@ func _portal_rect(portal: Dictionary, cursor: int = -1) -> Rect2:
 
 
 func _portal_at(position: Vector2) -> int:
-	var content := position - _offset
+	var content := (position - _offset) / maxf(_pinch.zoom, 0.01)
 	var portals: Array = _focus_layout.get("portals", [])
 	var pad := 8.0 if TouchUI.is_touch() else 4.0
 	for cursor in range(portals.size() - 1, -1, -1):
@@ -509,17 +510,18 @@ func _clamp_offset() -> void:
 	var bounds: Rect2 = _focus_layout.get("content_rect", Rect2())
 	if bounds.size.x <= 0.0:
 		return
+	var z := maxf(_pinch.zoom, 0.01)
 	var pad_x := 0.0 if bool(_focus_layout.get("fits_canvas", false)) else VIEW_PADDING
 	var padded := Rect2(bounds.position - Vector2(pad_x, VIEW_PADDING),
 		bounds.size + Vector2(pad_x, VIEW_PADDING) * 2.0)
-	if padded.size.x <= size.x:
-		_offset.x = (size.x - padded.size.x) * 0.5 - padded.position.x
+	if padded.size.x * z <= size.x:
+		_offset.x = (size.x - padded.size.x * z) * 0.5 - padded.position.x * z
 	else:
-		_offset.x = clampf(_offset.x, size.x - padded.end.x, -padded.position.x)
-	if padded.size.y <= size.y:
-		_offset.y = -padded.position.y
+		_offset.x = clampf(_offset.x, size.x - padded.end.x * z, -padded.position.x * z)
+	if padded.size.y * z <= size.y:
+		_offset.y = -padded.position.y * z
 	else:
-		_offset.y = clampf(_offset.y, size.y - padded.end.y, -padded.position.y)
+		_offset.y = clampf(_offset.y, size.y - padded.end.y * z, -padded.position.y * z)
 
 
 func _notification(what: int) -> void:
@@ -546,10 +548,9 @@ func _draw() -> void:
 	if not _focus_active or _focus_layout.is_empty():
 		return
 	_sync_effects()
-	draw_set_transform(_offset, 0.0, Vector2.ONE)
-	# Rice paper covers the visible viewport and is anchored to content space so
-	# it pans with the tree. ~6-9 quads of one texture; batched by the renderer.
-	Art.draw_backdrop(self, Rect2(-_offset, size), Vector2.ZERO)
+	var z := maxf(_pinch.zoom, 0.01)
+	draw_set_transform(_offset, 0.0, Vector2.ONE * z)
+	Art.draw_backdrop(self, Rect2(-_offset / z, size / z), Vector2.ZERO)
 	_draw_bands()
 	_draw_edges()
 	for cursor in range((_focus_layout.get("portals", []) as Array).size()):
@@ -714,9 +715,10 @@ func _card_style(domain: int, state: int, known: bool, emphasis: int,
 	style.corner_radius_bottom_left = UITokens.RADIUS_SM
 	style.corner_radius_bottom_right = UITokens.RADIUS_SM
 	style.border_width_left = 4 if known or is_milestone else 1
-	style.border_width_top = 2 if emphasis == 2 else 1
-	style.border_width_right = 2 if emphasis == 2 else 1
-	style.border_width_bottom = 2 if emphasis == 2 else 1
+	var bw := 2 if emphasis == 2 else 1
+	style.border_width_top = bw
+	style.border_width_right = bw
+	style.border_width_bottom = bw
 	var paper := CARD_PAPER.lerp(accent, 0.06 if not is_milestone else 0.10)
 	style.bg_color = SELECTED_WALNUT if emphasis == 2 else (
 		CARD_PAPER_DIM if emphasis == 0 else paper)

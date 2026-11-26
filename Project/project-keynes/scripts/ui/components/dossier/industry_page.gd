@@ -11,15 +11,23 @@ const COLUMNS := [
 	{"id": "revenue", "label": "营收 / 日", "kind": "money", "width": 82.0},
 	{"id": "mix", "label": "营收去向", "kind": "stacked", "width": 116.0, "optional": true,
 		"sortable": false, "tooltip": "原料 / 工资 / 维护与税 / 利润"},
-	{"id": "fill", "label": "岗位填充", "kind": "bar", "width": 92.0, "optional": true},
+	{"id": "fill", "label": "岗位填充", "kind": "bar", "width": 112.0, "optional": true},
 	{"id": "arrears", "label": "欠薪", "kind": "number", "width": 58.0, "optional": true},
 	{"id": "blocker", "label": "扩产卡点", "kind": "text", "width": 112.0, "optional": true},
 ]
+const TouchUI := preload("res://scripts/ui/touch_ui.gd")
 const MIX_COLORS := [Color(0.55, 0.47, 0.36), UITokens.FAMILY_GREEN, UITokens.FAMILY_OXBLOOD,
 	UITokens.FAMILY_BRASS]
 
 var _selected := -1
+var _mobile_subtab := "operations"
+var _has_built_rows := true
 
+@onready var _mobile_tabs: HBoxContainer = %MobileSectionTabs
+@onready var _tab_operations: Button = %TabOperations
+@onready var _tab_investment: Button = %TabInvestment
+@onready var _detail_panel: Control = %Detail
+@onready var _table_header: Control = %TableHeader
 @onready var _detail_grid: GridContainer = %DetailGrid
 @onready var _detail_title: Label = %DetailTitle
 @onready var _detail_meta: Label = %DetailMeta
@@ -35,21 +43,68 @@ var _selected := -1
 func _ready() -> void:
 	_table.set_columns(COLUMNS, "revenue")
 	_table.row_selected.connect(_on_row_selected)
+	if _tab_operations != null:
+		_tab_operations.pressed.connect(_set_mobile_subtab.bind("operations"))
+	if _tab_investment != null:
+		_tab_investment.pressed.connect(_set_mobile_subtab.bind("investment"))
+	_sync_mobile_subtabs()
+
+
+func _set_mobile_subtab(subtab: String) -> void:
+	if _mobile_subtab == subtab:
+		return
+	_mobile_subtab = subtab
+	_sync_mobile_subtabs()
+
+
+func _sync_mobile_subtabs() -> void:
+	var split_tabs := TouchUI.is_phone_landscape()
+	if _mobile_tabs != null:
+		_mobile_tabs.visible = split_tabs
+	if not split_tabs:
+		if _detail_panel != null:
+			_detail_panel.visible = _has_built_rows
+		if _table_header != null:
+			_table_header.visible = true
+		_table.visible = _has_built_rows
+		_invest_kicker.visible = true
+		_invest.visible = true
+		return
+	var show_ops := _mobile_subtab != "investment"
+	if _tab_operations != null:
+		_tab_operations.theme_type_variation = &"PKPrimaryButton" if show_ops else &"PKIconButton"
+	if _tab_investment != null:
+		_tab_investment.theme_type_variation = &"PKPrimaryButton" if not show_ops else &"PKIconButton"
+	if _detail_panel != null:
+		_detail_panel.visible = show_ops and _has_built_rows
+	if _table_header != null:
+		_table_header.visible = show_ops
+	_table.visible = show_ops and _has_built_rows
+	_empty.visible = show_ops and not _has_built_rows
+	_invest_kicker.visible = not show_ops
+	_invest.visible = not show_ops
 
 
 func focus_item(item) -> void:
 	# 合并章：建筑 id 是整数，投资风向的卡点类别是字符串，按类型分流。
 	if item is String and _invest != null:
+		_mobile_subtab = "investment"
+		_sync_mobile_subtabs()
 		_invest.focus_item(item)
 		return
+	_mobile_subtab = "operations"
+	_sync_mobile_subtabs()
 	_selected = int(item)
 
 
 ## 共用的页内锚点：卡点跳转落到「资本与在建」这一段时，外壳拿这个偏移去滚动视口。
-## 锚在小标题而不是区段本体上，否则跳过去第一眼是内容、看不到自己落在哪一段。
 func section_offset(section: String) -> float:
-	if section == "investment" and _invest_kicker != null:
-		return _invest_kicker.position.y
+	if section == "investment":
+		if TouchUI.is_phone_landscape():
+			_set_mobile_subtab("investment")
+			return 0.0
+		if _invest_kicker != null:
+			return _invest_kicker.position.y
 	return 0.0
 
 
@@ -69,7 +124,10 @@ func _refresh_industry(vm: EconomyDossierViewModel, filter = null) -> void:
 		return
 	var source: Array = model.rows
 	var built: Array = source.filter(func(r): return float(r.units) > 0.0 or float(r.pending) > 0.0)
-	_empty.visible = false
+	_has_built_rows = not built.is_empty()
+	_empty.visible = not _has_built_rows
+	if not _has_built_rows:
+		_empty.text = "当前范围内尚无已建成或在建的建筑"
 	_count_label.text = "%d 类建筑 · 共 %s 座" % [built.size(),
 		count(built.reduce(func(acc, r): return acc + float(r.units), 0.0))]
 	var selected: Dictionary = {}
@@ -87,6 +145,7 @@ func _refresh_industry(vm: EconomyDossierViewModel, filter = null) -> void:
 	_table.selected_id = _selected
 	_table.set_rows(rows)
 	_refresh_detail(selected)
+	_sync_mobile_subtabs()
 
 
 func _ledger_row(row: Dictionary) -> Dictionary:

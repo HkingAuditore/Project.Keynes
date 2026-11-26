@@ -113,9 +113,9 @@ POD 与 checkpoint。政治目录内容身份必须与保存内容匹配；旧�
 
 ## Skills
 
-各智能体目录（`.agents`、`.claude`、`.codex`、`.cursor`、`.dsh`、`.codebuddy`）下的 `skills/` 是同一批 skill 的副本，`.agents/skills` 是权威副本。改 skill 时改权威副本，再运行 `tools/ci/check_skill_mirrors.py --sync <skill>` 覆盖其他已有该 skill 的目录；某个目录可以不带某个 skill。
+skill 源文件统一放在仓库根目录的 `skills/`。各工具通过本机生成的链接读取同一份源文件，设置方法见 [AI skill 目录](../ai-skills.md)。
 
-现有分歧冻结在 `tools/ci/skill_mirrors_baseline.json`（每个文件的不同版本数），`check_skill_mirrors.py` 拒绝新增分歧和版本数增加。多数分歧文件是各副本分别改过的真分叉，`--sync` 前先把其他副本独有的内容合并进权威副本；合并后用 `--write-baseline` 收紧。
+`tools/ci/check_skill_mirrors.py` 检查源文件是否检出，以及 Git 是否误跟踪了各工具目录下的 skill 副本。
 
 ## 环境开关与故障点
 

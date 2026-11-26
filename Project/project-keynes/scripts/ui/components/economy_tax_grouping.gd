@@ -6,6 +6,7 @@ extends RefCounted
 ## 在缺少编译期 catalog 列（例如轻量级 UI 测试）时，退回静态目录推导。
 
 const TaxGroupMapScript := preload("res://scripts/country/tax_group_map.gd")
+const TaxGoodCategoryMapScript := preload("res://scripts/country/tax_good_category_map.gd")
 const CountryCatalogPresentation := preload("res://scripts/ui/country_catalog_presentation.gd")
 
 const TAX_MODE_PERCENT_BP := 0
@@ -14,8 +15,9 @@ const AXIS_FLAT := "flat"
 
 const PROFESSION_CLASS_LABELS_ZH := {
 	"farmer": "农民", "worker": "工人", "technology": "技术与学者",
-	"military": "军事", "merchant": "商业", "capitalist": "企业主",
-	"landowner": "地主", "general": "其他阶层",
+	"military": "军事", "commerce": "商业", "merchant": "商业",
+	"small_owner": "小业主", "major_owner": "大业主",
+	"capitalist": "大业主", "landowner": "大业主", "general": "其他阶层",
 }
 
 
@@ -109,8 +111,9 @@ static func _fallback_static_groups(page: String, card_ids: Array) -> Array:
 		elif page == "consumption":
 			var cat := String(meta.get("category_id", "")).strip_edges()
 			if not cat.is_empty():
-				gid = "cat:%s" % cat
-				label = cat
+				var mapped := TaxGoodCategoryMapScript.group_for_category(cat)
+				gid = "cat:%s" % (mapped if not mapped.is_empty() else cat)
+				label = TaxGoodCategoryMapScript.label_for_group(mapped) if not mapped.is_empty() else cat
 		if not grouped.has(gid):
 			grouped[gid] = {"id": gid, "label": label, "item_ids": PackedStringArray()}
 			order.append(gid)

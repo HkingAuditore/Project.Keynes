@@ -489,7 +489,7 @@ func _update_visibility() -> void:
 		and _formation_batch.multimesh.visible_instance_count > 0
 	if _formation_shadow_batch != null:
 		_formation_shadow_batch.visible = formation_visible \
-			and _visual_quality >= 2 and not OS.has_feature("web")
+			and _visual_quality >= 2 and not DCFeatureFlags.is_mobile_web()
 	visible = _enabled and _has_shader and (paper_visible or formation_visible)
 
 

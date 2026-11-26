@@ -1,5 +1,14 @@
 # 专项现状与验证记录
 
+## PC-Web 画质对齐桌面高画质与原生 HiDPI（2026-11-26）
+
+- 新增 `DCFeatureFlags.is_mobile_web()` / `is_desktop_web()` / `is_limited_render_platform()`，将移动浏览器的降档策略与 PC 浏览器解耦；保留 `uses_shader_quality_tier()` 作为 Web 共享低/中档与迷雾/天气预热前缀契约。
+- PC-Web 默认（`auto`）解析为 `high`（`visual_quality=2`），启动菜单默认预热并启用 `PK_WEB_PC_HIGH` 完整陆地/水面/植被管线及 `building_shadow`（同时保留共享低/中档预热，游戏内切换画质零卡顿）；移动浏览器或显式 `?quality=low|medium` 跳过 `_high` 预热。
+- PC-Web 恢复全量植被点缀层（不裁半）与桌面散布实例上限、100% 植被阴影强度、建筑投影阴影与 128 常驻块上限、非裁剪建筑 horizon GI 光照、商队与军队阵型高画质阴影、1024×512 云影场与高档合成强度，并开放「自定义」画质与地图清晰度等全部细分选项。
+- Web 导出恢复 `loading_prebaked_v1/material_1024_*.res` 打包，默认不再将 `material_512_*.res` 压到 256²，也不再把 `resource_art` 与 `vehicles_topdown_v2` 砍半分辨率；UI/图标保持 0.55 WebP 有损瘦身。
+- `export_presets.cfg` 将 PC-Web 的 `window.devicePixelRatio` 解锁至最高 `2.0`（支持 `?dpr=` 覆盖，移动浏览器保持 `1`），`MobileUIScaling` 在桌面 Web 上按物理窗口尺寸夹取补偿 `content_scale_factor`，保证逻辑画布不低于 1600×960 且高分屏按原生物理像素清晰绘制。
+- 验证：`web_pc_quality_policy_test.gd`、`game_settings_service_test.gd`、`cloud_weather_quality_test.gd`、`terrain_shader_variant_test.gd`（含 `gl_compatibility`）、`web_water_pass_node_test.gd`、`cell_field_web_probe_test.gd`、`military_formation_shader_lighting_test.gd` 及静态架构护栏通过。
+
 ## 地块展板与图例工具栏互斥动效（2026-11-21）
 
 - 展板入场时两级图例工具栏淡出，鼠标交互即时禁用；展板完全退场后工具栏再淡入。
@@ -15,6 +24,16 @@
 
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
+
+## 无界面性能录制（2026-11-26）
+
+迁移旧仓库 [PR #85](https://github.com/hrhgit/Project.Keynes/pull/85) 的逐日录制。
+批次回归在迁移前的 `f9984153` 漏掉第 6 天，导出 49 行；修复后逐日导出第 6 至 55 天，
+共 50 行。录制器测试的 98 项检查通过。
+
+Godot 4.6.3 在 macOS 的正式 60×40 开局做了两次 3 天记录验证。两次都在预热 2 天后
+导出第 3 至 5 天，批次诊断另存，结算账目无错误。第一次低于现有 50 日/秒门槛，
+返回退出码 9。补齐批次诊断检查后的第二次退出码是 0。未重跑完整性能对比。
 
 ## 后台领取、普通面板与地图出图（2026-11-24）
 
@@ -72,6 +91,70 @@ PR #74 审查回归中，旧实现把尚未绘制的视野当成未探索，丢�
 另一次测试暂停模拟，冻结同一张地图，交替测窗口只画界面、以及在界面下面再合成这张地图。
 两种情况各取 225 帧，窗口绘制的 CPU 耗时中位数分别为 0.144 ms 和 0.137 ms。
 Metal 接口在这次测量中没有返回可用的 GPU 耗时。原始记录见 `composite/`。
+
+## 地图按需领取生态贴图数据（#83，2026-11-25）
+
+改前 `c81ebf871` 通过 `GameFlow` 启动正式玩家场景（Godot 4.6.3，种子 `20260718`，60×40 格，
+四国，60 帧档，50×）。直接启动窗口未进入游戏，macOS `open` 返回 `kLSNoExecutableErr`。
+随后用 `player_scene_handoff_probe.gd --overload --simulate-frames` 在无窗口场景运行到第 75 日。
+第 41 至 55 日连续领取 15 批记录，贴图停在第 40 日，编码和提交均为零；领取结果仍带有 15 对
+各 2,400 字节的 `transition_age` 和 `previous_vitality`，共 72,000 字节。
+`DCWorldExt::poll_runtime_commit` 在构造领取结果时分配数组并复制，早于 `apply_pending_worker_map`
+检查帧预算。两列只供生态贴图编码使用。分类变格同时更新地块详情所读的地形、地貌、植被和覆盖分类。
+改前逐帧及逐日记录见 `/private/tmp/keynes-83.5xQarw/first/headless/`。
+
+改前在数组分配及复制处加计时后，同一复现得到 15 次读取、72,000 字节。每次分配与复制耗时
+中位数 3.667 微秒，P95 为 4.750 微秒，范围 1.875–4.750 微秒，合计 52.710 微秒。
+原始日志在 `/private/tmp/keynes-83.5xQarw/instrumented-base/`。该次取样与本机编译重叠。
+
+改后用同种子、命令和脚本复现，第 41 至 55 日仍逐批领取，复制和贴图提交均为零。
+第 55 日解除帧负担后读取一次 4,800 字节，贴图直接追到第 55 日。两版第 1 至 75 日业务摘要、
+命令生效日和回执顺序逐日一致，均在第 20 日收到剧情待答。改后记录见
+`/private/tmp/keynes-83.5xQarw/first/candidate/`。
+
+`player_map_publication_test.gd` 通过正式场景分别每日更新和延迟更新。延迟组在第 2 至 20 日
+按 100 ms 间隔领取，19 日内没有复制贴图列；已放行到第 21 日的执行器在第 20 日等待玩家选择。
+暂停并在同一世界重启执行器后，只读取一次第 20 日的完整数据。最终贴图字节、20 日业务摘要和有序
+回执与每日更新组一致。测试还验证了拒绝错误地图、日期、提交编号或格数，读档与换局释放旧发布，
+以及地图积压时完成正式保存。日志为 `/private/tmp/keynes-83.5xQarw/formal-map-final.log`。
+
+`cell_lut_incremental_test.gd` 在不同日分别改变两个地块，逐字节对照合并更新与每日更新，
+共 71 项通过。`simulation_presentation_coalescing_test.gd`、`independent_presentation_test.gd`、
+原生接口握手、世界生命周期、正式存档往返和两组逐日校验也通过。两组逐日校验改前、改后各跑三轮，
+全部与改前首轮一致。天气表通过 111 项，跳过两个需要实际图形后端的读回。游戏设置和内联执行器
+存档测试的初次运行受系统目录写入限制，改用临时用户数据目录后分别通过 34 项和 46 项。
+构建和回归日志在 `/private/tmp/keynes-83.5xQarw/`。
+
+无窗口取证命令如下。给每次运行单独的存档目录和记录文件。
+
+```sh
+PK_SAVE_DIR="$saves" godot --headless --path "$project" \
+  --script res://tests/game/player_scene_handoff_probe.gd -- --fps=60 --speed=50 \
+  --through=75 --answer-story --command-log --overload --simulate-frames --frames="$trace"
+```
+
+窗口复测用同一版 `player_scene_handoff_probe.gd` 和 `player_scene_handoff_timings.gd`。
+在改前源码副本应用证据目录的 `baseline-copy-timing.patch`，分别编译两份项目的调试库并导入。
+下列两次调用各交替运行三组。面板样本从派遣按钮收到鼠标事件开始，到派遣面板首次参与窗口绘制为止。
+地图间隔和落后天数取自独立地图窗口完成的绘制。后台每秒推进的天数按连续逐日提交时刻计算。
+
+```sh
+python3 tools/perf/run_rendered_player_handoff.py "$base_project" "$candidate_project" \
+  --output "$normal_output" --fps 60 --map-reads
+python3 tools/perf/run_rendered_player_handoff.py "$base_project" "$candidate_project" \
+  --output "$busy_output" --fps 60 --map-reads --overload --expect-pacing
+```
+
+本次配对试跑的第一组和 `independent_presentation_window_test.gd` 均在 macOS 启动阶段失败。
+桌面工具也拒绝操作 Godot，实际地图绘制间隔、落后天数和点击反馈仍待可见窗口验证。
+
+审查修复使用正式时钟以 5× 推进，逐步放开时钟可请求的日期以进行逐日对照，并在 60 帧档的帧开始后
+占用一整帧时间。无窗口回归确认第 2 至 20 日照常结算并领取记录，贴图列复制为零。
+时钟请求第 21 日时，后台停在第 20 日的剧情选择处。解除负载后
+只复制一次第 20 日的数据。错误的提交编号会记录具体原因并保留上次贴图。
+性能汇总要求整次运行至少有一次有效的复制计时，因此整次缺少数据会报错，已测量的忙帧仍可显示零次复制。
+91 项性能工具测试和 18 项架构检查通过。窗口脚本通过语法检查，macOS 仍未能启动测试窗口。
+日志见 `/private/tmp/keynes-83-review.LA4Vcp/`。
 
 ## 按帧率推迟地图更新（#63，2026-11-24）
 

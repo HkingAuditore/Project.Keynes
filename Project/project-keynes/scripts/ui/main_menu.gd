@@ -393,8 +393,8 @@ func _show_settings() -> void:
 			int(current.get("ui_layout_scale", 100)))
 		_settings_controls.ui_layout.visible = true
 		_configure_option(_settings_controls.ui_layout,
-			["完整 · PC 版式", "铺满 · 无黑边", "紧凑 · 更小更多"],
-			["fit", "fill", "dense"], String(current.get("ui_layout_mode", "fit")))
+			["完整 · 桌面比例", "铺满 · 手机推荐", "紧凑 · 更多内容"],
+			["fit", "fill", "dense"], String(current.get("ui_layout_mode", "fill")))
 	else:
 		if scale_label != null:
 			scale_label.text = "界面缩放"

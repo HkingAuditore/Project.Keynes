@@ -1,0 +1,5 @@
+{
+  "model": "cache",
+  "inputs": {"stable_frames": [1, 2, 4, 6, 7, 12], "direct_ms": 6, "read_ms": 4, "build_ms": 10},
+  "basis": {"stable_frames": "对不同连续稳定帧数分别预测。每组第一帧直画，第二帧建图并读图。", "direct_ms": "示例假设，直接绘制有效耗时", "read_ms": "示例假设，使用缓存时的绘制耗时", "build_ms": "示例假设，建两张图的额外成本，独立于当帧读图成本"}
+}

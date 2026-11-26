@@ -2,38 +2,66 @@ extends RefCounted
 
 const KitStatusText = preload("res://scripts/ui/components/colonization_kit_status_text.gd")
 const PreviewCards = preload("res://scripts/ui/components/colonization_preview_cards.gd")
+const TouchValueFieldScript = preload("res://scripts/ui/components/touch_value_field.gd")
+const TouchInspectable = preload("res://scripts/ui/components/touch_inspectable.gd")
 
-## Display helpers borrow the host per call; state and signal receivers stay there.
+
+static func _ensure_touch_bindings(host) -> void:
+	if not host.TouchUI.is_touch():
+		return
+	if host._population != null and host._population.get_line_edit().get_node_or_null("TouchValueField") == null:
+		var field := TouchValueFieldScript.new()
+		field.attach(host._population, {
+			"title": "外派定居人数",
+			"show_modes": false,
+			"allow_negative": false,
+			"commit": func(text: String, _m: int) -> void:
+				if text.is_valid_int() or text.is_valid_float():
+					host._population.value = clampf(text.to_float(),
+						host._population.min_value, host._population.max_value),
+		})
+	if host._start != null:
+		TouchInspectable.bind_disabled_reason(host._start, "暂不可出发")
 
 
 static func _layout_left_panel(host) -> void:
 	if not host.is_inside_tree():
 		return
+	_ensure_touch_bindings(host)
+	var touch: bool = host.TouchUI.is_touch()
 	var viewport_size = host.get_viewport().get_visible_rect().size
 	host.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	host.position = Vector2(UITokens.ARCHIVE_EDGE_INSET, PlayerTopBar.BAR_HEIGHT + 4.0)
-	var ratio = 0.56 if host.TouchUI.is_touch() else 0.45
+	var top_y := 8.0 if touch else (PlayerTopBar.BAR_HEIGHT + 4.0)
+	host.position = Vector2(UITokens.ARCHIVE_EDGE_INSET, top_y)
+	var ratio = 0.48 if touch else 0.45
 	var target_w = roundf(viewport_size.x * ratio)
 	var compact_viewport = viewport_size.x < UITokens.ARCHIVE_BREAKPOINT_COMPACT
 	if compact_viewport:
 		target_w = minf(maxf(target_w, 560.0), viewport_size.x - UITokens.ARCHIVE_EDGE_INSET * 2.0)
-	if host.TouchUI.is_touch():
-		target_w = clampf(target_w, 560.0, maxf(320.0, viewport_size.x - UITokens.ARCHIVE_EDGE_INSET * 2.0))
-	host.size = Vector2(target_w, maxf(0.0,
-		viewport_size.y - host.position.y - CountryActionBar.BAR_HEIGHT - UITokens.ARCHIVE_EDGE_INSET))
+	if touch:
+		target_w = clampf(target_w, 480.0, maxf(320.0, viewport_size.x - UITokens.ARCHIVE_EDGE_INSET * 2.0))
+	var picking_map := touch and bool(host._target_picking or host._source_picking)
 	var body = host.get_node("%Body") as BoxContainer
+	var footer = host.get_node_or_null("Margin/Root/Footer") as Control
+	body.visible = not picking_map
+	if footer != null:
+		footer.visible = not picking_map
+	var bottom_reserve := UITokens.ARCHIVE_EDGE_INSET if touch \
+		else (CountryActionBar.BAR_HEIGHT + UITokens.ARCHIVE_EDGE_INSET)
+	var full_h := maxf(0.0, viewport_size.y - host.position.y - bottom_reserve)
+	host.size = Vector2(minf(target_w, 520.0) if picking_map else target_w,
+		118.0 if picking_map else full_h)
 	var narrow = host.size.x < 560.0
 	body.vertical = narrow
-	# The footer already carries a population pictogram; the label only repeats it.
 	host._population_label.visible = false
 	host._population_row.add_theme_constant_override("separation", 4 if narrow else 6)
-	host._apply_narrow_density(compact_viewport)
+	host._apply_narrow_density(compact_viewport or picking_map)
+	if picking_map:
+		var tools = host.get_node_or_null("%Tools") as Control
+		if tools != null:
+			tools.visible = false
 	var list_pane = host.get_node("%ListPane") as Control
 	var preview_scroll = host.get_node("%PreviewScroll") as Control
-	# At 125% the stacked layout has little vertical room. Let the dossier keep
-	# enough height to expose its identity and quick-read band before scrolling.
-	# In the stacked view the dossier is the decision surface; keep a compact
-	# directory scroll above it rather than letting three rows crowd out the readout.
 	list_pane.size_flags_stretch_ratio = 0.36 if narrow else 0.44
 	preview_scroll.size_flags_stretch_ratio = 0.64 if narrow else 0.56
 

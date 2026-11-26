@@ -194,10 +194,9 @@ const SHADERS := [
 	{"path": "res://shaders/weather_overlay.gdshader",
 		"prefix": "#define PK_WEB_WEATHER_MIN\n" + TIER_PREFIX},
 	{"path": "res://shaders/country_border.gdshader", "prefix": ""},
-	# 建筑外观：web 上 `_put_batch` 只在 `detailed and not OS.has_feature("web")`
-	# 才建 shadow 的 MultiMesh，所以 shadow 不预热（它不会上屏）；decal 只在
-	# `visual_quality > 0` 建，但玩家可在游戏内调高画质，所以必须留。
+	# 建筑外观：PC-Web 默认启用建筑投影，这里一并预热 building_shadow，避免进世界首次绘制现编。
 	{"path": "res://shaders/building_compound.gdshader", "compose": "building"},
+	{"path": "res://shaders/building_shadow.gdshader", "compose": "building"},
 	{"path": "res://shaders/building_ground_decal.gdshader", "compose": "building"},
 	{"path": "res://shaders/building_macro.gdshader", "compose": "building"},
 	# resource_impostor 不在这里列：web 上它是**两份**程序
@@ -493,7 +492,7 @@ static func _collect_codes() -> Array:
 				"code": shared_map_prefix + "#define PK_PROBE_NO_LAND\n" + wm.code})
 			out.append({"label": "wm_no_water",
 				"code": shared_map_prefix + "#define PK_PROBE_NO_WATER\n" + wm.code})
-	if requested_quality() < 2:
+	if not RendererShaderWaterScript.web_pc_high_boot_enabled():
 		var light: Array = []
 		for entry in out:
 			if not String(entry.get("label", "")).ends_with("_high"):

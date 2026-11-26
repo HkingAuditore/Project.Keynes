@@ -74,8 +74,11 @@ func _run() -> void:
 			"pending_knowledge_building_id", ""))
 		var discovered: PackedStringArray = country_start.get(
 			"starter_discovered_technology_ids", PackedStringArray())
+		var has_gold := not String(country_start.get(
+			"precious_resource", "")).is_empty()
 		_expect("regional route grants the survival-core starter technologies",
-			technologies.size() >= 5 and technologies.size() <= 7
+			technologies.size() >= (5 if has_gold else 4)
+			and technologies.size() <= 7
 			and technologies.has("tech.gathering")
 			and technologies.has("tech.hunting")
 			and technologies.has("tech.early_trade")
@@ -83,7 +86,8 @@ func _run() -> void:
 			and not technologies.has("tech.oral_memory_practice")
 			and not technologies.has(pending_tech))
 		_expect("regional route prebuilds the survival-core buildings",
-			route_buildings.size() >= 5 and route_buildings.size() <= 8
+			route_buildings.size() >= (5 if has_gold else 4)
+			and route_buildings.size() <= 8
 			and route_buildings.has("gathering_ground")
 			and route_buildings.has("deadwood_gathering_camp")
 			and not route_buildings.has("oral_memory_circle")
@@ -104,8 +108,10 @@ func _run() -> void:
 			and String(country_start.get("starter_construction_good_id", "")) == "logs"
 			and String(country_start.get("starter_knowledge_good_id", "")) ==
 				"technology_points"
-			and String(country_start.get("starter_precious_good_id", "")) == "gold"
-			and String(country_start.get("precious_resource", "")) == "gold_ore"
+			and String(country_start.get("starter_precious_good_id", "")) ==
+				("gold" if has_gold else "")
+			and String(country_start.get("precious_resource", "")) ==
+				("gold_ore" if has_gold else "")
 			and technologies.has("tech.early_trade")
 			and route_buildings.has("early_merchant_post"))
 		var construction_offsets: PackedInt32Array = country_start.get(
@@ -138,9 +144,12 @@ func _run() -> void:
 					map, String(resource_id), int(country_start.get("cell", -1))) > 0.0)
 		for resource_id in [String(country_start.get("starter_construction_resource_id", "")),
 				String(country_start.get("precious_resource", ""))]:
+			if String(resource_id).is_empty():
+				# 砂金可选：无金开局没有贵金属路线，这一项不存在就不查。
+				continue
 			_expect("selected route resource %s exists locally" % resource_id,
-				not resource_id.is_empty() and _resource_reserve(
-					map, resource_id, int(country_start.get("cell", -1))) > 0.0)
+				_resource_reserve(map, resource_id,
+					int(country_start.get("cell", -1))) > 0.0)
 		var clothing_resource := String(country_start.get("starter_clothing_resource_id", ""))
 		if not clothing_resource.is_empty():
 			_expect("selected clothing resource %s exists locally" % clothing_resource,
@@ -493,7 +502,8 @@ func _starter_route_outputs(country_start: Dictionary) -> bool:
 	if knowledge_profile == null or not knowledge_profile.output_good_ids.has(
 			String(country_start.get("starter_knowledge_good_id", ""))):
 		return false
-	if not produced.has(String(country_start.get("starter_precious_good_id", ""))):
+	var precious_good := String(country_start.get("starter_precious_good_id", ""))
+	if not precious_good.is_empty() and not produced.has(precious_good):
 		return false
 	if buildings.has("hide_scraping_shelter") \
 			and not produced.has(String(country_start.get("starter_clothing_good_id", ""))):

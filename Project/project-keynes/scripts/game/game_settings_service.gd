@@ -24,9 +24,11 @@ const DEFAULTS := {
 	"cloud_shadow": null,
 	"frame_rate_limit": null,
 	"ui_scale_percent": 100,
-	## 触摸档的界面布局：fit（KEEP 1600×960，PC 版式）/ fill（EXPAND 铺满）/ dense（EXPAND+0.85）。
+	## 触摸档的界面布局：fill（默认，EXPAND 宽屏黄金画布 ~1600×720）/ fit（KEEP 1600×960）/ dense（EXPAND 高密度）。
 	## 桌面档忽略。见 scripts/ui/mobile_ui_scaling.gd:LAYOUT_MODES。
-	"ui_layout_mode": "fit",
+	"ui_layout_mode": "fill",
+	## 布局配置迁移版本：2 起将旧版默认 "fit" 升级为移动端推荐 "fill"，避免老设备沿用旧缓存。
+	"ui_layout_version": 2,
 	## 触摸档在布局之上的再缩放（%）。50~200 六档。
 	## >100 会把逻辑画布压到 1600×960 以下（200% ⇒ 800×480），`is_short_viewport()` 变 true，
 	## 各工作台自动切 compact 版式（收摘要卡/科技侧栏）—— 这是放大档的既定代价，不是 bug。
@@ -121,6 +123,10 @@ func load_settings() -> Dictionary:
 		for key in DEFAULTS:
 			_settings[key] = cfg.get_value("settings", key) if cfg.has_section_key("settings", key) \
 				else DEFAULTS[key]
+		if int(cfg.get_value("settings", "ui_layout_version", 1)) < int(DEFAULTS.ui_layout_version):
+			if String(_settings.get("ui_layout_mode", "fit")) == "fit":
+				_settings.ui_layout_mode = "fill"
+			_settings.ui_layout_version = int(DEFAULTS.ui_layout_version)
 	_validate()
 	return {"ok": true, "code": "ok", "message": ""}
 
@@ -224,10 +230,10 @@ func _update_navigation_limit(moved: bool) -> void:
 
 
 func apply() -> void:
-	if not OS.has_feature("web"):
-		var graphics := GraphicsQualitySettings.resolve(_settings, OS.has_feature("mobile"))
-		_frame_limit = int(graphics.frame_rate_limit)
-		_configure_frame_limit()
+	var graphics := GraphicsQualitySettings.resolve(
+		_settings, OS.has_feature("mobile") or DCFeatureFlags.is_mobile_web())
+	_frame_limit = int(graphics.frame_rate_limit)
+	_configure_frame_limit()
 	# Web 没有原生窗口概念："fullscreen"在浏览器里必须由用户输入手势触发，
 	# 否则 requestFullscreen() 会被静默拒绝（见 DisplayServerWeb::window_set_mode
 	# 的报错提示）；WINDOW_FLAG_BORDERLESS / window_set_size 在 Web 平台也均为
@@ -254,7 +260,7 @@ func apply() -> void:
 	# 移动端必须再乘上「设计像素 → dp」的设备倍率，否则 100% 在安卓上等于不缩放。
 	if _ui_scaling != null:
 		_ui_scaling.call("configure", int(_settings.ui_scale_percent),
-			String(_settings.get("ui_layout_mode", "fit")),
+			String(_settings.get("ui_layout_mode", "fill")),
 			int(_settings.get("ui_layout_scale", 100)))
 	else:
 		get_tree().root.content_scale_factor = float(_settings.ui_scale_percent) / 100.0
@@ -279,8 +285,8 @@ func _validate() -> void:
 			_settings[key] = null
 	if int(_settings.ui_scale_percent) not in [80, 100, 125, 150]:
 		_settings.ui_scale_percent = 100
-	if String(_settings.get("ui_layout_mode", "fit")) not in ["fit", "fill", "dense"]:
-		_settings.ui_layout_mode = "fit"
+	if String(_settings.get("ui_layout_mode", "fill")) not in ["fit", "fill", "dense"]:
+		_settings.ui_layout_mode = "fill"
 	if int(_settings.get("ui_layout_scale", 100)) not in [50, 75, 100, 125, 150, 200]:
 		_settings.ui_layout_scale = 100
 	_settings.master_volume = clampf(float(_settings.master_volume), 0.0, 1.0)

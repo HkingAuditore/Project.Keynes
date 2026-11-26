@@ -71,6 +71,15 @@ size_flags_horizontal = 8
 size_flags_vertical = 4
 theme_override_constants/separation = 12
 
+[node name="GroupTouchEdit" type="Button" parent="Header/Row"]
+visible = false
+custom_minimum_size = Vector2(104, 36)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+text = "整组调税"
+theme_type_variation = &"PKIconButton"
+
 [node name="MembersMargin" type="MarginContainer" parent="."]
 visible = false
 layout_mode = 2

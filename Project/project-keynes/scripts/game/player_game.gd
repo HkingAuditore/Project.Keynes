@@ -164,8 +164,7 @@ func _connect_signals() -> void:
 	_ui_manager.exit_game_requested.connect(_request_exit_game)
 	var settings: Node = _game_settings()
 	if settings != null:
-		if not OS.has_feature("web"):
-			settings.follow_map_camera(_camera, _world_clock)
+		settings.follow_map_camera(_camera, _world_clock)
 		if not settings.settings_changed.is_connected(_on_settings_changed):
 			settings.settings_changed.connect(_on_settings_changed)
 
@@ -376,7 +375,8 @@ func _push_visual_toggles() -> void:
 	var settings: Node = _game_settings()
 	var quality_values: Dictionary = settings.values() if settings != null else {}
 	var quality_setting := String(quality_values.get("render_quality", "auto"))
-	var mobile := OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
+	var mobile := OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios") \
+		or DCFeatureFlags.is_mobile_web()
 	var graphics := GraphicsQualitySettings.resolve(quality_values, mobile)
 	# 默认触摸档保留 2x 抗锯齿来抑制地图边缘闪烁；显式低档关闭额外采样。
 	var msaa := msaa_for_quality(quality_setting, _touch_profile())
@@ -394,9 +394,8 @@ func _push_visual_toggles() -> void:
 	# USE_FILMIC_TONEMAP 全部保留）；桌面全档、Web 低/高画质行为不变。
 	if _renderer.has_method("set_terrain_materials_enabled"):
 		_renderer.set_terrain_materials_enabled(_resolved_terrain_materials(quality_setting))
-	if not OS.has_feature("web"):
-		_renderer.set_graphics_details(graphics)
-		_renderer.set_terrain_render_scale(int(graphics["map_render_scale"]), msaa)
+	_renderer.set_graphics_details(graphics)
+	_renderer.set_terrain_render_scale(int(graphics["map_render_scale"]), msaa)
 	if _trade_activity != null:
 		_trade_activity.set_quality(visual_quality)
 	if _renderer.has_method("set_perf_sampler_enabled"):
@@ -472,19 +471,16 @@ func _resolved_visual_quality(quality: String) -> int:
 		"high":
 			return 2
 		_:
-			# auto：mobile/web 默认 LOW；桌面默认 HIGH。
-			return 0 if DCFeatureFlags.uses_shader_quality_tier() else 2
+			# auto：原生移动端与移动浏览器默认 LOW；桌面与 PC-Web 默认 HIGH。
+			return 0 if DCFeatureFlags.is_limited_render_platform() else 2
 
 
 ## [terrain-materials-runtime 2026-11-25] 档位 → 是否允许采样地面材质贴图
 ## （terrain_material_tex 的 4 层 biome tile + layer4 micro）。
-## 只控制采样，不控制 vq：web 中画质翻 false 时 vq 仍是 1，光照模型一根不动
-## （material_constants.gdshaderinc:33-35 的 USE_PBR_BRDF / USE_LINEAR_LIGHTING /
-## USE_FILMIC_TONEMAP 全部保留）。
-## **只翻 web**：桌面中画质继续返回 true，桌面地面贴图不受影响。
+## 只在移动浏览器中画质翻 false；桌面与 PC-Web 中画质继续返回 true。
 ## 验证走 GM diagnostics.terrain_materials（world_runtime_gm_adapter_part1.gd:610-612）。
 func _resolved_terrain_materials(quality: String) -> bool:
-	return not (quality == "medium" and DCFeatureFlags.is_web())
+	return not (quality == "medium" and DCFeatureFlags.is_mobile_web())
 
 
 static func msaa_for_quality(quality: String, touch: bool) -> Viewport.MSAA:
@@ -643,16 +639,32 @@ func _process(delta: float) -> void:
 	# 连续 3 天不推进就打一行，日志里一眼能看到卡在哪一侧。
 	var day := int(_current_day())
 	if day > 3 and int(eco["eco_day"]) >= 0 and day - int(eco["eco_day"]) > 3:
-		print("[economy-stall] day=%d eco_day=%d graph=%s paused=%s speed=%.2f" % [
+		# 新增的 6 项全部来自同一次 report()（每 5 秒一次，绝不进每帧）。
+		# 值域出处：gdext/src/economy_runtime_diagnostics.cpp:1498-1519（epoch_active/
+		# sample_day/last_committed_day/stage）、:2371（newest_state_day）、
+		# :3069-3070（fatal/fatal_reason）、:3180（market_runtime_mode）。
+		# 判「should_run 静默返回 false」只看这一组：
+		#   fatal=false + epoch_active=false + last_committed_day < day → 经济没被排上。
+		#   market_runtime_mode != ACTIVE 或 last_committed_day >= day 时直接坐实。
+		print("[economy-stall] day=%d eco_day=%d graph=%s paused=%s speed=%.2f fatal=%s fatal_reason=%s stage=%s epoch_active=%s sample_day=%d last_committed_day=%d market_runtime_mode=%s" % [
 			day, int(eco["eco_day"]), str(eco["graph"]),
-			str(_world_clock.paused if _world_clock != null else true), _current_speed()])
+			str(_world_clock.paused if _world_clock != null else true), _current_speed(),
+			str(eco["fatal"]), str(eco["fatal_reason"]), str(eco["stage"]),
+			str(eco["epoch_active"]), int(eco["sample_day"]),
+			int(eco["last_committed_day"]), str(eco["market_runtime_mode"])])
 	_sentinel_last_ms = now
 	_sentinel_frames = 0
 
 
 ## 经济日结水位 + 原生图是否在跑。失败时返回 -1 / false，绝不抛错（哨兵不能拖垮主循环）。
 func _economy_probe() -> Dictionary:
-	var out := {"eco_day": -1, "graph": false}
+	# 冻结定案用的标量。除 newest_state_day 外全是 report() 里现成的字段，与 eco_day
+	# 同一个字典取，不额外付第二次跨语言搬运。只在心跳（SENTINEL_HEARTBEAT_MS=5s）
+	# 里调，绝不进每帧。默认值保证宿主缺失时下面那行 print 不炸。
+	var out := {"eco_day": -1, "graph": false, "fatal": false,
+		"fatal_reason": "", "stage": "?", "epoch_active": false,
+		"sample_day": -1, "last_committed_day": -1,
+		"market_runtime_mode": "?"}
 	if _runtime_host == null or not _runtime_host.has_method("get_generator"):
 		return out
 	var generator = _runtime_host.get_generator()
@@ -665,6 +677,17 @@ func _economy_probe() -> Dictionary:
 		if facade != null and facade.has_method("report"):
 			var report: Dictionary = facade.report()
 			out["eco_day"] = int(report.get("newest_state_day", -1))
+			# 方案 A：把经济已结算日喂给日历闸门（world_clock.gd set_economy_settled_day）。
+			# 这里就是 5 秒心跳，不进每帧。
+			if _world_clock != null:
+				_world_clock.set_economy_settled_day(int(out["eco_day"]))
+			out["fatal"] = bool(report.get("fatal", false))
+			out["fatal_reason"] = str(report.get("fatal_reason", ""))
+			out["stage"] = str(report.get("stage", "?"))
+			out["epoch_active"] = bool(report.get("epoch_active", false))
+			out["sample_day"] = int(report.get("sample_day", -1))
+			out["last_committed_day"] = int(report.get("last_committed_day", -1))
+			out["market_runtime_mode"] = str(report.get("market_runtime_mode", "?"))
 	return out
 
 

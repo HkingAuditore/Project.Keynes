@@ -54,7 +54,7 @@ static func _push_material_state(layer: BuildingVisualLayer) -> void:
 			material.set_shader_parameter("visual_quality", layer._visual_quality)
 	if layer._shadow_material != null:
 		layer._shadow_material.set_shader_parameter("shadow_strength",
-			0.0 if OS.has_feature("web") else float(BuildingVisualLayer.SHADOW_STRENGTH[layer._visual_quality]))
+			0.0 if DCFeatureFlags.is_mobile_web() else float(BuildingVisualLayer.SHADOW_STRENGTH[layer._visual_quality]))
 	if layer._macro_material != null:
 		layer._macro_material.set_shader_parameter("camera_zoom", layer._camera_zoom)
 		# The macro pass now gates its terrain lighting on the same quality tier.

@@ -141,6 +141,8 @@ func _bind_countries() -> void:
 	_locate_button.pressed.connect(_on_locate_pressed)
 	UIAnimation.bind_tactile_button(_declare_button)
 	UIAnimation.bind_tactile_button(_peace_button)
+	preload("res://scripts/ui/components/touch_inspectable.gd").bind_disabled_reason(
+		_declare_button, "暂不可宣战")
 
 
 func _bind_wars() -> void:

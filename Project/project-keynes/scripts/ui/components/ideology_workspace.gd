@@ -48,7 +48,7 @@ const IdeologyEffectReportScript = preload("res://scripts/ideology/ideology_effe
 const HINT_HOLD_MSEC := 4500
 ## Height of the offer tray chrome (title, actions, margins) around the cards.
 const STAGE_CHROME_HEIGHT := 196.0
-const STAGE_CHROME_HEIGHT_COMPACT := 148.0
+const STAGE_CHROME_HEIGHT_COMPACT := 108.0
 const STAGE_CARD_MIN_HEIGHT := 140.0
 const STAGE_CARD_MAX_HEIGHT := 410.0
 const STAGE_OUTER_INSET := 12.0

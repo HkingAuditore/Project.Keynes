@@ -46,9 +46,6 @@ const TAX_ABSOLUTE_MAX := 1000000000
 const CARD_SIZE := Vector2(280.0, 0.0)
 const ENTRANCE_STAGGER := 0.022
 const ENTRANCE_MAX_DELAY := 0.30
-# The simulation can advance dozens of days per real second. Summary cards are
-# reading instruments, so coalesce those bursts while retaining the newest
-# authoritative snapshot for the trailing refresh.
 const LIVE_REFRESH_INTERVAL_MSEC := 200
 const DRAFT_COMMIT_DELAY_SEC := 0.18
 const SUMMARY_CARD_SIZE := Vector2(180.0, 78.0)

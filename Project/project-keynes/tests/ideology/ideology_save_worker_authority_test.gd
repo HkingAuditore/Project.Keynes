@@ -1610,9 +1610,11 @@ func _drive_executor_day(w: Dictionary, ext: Object, host: WorldRuntimeHost, clo
 	clock.current_day = float(day + 1)
 	host._admit_runtime_calendar(day + 1)
 	var deadline := Time.get_ticks_msec() + _pod_wait_ms
-	while Time.get_ticks_msec() < deadline:
+	while true:
+		# Consume any publication that arrived while the polling frame slept.
 		host._process(0.0)
-		if host._runtime_commit_day == day or not _worker_fault(ext).is_empty():
+		if host._runtime_commit_day == day or host.is_runtime_fault_paused() \
+				or Time.get_ticks_msec() >= deadline:
 			break
 		OS.delay_msec(2)
 	var settled := host._runtime_commit_day == day

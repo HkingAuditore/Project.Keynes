@@ -18,13 +18,10 @@ static func _render_quality_setting() -> String:
 	return "auto"
 
 static func _terrain_material_size() -> int:
-	# [web-loading-material-shrink 2026-11-01] Web 固定 512，不再有 1024 档：
-	# 1024 那套材质（4 x 5.33 MB）已从 Web 包体里排除（export_presets.cfg 的
-	# exclude_filter），请求它会直接拿不到图（prebaked_material_missing）。
-	# 512 那套在 Web 构建期被 tools/web_tex_stub_loading_materials.gd 缩到 256²，
-	# 实际层尺寸由 _build_terrain_material_tex 按读到的图决定，见那里。
 	if OS.has_feature("web"):
-		return TERRAIN_MATERIAL_SIZE_MOBILE
+		var q := _render_quality_setting()
+		var use_mobile := q == "low" or (q == "auto" and DCFeatureFlags.is_mobile_web())
+		return TERRAIN_MATERIAL_SIZE_MOBILE if use_mobile else TERRAIN_MATERIAL_SIZE_DESKTOP
 	return TERRAIN_MATERIAL_SIZE_MOBILE if OS.has_feature("mobile") else TERRAIN_MATERIAL_SIZE_DESKTOP
 
 static func _hm_max_dim() -> int:
@@ -36,7 +33,8 @@ static func _hm_max_dim() -> int:
 		match _render_quality_setting():
 			"high": return 2048
 			"medium": return 1024
-			_: return HM_MAX_DIM_MOBILE
+			"low": return HM_MAX_DIM_MOBILE
+			_: return HM_MAX_DIM_MOBILE if DCFeatureFlags.is_mobile_web() else 2048
 	if OS.has_feature("mobile"):
 		return HM_MAX_DIM_MOBILE
 	return HM_MAX_DIM_DESKTOP

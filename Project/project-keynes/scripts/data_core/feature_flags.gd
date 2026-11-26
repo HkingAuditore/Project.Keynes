@@ -429,10 +429,51 @@ static func set_terrain_horizon_gpu_bake(enabled: bool) -> void:
 # 实测出来的天花板；等 web 包能稳定跑完若干模拟日、量到真实堆占用之后再往上调。
 const WEB_MAX_MAP_WIDTH: int = 100
 const WEB_MAX_MAP_HEIGHT: int = 70
+const WEB_MOBILE_OVERRIDE_META: StringName = &"pk_web_mobile_override"
+
+## -1 = 尚未判定；0 = PC 浏览器；1 = 移动/平板触摸浏览器。
+static var _mobile_web_cached: int = -1
 
 ## 当前是否跑在浏览器里。
 static func is_web() -> bool:
 	return OS.has_feature("web")
+
+## 清空移动浏览器判定缓存（供单测切换模拟环境）。
+static func reset_web_platform_cache() -> void:
+	_mobile_web_cached = -1
+
+## 当前是否为手机/平板浏览器（PC 浏览器含触屏笔记本返回 false）。
+static func is_mobile_web() -> bool:
+	if Engine.has_meta(WEB_MOBILE_OVERRIDE_META):
+		return bool(Engine.get_meta(WEB_MOBILE_OVERRIDE_META))
+	if not is_web():
+		return false
+	if _mobile_web_cached >= 0:
+		return _mobile_web_cached == 1
+	var detected := OS.has_feature("web_android") or OS.has_feature("web_ios")
+	if not detected and Engine.has_singleton("JavaScriptBridge"):
+		var bridge: Object = Engine.get_singleton("JavaScriptBridge")
+		if bridge != null:
+			var raw: Variant = bridge.call("eval",
+				"(typeof window.__pkIsMobileWeb === 'boolean') ? window.__pkIsMobileWeb : "
+				+ "(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '') "
+				+ "|| (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) "
+				+ "|| !!(window.matchMedia && window.matchMedia('(pointer: coarse) and (hover: none)').matches))")
+			detected = bool(raw)
+	_mobile_web_cached = 1 if detected else 0
+	return detected
+
+## 当前是否为桌面浏览器（PC-Web）。
+static func is_desktop_web() -> bool:
+	return is_web() and not is_mobile_web()
+
+## 是否属于需要默认降档/减半密度的移动端受限渲染平台（原生移动端 + 移动浏览器；PC-Web 不在此列）。
+static func is_limited_render_platform() -> bool:
+	if _mobile_tier_sim < 0:
+		_mobile_tier_sim = 1 if OS.get_environment("PK_MOBILE_SHADER_TIER").strip_edges() != "" else 0
+	if _mobile_tier_sim == 1:
+		return true
+	return OS.has_feature("mobile") or is_mobile_web()
 
 ## 是否启用与 mobile 同套的 shader 编译期质量档（MOBILE_QUALITY_*）。
 ## Web 与 mobile 同属受限平台：auto 默认 LOW，设置里的低/中/高驱动 compile-time define。

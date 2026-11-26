@@ -33,16 +33,16 @@ extends Node
 ## 命中区不必靠视觉尺寸撑：touch_hit_button.gd 的 _has_point 已经把点击带扩到 44dp。
 ## 所以视觉下限回到 34dp，只有主菜单/暂停菜单这类主操作显式传 {"min_dp": 44}。
 const TOUCH_MIN_DP := 34.0
-## 密集数据区（热力网格方格、政策滑条行）用的次级目标（dp）。
-## [touch-size-rebalance 2026-11-02] 28dp：这些行原本只有 30~34 设计像素高，
-## 36dp 会把「一屏 30 行」压成 8 行。
+## 密集数据区（热力网格方格、自绘台账表行）用的设计像素高度目标。
+const TOUCH_DENSE_UNITS := 38.0
 const TOUCH_DENSE_DP := 28.0
-## 相邻可点控件之间至少留多少 dp 的空隙，避免「想点 A 点到 B」。
 const TOUCH_GAP_DP := 2.0
-## 滚动条宽度目标（dp）。原来的纸片滚动条约 6 设计像素（3dp），手指根本捏不住。
-## [touch-size-rebalance 2026-11-02] 32dp 在真机上是一条 42px 宽的棕色厚带
-## （玩家反馈「很诡异的滚动条」）。改成 12dp：仍够手指按住，且不再抢视觉。
-const SCROLLBAR_MIN_DP := 12.0
+## 滚动条宽度目标（dp）：手指主要靠内容区直接拖拽滚动，细滑块仅作位置指示，不抢纸面视觉。
+const SCROLLBAR_MIN_DP := 8.0
+const FORM_DESKTOP := "desktop"
+const FORM_TABLET := "tablet"
+const FORM_PHONE_LANDSCAPE := "phone_landscape"
+const SHORT_LOGICAL_HEIGHT := 860.0
 ## 记在节点上的元数据键：已经挂过 child_entered_tree 监听。
 const META_WATCH := &"pk_touch_watch"
 ## 记在控件上的元数据键：原始 custom_minimum_size（before/after 报告用）。
@@ -59,8 +59,31 @@ static func is_touch() -> bool:
 	return bool(scaling.call("is_touch_profile"))
 
 
-## 1 设计像素 = 多少 dp。缩放节点缺失时退化成 1.0（此时 44 设计像素 = 44dp，
-## 仍然远比现状的 17dp 好按，属于「宁可小一点也不能不生效」的兜底）。
+## 空间形态枚举：区分桌面、平板（>= 560dp 短边）与手机横屏（< 560dp 短边或矮逻辑视口）。
+static func form_factor(height: float = -1.0) -> String:
+	if not is_touch():
+		return FORM_DESKTOP
+	if OS.get_environment("PK_UI_FORCE_COMPACT") == "1":
+		return FORM_PHONE_LANDSCAPE
+	var scaling := _scaling()
+	if scaling != null and scaling.has_method("is_phone_landscape") \
+			and bool(scaling.call("is_phone_landscape")):
+		return FORM_PHONE_LANDSCAPE
+	var h := height
+	if h < 0.0:
+		var tree := Engine.get_main_loop() as SceneTree
+		if tree != null and tree.root != null:
+			h = tree.root.get_visible_rect().size.y
+	if h > 0.0 and h < SHORT_LOGICAL_HEIGHT:
+		return FORM_PHONE_LANDSCAPE
+	return FORM_TABLET
+
+
+static func is_phone_landscape(height: float = -1.0) -> bool:
+	return form_factor(height) == FORM_PHONE_LANDSCAPE
+
+
+## 1 设计像素 = 多少 dp。
 static func dp_per_unit() -> float:
 	var scaling := _scaling()
 	if scaling != null and scaling.has_method("dp_per_unit"):
@@ -75,50 +98,32 @@ static func units(dp: float) -> float:
 	return dp / dp_per_unit()
 
 
-## 视觉尺寸下限（设计像素）。
-##
-## [pc-fit 2026-11-17] **恒返回 0**：触摸档不再抬高任何控件的视觉尺寸。
-## 旧值 34dp ⇒ 68 设计像素塞进 custom_minimum_size，而 PC 的按钮只有 32~40，
-## 抬完比 PC 高七成；`maxf(原值, min_units())` 遍布 category_tabs / dossier_* /
-## ideology / 殖民面板等十几处，合起来就是玩家说的「按钮离奇地高、布局和 PC 对不上」。
-## 保留这个入口（而不是删掉调用点）是为了让所有调用方零改动地退回设计原值。
-static func min_units(options: Dictionary = {}) -> float:
+## 视觉尺寸下限（设计像素）：主布局控件不盲目全局撑高，保持排版比例稳定。
+static func min_units(_options: Dictionary = {}) -> float:
 	return 0.0
 
 
 ## 滚动条目标宽度（设计像素）。触摸档之外返回 0。
-## 这一条**保留**：滚动条不占主布局，加宽只影响 ScrollContainer 内部，不会破坏版式。
 static func scrollbar_units(options: Dictionary = {}) -> float:
 	return units(float(options.get("scrollbar_dp", SCROLLBAR_MIN_DP)))
 
 
-## 密集数据区的次级下限（设计像素）。同 min_units，恒返回 0。
-static func dense_units(options: Dictionary = {}) -> float:
-	return 0.0
+## 密集自绘表格/条形列表的行高下限（设计像素）。桌面档返回 0（维持原 28~30px），
+## 触摸档提升至 38 设计像素，配合宽屏黄金画布（1.5x 缩放）使单行易于点选且不撑爆列表。
+static func dense_units(_options: Dictionary = {}) -> float:
+	return TOUCH_DENSE_UNITS if is_touch() else 0.0
 
 
 ## 命中区间距（设计像素）。恒返回 0，保持容器 separation 与 PC 一致。
-static func gap_units(options: Dictionary = {}) -> float:
+static func gap_units(_options: Dictionary = {}) -> float:
 	return 0.0
 
 
-## 用长边/短边判断「手机横屏」：2670×1200@1.375 → 逻辑 1942×873。
-## 触摸档下逻辑短边 < 960（= 设计基准高度）就认为纵向空间吃紧（桌面 1600×960 是 960，
-## 但桌面 is_touch=false，所以这条分支永不影响桌面）。
-##
-## [pc-fit 2026-11-17] 阈值 1000 → 960。旧策略把手机逻辑高压到 785~873（< 1000），
-## 所以恒判「纵向吃紧」走紧凑档：工作台收起摘要卡、科技页收掉左右侧栏，
-## 于是和 PC 版式完全是两套排版 —— 玩家反馈的「排版完全错乱」有一半来自这里。
-## 现在逻辑画布恒为 1600×960（= 设计基准），纵向不再吃紧，紧凑档只在真正的
-## 小窗（< 960）才触发。
+## 手机横屏或矮逻辑视口判定：激活各工作区的紧凑头部与响应式收折。
 static func is_short_viewport(height: float = -1.0) -> bool:
 	if not is_touch():
 		return false
-	# [force-compact-qa 2026-11-02] 桌面模拟手机档时，总缩放上限 2.0 让逻辑高
-	# 压不到手机的 923，于是永远进不了 compact 版面。这个 QA 开关只用于截图核对：
-	#   PK_UI_FORCE_COMPACT=1  ⇒ 一律按"纵向吃紧"处理（等价真机 compact）。
-	# 正式包不设该变量 ⇒ 行为不变。
-	if OS.get_environment("PK_UI_FORCE_COMPACT") == "1":
+	if is_phone_landscape(height):
 		return true
 	var h := height
 	if h < 0.0:
@@ -184,9 +189,18 @@ static func apply_tree(root: Node, options: Dictionary = {}) -> int:
 ## PC 版式的等比缩放，而是另一套 —— 这才是「丑」的来源。
 ## 可点性改由**不占布局**的命中带承担：页签/整行按钮在 .tscn 里挂 touch_hit_button
 ## （_has_point 外扩，视觉不变）。需要更大命中区的地方应当显式挂，不做全局抬高。
-static func apply_control(node: Node, options: Dictionary = {}) -> bool:
+static func apply_control(node: Node, _options: Dictionary = {}) -> bool:
 	if node == null or not is_touch():
 		return false
+	if node is Label and (node as Control).theme_type_variation == &"PKDossierHeading":
+		(node as Label).add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
+		return true
+	if node is OptionButton:
+		raise_popup_items((node as OptionButton).get_popup(), units(44.0))
+		return true
+	if node is MenuButton:
+		raise_popup_items((node as MenuButton).get_popup(), units(44.0))
+		return true
 	return false
 
 
@@ -222,6 +236,11 @@ static func raise_popup_items(popup, target: float) -> void:
 static func widen_scrollbars(scroll: ScrollContainer, options: Dictionary = {}) -> void:
 	if scroll == null:
 		return
+	# 禁止触摸档常显滚动条：SHOW_ALWAYS 在内容未溢出时会把 100% 宽度的滑块画成一条横贯面板的棕色粗带。
+	if scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_SHOW_ALWAYS:
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	if scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_SHOW_ALWAYS:
+		scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	var width := scrollbar_units(options)
 	if width <= 0.0:
 		return
@@ -229,17 +248,12 @@ static func widen_scrollbars(scroll: ScrollContainer, options: Dictionary = {}) 
 	if v_bar != null:
 		if v_bar.custom_minimum_size.x < width:
 			v_bar.custom_minimum_size.x = width
-		# [scrollbar-track-off 2026-11-02] 主题给 ScrollBar 铺的纸纹"轨道"会被拉伸成
-		# 一条贯穿面板的浅棕色宽带（真机反馈"很诡异的滚动条"）。触摸档只保留滑块，
-		# 轨道置空；滚动仍然可用（拖动滑块 + 内容区拖动）。
 		v_bar.add_theme_stylebox_override("scroll", StyleBoxEmpty.new())
 	var h_bar := scroll.get_h_scroll_bar()
 	if h_bar != null:
 		if h_bar.custom_minimum_size.y < width:
 			h_bar.custom_minimum_size.y = width
 		h_bar.add_theme_stylebox_override("scroll", StyleBoxEmpty.new())
-	# 触摸拖动：ScrollContainer 只有在 deadzone 为 0 时才把第一下拖动判成滚动，
-	# 否则会先等「是不是点击」。手指没有 hover，等不起。
 	if scroll.scroll_deadzone > 4.0:
 		scroll.scroll_deadzone = 4.0
 

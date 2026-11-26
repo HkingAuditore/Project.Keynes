@@ -35,6 +35,11 @@ var _frames: Array = []
 var _answers: Array[Dictionary] = []
 var _draw_times: Array[int] = []
 var _draw_lag_days: Array[int] = []
+var _map_draw_times: Array[int] = []
+var _map_draw_lag_days: Array[int] = []
+var _map_viewport: SubViewport
+var _map_draw_count := 0
+var _panel_feedback: FrameTimings.PanelFeedback
 var _draw_count := 0
 var _view_updates := 0
 var _overload := false
@@ -73,6 +78,10 @@ func _run() -> void:
 		return
 	if args.has("--exercise-display") and (not require_rendered or not _overload or fps_mode != "60"):
 		push_error("--exercise-display requires --require-rendered, --overload and --fps=60")
+		quit(1)
+		return
+	if args.has("--panel-clicks") and (not require_rendered or target < 75 or not answer_story):
+		push_error("--panel-clicks requires --require-rendered, --through of at least 75 days and --answer-story")
 		quit(1)
 		return
 	var driver := RenderingServer.get_current_rendering_driver_name()
@@ -124,6 +133,12 @@ func _run() -> void:
 	_camera_zoom = _camera.zoom
 	_reset_camera()
 	_controller = scene.get_node("PlayerController")
+	_map_viewport = scene.get_node_or_null("MapViewport")
+	if _map_viewport != null:
+		_map_draw_count = int(_map_viewport.get("draw_count"))
+	if args.has("--panel-clicks"):
+		_panel_feedback = FrameTimings.PanelFeedback.new()
+		_panel_feedback.attach(scene)
 	# The same probe also measures older checkouts where UI and map shared a signal.
 	var ui_updates := Signal(_host, &"simulation_ui_updated") if _host.has_signal(&"simulation_ui_updated") else _host.simulation_view_updated
 	var ui_connections := ui_updates.get_connections()
@@ -161,7 +176,7 @@ func _run() -> void:
 		"vsync": DisplayServer.window_get_vsync_mode(), "quality": graphics.render_quality,
 		"graphics": graphics, "fps_mode": fps_mode, "overload": _overload,
 		"renderer": RenderingServer.get_current_rendering_method(), "driver": driver, "start_day": start,
-		"command_log": COMMAND_LOG if _check_commands else []}))
+		"command_log": COMMAND_LOG if _check_commands else [], "panel_clicks": _panel_feedback != null}))
 	if rendered:
 		RenderingServer.frame_post_draw.connect(_record_draw)
 	_host.execute_gm_command("time.speed", {"value": speed})
@@ -175,6 +190,8 @@ func _run() -> void:
 		condition = "probe_command_receipt_mismatch"
 	if _display_checks != null and condition == "target":
 		condition = _display_checks.result()
+	if _panel_feedback != null and not _panel_feedback.complete() and condition == "target":
+		condition = "missing_panel_feedback"
 	_clock.pause(true)
 	_clock._runtime_calendar_admit = _admit_day
 	_host.simulation_view_updated.disconnect(_record_view)
@@ -274,9 +291,19 @@ func _record_days(records: Array) -> void:
 
 
 func _record_draw() -> void:
-	_draw_times.append(Time.get_ticks_usec())
+	var now := Time.get_ticks_usec()
+	_draw_times.append(now)
 	var committed := int(_generator.get_runtime_control_state().get("simulation_committed_day", -1))
 	_draw_lag_days.append(maxi(0, committed - maxi(0, _host.presented_worker_day())))
+	if _map_viewport != null:
+		var map_draw_count := int(_map_viewport.get("draw_count"))
+		var drawn = _camera.get("drawn_frame")
+		if map_draw_count != _map_draw_count and drawn != null and drawn.valid:
+			_map_draw_count = map_draw_count
+			_map_draw_times.append(now)
+			_map_draw_lag_days.append(maxi(0, committed - maxi(0, drawn.day)))
+	if _panel_feedback != null and DisplayServer.window_can_draw():
+		_panel_feedback.observe_draw(now)
 	_draw_count += 1
 	if _display_checks != null:
 		_display_checks.check_draw(_host.presented_worker_day())
@@ -342,6 +369,8 @@ func _capture(target: int, answer_story: bool) -> String:
 		var frame := {"usec": now, "frame_usec": now - previous_frame, "draw_times": _draw_times,
 			"window_drawable": window_drawable and window_drawable_now,
 			"draw_lag_days": _draw_lag_days, "view_updates": _view_updates,
+			"map_draw_times": _map_draw_times, "map_draw_lag_days": _map_draw_lag_days,
+			"panel_feedback": _panel_feedback.take() if _panel_feedback != null else [],
 			"presented": _host.presented_worker_day(), "effective_max_fps": Engine.max_fps,
 			"overload_us": _overload_us,
 			"sample_usec": Time.get_ticks_usec() - now, "display": _clock.day_index(),
@@ -364,6 +393,8 @@ func _capture(target: int, answer_story: bool) -> String:
 		_frames.append(frame)
 		_draw_times = []
 		_draw_lag_days = []
+		_map_draw_times = []
+		_map_draw_lag_days = []
 		_view_updates = 0
 		_request = -1
 		_admit_usec = 0
@@ -397,6 +428,8 @@ func _capture(target: int, answer_story: bool) -> String:
 			return "target"
 		if now - last_progress >= WATCHDOG_USEC:
 			return "unexplained_stall"
+		if _panel_feedback != null:
+			_panel_feedback.step(consumed, root)
 		_apply_overload(consumed)
 	return "unreachable"
 

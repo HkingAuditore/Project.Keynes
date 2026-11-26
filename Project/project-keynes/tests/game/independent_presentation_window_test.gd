@@ -2,6 +2,7 @@ extends "res://tests/game/player_scene_handoff_probe.gd"
 
 ## Pixel readback is intentional here. The performance runs use the unmodified
 ## player handoff probe and never read back the offscreen texture.
+const TEST_FPS := 60
 var failures: Array[String] = []
 var ui_days: Array[int] = []
 
@@ -14,9 +15,13 @@ func _run() -> void:
 	root.always_on_top = true
 	root.grab_focus()
 	var settings := root.get_node("GameSettings")
-	settings.update({"window_mode": "windowed", "resolution_width": 1600,
+	var window_settings := {"window_mode": "windowed", "resolution_width": 1600,
 		"resolution_height": 960, "vsync": true, "render_quality": "high",
-		"autosave_enabled": false, "ai_narrative_enabled": false}, false)
+		"autosave_enabled": false, "ai_narrative_enabled": false}
+	window_settings.merge(GraphicsSettings.resolve(window_settings, OS.has_feature("mobile")), true)
+	window_settings.graphics_custom = true
+	window_settings.frame_rate_limit = TEST_FPS
+	settings.update(window_settings, false)
 	var config := NewGameConfig.new()
 	config.apply_land_layout(NewGameConfig.DEFAULT_LAND_LAYOUT)
 	config.base.map_width = WIDTH
@@ -42,16 +47,21 @@ func _run() -> void:
 		await RenderingServer.frame_post_draw
 	check(target.find_world_2d() != root.find_world_2d(), "world draws only in the map viewport")
 	check(target.size == Vector2i(1600, 960), "map uses the full configured drawing size")
+	check(Engine.max_fps == TEST_FPS, "the window uses the 60 fps map budget")
+	_host.publication_reader.interval_usec = 100000
+	_host.execute_gm_command("time.speed", {"value": 5})
+	if not await wait_for_received_day(1, func(): return _camera.drawn_frame.day >= 1):
+		finish()
+		return
+	_clock.pause(true)
 	_host.simulation_ui_updated.connect(func(_from, day, _generation): ui_days.append(day))
 	_host.simulation_day_records.connect(_record_days)
+	_timings.attach(_host)
 	var start_day := _host.received_worker_day()
 	var command: Dictionary = COMMAND_LOG[0].duplicate()
 	command.requested_day = maxi(0, start_day) + 2
 	var receipt: Dictionary = _host.generator().get_data_core_world_ext().submit_runtime_command(command)
 	check(receipt.get("admitted", receipt.get("ok", false)), "production command admitted")
-	_host.publication_reader.interval_usec = 100000
-	_host.execute_gm_command("time.speed", {"value": 10})
-	_clock.pause(false)
 	var frozen_day: int = _camera.drawn_frame.day
 	var frozen_transform := _camera.drawn_frame.transform
 	var sample := ui.map_safe_area().get_center()
@@ -68,7 +78,16 @@ func _run() -> void:
 	target.draw_enabled = false
 	var date_before: String = top._date_label.text
 	var receipt_seen := false
-	await wait_for_received_day(int(receipt.effective_day) + 1)
+	# The host has already marked the start of each frame when this runs.
+	var occupy_frame := func(): OS.delay_usec(roundi(1_000_000.0 / TEST_FPS))
+	process_frame.connect(occupy_frame)
+	_clock.pause(false)
+	var arrived := await wait_for_received_day(int(receipt.effective_day) + 1)
+	process_frame.disconnect(occupy_frame)
+	_clock.pause(true)
+	if not arrived:
+		finish()
+		return
 	for row in _day_rows:
 		for result in row.receipts:
 			if int(result.request_id) == int(command.request_id):
@@ -76,6 +95,15 @@ func _run() -> void:
 				check(int(row.day) == int(receipt.effective_day), "receipt arrived on its sealed day")
 	check(receipt_seen, "command receipt arrives while map is held")
 	check(not ui_days.is_empty() and date_before != top._date_label.text, "date updates on the held map")
+	var busy := _timings.take()
+	check(busy.received_batches > 0 and busy.map_copies.is_empty() and target.draw_count == count,
+		"busy window frames receive results without reading the map")
+	var held_day := _host.received_worker_day()
+	if not await wait_for_received_day(held_day, func(): return target._frame.staged_day >= held_day):
+		finish()
+		return
+	check(not _timings.take().map_copies.is_empty() and target.draw_count == count,
+		"the map stages its latest textures when the budget allows while drawing stays held")
 	var old_camera_pos := _camera.position
 	var old_zoom := _camera.zoom
 	push_button(MOUSE_BUTTON_RIGHT, sample, true)
@@ -101,6 +129,10 @@ func _run() -> void:
 	check(clicked_cell != null and ui._right_panel.visible and ui._right_panel._cell_index == clicked_cell.index,
 		"frozen map click opens the matching cell inspector")
 	check(ui._right_panel._model.get("tabs", []).is_empty(), "frozen cell summary excludes unpublished details")
+	if clicked_cell != null:
+		var unexplored: bool = _camera.drawn_frame.explored[clicked_cell.index] == 0
+		check((ui._right_panel._model.header.title == "未探索区域") == unexplored,
+			"frozen inspector uses the exploration knowledge in the drawn picture")
 	ui.toggle_pause_menu()
 	await RenderingServer.frame_post_draw
 	await RenderingServer.frame_post_draw
@@ -115,12 +147,15 @@ func _run() -> void:
 	_host._presentation.ui_refresh_enabled = false
 	target.draw_enabled = true
 	_clock.pause(false)
-	var resume_day := _host.received_worker_day()
-	await wait_for_received_day(resume_day + 2)
+	var resume_day := _host.received_worker_day() + 2
+	if not await wait_for_received_day(resume_day, func(): return _camera.drawn_frame.day >= resume_day):
+		finish()
+		return
 	check(target.draw_count > count and ui_days.size() == notifications, "map draws while ordinary UI is held")
 	check(top._date_label.text == held_ui_date, "ordinary date stays held")
 	check(texture_before.get_data() != target.get_texture().get_image().get_data(), "next map contains new pixels")
 	check(not frozen_world.is_equal_approx(_camera.safe_screen_to_world(sample)), "hit follows the newly drawn camera")
+	check(not ui._cell_panel._waiting_for_drawn_cell, "new map draw releases the inspector's detail query")
 	_host._presentation.ui_refresh_enabled = true
 	await RenderingServer.frame_post_draw
 	check(ui_days.back() == _host.received_worker_day(), "UI catches up to the latest received batch")
@@ -143,6 +178,10 @@ func _run() -> void:
 	var closed: Dictionary = await _host.close_world()
 	check(closed.get("ok", false) and MapDrawnFrame.for_map(old_map) == null and not image.visible,
 		"closing the world detaches the cached picture")
+	finish()
+
+
+func finish() -> void:
 	for item in failures:
 		printerr(item)
 	print("INDEPENDENT_WINDOW=", JSON.stringify({"failures": failures, "ui_days": ui_days,
@@ -150,14 +189,22 @@ func _run() -> void:
 	quit(0 if failures.is_empty() else 1)
 
 
-func wait_for_received_day(day: int) -> void:
-	# The normal player process owns receipt delivery, including its polling interval.
+func wait_for_received_day(day: int, map_ready: Callable = Callable()) -> bool:
 	var generator := _host.generator()
-	while int(generator.get_runtime_control_state().get("simulation_committed_day", -1)) < day or _host.received_worker_day() < day:
+	var started := Time.get_ticks_usec()
+	while true:
+		var committed := int(generator.get_runtime_control_state().get("simulation_committed_day", -1))
+		var received := _host.received_worker_day()
 		if _host.is_runtime_fault_paused():
 			check(false, "runtime fault waiting for day %d" % day)
-			return
-		await RenderingServer.frame_post_draw
+			return false
+		if committed >= day and received >= day and (not map_ready.is_valid() or map_ready.call()):
+			return true
+		if Time.get_ticks_usec() - started >= WATCHDOG_USEC:
+			check(false, "window wait for day %d timed out: committed=%d received=%d" % [day, committed, received])
+			return false
+		await process_frame
+	return false
 
 
 func check_reloaded_world(previous: PlayerGame) -> void:

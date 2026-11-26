@@ -4,13 +4,20 @@ extends DossierPage
 ## 下方接全国进出口（贸易差额 / 伙伴 / 物资账簿）——市场按范围取数，贸易恒为全国口径。
 ## 价格走势只在本页打开期间按结算日采样，保存在页面本地，不进存档。
 
+const TouchUI := preload("res://scripts/ui/touch_ui.gd")
 const PRICE_CAPACITY := 120
 
 var _selected := ""
+var _mobile_subtab := "supply"
+var _has_market_cells := true
 var _price_history: Dictionary = {}
 var _history_scope := -3
 var _history_day := -1
 
+@onready var _mobile_tabs: HBoxContainer = %MobileSectionTabs
+@onready var _tab_supply: Button = %TabSupply
+@onready var _tab_trade: Button = %TabTrade
+@onready var _header: Control = %Header
 @onready var _body: GridContainer = %Body
 @onready var _count_label: Label = %CountLabel
 @onready var _grid: DossierHeatGrid = %HeatGrid
@@ -30,17 +37,58 @@ func _ready() -> void:
 	_stats.label_width = 72.0
 	_stats.value_width = 76.0
 	_price_card.show_divider = false
+	if _tab_supply != null:
+		_tab_supply.pressed.connect(_set_mobile_subtab.bind("supply"))
+	if _tab_trade != null:
+		_tab_trade.pressed.connect(_set_mobile_subtab.bind("trade"))
+	_sync_mobile_subtabs()
+
+
+func _set_mobile_subtab(subtab: String) -> void:
+	if _mobile_subtab == subtab:
+		return
+	_mobile_subtab = subtab
+	_sync_mobile_subtabs()
+
+
+func _sync_mobile_subtabs() -> void:
+	var split_tabs := TouchUI.is_phone_landscape()
+	if _mobile_tabs != null:
+		_mobile_tabs.visible = split_tabs
+	if not split_tabs:
+		if _header != null:
+			_header.visible = true
+		_body.visible = _has_market_cells
+		_trade_kicker.visible = true
+		_trade.visible = true
+		return
+	var show_supply := _mobile_subtab != "trade"
+	if _tab_supply != null:
+		_tab_supply.theme_type_variation = &"PKPrimaryButton" if show_supply else &"PKIconButton"
+	if _tab_trade != null:
+		_tab_trade.theme_type_variation = &"PKPrimaryButton" if not show_supply else &"PKIconButton"
+	if _header != null:
+		_header.visible = show_supply
+	_body.visible = show_supply and _has_market_cells
+	_empty.visible = show_supply and not _has_market_cells
+	_trade_kicker.visible = not show_supply
+	_trade.visible = not show_supply
 
 
 func focus_item(item) -> void:
+	_mobile_subtab = "supply"
+	_sync_mobile_subtabs()
 	_selected = String(item)
 
 
 ## 共用的页内锚点：卡点跳转落到「全国进出口」一段时，外壳拿这个偏移去滚动视口。
-## 锚在小标题而不是区段本体上，否则跳过去第一眼是内容、看不到自己落在哪一段。
 func section_offset(section: String) -> float:
-	if section == "trade" and _trade_kicker != null:
-		return _trade_kicker.position.y
+	if section == "trade":
+		if TouchUI.is_phone_landscape():
+			_set_mobile_subtab("trade")
+			return 0.0
+		if _trade_kicker != null:
+			return _trade_kicker.position.y
 	return 0.0
 
 
@@ -57,6 +105,7 @@ func _refresh_market(vm: EconomyDossierViewModel, filter = null) -> void:
 		_show_empty(_empty, _grid, String(model.get("reason", "")))
 		return
 	var cells: Array = model.cells
+	_has_market_cells = not cells.is_empty()
 	_show_empty(_empty, _grid, "")
 	_sample_prices(vm, cells)
 	var selected: Dictionary = {}
@@ -76,6 +125,7 @@ func _refresh_market(vm: EconomyDossierViewModel, filter = null) -> void:
 	_grid.selected_id = _selected
 	_grid.set_cells(model.groups, cells)
 	_refresh_detail(selected)
+	_sync_mobile_subtabs()
 
 
 ## 默认选中最值得关注的物资：短缺优先，其次是积压。

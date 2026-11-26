@@ -89,7 +89,7 @@ static func _refresh_resident_chunks(layer: BuildingVisualLayer) -> void:
 	if layer._camera_zoom < 0.46:
 		layer._clear_chunks()
 		return
-	var limit := BuildingVisualLayer.MAX_RESIDENT_WEB if OS.has_feature("web") else BuildingVisualLayer.MAX_RESIDENT_DESKTOP
+	var limit := BuildingVisualLayer.MAX_RESIDENT_WEB if DCFeatureFlags.is_mobile_web() else BuildingVisualLayer.MAX_RESIDENT_DESKTOP
 	var ordered: PackedInt32Array = layer._visual_cache.chunks_in_rect(
 		layer._camera_rect.grow(layer._hex_size * 18.0), layer._camera_center, limit)
 	var wanted := {}
@@ -154,7 +154,7 @@ static func _upload_chunk_buffers(layer: BuildingVisualLayer, chunk_id: int) -> 
 			decal_buffer, decal_count, null, BuildingVisualLayer.Z_BAND_DECAL, BuildingVisualLayer.FogDrawBounds.Kind.BUILDING_DECAL)
 	else:
 		layer._drop_batch(nodes, "decal")
-	if detailed and not OS.has_feature("web"):
+	if detailed and not DCFeatureFlags.is_mobile_web():
 		# 投影必须留在贴花那一层（贴着地面、压在建筑主体之下）。跟着 body 一起
 		# 抬到 2 会让深色壳体刷在屋顶上。
 		layer._put_batch(nodes, "shadow", "Shadow", layer._shadow_material,

@@ -37,7 +37,9 @@ static func _web_weather_layer_draw_allowed(host) -> bool:
 		return true
 	if not host.PK_WEB_ENABLE_WEATHER_LAYER:
 		return false
-	return host.visual_quality >= 2 or host._mobile_quality_tier_define == "MOBILE_QUALITY_HIGH"
+	var q: int = host._weather_layer._weather_quality() if host._weather_layer != null else host.visual_quality
+	var min_q: int = 2 if DCFeatureFlags.is_mobile_web() else 1
+	return q >= min_q or host._mobile_quality_tier_define == "MOBILE_QUALITY_HIGH"
 
 
 ## 上一次推给天气层的门状态（只用于首帧/切档时打一行诊断）。
@@ -638,6 +640,10 @@ static func web_map_web_prefix_active() -> String:
 
 static func web_warmup_program_prefixes() -> Dictionary:
 	return ShaderVariants.web_warmup_program_prefixes()
+
+
+static func web_pc_high_boot_enabled() -> bool:
+	return ShaderVariants.web_pc_high_boot_enabled()
 
 
 static func _web_pc_high_active(host) -> bool:

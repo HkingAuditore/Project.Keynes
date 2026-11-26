@@ -13,6 +13,7 @@ class_name WorldClock
 extends Node
 
 const FrameAdvance = preload("res://scripts/geography/world_clock_frame_advance.gd")
+const EconomyGate = preload("res://scripts/geography/world_clock_economy_gate.gd")
 const WorldDayCostProbe = preload("res://scripts/diagnostics/world_day_cost_probe.gd")
 var _day_cost_probe = WorldDayCostProbe.new()
 
@@ -136,6 +137,7 @@ var _runtime_calendar_admit: Callable
 var _runtime_calendar_through := -1
 var _runtime_calendar_fraction := 0.0
 var _publishing_runtime_date := false
+var _economy_gate := EconomyGate.new()
 
 # 任务 2：上次发射 day_phase_changed 时的 phase 值，用于节流判定。
 # -1.0 是哨兵值，表示"从来没发射过"，第一次 _process 必发。
@@ -369,6 +371,18 @@ func publish_runtime_date(committed: int) -> void:
 	FrameAdvance.publish_runtime_date(self, committed)
 
 
+func set_economy_settled_day(day: int) -> void:
+	_economy_gate.observe(day, day_index(), speed_multiplier)
+
+func reset_economy_settled_day() -> void:
+	_economy_gate.reset()
+
+func set_economy_gate_force_open(enabled: bool) -> void:
+	_economy_gate.set_force_open(enabled)
+
+func is_economy_gate_blocked() -> bool:
+	return _economy_gate.is_blocked()
+
 func _process_runtime_calendar(delta: float) -> void:
 	FrameAdvance._process_runtime_calendar(self, delta)
 
@@ -462,17 +476,7 @@ func set_visual_shader_days_per_year(value: float) -> void:
 
 
 func _advance_visual_day_phase(delta: float) -> void:
-	# 钉住时不推进、不发信号，避免实时晨昏线把 GM 太阳预览冲掉。
-	if visual_day_phase_held:
-		return
-	if visual_tod_follow_speed:
-		var year_days := float(days_per_year())
-		var year_progress := current_day / year_days
-		visual_day_phase = fposmod(0.25 + year_progress * _visual_shader_days_per_year, 1.0)
-	else:
-		var period: float = maxf(visual_daylen_seconds, 1.0)
-		visual_day_phase = fposmod(visual_day_phase + delta / period, 1.0)
-	visual_day_phase_changed.emit(visual_day_phase)
+	FrameAdvance._advance_visual_day_phase(self, delta)
 
 
 func hold_visual_day_phase(phase: float) -> void:
@@ -499,25 +503,12 @@ func hour_of_day() -> int:
 	return int(floor(fposmod(visual_day_phase - 0.75, 1.0) * 24.0)) % 24
 
 # 任务 2：节流判定——默认每帧发射；当 day_phase_emit_step > 0 时，
-# 累计变化 ≥ step 才发射。特別处理：phase 跳回 0 的跈变，应视为"必发"以避免突变时错过。
 func _should_emit_day_phase(dp: float) -> bool:
-	if _last_emit_day_phase < 0.0:
-		return true
-	if day_phase_emit_step <= 0.0:
-		return true
-	var diff: float = absf(dp - _last_emit_day_phase)
-	# 跳回的临界情况：上次 0.99 + 这次 0.01，diff=0.98，仍会大于 step，正常发射
-	return diff >= day_phase_emit_step
+	return FrameAdvance._should_emit_day_phase(self, dp)
 
 # Fast-tick perf opt (D)：season_phase 节流判定，语义同上。
-# season_phase ∈ [0, 4)，回绕临界情况同样会 diff 很大，自动通过阈值。
 func _should_emit_season_phase(sp: float) -> bool:
-	if _last_emit_season_phase < 0.0:
-		return true
-	if season_phase_emit_step <= 0.0:
-		return true
-	var diff: float = absf(sp - _last_emit_season_phase)
-	return diff >= season_phase_emit_step
+	return FrameAdvance._should_emit_season_phase(self, sp)
 
 func season_name(idx: int) -> String:
 	match idx:
@@ -685,6 +676,8 @@ func restore_state(state: Dictionary) -> Dictionary:
 	visual_day_phase = fposmod(float(state.get("visual_day_phase", 0.25)), 1.0)
 	visual_day_phase_held = false
 	_last_day = int(state.get("last_day", int(floor(current_day))))
+	# 读档后经济日与时钟同时回退，需要清空旧世界的经济日缓存。
+	reset_economy_settled_day()
 	_last_season = int(state.get("last_season", season_index_for_day(_last_day)))
 	_last_year = int(state.get("last_year", year_index_for_day(_last_day)))
 	_apply_phase_step_for_speed(speed_multiplier)

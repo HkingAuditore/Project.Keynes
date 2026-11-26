@@ -67,36 +67,36 @@ const ERA_LABELS := {
 	"steam": "蒸汽时代", "electrical": "电气时代", "atomic": "原子时代",
 	"information": "信息时代", "intelligent": "智能时代",
 }
-## 24 条产品线 + 4 条 backbone：technology_layout_lanes 里的原样取值。
+## 24 条产品线 + 4 条 backbone 在税收面板里的精简分类名（与科技树长说明名解耦）。
 const FAMILY_LABELS := {
-	"branch.maize_horticulture": "玉米与园圃农业",
-	"branch.wheat_rainfed": "小麦、谷物与雨养农业",
-	"branch.rice_irrigation": "水稻、水田与灌溉农业",
-	"branch.tuber_highland": "块茎、梯田与高地农业",
-	"branch.pastoral_livestock": "草原、马匹与畜牧业",
-	"branch.tropical_commodities": "热带作物与商品农业",
-	"branch.forest_biomass": "森林、木材、造纸与生物质",
-	"branch.maritime_logistics": "渔业、航海、港口与海运物流",
-	"branch.textile_fibers": "纤维、纺织、服装与合成纤维",
-	"branch.construction_materials": "黏土、石材、玻璃、建筑与公共工程",
-	"branch.nonferrous_metals": "铜、锡、有色金属与特种合金",
-	"branch.heavy_industry": "铁、煤、矿井、蒸汽与重工业",
-	"branch.industrial_chemistry": "盐、硫、肥料、炸药与工业化学",
-	"branch.petroleum_materials": "石油、内燃机、石化与合成材料",
-	"branch.water_wind": "水力、风力、水务与流域工程",
-	"branch.electric_intelligent_energy": "电力、核能、电网与智能能源",
-	"branch.land_institutions": "土地产权、租佃与乡村制度",
-	"branch.commerce_finance": "商业、金融、会计与公司组织",
-	"branch.labor_management": "劳工、管理与生产组织",
-	"branch.measurement_instruments": "测量、标准化与精密仪器",
-	"branch.natural_history": "自然史、生物学与育种科学",
-	"branch.public_health": "医学、卫生与公共健康",
-	"branch.geoscience_gis": "制图、地学、遥感与空间分析",
-	"branch.computation_control": "计算、控制、网络与机器智能",
-	"backbone.food_storage": "食物、保存与公共储备",
-	"backbone.tools_machinery": "工具、机械与自动控制",
-	"backbone.knowledge_computation": "观察、科学与计算",
-	"backbone.institutions_exchange": "制度、交换与组织",
+	"branch.maize_horticulture": "园艺农业",
+	"branch.wheat_rainfed": "旱作农业",
+	"branch.rice_irrigation": "水田农业",
+	"branch.tuber_highland": "高地农业",
+	"branch.pastoral_livestock": "畜牧业",
+	"branch.tropical_commodities": "经济作物",
+	"branch.forest_biomass": "林业与造纸",
+	"branch.maritime_logistics": "渔业与航运",
+	"branch.textile_fibers": "纺织服装",
+	"branch.construction_materials": "建材与建筑",
+	"branch.nonferrous_metals": "有色金属",
+	"branch.heavy_industry": "重工业",
+	"branch.industrial_chemistry": "化工业",
+	"branch.petroleum_materials": "石化业",
+	"branch.water_wind": "水利风能",
+	"branch.electric_intelligent_energy": "电力能源",
+	"branch.land_institutions": "土地制度",
+	"branch.commerce_finance": "商贸金融",
+	"branch.labor_management": "劳工管理",
+	"branch.measurement_instruments": "精密仪器",
+	"branch.natural_history": "生物育种",
+	"branch.public_health": "医疗卫生",
+	"branch.geoscience_gis": "测绘地学",
+	"branch.computation_control": "计算与控制",
+	"backbone.food_storage": "食品业",
+	"backbone.tools_machinery": "工具机械",
+	"backbone.knowledge_computation": "科学与知识",
+	"backbone.institutions_exchange": "制度与交换",
 }
 const SECTOR_LABELS := {
 	"agriculture": "农业", "extractive": "采掘", "manufacturing": "制造",
@@ -105,16 +105,17 @@ const SECTOR_LABELS := {
 }
 const PROFESSION_CLASS_LABELS := {
 	"farmer": "农民", "worker": "工人", "technology": "技术与学者",
-	"military": "军事", "owner": "商业与业主", "unemployed": "未就业",
-	"general": "其他",
+	"military": "军事", "commerce": "商业", "small_owner": "小业主",
+	"major_owner": "大业主", "unemployed": "未就业", "general": "其他",
 }
 ## 商业与流通职业（如商人兼任矿场业主时，不能因矿场数量多而被归入采掘业）。
 const COMMERCE_PROFESSION_IDS := {
 	"merchant": true, "ship_officer": true, "transport_worker": true,
 }
-const OWNER_PROFESSION_IDS := {
-	"merchant": true, "landlord": true, "industrialist": true,
-	"guild_master": true, "manager": true, "ship_officer": true,
+const PROFESSION_CLASS_OVERRIDES := {
+	"landlord": "major_owner", "industrialist": "major_owner",
+	"guild_master": "small_owner", "manager": "small_owner",
+	"merchant": "commerce", "ship_officer": "commerce",
 }
 const LAYER_RAW := "raw"
 const LAYER_INTERMEDIATE := "intermediate"
@@ -133,6 +134,8 @@ const NO_OUTPUT_GROUP := "no_output"
 ## 镜像与数据是否逐字一致由探针核对——两侧都不自己编名字。
 const TechnologyCatalogScript := preload(
 	"res://scripts/economy/technology_catalog.gd")
+const TaxGoodCategoryMapScript := preload(
+	"res://scripts/country/tax_good_category_map.gd")
 static var _era_labels_cache: Dictionary = {}
 static var _family_labels_cache: Dictionary = {}
 
@@ -155,20 +158,19 @@ static func era_label_map() -> Dictionary:
 	return out
 
 
-## 产品线 id → 中文名：24 条 branch.* + 4 条 backbone.* 全带 display_name。
+## 产品线 id → 税收精简中文名：优先使用 FAMILY_LABELS 简称，未收录的新产品线才回落到科技树 display_name。
 static func family_label_map() -> Dictionary:
 	if not _family_labels_cache.is_empty():
 		return _family_labels_cache
 	var out := {}
+	for family_id in FAMILY_LABELS.keys():
+		out[String(family_id)] = String(FAMILY_LABELS[family_id])
 	for row_value in TechnologyCatalogScript.public_lane_metadata():
 		var row: Dictionary = row_value
 		var id := String(row.get("id", ""))
 		var name := String(row.get("display_name", ""))
-		if not id.is_empty() and not name.is_empty():
+		if not id.is_empty() and not name.is_empty() and not out.has(id):
 			out[id] = name
-	for family_id in FAMILY_LABELS.keys():
-		if not out.has(String(family_id)):
-			out[String(family_id)] = String(FAMILY_LABELS[family_id])
 	_family_labels_cache = out
 	return out
 
@@ -190,6 +192,7 @@ const AXIS_BRANCH_FAMILY := "branch_family"
 const AXIS_SECTOR := "sector"
 const AXIS_MATURITY_RANK := "maturity_rank"
 const AXIS_LAYER := "layer"
+const AXIS_GOOD_CATEGORY := "good_category"
 const AXIS_PROFESSION_CLASS := "profession_class"
 
 ## 面板轴的展示清单：总面板（economy_workspace.gd 的 _tax_group_axes_for_page）
@@ -211,6 +214,8 @@ const SUBJECT_AXES := {
 	SUBJECT_GOOD: [
 		{"id": AXIS_LAYER, "label": "按产品性质",
 			"hint": "原材料 / 中间品 / 制成品"},
+		{"id": AXIS_GOOD_CATEGORY, "label": "按商品大类",
+			"hint": "主粮蔬果 / 肉类水产 / 加工食品 / 纺织服饰 / 矿产能源 / 军工等"},
 		{"id": AXIS_ERA, "label": "按时代",
 			"hint": "这种货最早能造出来的时代"},
 		{"id": AXIS_BRANCH_FAMILY, "label": "按产品线",
@@ -220,7 +225,7 @@ const SUBJECT_AXES := {
 	],
 	SUBJECT_PROFESSION: [
 		{"id": AXIS_PROFESSION_CLASS, "label": "按阶层",
-			"hint": "农民 / 工人 / 技术 / 军事；缺字段的归未分类"},
+			"hint": "农民 / 工人 / 技术 / 军事 / 商业 / 小业主 / 大业主"},
 		{"id": AXIS_SECTOR, "label": "按产业",
 			"hint": "按雇主建筑的主导产业"},
 	],
@@ -488,10 +493,16 @@ static func _good_axis(catalog: Dictionary, axis: String) -> Dictionary:
 		labels = era_label_map() if axis == "era" else family_label_map()
 	elif axis == "layer":
 		labels = LAYER_LABELS
+	elif axis == AXIS_GOOD_CATEGORY:
+		labels = TaxGoodCategoryMapScript.GROUP_LABELS
 	elif axis == "sector":
 		labels = SECTOR_LABELS
 	else:
 		return {"ok": false, "reason": "unknown_tax_good_axis: %s" % axis}
+	var good_categories: PackedStringArray = catalog.get(
+		"good_category_ids", PackedStringArray())
+	if axis == AXIS_GOOD_CATEGORY and good_categories.size() != ids.size():
+		return {"ok": false, "reason": "tax_axis_good_category_column_mismatch"}
 	var consumers := _good_consumer_set(catalog) if axis == "layer" else {}
 	var keys := PackedStringArray()
 	keys.resize(ids.size())
@@ -500,6 +511,9 @@ static func _good_axis(catalog: Dictionary, axis: String) -> Dictionary:
 		match axis:
 			"layer":
 				keys[good] = _good_layer(catalog, good, producers, consumers, sectors)
+			AXIS_GOOD_CATEGORY:
+				keys[good] = TaxGoodCategoryMapScript.group_for_category(
+					String(good_categories[good]))
 			"era":
 				# 物资「最早能造出来」的那一档：只要有任意一座生产建筑先出现，
 				# 这种货就存在了，所以取最早，而不是最晚。
@@ -610,8 +624,8 @@ static func _profession_axis(catalog: Dictionary, axis: String) -> Dictionary:
 				var cls := String(classes[i])
 				if pid == "unemployed":
 					keys[i] = "unemployed"
-				elif (cls.is_empty() or cls == "general") and OWNER_PROFESSION_IDS.has(pid):
-					keys[i] = "owner"
+				elif (cls.is_empty() or cls == "general") and PROFESSION_CLASS_OVERRIDES.has(pid):
+					keys[i] = String(PROFESSION_CLASS_OVERRIDES[pid])
 				else:
 					keys[i] = cls
 			return _group_from_keys(SUBJECT_PROFESSION, axis, ids, keys,

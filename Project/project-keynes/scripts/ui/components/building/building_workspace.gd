@@ -16,6 +16,7 @@ signal build_requested(request: Dictionary)
 ## 折叠卡被展开/收起：由宿主切换视图模型的展开状态并重算本页。
 signal fold_action_requested(action: Dictionary)
 
+const TouchUI := preload("res://scripts/ui/touch_ui.gd")
 const RowScene := preload("res://scenes/ui/building_option_row.tscn")
 const HoverCardScene := preload("res://scenes/ui/building_hover_card.tscn")
 ## 点击后短暂禁用同一行：只防手抖重复下单，不阻止「今天连排两座」。
@@ -78,6 +79,10 @@ func _ready() -> void:
 	_search.text_submitted.connect(_on_search_submitted)
 	_prev_button.pressed.connect(_on_prev_pressed)
 	_next_button.pressed.connect(_on_next_pressed)
+	if _scroll != null and _scroll.get_v_scroll_bar() != null:
+		_scroll.get_v_scroll_bar().value_changed.connect(func(_v: float) -> void:
+			if TouchUI.is_touch():
+				_on_row_hover_ended())
 	if not _model.is_empty():
 		_apply_model()
 
@@ -264,8 +269,12 @@ func _build_rows(items: Array) -> void:
 func _on_row_hover_started(row_data: Dictionary, source: Control) -> void:
 	if _hover_card == null or not visible:
 		return
-	_hovered_row_id = _row_key_of(row_data)
-	_hover_card.show_for(row_data, source, self)
+	var key := _row_key_of(row_data)
+	if TouchUI.is_touch() and _hover_card.visible and _hovered_row_id == key:
+		_on_row_hover_ended()
+		return
+	_hovered_row_id = key
+	_hover_card.show_for(row_data, source, self, TouchUI.is_touch())
 
 
 ## 折叠卡与它的变体可能共用 building_id，所以列表索引用 row_key 优先。

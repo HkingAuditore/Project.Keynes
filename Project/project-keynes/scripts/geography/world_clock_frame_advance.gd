@@ -25,6 +25,9 @@ static func _advance_one_sim_day(owner: Variant) -> void:
 static func publish_runtime_date(owner: Variant, committed: int) -> void:
 	if not owner._runtime_calendar_admit.is_valid() or committed + 1 <= owner._last_day:
 		return
+	# Keep publication parked while the simulation can still admit future days.
+	if owner.is_economy_gate_blocked():
+		return
 	owner._last_day = committed + 1
 	owner.current_day = float(owner._last_day) + owner._runtime_calendar_fraction
 	owner._runtime_calendar_through = maxi(owner._runtime_calendar_through, committed)
@@ -230,3 +233,38 @@ static func _process(owner: Variant, delta: float) -> void:
 	# 帧尾补发一次。已经在 _advance_one_sim_day 开头发过的桶是空的，不会重复。
 	if owner.day_cost_probe_on:
 		owner.day_cost_flush()
+
+
+# 累计变化 ≥ step 才发射。特別处理：phase 跳回 0 的跈变，应视为"必发"以避免突变时错过。
+static func _should_emit_day_phase(owner: Variant, dp: float) -> bool:
+	if owner._last_emit_day_phase < 0.0:
+		return true
+	if owner.day_phase_emit_step <= 0.0:
+		return true
+	var diff: float = absf(dp - owner._last_emit_day_phase)
+	# 跳回的临界情况：上次 0.99 + 这次 0.01，diff=0.98，仍会大于 step，正常发射
+	return diff >= owner.day_phase_emit_step
+
+
+# season_phase ∈ [0, 4)，回绕临界情况同样会 diff 很大，自动通过阈值。
+static func _should_emit_season_phase(owner: Variant, sp: float) -> bool:
+	if owner._last_emit_season_phase < 0.0:
+		return true
+	if owner.season_phase_emit_step <= 0.0:
+		return true
+	var diff: float = absf(sp - owner._last_emit_season_phase)
+	return diff >= owner.season_phase_emit_step
+
+
+static func _advance_visual_day_phase(owner: Variant, delta: float) -> void:
+	# 钉住时不推进、不发信号，避免实时晨昏线把 GM 太阳预览冲掉。
+	if owner.visual_day_phase_held:
+		return
+	if owner.visual_tod_follow_speed:
+		var year_days := float(owner.days_per_year())
+		var year_progress: float = owner.current_day / year_days
+		owner.visual_day_phase = fposmod(0.25 + year_progress * owner._visual_shader_days_per_year, 1.0)
+	else:
+		var period: float = maxf(owner.visual_daylen_seconds, 1.0)
+		owner.visual_day_phase = fposmod(owner.visual_day_phase + delta / period, 1.0)
+	owner.visual_day_phase_changed.emit(owner.visual_day_phase)

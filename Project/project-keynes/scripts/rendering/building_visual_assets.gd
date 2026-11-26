@@ -9,7 +9,7 @@ static func web_building_min_active() -> bool:
 		return false
 	if not DCFeatureFlags.is_compatibility_renderer():
 		return false
-	return not DCFeatureFlags.terrain_horizon_gpu_bake_active()
+	return DCFeatureFlags.is_mobile_web()
 
 
 static func compose_shader_code(source: Shader, tiled: bool,

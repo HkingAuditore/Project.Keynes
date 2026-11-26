@@ -519,7 +519,7 @@ windows.debug.x86_64 = "res://addons/dots_ext/bin/windows/dots_ext_country_borde
 | `check_module_api.py` | 模块 API 边界契约 |
 | `check_module_contracts.py` | 已补 `encoding="utf-8"`（R6 修复） |
 | `check_script_native_access.py` | GDScript 跨模块 DCWorldExt 访问棘轮 |
-| `check_skill_mirrors.py` | 多 agent 目录下的 skill 副本漂移 |
+| `check_skill_mirrors.py` | 检查根目录的 skill 源文件及误提交的工具目录副本 |
 | `check_world_ext_bindings.py` | binding 归属模块一致性 |
 | `world_ext_bindings.py` | 上者的清单库；`--json/--refs` 直接可跑 |
 | `inspect_incident.py` | R2 事故包检查（读 zip + JSON，不碰文本编码） |

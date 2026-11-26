@@ -60,9 +60,6 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 		region = "arid_highland"
 
 	var precious_resource := _precious_for_cell(map, cell_idx)
-	if precious_resource.is_empty():
-		return _error("starter_precious_metal_unavailable",
-			"首都格没有可用于石器时代开局的天然砂金。")
 	var is_cold := region == "cold_highland"
 	var technologies := PackedStringArray()
 	var buildings := PackedStringArray()
@@ -82,8 +79,10 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 		return _error("starter_food_unavailable", "出生点没有已发现的可运行食物生产方式。")
 	_append_unique(technologies, "tech.early_trade")
 	_append_unique(buildings, "early_merchant_post")
-	_append_unique(technologies, "tech.gold_panning")
-	_append_unique(buildings, "placer_gold_working")
+	# 砂金可选：只有本地真有砂金才送淘金科技与淘金场。
+	if not precious_resource.is_empty():
+		_append_unique(technologies, "tech.gold_panning")
+		_append_unique(buildings, "placer_gold_working")
 	var clothing_resource := ""
 	var input_buffer := ""
 	if is_cold:
@@ -152,7 +151,7 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 	var planned := StarterEconomyPlannerScript.plan(map, cell_idx, route)
 	if not bool(planned.get("ok", false)):
 		var failure := _error("starter_capability_unsatisfied",
-			"没有闭合采集、狩猎、砂金和贸易核心的出生点路线。")
+			"没有闭合采集、狩猎、贸易与建材核心的出生点路线。")
 		failure["planner_failure"] = planned
 		return failure
 	route.merge(planned, true)
@@ -298,8 +297,7 @@ static func _validate_starter_technologies(technology_ids: PackedStringArray,
 		var tags: PackedStringArray = catalog.technology_starter_capability_tags
 		for edge in range(offsets[technology_index], offsets[technology_index + 1]):
 			capabilities[String(tags[edge])] = true
-	for required in ["starter.food", "starter.precious_metal", "starter.trade",
-			"starter.construction"]:
+	for required in ["starter.food", "starter.trade", "starter.construction"]:
 		if not capabilities.has(required):
 			return _error("starter_capability_unsatisfied",
 				"开局路线缺少能力：%s" % required)
