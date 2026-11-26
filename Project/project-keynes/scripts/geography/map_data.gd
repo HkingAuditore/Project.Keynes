@@ -3,6 +3,8 @@
 # 存储所有 HexCell，以 Vector3i(q, r, s) 为键的 Dictionary
 
 class_name MapData
+const TerrainColumns = preload("res://scripts/geography/map_data_terrain_columns.gd")
+const BakeArrays = preload("res://scripts/geography/map_data_bake_arrays.gd")
 const MapLatitudeBake = preload("res://scripts/geography/map_latitude_bake.gd")
 const Queries = preload("res://scripts/geography/map_data_queries.gd")
 
@@ -625,198 +627,17 @@ func _season_history_warning_key(vegetation: bool) -> String:
 	return "vegetation" if vegetation else "biome"
 
 func sync_is_water_arr_from_terrain() -> void:
-	var n: int = mini(terrain_arr.size(), is_water_arr.size())
-	var lut: PackedByteArray = MapData.is_water_lut()
-	for i in range(n):
-		is_water_arr[i] = lut[int(terrain_arr[i])]
+	TerrainColumns.sync_is_water_arr_from_terrain(self)
 
 func sync_runtime_terrain_facade_from_soa() -> int:
-	var n: int = mini(_cell_array.size(), terrain_arr.size())
-	var changed: int = 0
-	var lut: PackedByteArray = MapData.is_water_lut()
-	for i in range(n):
-		var terrain_byte: int = int(terrain_arr[i]) & 0xFF
-		if i < is_water_arr.size():
-			is_water_arr[i] = lut[terrain_byte]
-		var cell: HexCell = _cell_array[i]
-		if cell != null and int(cell.terrain) != terrain_byte:
-			cell.apply_terrain(terrain_byte)
-			changed += 1
-	return changed
+	return TerrainColumns.sync_runtime_terrain_facade_from_soa(self)
 
 func set_runtime_terrain(idx: int, terrain_id: int, sync_cell: bool = true) -> void:
-	if idx < 0 or idx >= _cell_array.size():
-		return
-	var terrain_byte: int = terrain_id & 0xFF
-	if idx < terrain_arr.size():
-		terrain_arr[idx] = terrain_byte
-	if idx < is_water_arr.size():
-		is_water_arr[idx] = MapData.terrain_is_water_u8(terrain_byte)
-	if sync_cell:
-		var cell: HexCell = cell_at(idx)
-		if cell != null:
-			cell.apply_terrain(terrain_byte)
+	TerrainColumns.set_runtime_terrain(self, idx, terrain_id, sync_cell)
 
 ## 一次性按 _cell_array.size() 预分配所有 SoA 数组与 dirty mask。重复调用是安全的。
 func _alloc_soa(n: int) -> void:
-	temp_arr.resize(n);              temp_arr_prev.resize(n)
-	moisture_arr.resize(n);          moisture_arr_prev.resize(n)
-	snow_cover_arr.resize(n);        snow_cover_arr_prev.resize(n)
-	temp_baseline_arr.resize(n)
-	temp_30d_arr.resize(n)
-	temp_365d_arr.resize(n)
-	temp_anomaly_arr.resize(n)
-	sea_ice_frac_arr.resize(n);      sea_ice_frac_arr_prev.resize(n)
-	weather_intensity_arr.resize(n)
-	weather_cloud_arr.resize(n)
-	weather_cloud_water_arr.resize(n)
-	weather_precip_arr.resize(n)
-	weather_transition_alpha_arr.resize(n)
-	weather_classification_temp_arr.resize(n)
-	weather_classification_moisture_arr.resize(n)
-	elevation_arr.resize(n)
-	base_moisture_arr.resize(n)
-	ocean_current_x_arr.resize(n)
-	ocean_current_y_arr.resize(n)
-	wind_x_arr.resize(n)
-	wind_y_arr.resize(n)
-	slp_arr.resize(n)
-	wind_speed_arr.resize(n)
-	upwelling_strength_arr.resize(n)
-	wind_stress_curl_arr.resize(n)
-	ocean_psi_arr.resize(n)
-	cell_pos_x_arr.resize(n)
-	cell_pos_y_arr.resize(n)
-	cell_lat_norm_arr.resize(n)
-	temp_baseline_year_arr.resize(n)
-	terrain_arr.resize(n)
-	landform_arr.resize(n)
-	vegetation_arr.resize(n)
-	base_terrain_arr.resize(n)
-	base_landform_arr.resize(n)
-	base_vegetation_arr.resize(n)
-	cover_arr.resize(n)
-	weather_type_arr.resize(n)
-	weather_prev_type_arr.resize(n)
-	weather_target_type_arr.resize(n)
-	is_water_arr.resize(n)
-	country_slot_arr.resize(n)
-	visible_arr.resize(n)
-	explored_arr.resize(n)
-	fog_k_arr.resize(n)
-	resource_habitat_mask_arr.resize(n)
-	climate_dirty_mask.resize(n)
-	weather_dirty_mask.resize(n)
-	# B-full Step-2：6 个新 SoA 字段一次性 resize
-	weather_vapor_arr.resize(n)
-	weather_convergence_arr.resize(n)
-	weather_instability_arr.resize(n)
-	weather_field_init_arr.resize(n)
-	air_mass_temp_anomaly_arr.resize(n)
-	has_river_arr.resize(n)
-	river_flow_arr.resize(n)
-	river_downstream_arr.resize(n)
-	has_volcano_arr.resize(n)
-	is_lake_seed_arr.resize(n)
-	hydro_parent_arr.resize(n)
-	river_discharge_arr.resize(n)
-	river_discharge_30d_arr.resize(n)
-	river_storage_arr.resize(n)
-	groundwater_storage_arr.resize(n)
-	surface_runoff_arr.resize(n)
-	canal_edge_mask_arr.resize(n)
-	canal_water_arr.resize(n)
-	# Natural resources：per-cell 资源储量字段
-	res_timber_reserve_arr.resize(n)
-	res_stone_reserve_arr.resize(n)
-	res_fertile_soil_reserve_arr.resize(n)
-	res_coal_reserve_arr.resize(n)
-	res_oil_reserve_arr.resize(n)
-	res_natural_gas_reserve_arr.resize(n)
-	res_copper_ore_reserve_arr.resize(n)
-	res_iron_ore_reserve_arr.resize(n)
-	res_gold_ore_reserve_arr.resize(n)
-	res_silver_ore_reserve_arr.resize(n)
-	res_salt_reserve_arr.resize(n)
-	res_saltpeter_reserve_arr.resize(n)
-	res_rare_earth_reserve_arr.resize(n)
-	res_clay_reserve_arr.resize(n)
-	res_wild_game_reserve_arr.resize(n)
-	res_marine_fish_reserve_arr.resize(n)
-	res_freshwater_fish_reserve_arr.resize(n)
-	res_arable_land_reserve_arr.resize(n)
-	res_paddy_land_reserve_arr.resize(n)
-	res_plantation_land_reserve_arr.resize(n)
-	res_pasture_reserve_arr.resize(n)
-	res_bauxite_reserve_arr.resize(n)
-	res_limestone_reserve_arr.resize(n)
-	res_silica_sand_reserve_arr.resize(n)
-	res_phosphate_rock_reserve_arr.resize(n)
-	res_tin_ore_reserve_arr.resize(n)
-	res_lead_ore_reserve_arr.resize(n)
-	res_zinc_ore_reserve_arr.resize(n)
-	res_manganese_ore_reserve_arr.resize(n)
-	res_sulfur_reserve_arr.resize(n)
-	res_flint_reserve_arr.resize(n)
-	res_timber_extra_change_arr.resize(n)
-	res_stone_extra_change_arr.resize(n)
-	res_fertile_soil_extra_change_arr.resize(n)
-	res_coal_extra_change_arr.resize(n)
-	res_oil_extra_change_arr.resize(n)
-	res_natural_gas_extra_change_arr.resize(n)
-	res_copper_ore_extra_change_arr.resize(n)
-	res_iron_ore_extra_change_arr.resize(n)
-	res_gold_ore_extra_change_arr.resize(n)
-	res_silver_ore_extra_change_arr.resize(n)
-	res_salt_extra_change_arr.resize(n)
-	res_saltpeter_extra_change_arr.resize(n)
-	res_rare_earth_extra_change_arr.resize(n)
-	res_clay_extra_change_arr.resize(n)
-	res_wild_game_extra_change_arr.resize(n)
-	res_marine_fish_extra_change_arr.resize(n)
-	res_freshwater_fish_extra_change_arr.resize(n)
-	res_arable_land_extra_change_arr.resize(n)
-	res_paddy_land_extra_change_arr.resize(n)
-	res_plantation_land_extra_change_arr.resize(n)
-	res_pasture_extra_change_arr.resize(n)
-	res_bauxite_extra_change_arr.resize(n)
-	res_limestone_extra_change_arr.resize(n)
-	res_silica_sand_extra_change_arr.resize(n)
-	res_phosphate_rock_extra_change_arr.resize(n)
-	res_tin_ore_extra_change_arr.resize(n)
-	res_lead_ore_extra_change_arr.resize(n)
-	res_zinc_ore_extra_change_arr.resize(n)
-	res_manganese_ore_extra_change_arr.resize(n)
-	res_sulfur_extra_change_arr.resize(n)
-	res_flint_extra_change_arr.resize(n)
-	# A 修复（climate-temp-pingpong-fix-2026-06）：anomaly 合成新增 2 个字段
-	ocean_thermal_anomaly_arr.resize(n)
-	local_thermal_anomaly_arr.resize(n)
-	# Phase 3a Step 2.1.a：climate Pass-A SoA 化新增 2 个字段
-	ema_initialized_arr.resize(n)
-	temp_season_offset_arr.resize(n)
-	insolation_now_arr.resize(n)
-	insolation_dev_arr.resize(n)
-	day_length_arr.resize(n)
-	heat_input_arr.resize(n)
-	thermal_energy_arr.resize(n)
-	snowpack_arr.resize(n)
-	water_balance_30d_arr.resize(n)
-	# B3b：植被动力学字段全量下沉 SoA（4 f32 + 2 i32）
-	vegetation_vitality_arr.resize(n)
-	vitality_low_streak_arr.resize(n)
-	vitality_high_streak_arr.resize(n)
-	soil_moisture_arr.resize(n)
-	plant_available_water_arr.resize(n)
-	vegetation_growth_pressure_arr.resize(n)
-	temperature_transport_anomaly_arr.resize(n)
-	vegetation_heat_stress_arr.resize(n)
-	vegetation_drought_stress_arr.resize(n)
-	vegetation_cold_stress_arr.resize(n)
-	vegetation_regen_score_arr.resize(n)
-	bio_occupancy_bits_arr.resize(n)
-	landmass_id_arr.resize(n)
-	province_id_arr.resize(n)
+	BakeArrays._alloc_soa(self, n)
 
 ## DEPRECATED（PR-2.2，2026-Q3）：本函数仅在 bake_world / 加载存档时调用一次（生成期初始化）。
 ## 运行期 sub-pass 已经全部走 world.write_*_indexed（PR-2.1.x 完成）。
@@ -837,187 +658,13 @@ func rebuild_soa_from_cells() -> void:
 	_finish_bake_soa()
 
 func _prepare_bake_soa() -> PackedInt32Array:
-	var n := _cell_array.size()
-	var seed := hydro_parent_arr.duplicate()
-	_alloc_soa(n)
-	fog_solved = false
-	physical_visible_arr = PackedByteArray()
-	return seed
+	return BakeArrays._prepare_bake_soa(self)
 
 func _copy_bake_cells(begin: int, end: int, hydro_parent_seed: PackedInt32Array) -> void:
-	var n := _cell_array.size()
-	for i in range(begin,end):
-		var c: HexCell = _cell_array[i]
-		temp_arr[i] = c.temperature
-		moisture_arr[i] = c.moisture
-		snow_cover_arr[i] = c.snow_cover
-		temp_baseline_arr[i] = c.temp_baseline
-		temp_30d_arr[i] = c.temp_30d_mean
-		temp_365d_arr[i] = c.temp_365d_mean
-		temp_anomaly_arr[i] = c.temp_dev_from_annual
-		sea_ice_frac_arr[i] = c.sea_ice_fraction
-		weather_intensity_arr[i] = c.weather_intensity
-		weather_cloud_arr[i] = c.weather_cloud
-		weather_cloud_water_arr[i] = c.weather_cloud * 0.5 if c.weather_field_initialized else 0.0
-		weather_precip_arr[i] = c.weather_precip
-		weather_transition_alpha_arr[i] = c.weather_transition_alpha
-		weather_classification_temp_arr[i] = c.temperature
-		weather_classification_moisture_arr[i] = c.moisture
-		elevation_arr[i] = c.elevation
-		base_moisture_arr[i] = c.base_moisture
-		ocean_current_x_arr[i] = c.ocean_current.x
-		ocean_current_y_arr[i] = c.ocean_current.y
-		wind_x_arr[i] = c.wind_vector.x
-		wind_y_arr[i] = c.wind_vector.y
-		slp_arr[i] = c.slp
-		wind_speed_arr[i] = c.wind_speed
-		upwelling_strength_arr[i] = c.upwelling_strength
-		wind_stress_curl_arr[i] = c.wind_stress_curl
-		ocean_psi_arr[i] = c.ocean_psi
-		var wp: Vector2 = HexUtils.cube_to_world(c.q, c.r, 1.0)
-		cell_pos_x_arr[i] = wp.x
-		cell_pos_y_arr[i] = wp.y
-		terrain_arr[i] = int(c.terrain) & 0xFF
-		landform_arr[i] = c.landform & 0xFF
-		vegetation_arr[i] = c.vegetation & 0xFF
-		base_terrain_arr[i] = int(c.base_terrain) & 0xFF
-		base_landform_arr[i] = c.base_landform & 0xFF
-		base_vegetation_arr[i] = c.base_vegetation & 0xFF
-		cover_arr[i] = c.cover & 0xFF
-		weather_type_arr[i] = c.weather_type & 0xFF
-		weather_prev_type_arr[i] = c.weather_prev_type & 0xFF
-		weather_target_type_arr[i] = c.weather_target_type & 0xFF
-		is_water_arr[i] = MapData.terrain_is_water_u8(int(terrain_arr[i]))
-		country_slot_arr[i] = -1
-		# 视野：纯运行期 SoA（无 HexCell 镜像）。全图未探索起步，由 VisionSolver
-		# 在 country bootstrap 后首解；存档恢复时 explored 由 PKFG 覆盖。
-		visible_arr[i] = 0
-		explored_arr[i] = 0
-		fog_k_arr[i] = 0
-		climate_dirty_mask[i] = 0
-		weather_dirty_mask[i] = 0
-		# B-full Step-2：6 个新字段 AoS → SoA 一次性镜像
-		weather_vapor_arr[i] = c.weather_vapor
-		weather_convergence_arr[i] = c.weather_convergence
-		weather_instability_arr[i] = c.weather_instability
-		weather_field_init_arr[i] = (1 if c.weather_field_initialized else 0)
-		air_mass_temp_anomaly_arr[i] = c.air_mass_temp_anomaly
-		has_river_arr[i] = (1 if c.has_river else 0)
-		river_flow_arr[i] = c.river_flow
-		has_volcano_arr[i] = (1 if c.has_volcano else 0)
-		is_lake_seed_arr[i] = (1 if c.is_lake_seed else 0)
-		var downstream_idx: int = -1
-		if c.has_river_downstream:
-			var downstream_cell: HexCell = get_cell_by_cube(c.river_downstream)
-			downstream_idx = int(_cell_index.get(downstream_cell, -1)) if downstream_cell != null else -1
-		river_downstream_arr[i] = downstream_idx
-		var hydro_parent_idx: int = int(hydro_parent_seed[i]) if hydro_parent_seed.size() == n else -1
-		hydro_parent_arr[i] = hydro_parent_idx if hydro_parent_idx >= -1 and hydro_parent_idx < n else -1
-		river_discharge_arr[i] = maxf(0.0, river_flow_arr[i] if has_river_arr[i] != 0 else 0.0)
-		river_discharge_30d_arr[i] = river_discharge_arr[i]
-		river_storage_arr[i] = 0.0
-		groundwater_storage_arr[i] = 0.0
-		surface_runoff_arr[i] = 0.0
-		canal_edge_mask_arr[i] = 0
-		canal_water_arr[i] = 0.0
-		# Phase 3a Step 2.1.a：Pass-A SoA 化新增 2 个字段镜像
-		ema_initialized_arr[i] = (1 if c._ema_initialized else 0)
-		temp_season_offset_arr[i] = c.temp_season_offset
-		insolation_now_arr[i] = 0.0
-		insolation_dev_arr[i] = 0.0
-		day_length_arr[i] = 0.5
-		heat_input_arr[i] = 0.0
-		thermal_energy_arr[i] = c.temperature
-		snowpack_arr[i] = 0.8 if c.cover == CoverType.CV.GLACIER else clampf(c.snow_cover * 0.35, 0.0, 1.0)
-		water_balance_30d_arr[i] = 0.0
-		# B3b：植被动力学字段全量下沉 SoA — bake 期一次性从 HexCell 镜像初值
-		var has_live_vegetation: bool = is_water_arr[i] == 0 and int(c.vegetation) != int(VegetationType.VEG.NONE)
-		vegetation_vitality_arr[i] = c.vegetation_vitality if has_live_vegetation else 0.0
-		vitality_low_streak_arr[i] = c._vitality_low_streak if has_live_vegetation else 0
-		vitality_high_streak_arr[i] = c._vitality_high_streak if has_live_vegetation else 0
-		soil_moisture_arr[i] = c.soil_moisture
-		vegetation_growth_pressure_arr[i] = c.vegetation_growth_pressure if has_live_vegetation else 0.0
-		temperature_transport_anomaly_arr[i] = c.temperature_transport_anomaly
-		vegetation_heat_stress_arr[i] = c.vegetation_heat_stress if has_live_vegetation else 0.0
-		vegetation_drought_stress_arr[i] = c.vegetation_drought_stress if has_live_vegetation else 0.0
-		vegetation_cold_stress_arr[i] = c.vegetation_cold_stress if has_live_vegetation else 0.0
-		vegetation_regen_score_arr[i] = c.vegetation_regen_score if has_live_vegetation else 0.0
+	BakeArrays._copy_bake_cells(self, begin, end, hydro_parent_seed)
 
 func _finish_bake_soa() -> void:
-	ocean_thermal_anomaly_arr.fill(0.0)
-	local_thermal_anomaly_arr.fill(0.0)
-	res_timber_reserve_arr.fill(0.0)
-	res_stone_reserve_arr.fill(0.0)
-	res_fertile_soil_reserve_arr.fill(0.0)
-	res_coal_reserve_arr.fill(0.0)
-	res_oil_reserve_arr.fill(0.0)
-	res_natural_gas_reserve_arr.fill(0.0)
-	res_copper_ore_reserve_arr.fill(0.0)
-	res_iron_ore_reserve_arr.fill(0.0)
-	res_gold_ore_reserve_arr.fill(0.0)
-	res_silver_ore_reserve_arr.fill(0.0)
-	res_salt_reserve_arr.fill(0.0)
-	res_saltpeter_reserve_arr.fill(0.0)
-	res_rare_earth_reserve_arr.fill(0.0)
-	res_clay_reserve_arr.fill(0.0)
-	res_wild_game_reserve_arr.fill(0.0)
-	res_marine_fish_reserve_arr.fill(0.0)
-	res_freshwater_fish_reserve_arr.fill(0.0)
-	res_arable_land_reserve_arr.fill(0.0)
-	res_paddy_land_reserve_arr.fill(0.0)
-	res_plantation_land_reserve_arr.fill(0.0)
-	res_pasture_reserve_arr.fill(0.0)
-	res_bauxite_reserve_arr.fill(0.0)
-	res_limestone_reserve_arr.fill(0.0)
-	res_silica_sand_reserve_arr.fill(0.0)
-	res_phosphate_rock_reserve_arr.fill(0.0)
-	res_tin_ore_reserve_arr.fill(0.0)
-	res_lead_ore_reserve_arr.fill(0.0)
-	res_zinc_ore_reserve_arr.fill(0.0)
-	res_manganese_ore_reserve_arr.fill(0.0)
-	res_sulfur_reserve_arr.fill(0.0)
-	res_flint_reserve_arr.fill(0.0)
-	res_timber_extra_change_arr.fill(0.0)
-	res_stone_extra_change_arr.fill(0.0)
-	res_fertile_soil_extra_change_arr.fill(0.0)
-	res_coal_extra_change_arr.fill(0.0)
-	res_oil_extra_change_arr.fill(0.0)
-	res_natural_gas_extra_change_arr.fill(0.0)
-	res_copper_ore_extra_change_arr.fill(0.0)
-	res_iron_ore_extra_change_arr.fill(0.0)
-	res_gold_ore_extra_change_arr.fill(0.0)
-	res_silver_ore_extra_change_arr.fill(0.0)
-	res_salt_extra_change_arr.fill(0.0)
-	res_saltpeter_extra_change_arr.fill(0.0)
-	res_rare_earth_extra_change_arr.fill(0.0)
-	res_clay_extra_change_arr.fill(0.0)
-	res_wild_game_extra_change_arr.fill(0.0)
-	res_marine_fish_extra_change_arr.fill(0.0)
-	res_freshwater_fish_extra_change_arr.fill(0.0)
-	res_arable_land_extra_change_arr.fill(0.0)
-	res_paddy_land_extra_change_arr.fill(0.0)
-	res_plantation_land_extra_change_arr.fill(0.0)
-	res_pasture_extra_change_arr.fill(0.0)
-	resource_habitat_mask_arr.fill(0)
-	res_bauxite_extra_change_arr.fill(0.0)
-	res_limestone_extra_change_arr.fill(0.0)
-	res_silica_sand_extra_change_arr.fill(0.0)
-	res_phosphate_rock_extra_change_arr.fill(0.0)
-	res_tin_ore_extra_change_arr.fill(0.0)
-	res_lead_ore_extra_change_arr.fill(0.0)
-	res_zinc_ore_extra_change_arr.fill(0.0)
-	res_manganese_ore_extra_change_arr.fill(0.0)
-	res_sulfur_extra_change_arr.fill(0.0)
-	res_flint_extra_change_arr.fill(0.0)
-	# 同步初始化 _prev 双缓冲为 _next 当前快照，避免首日 sub-pass 切片读到 0。
-	temp_arr_prev = temp_arr.duplicate()
-	moisture_arr_prev = moisture_arr.duplicate()
-	snow_cover_arr_prev = snow_cover_arr.duplicate()
-	sea_ice_frac_arr_prev = sea_ice_frac_arr.duplicate()
-	_soa_built = true
-	# B1-A：lat / temp_year LUT 必须由 generator 在 _last_cfg 就位后 bake；
-	# 这里仅置为未 bake 状态，bake_world 路径会立即调用 bake_lat_temp_year_lut()。
-	_lat_lut_baked = false
+	BakeArrays._finish_bake_soa(self)
 
 func init_soa_from_bake_cooperative(frame_gate = null) -> void:
 	await build_indices_cooperative(frame_gate)
@@ -1051,20 +698,7 @@ func set_pending_generation_ecology(bundle: Dictionary) -> void:
 
 
 func apply_pending_generation_ecology() -> void:
-	if _pending_generation_ecology.is_empty():
-		return
-	var n: int = cell_count()
-	var fields := [
-		"vegetation_vitality_arr", "soil_moisture_arr", "water_balance_30d_arr",
-		"plant_available_water_arr", "vegetation_growth_pressure_arr",
-		"vegetation_heat_stress_arr", "vegetation_drought_stress_arr",
-		"vegetation_cold_stress_arr", "vegetation_regen_score_arr",
-	]
-	for field in fields:
-		var value = _pending_generation_ecology.get(field, null)
-		if value is PackedFloat32Array and value.size() == n:
-			set(field, value.duplicate())
-	_pending_generation_ecology.clear()
+	BakeArrays.apply_pending_generation_ecology(self)
 
 
 ## REMOVED PR-2.4 (2026-05-14)：flush_soa_to_cells() 已删除。

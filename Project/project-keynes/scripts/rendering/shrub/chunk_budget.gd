@@ -62,7 +62,7 @@ static func apply_visible_instance_fraction(host, fraction: float) -> void:
 	invalidate_viewport_budget_cache(host, )
 	if host._chunked_multimesh_enabled and not host._chunk_nodes.is_empty():
 		var any_visible = false
-		var show_shadow = host._shadow_should_render()
+		var show_shadow = host.Chunk_nodes._shadow_should_render(host)
 		for chunk_id in host._chunk_nodes.keys():
 			var node: MultiMeshInstance2D = host._chunk_nodes[chunk_id]
 			if node == null or not is_instance_valid(node) or node.multimesh == null:
@@ -89,14 +89,14 @@ static func apply_visible_instance_fraction(host, fraction: float) -> void:
 		return
 	if host._multimesh == null:
 		host.visible = false
-		host._sync_single_shadow()
+		host.Chunk_nodes._sync_single_shadow(host)
 		return
 	var next_visible = _lod_visible_count(host, host._instance_count, host._far_instance_count)
 	host._multimesh.visible_instance_count = next_visible
 	host.visible = not host._family_batch_suppressed and host._profile().enabled \
 		and not host._camera_lod_hidden and next_visible > 0
 	host._sync_single_wrap_nodes()
-	host._sync_single_shadow()
+	host.Chunk_nodes._sync_single_shadow(host)
 
 
 # ─── 视口优先的细节预算分配 [viewport-budget 2026-11-03] ──────────────────────
@@ -357,7 +357,7 @@ static func apply_visible_instance_fraction_weighted(host,
 			kept -= cut
 	# 落盘：只写 visible_instance_count / host.visible，复用现有 chunk 可见计数路径。
 	var layer_enabled: bool = bool(host._profile().enabled)
-	var show_shadow = host._shadow_should_render()
+	var show_shadow = host.Chunk_nodes._shadow_should_render(host)
 	var any_visible = false
 	var visible_chunks = 0
 	for i in range(ids.size()):
@@ -458,7 +458,7 @@ static func _vp_budget_edge_falloff(host, zoom_value: float, pixel_world_size: f
 
 static func _vp_budget_chunk_distance_t(host, chunk_id: int, rect: Rect2, view_radius: float) -> float:
 
-	if not host._chunk_intersects_rect(chunk_id, rect):
+	if not host.Chunk_nodes._chunk_intersects_rect(host, chunk_id, rect):
 		return -1.0
 	var bounds = host._chunk_world_bounds(chunk_id)
 	if bounds.size == Vector2.ZERO:
@@ -674,6 +674,3 @@ static func _apply_chunk_viewport_counts(host,
 	snode.multimesh.visible_instance_count = clampi(applied, 0, snode.multimesh.instance_count)
 	snode.visible = show_shadow and node.visible and applied > 0
 	host._sync_shadow_chunk_wrap_nodes(chunk_id)
-
-
-

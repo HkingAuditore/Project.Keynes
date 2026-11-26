@@ -14,7 +14,7 @@ func military_map_pick(host, world: Vector2) -> bool:
 			var handle = int(pick.get("handle", 0))
 			if handle == 0:
 				return false
-			host._apply_military_render_selection(handle)
+			host._military_component._apply_military_render_selection(host, handle)
 			if layers.has_method("set_selected_cell"):
 				layers.call("set_selected_cell", int(pick.get("cell", -1)))
 			return bool(host._ui_manager.call("open_military_dossier", "army", handle,
@@ -23,7 +23,7 @@ func military_map_pick(host, world: Vector2) -> bool:
 			var edge = int(pick.get("edge", -1))
 			if edge < 0:
 				return false
-			host._apply_military_render_selection(0)
+			host._military_component._apply_military_render_selection(host, 0)
 			if layers.has_method("set_selected_front_edge"):
 				layers.call("set_selected_front_edge", edge)
 			return bool(host._ui_manager.call("open_military_dossier", "front", edge))
@@ -61,7 +61,7 @@ func military_army_cell(host, handle: int) -> int:
 ## 关掉档案时同时撤掉地图上的选中态（部队选中环 / 战线高亮 / 区域与路线层）。
 
 func clear_military_map_selection(host) -> void:
-	host._apply_military_render_selection(0)
+	host._military_component._apply_military_render_selection(host, 0)
 	var layers = host._military_layers()
 	if layers == null:
 		return
@@ -165,9 +165,9 @@ func begin_military_arm_order(host, army: int, mode: String, radius: int = 1) ->
 		host._military_order_message = "点击地图选择探查中心，再确认探查半径。"
 	else:
 		host._military_order_message = "点击地图预览路线，再确认行军。"
-	host._apply_military_render_selection(army)
-	host._clear_military_path_preview()
-	host._notify_military_arm_order()
+	host._military_component._apply_military_render_selection(host, army)
+	host._military_component._clear_military_path_preview(host)
+	host._military_component._notify_military_arm_order(host)
 	var armed = host._result(true, "ok", "在地图上点目标格。")
 	armed["mode"] = mode
 	armed["radius"] = radius
@@ -184,8 +184,8 @@ func cancel_military_arm_order(host) -> void:
 	host._military_order_target = -1
 	host._military_order_preview.clear()
 	host._military_order_message = ""
-	host._clear_military_path_preview()
-	host._notify_military_arm_order()
+	host._military_component._clear_military_path_preview(host)
+	host._military_component._notify_military_arm_order(host)
 
 
 
@@ -217,7 +217,7 @@ func set_military_arm_order_radius(host, radius: int) -> void:
 	if host._military_order_target >= 0:
 		host.military_arm_order_click(host._military_order_target)
 	else:
-		host._notify_military_arm_order()
+		host._military_component._notify_military_arm_order(host)
 
 
 func confirm_military_arm_order(host) -> Dictionary:
@@ -235,7 +235,7 @@ func confirm_military_arm_order(host) -> Dictionary:
 		host.cancel_military_arm_order()
 	else:
 		host._military_order_message = String(sent.get("message", "命令未能下达，请重试。"))
-		host._notify_military_arm_order()
+		host._military_component._notify_military_arm_order(host)
 	return sent
 
 
@@ -248,7 +248,7 @@ func military_arm_order_click(host, cell: int) -> bool:
 	if host._military_order_mode == "explore":
 		host._military_order_target = -1
 		host._military_order_preview.clear()
-		host._clear_military_path_preview()
+		host._military_component._clear_military_path_preview(host)
 		host.clear_cell_highlights()
 		var explore_cells = host._military_area_cells(cell, host._military_order_radius)
 		host._military_order_target = cell
@@ -256,22 +256,22 @@ func military_arm_order_click(host, cell: int) -> bool:
 			"cells": PackedInt32Array()}
 		host.highlight_cells(explore_cells)
 		host._military_order_message = "探查范围已标出，确认后部队将自动探路并返回出发点。"
-		host._notify_military_arm_order()
+		host._military_component._notify_military_arm_order(host)
 		return true
 	var facade = host._military_facade()
 	var preview: Dictionary = facade.preview_path(host._military_order_army, cell) \
 		if facade != null and facade.has_method("preview_path") else {}
 	host._military_order_target = cell
 	host._military_order_preview.clear()
-	host._clear_military_path_preview()
+	host._military_component._clear_military_path_preview(host)
 	if host._military_order_mode == "area":
 		host.clear_cell_highlights()
 	if not bool(preview.get("ok", false)):
-		host._preview_failed(preview, cell)
+		host._military_component._preview_failed(host, preview, cell)
 		return true
-	if not host._show_military_path_preview(preview, cell):
+	if not host._military_component._show_military_path_preview(host, preview, cell):
 		host._military_order_message = "路线暂不可显示，请重新选择目标。"
-		host._notify_military_arm_order()
+		host._military_component._notify_military_arm_order(host)
 		return true
 	host._military_order_target = cell
 	host._military_order_preview = preview.duplicate()
@@ -282,7 +282,7 @@ func military_arm_order_click(host, cell: int) -> bool:
 		host._military_order_message = "控制范围已标出，确认后部队将执行区域控制。"
 	else:
 		host._military_order_message = "路线已标出；可改选目标，或确认行军。"
-	host._notify_military_arm_order()
+	host._military_component._notify_military_arm_order(host)
 	return true
 
 
@@ -293,7 +293,7 @@ func _preview_failed(host, preview: Dictionary, cell: int) -> void:
 	if reason == "military_path_unreachable":
 		text = "这段路走不通：与部队之间没有可通行的路线。"
 	host._military_order_message = text
-	host._notify_military_arm_order()
+	host._military_component._notify_military_arm_order(host)
 	if host._ui_manager != null and host._ui_manager.has_method("show_transient_message"):
 		host._ui_manager.call("show_transient_message", text)
 	else:

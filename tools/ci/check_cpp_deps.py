@@ -2,8 +2,8 @@
 """Lexical cross-domain include/type ratchet (not a C++ compiler).
 
 Counts each include target and each foreign type token per source file. Reviewed
-header-to-implementation and economy implementation moves require matching
-source reductions; moving a reference never authorizes copying it.
+moves into a responsibility file require matching source reductions. The baseline
+retains a record of the source and target for each moved reference.
 Header exposure and total occurrences can only decrease.
 Comments/strings are ignored; conditional branches are all checked. The host,
 protocol and generic adapters are outside business-domain ownership.
@@ -15,6 +15,7 @@ from collections import Counter
 import json
 from pathlib import Path
 import re
+from cpp_source import read_cpp_source
 
 ROOT = Path(__file__).resolve().parents[2]
 DOMAINS = ("country", "economy", "effect", "ideology", "modifier", "trigger", "military", "family", "climate")
@@ -130,6 +131,7 @@ def measure(root: Path, include_contracts: bool = False) -> dict[str, int]:
                 if len(owners) == 1}
     edges: Counter[str] = Counter()
     api_includes: dict[str, set[str]] = {}
+    fragment_parents: dict[str, set[str]] = {}
     for path, source in sources.items():
         owner = domain_of(path.name)
         if not owner:
@@ -158,6 +160,10 @@ def measure(root: Path, include_contracts: bool = False) -> dict[str, int]:
                 # debt edge solely because its include moved one level down.
                 fragment = (path.parent / target).resolve()
                 if fragment.is_file() and fragment.parent == path.parent:
+                    if fragment.stem.startswith(path.stem + '_'):
+                        fragment_parents.setdefault(
+                            fragment.relative_to(root).as_posix(), set()
+                        ).add(name)
                     fragment_text = fragment.read_text(encoding='utf-8')
                     for nested in INCLUDE.finditer(fragment_text):
                         if api_domain(nested.group(1)):
@@ -182,6 +188,12 @@ def measure(root: Path, include_contracts: bool = False) -> dict[str, int]:
             if peer and peer != owner:
                 edges[f"{name}|{owner}->{peer}|type:{token}"] += 1
     if not include_contracts:
+        # A scoped fragment sees exactly the API headers available in its
+        # containing source. A fragment included from several sources can
+        # rely only on headers available from every one of them.
+        for fragment, parents in fragment_parents.items():
+            common = set.intersection(*(api_includes.get(parent, set()) for parent in parents))
+            api_includes.setdefault(fragment, set()).update(common)
         symbols = api_symbols(root)
         edges = Counter({k: n for k, n in edges.items()
                          if not api_contract_key(k, symbols, api_includes)})
@@ -203,7 +215,7 @@ def metrics(references: dict[str, int], contracts: dict[str, int] | None = None)
     }
 
 
-def relocation_source(key: str, origin: str) -> str:
+def relocation_source(key: str, origin: str, mode: str = 'reduction') -> str:
     path, pair, symbol = key.split('|')
     source = Path(origin)
     target = Path(path)
@@ -234,8 +246,20 @@ def relocation_source(key: str, origin: str) -> str:
                    target.name.startswith('economy_runtime_family_') and
                    pair.split('->')[0] == 'family' and
                    domain_of(source.name) == domain_of(target.name) == 'family')
+    owner = pair.split('->')[0]
+    responsibility_leaf_move = (
+        mode == 'reduction'
+        and target.stem.startswith(source.stem + '_')
+        and domain_of(source.name) == domain_of(target.name) == owner
+        and (source.name != 'economy_runtime.h' or target.suffix != '.h')
+        and (
+            (source.suffix == target.suffix and source.suffix in {'.cpp', '.h', '.inc'})
+            or (source.suffix == '.cpp' and target.suffix == '.inc')
+        )
+    )
     if (source.parent != target.parent or
-            not (internal_header_move or bridge_move or same_domain_move or family_move or
+            not (internal_header_move or bridge_move or same_domain_move or family_move
+                 or responsibility_leaf_move or
                  (target.suffix == '.cpp' and (header_move or economy_move)))):
         raise ValueError(f"invalid relocation: {origin} -> {path}")
     return f"{origin}|{pair}|{symbol}"
@@ -253,7 +277,7 @@ def updated_baseline(current: dict[str, int], baseline: dict, moves: dict[str, s
     for key, move in moves.items():
         header = move.get('moved_from') if isinstance(move, dict) else move
         mode = move.get('mode', 'reduction') if isinstance(move, dict) else 'reduction'
-        source = relocation_source(key, header)
+        source = relocation_source(key, header, mode)
         growth = current.get(key, 0) - previous.get(key, 0)
         decrease = previous.get(source, 0) - current.get(source, 0)
         if growth <= 0:
@@ -308,8 +332,8 @@ def baseline_errors(baseline: dict, symbols: dict[str, str] | None = None) -> li
             errors.append(f'unreviewed read contract: {key}')
     for key, move in baseline.get('relocations', {}).items():
         try:
-            source = relocation_source(key, move['moved_from'])
             mode = move.get('mode', 'reduction')
+            source = relocation_source(key, move['moved_from'], mode)
             source_reduction_invalid = (mode != 'duplicate' and
                     move['source_before'] - move['source_after'] < move['moved_count'])
             if (mode not in {'reduction', 'duplicate'} or move['moved_count'] <= 0 or move['target_before'] < 0 or
@@ -326,7 +350,7 @@ def baseline_errors(baseline: dict, symbols: dict[str, str] | None = None) -> li
 def measure_country_writes(root: Path) -> dict[str, int]:
     counts: Counter[str] = Counter()
     for path in sorted((root / "gdext/src").glob("economy_runtime*.cpp")):
-        for method in re.findall(r"\b_country_runtime\s*->\s*(\w+)\s*\(", code_only(path.read_text(encoding="utf-8"))):
+        for method in re.findall(r"\b_country_runtime\s*->\s*(\w+)\s*\(", code_only(read_cpp_source(path))):
             if method in COUNTRY_WRITE_CALLS:
                 counts[f"{path.relative_to(root).as_posix()}|{method}"] += 1
     return dict(sorted(counts.items()))
@@ -337,7 +361,7 @@ def country_write_errors(root: Path, baseline: dict[str, int]) -> list[str]:
     migrated = set(COUNTRY_WRITE_CALLS)
     migrated.add("begin_economy_fiscal_return")
     for path in sorted((root / "gdext/src").glob("economy_runtime*.cpp")):
-        code = code_only(path.read_text(encoding="utf-8"))
+        code = code_only(read_cpp_source(path))
         for method in sorted(migrated):
             if re.search(r"\b" + method + r"\b", code):
                 errors.append(f"{path.name}: {method} must use the owner intent port")

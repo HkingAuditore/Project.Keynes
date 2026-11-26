@@ -20,6 +20,7 @@ import check_skill_mirrors as skill_mirrors
 import world_ext_bindings
 import check_world_ext_bindings as binding_guard
 import check_script_native_access as script_access
+from cpp_source import read_cpp_source
 import runtime_test_hygiene as hygiene
 import subprocess
 import os
@@ -46,7 +47,7 @@ class GuardsTest(unittest.TestCase):
             paths={x['source'] for x in data['resolve']+data['apply']+data['retained_soft_paths']} | {'gdext/src/native_simulation_host.cpp'}
             for path in paths:
                 target=root/path; target.parent.mkdir(parents=True,exist_ok=True)
-                target.write_text((resolve_apply.ROOT/path).read_text())
+                target.write_text(read_cpp_source(resolve_apply.ROOT / path))
             self.assertFalse(resolve_apply.violations(root,data))
             for row in data['resolve']:
                 p=root/row['source']; original=p.read_text()
@@ -114,7 +115,7 @@ class GuardsTest(unittest.TestCase):
             source.with_name("annual_development_host.cpp").write_text(annual_good)
             source.with_name("native_simulation_host_ideology.cpp").write_text("copy_committed_view(); assert(_modifier_pod_authority.observe_committed_view(modifier_view));" + opinion_good)
             source.with_name("native_simulation_host_modifier.cpp").write_text("copy_committed_view(); assert(_effect_pod_authority.observe_committed_view(effect_view));")
-            source.with_name("economy_runtime_family_effect_inputs.cpp").write_text("void refresh_class_opinion_metrics() { copy_lineage_opinion_view(); assert(view.observe(_lineage_opinion_view_version)); }")
+            source.with_name("economy_runtime_family_effect_inputs_metrics.cpp").write_text("void refresh_class_opinion_metrics() { copy_lineage_opinion_view(); assert(view.observe(_lineage_opinion_view_version)); }")
             self.assertFalse(views.violations(root))
             for bypass in ["const auto &s = _climate_authority.store();",
                            "auto &owner = _climate_authority; owner.store();",
@@ -208,7 +209,9 @@ class GuardsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);data=json.loads((modules.ROOT/modules.REGISTRY).read_text())
             for relative in [modules.HEADER]+[e['source'] for e in data['reviewed_reads']]:
-                target=root/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(modules.ROOT/relative,target)
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(read_cpp_source(modules.ROOT / relative))
             self.assertFalse(modules.violations(root,data))
             data['modules'][8]['reads']='country, modifier'
             (root/modules.HEADER).write_text(modules.render(data))
@@ -501,6 +504,56 @@ class GuardsTest(unittest.TestCase):
         wrong_symbol = target.replace("country_ai_core.h", "country_runtime.h")
         with self.assertRaises(ValueError):
             deps.updated_baseline({wrong_symbol: 1}, baseline, {wrong_symbol: header})
+
+    def test_responsibility_header_move_preserves_owner_and_requires_reduction(self):
+        original = "gdext/src/modifier_runtime.h"
+        edge = "|modifier->country|type:CountryState"
+        source = original + edge
+        target = "gdext/src/modifier_runtime_country_state.h" + edge
+        baseline = {"version": 1, "references": {source: 1}}
+
+        moved = deps.updated_baseline({target: 1}, baseline, {target: original})
+        self.assertEqual(moved["metrics"]["header_exposed"], 1)
+        self.assertFalse(deps.baseline_errors(moved))
+
+        for wrong_path in ("gdext/src/modifier_country_state.h",
+                           "gdext/src/modifier_runtime_family_state.h",
+                           "gdext/src/internal/modifier_runtime_country_state.h"):
+            with self.subTest(path=wrong_path), self.assertRaises(ValueError):
+                deps.updated_baseline({wrong_path + edge: 1}, baseline, {wrong_path + edge: original})
+        with self.assertRaises(ValueError):
+            deps.updated_baseline({source: 1, target: 1}, baseline, {target: original})
+        with self.assertRaises(ValueError):
+            deps.updated_baseline({target: 1}, baseline, {
+                target: {"moved_from": original, "mode": "duplicate"},
+            })
+
+    def test_cpp_source_reader_expands_sibling_fragments_in_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "owner"
+            root.mkdir()
+            source = root / "runtime.cpp"
+            (root / "runtime_section_publish.inc").write_text(
+                'prepare();\n#include "publication_body.inc"\npublish();\n')
+            (root / "publication_body.inc").write_text("commit();\n")
+            (root.parent / "runtime_section_external.inc").write_text("foreign();\n")
+            source.write_text(
+                '#include "runtime_section_publish.inc"\n'
+                '#include "../runtime_section_external.inc"\n'
+                '/*\n#include "runtime_section_missing.inc"\n*/\n'
+                'auto text = R"doc(\n#include "runtime_section_in_text.inc"\n)doc";\n'
+            )
+            code = read_cpp_source(source)
+            self.assertRegex(code, r"prepare\(\);\s+commit\(\);\s+publish\(\);")
+            self.assertNotIn("foreign();", code)
+            self.assertIn('#include "runtime_section_missing.inc"', code)
+            self.assertIn('#include "runtime_section_in_text.inc"', code)
+            (root / "publication_body.inc").unlink()
+            with self.assertRaisesRegex(FileNotFoundError, "publication_body.inc"):
+                read_cpp_source(source)
+            (root / "publication_body.inc").write_text('#include "runtime_section_publish.inc"\n')
+            with self.assertRaisesRegex(ValueError, "Circular C\\+\\+ source fragment"):
+                read_cpp_source(source)
 
     def test_economy_cpp_relocation_requires_same_symbol_reduction(self):
         origin = "gdext/src/economy_runtime.cpp"
@@ -912,7 +965,7 @@ class GuardsTest(unittest.TestCase):
             for row in registry["sections"]:
                 target = root / row["source"]
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text((saves.ROOT / row["source"]).read_text())
+                target.write_text(read_cpp_source(saves.ROOT / row["source"]))
             self.assertFalse(saves.cpp_section_violations(root))
             broken = json.loads(json.dumps(registry))
             family = next(row for row in broken["sections"] if row["domain"] == "family")

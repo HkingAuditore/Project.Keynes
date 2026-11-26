@@ -1,6 +1,14 @@
 class_name ObjectDetailDialog
 extends Control
 
+const DetailLayout = preload("res://scripts/ui/components/object_detail_layout.gd")
+
+const EstateDetails = preload("res://scripts/ui/components/object_estate_details.gd")
+
+const CohortDetails = preload("res://scripts/ui/components/object_cohort_details.gd")
+
+const GoodDetails = preload("res://scripts/ui/components/object_good_details.gd")
+
 const LedgerFacts = preload("res://scripts/ui/components/dossier_ledger_facts.gd")
 const ObjectDetailTaxGroup = preload("res://scripts/ui/components/object_detail_tax_group.gd")
 
@@ -605,910 +613,166 @@ func _clear_content() -> void:
 # ─── 物资与阶层卷宗构建与实时补丁 ──────────────────────────────────────
 
 func _build_good_details(row: Dictionary, tax_context: Variant) -> void:
-	# show_details 会重建整个卷宗节点；签名/模型必须清空，否则同身份重建后
-	# _apply_trade_orders 会误判“数据未变”而跳过填表。
-	_trade_orders_signature = ""
-	_trade_orders_model = {}
-	var root := GoodDossierScene.instantiate() as VBoxContainer
-	_content.add_child(root)
-	var overview_page := root.get_node("%OverviewPage") as VBoxContainer
-	var operations_page := root.get_node("%OperationsPage") as VBoxContainer
-	var notes := root.get_node("%Notes") as InspectorNoteList
-	var supply_demand_bar := root.get_node("%SupplyDemandBar") as DossierDivergingBar
-	# 与 DemandSupplyBars 同为本地供需读数，二选一渲染避免同值重复。
-	supply_demand_bar.visible = false
-	var demand_supply_bars := root.get_node("%DemandSupplyBars") as DossierBarList
-	var price_stock_bars := root.get_node("%PriceStockBars") as DossierBarList
-	var trade_flow_bar := root.get_node("%TradeFlowBar") as DossierDivergingBar
-	var trade_bars := root.get_node("%TradeBars") as DossierBarList
-	var trade_empty_note := root.get_node("%TradeEmptyNote") as Label
-	var orders_table := root.get_node("%TradeOrdersTable") as DossierLedgerTable
-	var orders_hint := root.get_node("%TradeOrdersHint") as Label
-	var orders_footer := root.get_node("%TradeOrdersFooter") as Control
-	var orders_page_label := root.get_node("%TradeOrdersPage") as Label
-	var orders_prev := root.get_node("%TradeOrdersPrev") as Button
-	var orders_next := root.get_node("%TradeOrdersNext") as Button
-
-	demand_supply_bars.label_width = 96.0
-	demand_supply_bars.value_width = 76.0
-	price_stock_bars.label_width = 96.0
-	price_stock_bars.value_width = 76.0
-	trade_bars.label_width = 96.0
-	trade_bars.value_width = 76.0
-	orders_table.set_columns(_trade_order_columns(), "", true)
-	orders_table.row_height = 28.0
-	orders_table.focus_mode = Control.FOCUS_NONE
-	orders_table.row_selected.connect(_on_trade_order_row_selected)
-	IconButton.apply(orders_prev, &"action.back", IconButton.MEDIUM, "上一页")
-	IconButton.apply(orders_next, &"action.chevron_right", IconButton.MEDIUM, "下一页")
-	orders_prev.focus_mode = Control.FOCUS_NONE
-	orders_next.focus_mode = Control.FOCUS_NONE
-	orders_prev.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	orders_next.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	orders_prev.pressed.connect(_request_trade_orders_page.bind(-1))
-	orders_next.pressed.connect(_request_trade_orders_page.bind(1))
-
-	_fact_columns = [2]
-	_good_refs = {
-		"root": root,
-		"overview_page": overview_page,
-		"operations_page": operations_page,
-		"notes": notes,
-		"supply_demand_bar": supply_demand_bar,
-		"demand_supply_bars": demand_supply_bars,
-		"price_stock_bars": price_stock_bars,
-		"trade_flow_bar": trade_flow_bar,
-		"trade_bars": trade_bars,
-		"trade_empty_note": trade_empty_note,
-		"orders_table": orders_table,
-		"orders_hint": orders_hint,
-		"orders_footer": orders_footer,
-		"orders_page": orders_page_label,
-		"orders_prev": orders_prev,
-		"orders_next": orders_next,
-	}
-	_section_targets["overview"] = overview_page
-	_section_targets["operations"] = operations_page
-	_build_tax_section("good", tax_context, row, operations_page)
-	_apply_good_dossier_data(row, false)
+	GoodDetails._build_good_details(self, row, tax_context)
 
 
 func _patch_good_dossier(row: Dictionary) -> void:
-	_apply_good_dossier_data(row, true)
+	GoodDetails._patch_good_dossier(self, row)
 
 
 func _apply_good_dossier_data(row: Dictionary, live_patch: bool) -> void:
-	var dossier := CellInspectorViewModel.good_dossier_model(row)
-	_apply_kpis(dossier.get("kpis", []), live_patch)
-	var notes := _good_refs.get("notes") as InspectorNoteList
-	if notes != null:
-		var insights: Array = dossier.get("insights", [])
-		notes.set_notes(insights)
-		notes.visible = not insights.is_empty()
-	var sd: Dictionary = dossier.get("supply_demand_bar", {})
-	var sd_bar := _good_refs.get("supply_demand_bar") as DossierDivergingBar
-	if sd_bar != null:
-		sd_bar.set_values(
-			String(sd.get("left_label", "本地需求")),
-			float(sd.get("left_value", 0.0)),
-			String(sd.get("left_text", "0")),
-			String(sd.get("right_label", "本地供给")),
-			float(sd.get("right_value", 0.0)),
-			String(sd.get("right_text", "0"))
-		)
-	var ds_bars := _good_refs.get("demand_supply_bars") as DossierBarList
-	if ds_bars != null:
-		ds_bars.set_rows(dossier.get("demand_supply_bars", []))
-	var ps_bars := _good_refs.get("price_stock_bars") as DossierBarList
-	if ps_bars != null:
-		ps_bars.set_rows(dossier.get("price_stock_bars", []))
-	var tf: Dictionary = dossier.get("trade_flow_bar", {})
-	var tf_bar := _good_refs.get("trade_flow_bar") as DossierDivergingBar
-	if tf_bar != null:
-		tf_bar.set_values(
-			String(tf.get("left_label", "外销流出")),
-			float(tf.get("left_value", 0.0)),
-			String(tf.get("left_text", "0")),
-			String(tf.get("right_label", "采购流入")),
-			float(tf.get("right_value", 0.0)),
-			String(tf.get("right_text", "0"))
-		)
-	var t_bars := _good_refs.get("trade_bars") as DossierBarList
-	if t_bars != null:
-		t_bars.set_rows(dossier.get("trade_bars", []))
-	var empty_note := _good_refs.get("trade_empty_note") as Label
-	if empty_note != null:
-		var has_trade := float(tf.get("left_value", 0.0)) > 0.0001 \
-			or float(tf.get("right_value", 0.0)) > 0.0001
-		empty_note.text = "当前无在途商队与跨区贸易流水。"
-		empty_note.visible = not has_trade
+	GoodDetails._apply_good_dossier_data(self, row, live_patch)
 
-
-# ─── 物资详情 · 逐单商路 ──────────────────────────────────────────────
-# 数据由 CellInspectorViewModel.trade_orders_model 生成；这里只做控件 patch，
-# 不重建节点树，也不在日 tick 里自行查询/计算。
 
 func _trade_order_columns() -> Array:
-	return [
-		{"id": "dir", "label": "方向", "width": 42.0},
-		{"id": "counterpart", "label": "对端", "expand": true, "min_width": 78.0},
-		{"id": "quantity", "label": "数量", "width": 52.0, "kind": "number"},
-		{"id": "price", "label": "单价", "width": 92.0, "kind": "money", "optional": true},
-		{"id": "route", "label": "行程", "width": 82.0, "kind": "bar"},
-		{"id": "status", "label": "状态", "width": 44.0, "optional": true},
-	]
+	return GoodDetails._trade_order_columns(self)
 
 
 func _apply_trade_orders(model_value: Variant) -> void:
-	var table := _good_refs.get("orders_table") as DossierLedgerTable
-	if table == null:
-		return
-	var hint := _good_refs.get("orders_hint") as Label
-	var footer := _good_refs.get("orders_footer") as Control
-	var page_label := _good_refs.get("orders_page") as Label
-	var prev := _good_refs.get("orders_prev") as Button
-	var next := _good_refs.get("orders_next") as Button
-	var model: Dictionary = model_value if model_value is Dictionary else {}
-	if model.is_empty():
-		_trade_orders_signature = ""
-		_trade_orders_model = {}
-		table.empty_text = ""
-		table.set_rows([])
-		if hint != null:
-			hint.text = ""
-			hint.visible = false
-		if footer != null:
-			footer.visible = false
-		return
-	if bool(model.get("pending", false)):
-		# 结算中：保留上一页；现有 200ms 重试会在 committed 后拿到新页。
-		if hint != null:
-			hint.text = String(model.get("hint", "经济结算中，沿用上次结果。"))
-		return
-	if not bool(model.get("ok", false)):
-		_trade_orders_signature = ""
-		_trade_orders_model = {}
-		table.empty_text = String(model.get("empty_text", "贸易流水暂不可用。"))
-		table.set_rows([])
-		if hint != null:
-			hint.text = String(model.get("hint", "贸易流水暂不可用。"))
-		if footer != null:
-			footer.visible = false
-		return
-	var signature := String(model.get("signature", ""))
-	if signature == _trade_orders_signature:
-		return
-	_trade_orders_signature = signature
-	_trade_orders_model = model
-	table.empty_text = String(model.get("empty_text", ""))
-	table.set_rows(model.get("rows", []))
-	if hint != null:
-		hint.text = String(model.get("hint", ""))
-	if page_label != null:
-		page_label.text = String(model.get("page_label", ""))
-	var limit := maxi(1, int(model.get("limit", 12)))
-	var total := maxi(0, int(model.get("total", 0)))
-	if footer != null:
-		footer.visible = total > limit
-	if prev != null:
-		prev.disabled = int(model.get("offset", 0)) <= 0
-	if next != null:
-		next.disabled = not bool(model.get("has_more", false))
+	GoodDetails._apply_trade_orders(self, model_value)
 
 
 func _request_trade_orders_page(step: int) -> void:
-	if _trade_orders_model.is_empty():
-		return
-	var limit := maxi(1, int(_trade_orders_model.get("limit", 12)))
-	var total := maxi(0, int(_trade_orders_model.get("total", 0)))
-	var offset := int(_trade_orders_model.get("offset", 0))
-	var target := offset + step * limit
-	var max_offset := maxi(0, ((maxi(total, 1) - 1) / limit) * limit)
-	target = clampi(target, 0, max_offset)
-	if target == offset and step != 0:
-		return
-	trade_orders_page_requested.emit(target)
+	GoodDetails._request_trade_orders_page(self, step)
 
 
 func _on_trade_order_row_selected(row_id: Variant) -> void:
-	var rows_by_id: Dictionary = _trade_orders_model.get("rows_by_id", {})
-	var row: Dictionary = rows_by_id.get(row_id, {})
-	var cell := int(row.get("locate_cell", -1))
-	if cell >= 0:
-		trade_order_locate_requested.emit(cell)
+	GoodDetails._on_trade_order_row_selected(self, row_id)
 
-
-# ─── 测试钩子（逐单商路） ─────────────────────────────────────────────
 
 func trade_orders_row_count() -> int:
-	var table := _good_refs.get("orders_table") as DossierLedgerTable
-	return table.row_count() if table != null else 0
+	return GoodDetails.trade_orders_row_count(self)
 
 
 func trade_orders_hint_text() -> String:
-	var hint := _good_refs.get("orders_hint") as Label
-	return hint.text if hint != null else ""
+	return GoodDetails.trade_orders_hint_text(self)
 
 
 func trade_orders_offset() -> int:
-	return int(_trade_orders_model.get("offset", 0))
+	return GoodDetails.trade_orders_offset(self)
 
 
 func trade_orders_page_text() -> String:
-	var label := _good_refs.get("orders_page") as Label
-	return label.text if label != null else ""
+	return GoodDetails.trade_orders_page_text(self)
 
 
 func current_trade_orders_model() -> Dictionary:
-	return _trade_orders_model
+	return GoodDetails.current_trade_orders_model(self)
 
 
 func _build_cohort_details(row: Dictionary, tax_context: Variant) -> void:
-	var root := CohortDossierScene.instantiate() as VBoxContainer
-	_content.add_child(root)
-	var overview_page := root.get_node("%OverviewPage") as VBoxContainer
-	var operations_page := root.get_node("%OperationsPage") as VBoxContainer
-	var notes := root.get_node("%Notes") as InspectorNoteList
-	var living_strip := root.get_node("%LivingStrip") as DossierChart
-	var radar_split := root.get_node("%RadarSplit") as GridContainer
-	var radar := root.get_node("%SatisfactionRadar") as DossierRadarChart
-	var dimension_bars := root.get_node("%DimensionBars") as DossierBarList
-	var cashflow_bar := root.get_node("%CashflowBar") as DossierDivergingBar
-	var income_stacked := root.get_node("%IncomeStackedBar") as DossierStackedBar
-	var expense_stacked := root.get_node("%ExpenseStackedBar") as DossierStackedBar
-	var summary_label := root.get_node("%SummaryLabel") as Label
-	var tier_kicker := root.get_node("%TierKicker") as Label
-	var demand_tier_bars := root.get_node("%DemandTierBars") as DossierBarList
-	var goods_kicker := root.get_node("%GoodsKicker") as Label
-	var active_demand_bars := root.get_node("%ActiveDemandBars") as DossierBarList
-	var demand_empty_note := root.get_node("%DemandEmptyNote") as Label
-	var inactive_note := root.get_node("%InactiveAlternativesNote") as Label
-
-	dimension_bars.row_height = 21.0
-	dimension_bars.label_width = 68.0
-	dimension_bars.value_width = 50.0
-	demand_tier_bars.label_width = 104.0
-	demand_tier_bars.value_width = 92.0
-	active_demand_bars.label_width = 114.0
-	active_demand_bars.value_width = 104.0
-
-	# 兼容既有测试对八维核心摘要 4 列网格的断言钩子。
-	_fact_columns = [4]
-	_cohort_refs = {
-		"root": root,
-		"overview_page": overview_page,
-		"operations_page": operations_page,
-		"notes": notes,
-		"living_strip": living_strip,
-		"radar_split": radar_split,
-		"radar": radar,
-		"dimension_bars": dimension_bars,
-		"cashflow_bar": cashflow_bar,
-		"income_stacked": income_stacked,
-		"expense_stacked": expense_stacked,
-		"summary_label": summary_label,
-		"tier_kicker": tier_kicker,
-		"demand_tier_bars": demand_tier_bars,
-		"goods_kicker": goods_kicker,
-		"active_demand_bars": active_demand_bars,
-		"demand_empty_note": demand_empty_note,
-		"inactive_note": inactive_note,
-	}
-	_section_targets["overview"] = overview_page
-	_section_targets["operations"] = operations_page
-	_build_tax_section("cohort", tax_context, row, operations_page)
-	_apply_cohort_dossier_data(row, false)
-	_sync_cohort_radar_split()
+	CohortDetails._build_cohort_details(self, row, tax_context)
 
 
 func _patch_cohort_dossier(row: Dictionary) -> void:
-	_apply_cohort_dossier_data(row, true)
-	_sync_cohort_radar_split()
+	CohortDetails._patch_cohort_dossier(self, row)
 
 
 func _sync_cohort_radar_split() -> void:
-	var radar_split := _cohort_refs.get("radar_split") as GridContainer
-	if radar_split == null or not is_instance_valid(radar_split):
-		return
-	var w := _content_width()
-	radar_split.columns = 1 if (w > 1.0 and w < 360.0) else 2
+	CohortDetails._sync_cohort_radar_split(self)
 
 
 func _apply_cohort_dossier_data(row: Dictionary, live_patch: bool) -> void:
-	var dossier := CellInspectorViewModel.cohort_dossier_model(row)
-	_apply_kpis(dossier.get("kpis", []), live_patch)
-	var notes := _cohort_refs.get("notes") as InspectorNoteList
-	if notes != null:
-		var insights: Array = dossier.get("insights", [])
-		notes.set_notes(insights)
-		notes.visible = not insights.is_empty()
-	var living_strip := _cohort_refs.get("living_strip") as Control
-	if living_strip != null and living_strip.has_method("set_living_state"):
-		living_strip.set_living_state(
-			int(dossier.get("living_level", -1)),
-			String(dossier.get("wealth_text", "—")),
-			String(row.get("satisfaction", "—"))
-		)
-	var radar := _cohort_refs.get("radar") as DossierRadarChart
-	if radar != null:
-		var axes: PackedStringArray = dossier.get("radar_axes", PackedStringArray())
-		var vals: PackedFloat32Array = dossier.get("radar_values", PackedFloat32Array())
-		var refs: PackedFloat32Array = dossier.get("radar_reference", PackedFloat32Array())
-		radar.set_values(axes, vals, refs, UITokens.DOSSIER_OXBLOOD)
-	var dim_bars := _cohort_refs.get("dimension_bars") as DossierBarList
-	if dim_bars != null:
-		var dbars: Array = dossier.get("dimension_bars", [])
-		dim_bars.set_rows(dbars)
-		dim_bars.visible = not dbars.is_empty()
-	var cf: Dictionary = dossier.get("cashflow_bar", {})
-	var cf_bar := _cohort_refs.get("cashflow_bar") as DossierDivergingBar
-	if cf_bar != null:
-		cf_bar.set_values(
-			String(cf.get("left_label", "人均日支")),
-			float(cf.get("left_value", 0.0)),
-			String(cf.get("left_text", "—")),
-			String(cf.get("right_label", "人均日收")),
-			float(cf.get("right_value", 0.0)),
-			String(cf.get("right_text", "—"))
-		)
-	var inc_stacked := _cohort_refs.get("income_stacked") as DossierStackedBar
-	if inc_stacked != null:
-		var inc_segs: Array = dossier.get("income_segments", [])
-		inc_stacked.visible = not inc_segs.is_empty()
-		if not inc_segs.is_empty():
-			inc_stacked.set_segments("收入构成", inc_segs,
-				"%s/人" % String(row.get("income", "—")), true)
-	var exp_stacked := _cohort_refs.get("expense_stacked") as DossierStackedBar
-	if exp_stacked != null:
-		var exp_segs: Array = dossier.get("expense_segments", [])
-		exp_stacked.visible = not exp_segs.is_empty()
-		if not exp_segs.is_empty():
-			exp_stacked.set_segments("支出构成", exp_segs,
-				"%s/人" % String(row.get("expense", "—")), true)
-
-	var demand_summary: Dictionary = row.get("demand_summary", {})
-	var summary_label := _cohort_refs.get("summary_label") as Label
-	if summary_label != null:
-		var total_cost := String(demand_summary.get("total_daily_cost", ""))
-		summary_label.text = ("日均开销 %s/人" % total_cost) \
-			if (not total_cost.is_empty() and total_cost != "—") \
-			else String(demand_summary.get("value", ""))
-	var tier_bars_data: Array = dossier.get("demand_tier_bars", [])
-	var tier_kicker := _cohort_refs.get("tier_kicker") as Label
-	var tier_bars := _cohort_refs.get("demand_tier_bars") as DossierBarList
-	if tier_kicker != null:
-		tier_kicker.visible = not tier_bars_data.is_empty()
-	if tier_bars != null:
-		tier_bars.visible = not tier_bars_data.is_empty()
-		tier_bars.set_rows(tier_bars_data)
-	var active_bars_data: Array = dossier.get("active_demand_bars", [])
-	var goods_kicker := _cohort_refs.get("goods_kicker") as Label
-	var active_bars := _cohort_refs.get("active_demand_bars") as DossierBarList
-	if goods_kicker != null:
-		goods_kicker.visible = not active_bars_data.is_empty()
-	if active_bars != null:
-		active_bars.visible = not active_bars_data.is_empty()
-		active_bars.set_rows(active_bars_data)
-	var empty_note := _cohort_refs.get("demand_empty_note") as Label
-	if empty_note != null:
-		empty_note.text = "当前无活跃物资消费。"
-		empty_note.visible = active_bars_data.is_empty()
-	var inactive_note := _cohort_refs.get("inactive_note") as Label
-	if inactive_note != null:
-		var summary_str := String(dossier.get("inactive_alternatives_summary", ""))
-		inactive_note.text = summary_str
-		inactive_note.visible = not summary_str.is_empty()
+	CohortDetails._apply_cohort_dossier_data(self, row, live_patch)
 
 
 # ─── 其他详情区（建筑/自然资源/家族回退） ───────────────────────────────
 
 func _build_building_details(row: Dictionary, tax_context: Variant = {}) -> void:
-	var root := BuildingDossierScene.instantiate() as VBoxContainer
-	_content.add_child(root)
-	var overview_page := root.get_node("%OverviewPage") as VBoxContainer
-	var operations_page := root.get_node("%OperationsPage") as VBoxContainer
-	var notes := root.get_node("%Notes") as InspectorNoteList
-	var loss_card := root.get_node("%LossCard") as PanelContainer
-	var loss_summary := root.get_node("%LossCard/Box/Summary") as Label
-	var loss_diverging_bar := root.get_node("%LossCard/Box/DivergingBar") as DossierDivergingBar
-	var loss_cost_bar := root.get_node("%LossCard/Box/CostBar") as DossierStackedBar
-	var capacity_bars := root.get_node("%CapacityBars") as DossierBarList
-	var job_kicker := root.get_node("%JobKicker") as Label
-	var job_bars := root.get_node("%JobBars") as DossierBarList
-	var unused_inputs_note := root.get_node("%UnusedInputsNote") as Label
-	var finance_warning := root.get_node("%FinanceWarning") as Label
-	var finance_diverging_bar := root.get_node("%FinanceDivergingBar") as DossierDivergingBar
-	var revenue_stacked_bar := root.get_node("%RevenueStackedBar") as DossierStackedBar
-	var cost_stacked_bar := root.get_node("%CostStackedBar") as DossierStackedBar
-	var finance_note := root.get_node("%FinanceNote") as Label
-
-	capacity_bars.label_width = 110.0
-	capacity_bars.value_width = 64.0
-	job_bars.label_width = 158.0
-	job_bars.value_width = 64.0
-
-	_fact_columns = [3]
-	_building_refs = {
-		"root": root,
-		"overview_page": overview_page,
-		"operations_page": operations_page,
-		"notes": notes,
-		"loss_card": loss_card,
-		"loss_summary": loss_summary,
-		"loss_diverging_bar": loss_diverging_bar,
-		"loss_cost_bar": loss_cost_bar,
-		"capacity_bars": capacity_bars,
-		"job_kicker": job_kicker,
-		"job_bars": job_bars,
-		"capacity_card": root.get_node("%CapacityCard"),
-		"job_rule": root.get_node("%Rule"),
-		"production_card": root.get_node("%ProductionCard"),
-		"production_rows": root.get_node("%ProductionRows"),
-		"construction_card": root.get_node("%ConstructionCard"),
-		"requirements": root.get_node("%Requirements"),
-		"unused_inputs_note": unused_inputs_note,
-		"finance_warning": finance_warning,
-		"finance_diverging_bar": finance_diverging_bar,
-		"revenue_stacked_bar": revenue_stacked_bar,
-		"cost_stacked_bar": cost_stacked_bar,
-		"finance_note": finance_note,
-	}
-	_section_targets["overview"] = overview_page
-	_section_targets["operations"] = operations_page
-	_build_tax_section("building", tax_context, row, operations_page)
-	_apply_building_dossier_data(row, false)
+	EstateDetails._build_building_details(self, row, tax_context)
 
 
 func _patch_building_dossier(row: Dictionary) -> void:
-	_apply_building_dossier_data(row, true)
+	EstateDetails._patch_building_dossier(self, row)
 
 
 func _apply_building_dossier_data(row: Dictionary, live_patch: bool) -> void:
-	var dossier := CellInspectorViewModel.building_dossier_model(row)
-	_apply_kpis(dossier.get("kpis", []), live_patch)
-	var notes := _building_refs.get("notes") as InspectorNoteList
-	if notes != null:
-		var insights: Array = dossier.get("insights", [])
-		notes.set_notes(insights)
-		notes.visible = not insights.is_empty()
-	var loss_card := _building_refs.get("loss_card") as PanelContainer
-	var loss_summary := _building_refs.get("loss_summary") as Label
-	var loss_diverging_bar := _building_refs.get("loss_diverging_bar") as DossierDivergingBar
-	var loss_cost_bar := _building_refs.get("loss_cost_bar") as DossierStackedBar
-	var loss_visible := bool(dossier.get("loss_visible", false))
-	if loss_card != null:
-		loss_card.visible = loss_visible
-	if loss_summary != null:
-		loss_summary.text = String(dossier.get("loss_summary", ""))
-		loss_summary.visible = loss_visible
-	if loss_visible:
-		var loss_fd: Dictionary = dossier.get("loss_diverging_bar", {})
-		if loss_diverging_bar != null:
-			loss_diverging_bar.set_values(
-				String(loss_fd.get("left_label", "含税总支出")),
-				float(loss_fd.get("left_value", 0.0)),
-				String(loss_fd.get("left_text", "0")),
-				String(loss_fd.get("right_label", "税前总收入")),
-				float(loss_fd.get("right_value", 0.0)),
-				String(loss_fd.get("right_text", "0")))
-		if loss_cost_bar != null:
-			var loss_segments: Array = dossier.get("loss_cost_segments", [])
-			loss_cost_bar.set_segments("支出构成", loss_segments,
-				String(loss_fd.get("left_text", "0")), true)
-	var cap_bars := _building_refs.get("capacity_bars") as DossierBarList
-	if cap_bars != null:
-		var cbars: Array = dossier.get("capacity_bars", [])
-		cap_bars.set_rows(cbars)
-		cap_bars.visible = not cbars.is_empty()
-	var jbars_data: Array = dossier.get("job_bars", [])
-	var job_kicker := _building_refs.get("job_kicker") as Label
-	var job_bars := _building_refs.get("job_bars") as DossierBarList
-	var has_jobs := not jbars_data.is_empty()
-	job_kicker.visible = has_jobs
-	job_bars.visible = has_jobs
-	job_bars.set_rows(jbars_data)
-	_building_refs.job_rule.visible = has_jobs and cap_bars.visible
-	_building_refs.capacity_card.visible = has_jobs or cap_bars.visible
-
-	var production: Array = dossier.get("production_bars", [])
-	var unused_note := _building_refs.get("unused_inputs_note") as Label
-	unused_note.text = String(dossier.get("unused_inputs_summary", ""))
-	unused_note.visible = not unused_note.text.is_empty()
-	_building_refs.production_card.visible = not production.is_empty() or unused_note.visible
-	_building_refs.production_rows.set_rows(production)
-	_building_refs.production_rows.visible = not production.is_empty()
-
-	var requirements: Array = dossier.get("construction_requirements", [])
-	_building_refs.construction_card.visible = not requirements.is_empty()
-	_building_refs.requirements.set_rows(requirements)
-
-	var fwarn := _building_refs.get("finance_warning") as Label
-	if fwarn != null:
-		var warn_str := String(dossier.get("finance_warning", ""))
-		fwarn.text = warn_str
-		fwarn.visible = not warn_str.is_empty()
-	var fd: Dictionary = dossier.get("finance_diverging_bar", {})
-	var fd_bar := _building_refs.get("finance_diverging_bar") as DossierDivergingBar
-	if fd_bar != null:
-		fd_bar.set_values(
-			String(fd.get("left_label", "本期总成本")),
-			float(fd.get("left_value", 0.0)),
-			String(fd.get("left_text", "0")),
-			String(fd.get("right_label", "税后总收入")),
-			float(fd.get("right_value", 0.0)),
-			String(fd.get("right_text", "0"))
-		)
-	var rev_stacked := _building_refs.get("revenue_stacked_bar") as DossierStackedBar
-	if rev_stacked != null:
-		var rev_segs: Array = dossier.get("revenue_segments", [])
-		rev_stacked.visible = not rev_segs.is_empty()
-		if not rev_segs.is_empty():
-			rev_stacked.set_segments("收入构成（税前）", rev_segs,
-				String(fd.get("right_text", "0")), true)
-	var cost_stacked := _building_refs.get("cost_stacked_bar") as DossierStackedBar
-	if cost_stacked != null:
-		var cost_segs: Array = dossier.get("cost_segments", [])
-		cost_stacked.visible = not cost_segs.is_empty()
-		if not cost_segs.is_empty():
-			cost_stacked.set_segments("成本构成", cost_segs,
-				String(fd.get("left_text", "0")), true)
-	var fnote := _building_refs.get("finance_note") as Label
-	if fnote != null:
-		var note_str := String(dossier.get("finance_note", ""))
-		fnote.text = note_str
-		fnote.visible = not note_str.is_empty()
+	EstateDetails._apply_building_dossier_data(self, row, live_patch)
 
 
 func _build_resource_details(row: Dictionary) -> void:
-	_section_targets["overview"] = _add_fact_grid(_facts_for_row("resource", row))
+	EstateDetails._build_resource_details(self, row)
 
 
 func _build_family_details(row: Dictionary) -> void:
-	_section_targets["overview"] = _add_fact_grid(_facts_for_row("family", row))
-	var people_target := _add_rows_card("家族特性", "family.house", UITokens.DOSSIER_INK,
-		row.get("trait_rows", []))
-	_add_rows_card("行为偏好", "growth", UITokens.DOSSIER_VERDIGRIS,
-		row.get("behavior_rows", []))
-	var branch_target := _add_rows_card("地块威望", "family.house", UITokens.DOSSIER_INK,
-		row.get("branch_rows", []))
-	var action_target := _add_branch_colonization_buttons(int(row.get("family_handle", 0)),
-		row.get("branch_rows", []))
-	if branch_target != null:
-		people_target = branch_target
-	elif action_target != null:
-		people_target = action_target
-	var family_effect_target := _add_rows_card("家族效果", "growth", UITokens.DOSSIER_BRASS,
-		row.get("effect_rows", []))
-	var effects_target := _add_rows_card("已激活加成", "growth", UITokens.DOSSIER_BRASS,
-		row.get("modifier_rows", []))
-	var trigger_target := _add_rows_card("累计触发", "resource", UITokens.DOSSIER_BRASS,
-		row.get("trigger_rows", []))
-	if family_effect_target != null:
-		effects_target = family_effect_target
-	elif effects_target == null:
-		effects_target = trigger_target
-	var people: Array = row.get("notable_person_rows", [])
-	if not people.is_empty():
-		var notable_target := _add_rows_card("主要人物", "family.house", UITokens.DOSSIER_INK, people)
-		if people_target == null:
-			people_target = notable_target
-	if people_target != null:
-		_section_targets["operations"] = people_target
-	if family_effect_target != null:
-		_section_targets["effects"] = family_effect_target
-	elif effects_target != null:
-		_section_targets["effects"] = effects_target
-	elif trigger_target != null:
-		_section_targets["effects"] = trigger_target
+	EstateDetails._build_family_details(self, row)
 
 
 func _add_branch_colonization_buttons(family_handle: int, branches: Array) -> Control:
-	if family_handle == 0 or branches.is_empty():
-		return null
-	var panel := RowsCardScene.instantiate() as PanelContainer
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.clip_contents = false
-	_content.add_child(panel)
-	(panel.get_node("Box/TitleRow/Icon") as IconBadge).set_semantic(
-		&"family.house", UITokens.DOSSIER_OXBLOOD)
-	var title := panel.get_node("Box/TitleRow/Title") as Label
-	title.text = "选择开拓源分支"
-	title.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
-	var rows := panel.get_node("Box/Rows") as VBoxContainer
-	for raw in branches:
-		var branch: Dictionary = raw
-		var source_cell := int(branch.get("cell", -1))
-		if source_cell < 0:
-			continue
-		var button := ActionButtonScene.instantiate() as Button
-		button.clip_text = true
-		button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		button.text = "%s · 从此城派遣" % String(branch.get(
-			"name", "地块 %d" % source_cell))
-		var owned: bool = _player_controller != null and \
-			_player_controller.has_method("is_player_owned_cell") and \
-			bool(_player_controller.is_player_owned_cell(source_cell))
-		button.disabled = not owned
-		button.tooltip_text = "仅玩家领土内的家族分支可以派遣" if not owned \
-			else "选择一个可见的无主或本国陆地作为目标"
-		button.pressed.connect(func() -> void:
-			colonization_requested.emit(family_handle, source_cell))
-		rows.add_child(button)
-	return panel
+	return EstateDetails._add_branch_colonization_buttons(self, family_handle, branches)
 
 
 func _delta_accent(delta: String) -> Color:
-	return LedgerFacts._delta_accent(delta)
+	return EstateDetails._delta_accent(self, delta)
 
 
 func _add_fact_grid(facts: Array) -> Control:
-	var panel := FactGridScene.instantiate() as PanelContainer
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_content.add_child(panel)
-	var grid := panel.get_node("Grid") as GridContainer
-	grid.columns = _fact_columns_for_width(facts.size(), _content_width())
-	_fact_columns.append(grid.columns)
-	_fact_grids.append(grid)
-	for raw in facts:
-		var fact: Dictionary = raw
-		var cell := FactCellScene.instantiate() as VBoxContainer
-		grid.add_child(cell)
-		var label := cell.get_node("Label") as Label
-		label.text = String(fact.get("label", ""))
-		label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
-		var value := cell.get_node("Value") as Label
-		value.text = String(fact.get("value", "—"))
-		value.clip_text = true
-		value.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		value.autowrap_mode = TextServer.AUTOWRAP_OFF
-		value.custom_minimum_size.y = 18
-		value.add_theme_font_override("font", UITokens.font_with_weight(650))
-		value.add_theme_color_override("font_color",
-			_dossier_accent(fact.get("accent", UITokens.DOSSIER_INK)))
-		_fact_value_labels.append(value)
-	return panel
+	return DetailLayout._add_fact_grid(self, facts)
 
 
 static func _balanced_fact_columns(fact_count: int) -> int:
-	if fact_count <= 1:
-		return 1
-	if fact_count == 2 or fact_count == 4:
-		return 2
-	if fact_count % 4 == 0:
-		return 4
-	if fact_count % 3 == 0 or fact_count % 3 == 2:
-		return 3
-	return 4
+	return DetailLayout._balanced_fact_columns(fact_count)
 
 
 func _fact_columns_for_width(fact_count: int, width: float) -> int:
-	var balanced := _balanced_fact_columns(fact_count)
-	if width <= 1.0:
-		return balanced
-	if width < 220.0:
-		return 1
-	if width < 420.0:
-		return mini(balanced, 2)
-	return balanced
+	return DetailLayout._fact_columns_for_width(self, fact_count, width)
 
 
 func _content_width() -> float:
-	if _scroll != null and _scroll.size.x > 1.0:
-		return _scroll.size.x
-	if size.x > 1.0:
-		return size.x
-	return 0.0
+	return DetailLayout._content_width(self)
 
 
 func _on_dialog_resized() -> void:
-	_sync_kpi_density()
-	_sync_cohort_radar_split()
-	_fit_fact_grids()
+	DetailLayout._on_dialog_resized(self)
 
 
 func _fit_embedded_layout() -> void:
-	_sync_kpi_density()
-	_sync_cohort_radar_split()
-	_constrain_autowrap(_content)
-	_fit_fact_grids()
-	if _embedded and is_inside_tree():
-		call_deferred("_fit_fact_grids")
+	DetailLayout._fit_embedded_layout(self)
 
 
 func _constrain_autowrap(node: Node) -> void:
-	if node == null:
-		return
-	if node is Label:
-		var label := node as Label
-		if label.autowrap_mode != TextServer.AUTOWRAP_OFF:
-			label.custom_minimum_size.x = 0
-			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	for child in node.get_children():
-		_constrain_autowrap(child)
+	DetailLayout._constrain_autowrap(self, node)
 
 
 func _fit_fact_grids() -> void:
-	if _fact_grids.is_empty():
-		return
-	var width := _content_width()
-	if width <= 1.0:
-		return
-	for index in range(_fact_grids.size()):
-		var grid := _fact_grids[index]
-		if grid == null or not is_instance_valid(grid):
-			continue
-		var next_columns := _fact_columns_for_width(grid.get_child_count(), width)
-		grid.columns = next_columns
-		if index < _fact_columns.size():
-			_fact_columns[index] = next_columns
+	DetailLayout._fit_fact_grids(self)
 
 
 func _add_rows_card(title_text: String, icon_key: String, accent: Color,
 		rows: Array) -> Control:
-	if rows.is_empty():
-		return null
-	var dossier_color := _dossier_accent(accent)
-	var panel := RowsCardScene.instantiate() as PanelContainer
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.clip_contents = false
-	_content.add_child(panel)
-	var icon := panel.get_node("Box/TitleRow/Icon") as IconBadge
-	icon.set_semantic(StringName(icon_key), dossier_color)
-	var title := panel.get_node("Box/TitleRow/Title") as Label
-	title.text = title_text
-	title.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
-	var row_box := panel.get_node("Box/Rows") as VBoxContainer
-	for raw in rows:
-		var data: Dictionary = raw
-		if not bool(data.get("visible", true)):
-			continue
-		var line := DetailLineScene.instantiate() as VBoxContainer
-		row_box.add_child(line)
-		var name_label := line.get_node("Line/Name") as Label
-		name_label.text = String(data.get("name", ""))
-		name_label.clip_text = true
-		name_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_SOFT)
-		var value_text := String(data.get("value", "")).strip_edges()
-		var value_label := line.get_node("Line/Value") as Label
-		value_label.text = value_text
-		value_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
-		var detail := String(data.get("detail", "")).strip_edges()
-		var value_too_long := value_text.length() > 22
-		value_label.clip_text = false
-		value_label.visible = not value_text.is_empty() and not value_too_long
-		if value_too_long:
-			if detail.is_empty():
-				detail = value_text
-			elif detail != value_text:
-				detail = "%s\n%s" % [value_text, detail]
-		var detail_label := line.get_node("Detail") as Label
-		detail_label.text = detail
-		detail_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
-		detail_label.visible = not detail.is_empty()
-		var tooltip := String(data.get("tooltip", "")).strip_edges()
-		line.tooltip_text = tooltip if not tooltip.is_empty() else detail
-	return panel
+	return DetailLayout._add_rows_card(self, title_text, icon_key, accent, rows)
 
 
 func _add_muted_note(text: String, color: Color = UITokens.DOSSIER_INK_MUTED) -> Control:
-	var note := NoteScene.instantiate() as Label
-	note.text = text
-	note.add_theme_color_override("font_color", _dossier_accent(color))
-	_content.add_child(note)
-	return note
+	return DetailLayout._add_muted_note(self, text, color)
 
 
 func _configure_section_nav(kind: String) -> void:
-	var compat_labels := {
-		"overview": "概览",
-		"operations": "需求" if kind == "cohort" else \
-			"人物与分支" if kind == "family" else "经营" if kind == "building" \
-			else "供需",
-		"effects": "效果",
-	}
-	var visible_count := 0
-	for section_id in _section_buttons:
-		var button := _section_buttons[section_id] as Button
-		button.text = String(compat_labels.get(section_id, section_id))
-		button.visible = _section_targets.has(section_id)
-		visible_count += 1 if button.visible else 0
-	_section_nav.visible = visible_count > 1
-
-	if _chapter_nav == null:
-		return
-	var chapters: Array = []
-	if kind == "good":
-		chapters = [
-			{"id": "overview", "label": "供需与价格", "icon": &"metric.goods", "question": ""},
-			{"id": "operations", "label": "贸易与税率", "icon": &"tax.tariff", "question": ""},
-		]
-	elif kind == "cohort":
-		chapters = [
-			{"id": "overview", "label": "民生与收支", "icon": &"population.heart", "question": ""},
-			{"id": "operations", "label": "消费与税率", "icon": &"metric.goods", "question": ""},
-		]
-	elif kind == "building":
-		chapters = [
-			{"id": "overview", "label": "生产与岗位", "icon": &"economy.building.factory", "question": ""},
-			{"id": "operations", "label": "财务与税率", "icon": &"metric.treasury", "question": ""},
-		]
-	else:
-		var icon_map := {
-			"overview": &"summary.overview",
-			"operations": &"economy.building.factory",
-			"effects": &"trend.up",
-		}
-		for section_id in ["overview", "operations", "effects"]:
-			if _section_targets.has(section_id):
-				chapters.append({
-					"id": section_id,
-					"label": String(compat_labels.get(section_id, section_id)),
-					"icon": icon_map.get(section_id, &"summary.overview"),
-					"question": "",
-				})
-	_chapter_nav.visible = chapters.size() > 1
-	if chapters.size() > 1:
-		_chapter_nav.set_chapters(chapters, _current_chapter)
+	DetailLayout._configure_section_nav(self, kind)
 
 
 func _on_chapter_selected(section_id: String) -> void:
-	if _payload_kind in ["good", "cohort", "building"]:
-		_apply_dossier_chapter(section_id, true)
-		return
-	if _chapter_nav != null and _chapter_nav.visible:
-		_chapter_nav.select(section_id, true)
-	_scroll_to_section(section_id)
+	DetailLayout._on_chapter_selected(self, section_id)
 
 
 func _apply_dossier_chapter(section_id: String, animate: bool) -> void:
-	if _scroll != null and _current_chapter != section_id:
-		_scroll_by_chapter[_current_chapter] = _scroll.scroll_vertical
-	_current_chapter = section_id if (section_id == "overview" or section_id == "operations") else "overview"
-	if _chapter_nav != null and _chapter_nav.visible:
-		_chapter_nav.select(_current_chapter, animate)
-	var refs := _good_refs if _payload_kind == "good" \
-		else (_cohort_refs if _payload_kind == "cohort" else _building_refs)
-	var overview_page := refs.get("overview_page") as Control
-	var operations_page := refs.get("operations_page") as Control
-	if overview_page != null:
-		overview_page.visible = _current_chapter == "overview"
-	if operations_page != null:
-		operations_page.visible = _current_chapter == "operations"
-	var active_page := overview_page if _current_chapter == "overview" else operations_page
-	if animate and active_page != null:
-		_replay_page_charts(active_page)
-	if _scroll != null:
-		var next_scroll := int(_scroll_by_chapter.get(_current_chapter, 0))
-		_scroll.scroll_vertical = next_scroll
-		if animate:
-			call_deferred("_restore_scroll", next_scroll)
+	DetailLayout._apply_dossier_chapter(self, section_id, animate)
 
 
 func _replay_page_charts(node: Node) -> void:
-	if node == null:
-		return
-	if node is DossierChart:
-		(node as DossierChart).replay_growth()
-		(node as DossierChart)._start_animation()
-	for child in node.get_children():
-		_replay_page_charts(child)
+	DetailLayout._replay_page_charts(self, node)
 
 
 func _scroll_to_section(section_id: String) -> void:
-	if _scroll == null or not _section_targets.has(section_id):
-		return
-	call_deferred("_ensure_section_visible", section_id)
+	DetailLayout._scroll_to_section(self, section_id)
 
 
 func _ensure_section_visible(section_id: String) -> void:
-	var target := _section_targets.get(section_id) as Control
-	if target != null and is_instance_valid(target):
-		_scroll.ensure_control_visible(target)
+	DetailLayout._ensure_section_visible(self, section_id)
 
 
 func _restore_scroll(value: int) -> void:
-	if _scroll != null:
-		_scroll.scroll_vertical = value
+	DetailLayout._restore_scroll(self, value)
 
 
 # ─── 测试钩子 ────────────────────────────────────────────────────────────

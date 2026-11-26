@@ -1,6 +1,8 @@
 extends Control
 class_name MilitaryWorkspace
 
+const ArmyConflictRows = preload("res://scripts/ui/components/military_army_conflict_rows.gd")
+
 const ForceTarget = preload("res://scripts/ui/components/military_force_target.gd")
 const MilitaryTableRows = preload("res://scripts/ui/components/military_table_rows.gd")
 
@@ -689,221 +691,76 @@ func _locate_training(order_id: int) -> void:
 			locate_cell_requested.emit(int(row.cell))
 
 
-# ── armies & logistics ─────────────────────────────────────────────────
-#
-# 这里只是索引：一行说明「哪支部队、多少人、还能不能打」，编成、补给天数、
-# 移动 / 军事控制 / 停止 / 解散都在军务档案面板里（点击行或「档案」按钮）。
-
 func _refresh_armies() -> void:
-	var data: Dictionary = _vm.build("armies", {"army": _selected_army})
-	var rows: Array = data.get("rows", [])
-	_selected_army = int(data.get("selected", 0))
-	var total := 0
-	for row in rows:
-		total += int(row.headcount)
-	_army_caption.text = "%d 支 · %s 人" % [rows.size(), _count(total)]
-	_army_empty.visible = rows.is_empty()
-	%ArmyGrid.visible = not rows.is_empty()
-	if _changed("army_rows", rows):
-		_apply_army_rows(rows)
-	_army_table.selected_id = _selected_army
-	_army_table.queue_redraw()
-	var convoys: Array = data.get("convoys", [])
-	var at_risk := convoys.filter(func(c): return float(c.risk) >= 0.25).size()
-	_convoy_table.visible = not convoys.is_empty()
-	_convoy_caption.visible = not convoys.is_empty()
-	if not convoys.is_empty():
-		_convoy_caption.text = ("%d 支 · %d 支高风险" % [convoys.size(), at_risk]) if at_risk > 0 \
-			else "%d 支" % convoys.size()
-	if _changed("convoys", convoys):
-		_apply_convoys(convoys)
-	var procurement_text := String(data.get("procurement_text", ""))
-	_procurement_label.visible = not procurement_text.is_empty()
-	_procurement_label.text = procurement_text
+	ArmyConflictRows._refresh_armies(self)
 
 
 func _apply_army_rows(rows: Array) -> void:
-	MilitaryTableRows._apply_army_rows( _army_table, rows)
+	ArmyConflictRows._apply_army_rows(self, rows)
 
 
 func _apply_convoys(convoys: Array) -> void:
-	MilitaryTableRows._apply_convoys( _convoy_table, convoys)
+	ArmyConflictRows._apply_convoys(self, convoys)
 
 
 func _on_army_action(handle, action_id: String) -> void:
-	match String(action_id):
-		"locate":
-			locate_cell_requested.emit(_army_cell(int(handle)))
-		"dossier":
-			_open_army_dossier(int(handle))
+	ArmyConflictRows._on_army_action(self, handle, action_id)
 
 
-## 「定位」= 镜头落到部队所在格；「档案」= 打开军务档案（外壳会顺带对焦）。
 func _open_army_dossier(handle: int) -> void:
-	if handle <= 0:
-		return
-	_selected_army = handle
-	dossier_requested.emit("army", handle, _army_cell(handle))
+	ArmyConflictRows._open_army_dossier(self, handle)
 
 
 func _army_cell(handle: int) -> int:
-	for raw in _vm.armies():
-		if int(raw.get("handle", 0)) == handle:
-			return int(raw.get("cell", -1))
-	return -1
+	return ArmyConflictRows._army_cell(self, handle)
 
 
 func selected_army() -> int:
-	return _selected_army
+	return ArmyConflictRows.selected_army(self)
 
 
 func set_selected_army(army_handle: int) -> void:
-	_selected_army = army_handle
-	if is_node_ready():
-		_refresh_armies()
+	ArmyConflictRows.set_selected_army(self, army_handle)
 
 
 func _on_convoy_selected(convoy_id) -> void:
-	for raw in _vm.snapshot().get("convoys", []):
-		if int(raw.get("id", 0)) == int(convoy_id):
-			locate_cell_requested.emit(int(raw.get("current_cell", -1)))
+	ArmyConflictRows._on_convoy_selected(self, convoy_id)
 
-
-# ── war & peace ─────────────────────────────────────────────────────────
-#
-# 这一页只回答「在打谁、打到什么程度、要不要谈」。条款编辑器在议和面板里
-# （每张战争卡的「议和」按钮打开它），战报属于战争细节，也不在这里堆。
 
 func _refresh_war() -> void:
-	var data: Dictionary = _vm.build("war", {"war": _selected_war})
-	_war_data = data
-	var wars: Array = data.get("wars", [])
-	_selected_war = int(data.get("selected", 0))
-	_war_empty.visible = wars.is_empty()
-	%WarGrid.visible = not wars.is_empty()
-	for index in range(_war_cards.size()):
-		var card: Control = _war_cards[index]
-		card.visible = index < wars.size()
-		if card.visible:
-			card.set_data(wars[index])
-			card.modulate = Color.WHITE if int(wars[index].id) == _selected_war \
-				else Color(1, 1, 1, 0.72)
-	_refresh_declare(data)
-	_refresh_fronts(data)
+	ArmyConflictRows._refresh_war(self)
 
-
-# ── 宣战：邻国候选（真实领土图 + Country 名称）──────────────────────────
 
 func _refresh_declare(data: Dictionary) -> void:
-	var rows: Array = data.get("declare", [])
-	_declare_caption.text = "%d 个邻国" % rows.size() if not rows.is_empty() else ""
-	_declare_empty.visible = rows.is_empty()
-	_declare_empty.text = "邻接领土图上没有其他国家。" if _vm.session_bound() \
-		else "暂时读不到邻国领土，请稍后重试。"
-	if _changed("declare", rows):
-		var table_rows: Array = []
-		for row in rows:
-			var reason := String(row.reason)
-			var state := reason if not reason.is_empty() else "可宣战"
-			var tone := UITokens.DOSSIER_OXBLOOD if bool(row.can_declare) \
-				else UITokens.DOSSIER_INK_MUTED
-			var actions: Array = []
-			if bool(row.can_declare) and int(row.handle) != 0:
-				actions.append({"id": "declare", "icon": "military.war.front",
-					"tooltip": "向%s宣战" % String(row.name)})
-			table_rows.append({
-				"id": int(row.id),
-				"muted": not bool(row.can_declare),
-				"tooltip": "%s\n边域 %d 格 · %s" % [String(row.name), int(row.cells), state],
-				"cells": {
-					"name": {"text": String(row.name), "icon": "country.military",
-						"color": UITokens.DOSSIER_INK},
-					"capital": {"text": String(row.capital)},
-					"cells": {"text": "%d" % int(row.cells), "sort": float(row.cells)},
-					"state": {"text": state, "color": tone},
-					"actions": {},
-				},
-				"actions": actions,
-			})
-		_declare_table.set_rows(table_rows)
+	ArmyConflictRows._refresh_declare(self, data)
 
 
 func _on_war_card_input(event: InputEvent, card: Control) -> void:
-	if event is InputEventMouseButton and event.pressed \
-			and event.button_index == MOUSE_BUTTON_LEFT:
-		_selected_war = int(card.war_id)
-		_refresh_war()
+	ArmyConflictRows._on_war_card_input(self, event, card)
 
 
 func _on_declare_selected(row_id) -> void:
-	var row := _declare_row(int(row_id))
-	if row.is_empty():
-		return
-	if not bool(row.can_declare):
-		_flash("%s 目前无法宣战：%s" % [String(row.name), String(row.reason)], true)
-		return
-	_request(PlayerControllerScript.COMMAND_MILITARY_WAR_DECLARE,
-		{"target": int(row.handle)})
+	ArmyConflictRows._on_declare_selected(self, row_id)
 
 
 func _on_declare_action(row_id, action_id: String) -> void:
-	if action_id == "declare":
-		_on_declare_selected(row_id)
+	ArmyConflictRows._on_declare_action(self, row_id, action_id)
 
 
 func _declare_row(row_id: int) -> Dictionary:
-	for row in _war_data.get("declare", []):
-		if int(row.id) == row_id:
-			return row
-	return {}
+	return ArmyConflictRows._declare_row(self, row_id)
 
-
-# ── 战线 ────────────────────────────────────────────────────────────────
 
 func _refresh_fronts(data: Dictionary) -> void:
-	var rows: Array = data.get("fronts", [])
-	# 和平（无战线）时空态整节不渲染；仅数据源缺失时给出原因提示（后果提示保留）。
-	var front_source_missing := not bool(data.get("front_source", true))
-	_front_empty.visible = rows.is_empty() and front_source_missing
-	if front_source_missing:
-		_front_empty.text = "暂时读不到战线情报。"
-	if _changed("fronts", rows):
-		var list_rows: Array = []
-		for row in rows:
-			var progress := float(row.progress)
-			list_rows.append({
-				"id": String(row.id),
-				"label": String(row.zone),
-				"text": "%s · %d 处接触" % [String(row.text), int(row.edges)],
-				"value": progress,
-				"color": UITokens.DOSSIER_OXBLOOD if progress > 0.001
-					else UITokens.DOSSIER_SLATE,
-				"tooltip": "%s · %d 处接触\n点击打开战线档案" % [String(row.zone),
-					int(row.edges)],
-			})
-		_front_list.set_rows(list_rows)
+	ArmyConflictRows._refresh_fronts(self, data)
 
 
-## 点战线 = 打开战线档案；外壳会同时把镜头落到该扇区（等同于「定位」）。
 func _on_front_selected(row_id) -> void:
-	for row in _war_data.get("fronts", []):
-		if String(row.id) == String(row_id):
-			dossier_requested.emit("front", int(row.cell), int(row.cell))
-			return
+	ArmyConflictRows._on_front_selected(self, row_id)
 
-
-# ── commands ────────────────────────────────────────────────────────────
 
 func _request(id: StringName, args: Dictionary) -> Dictionary:
-	if _player_controller == null or not _player_controller.has_method("request_command"):
-		_flash("命令暂未接通，请稍后重试。", true)
-		return {}
-	var result: Dictionary = _player_controller.request_command(id, args)
-	if bool(result.get("ok", false)):
-		_flash(String(result.get("message", "已下达。")), false)
-	else:
-		_flash(String(result.get("message", "命令未生效，请重试或查看军情。")), true)
-	return result
+	return ArmyConflictRows._request(self, id, args)
 
 
 func _flash(text: String, danger: bool) -> void:
@@ -916,9 +773,7 @@ func _flash(text: String, danger: bool) -> void:
 
 
 func _show_status(text: String, danger: bool) -> void:
-	_status_label.text = text
-	_status_label.visible = not text.is_empty()
-	_status_label.theme_type_variation = &"PKDangerText" if danger else &"PKDossierCaption"
+	ArmyConflictRows._show_status(self, text, danger)
 
 
 static func _count(value) -> String:

@@ -4,6 +4,7 @@ from pathlib import Path
 import argparse
 import re
 from check_cpp_deps import code_only
+from cpp_source import read_cpp_source
 ROOT = Path(__file__).resolve().parents[2]
 
 def borrowed_owner(code, owner, owner_type, allow_hash=False):
@@ -62,7 +63,7 @@ def lineage_opinion_violations(code):
 
 def violations(root):
     path = root / "gdext/src/native_simulation_stage_economy.cpp"
-    code = code_only(path.read_text())
+    code = code_only(read_cpp_source(path))
     errors = []
     if re.search(r"\b(?:store|planned_store)\s*\(\s*\)|RuntimeClimateAuthority\s*::\s*(?:store|planned_store)|\b(?:snapshot|snapshot_into)\s*\(", code):
         errors.append("Economy stage bypasses Climate committed view")
@@ -70,31 +71,31 @@ def violations(root):
         errors.append("missing consumer generation/day assertion")
     if "copy_committed_view" not in code:
         errors.append("missing owned committed projection")
-    event_code = code_only((root / "gdext/src/native_simulation_host_trigger.cpp").read_text())
+    event_code = code_only(read_cpp_source(root / "gdext/src/native_simulation_host_trigger.cpp"))
     if re.search(r"\bsnapshot\s*\(|RuntimeEventsAuthority\s*::\s*snapshot\b", event_code):
         errors.append("Trigger forwarding bypasses Events committed view")
     if "copy_committed_view" not in event_code:
         errors.append("missing owned Events projection")
     if not re.search(r"assert\s*\(\s*_events_authority\.observe_trigger_view\s*\(events_view\)\s*\)", event_code):
         errors.append("missing Events generation/day assertion")
-    ideology_code = code_only((root / "gdext/src/native_simulation_host_ideology.cpp").read_text())
+    ideology_code = code_only(read_cpp_source(root / "gdext/src/native_simulation_host_ideology.cpp"))
     if borrowed_owner(ideology_code, "_modifier_pod_authority", "RuntimeModifierPodAuthority"):
         errors.append("Ideology bypasses Modifier committed view")
     if "copy_committed_view" not in ideology_code or not re.search(r"assert\s*\(\s*_modifier_pod_authority\.observe_committed_view", ideology_code):
         errors.append("missing Modifier generation/day assertion")
-    modifier_code = code_only((root / "gdext/src/native_simulation_host_modifier.cpp").read_text())
+    modifier_code = code_only(read_cpp_source(root / "gdext/src/native_simulation_host_modifier.cpp"))
     if borrowed_owner(modifier_code, "_effect_pod_authority", "RuntimeEffectPodAuthority", allow_hash=True):
         errors.append("Modifier bypasses Effect committed view")
     if "copy_committed_view" not in modifier_code or not re.search(r"assert\s*\(\s*_effect_pod_authority\.observe_committed_view", modifier_code):
         errors.append("missing Effect generation/day assertion")
-    annual_code = code_only((root / "gdext/src/annual_development_host.cpp").read_text())
+    annual_code = code_only(read_cpp_source(root / "gdext/src/annual_development_host.cpp"))
     errors += published_view_violations(
         consumer_body(ideology_code, "execute_ideology_worker_stage"),
         consumer_body(annual_code, "commit_annual_worker_day"))
     ai_path = root / "gdext/src/native_simulation_host_country_stage.cpp"
-    errors += country_ai_violations(code_only(ai_path.read_text()))
+    errors += country_ai_violations(code_only(read_cpp_source(ai_path)))
     errors += annual_country_violations(consumer_body(annual_code, "commit_annual_worker_day"))
-    family = code_only((root / "gdext/src/economy_runtime_family_effect_inputs.cpp").read_text())
+    family = code_only(read_cpp_source(root / "gdext/src/economy_runtime_family_effect_inputs_metrics.cpp"))
     errors += lineage_opinion_violations(consumer_body(family, "refresh_class_opinion_metrics"))
     return errors
 

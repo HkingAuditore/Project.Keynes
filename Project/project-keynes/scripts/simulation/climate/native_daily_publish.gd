@@ -1,5 +1,7 @@
 extends "res://scripts/simulation/generator_context.gd"
 
+const FrontSignatures = preload("res://scripts/simulation/climate/native_daily_front_signatures.gd")
+
 ## Native daily graph result synchronization and publish. Mutable state remains on MapGenerator.
 
 func _publish_native_daily_temperature_transport_anomaly(
@@ -568,55 +570,13 @@ func _native_daily_install_complete_apply_diag(
 		breakdown[key] = diag[key]
 
 func _native_daily_make_front_signature(front: WeatherFront) -> String:
-	if front == null:
-		return "null"
-	var axis_v: Vector2 = front.normalized_axis()
-	return "%d:%d:%d:%d:%d:%d:%d:%d" % [
-		int(front.type),
-		roundi(front.center.x / 8.0),
-		roundi(front.center.y / 8.0),
-		roundi(axis_v.angle() / 0.0872665),
-		roundi(front.radius / 8.0),
-		roundi(clampf(front.intensity, 0.0, 1.0) * 100.0),
-		roundi(clampf(front.precip_amount, 0.0, 1.0) * 100.0),
-		roundi(clampf(front.cloud_amount, 0.0, 1.0) * 100.0),
-	]
+	return FrontSignatures.make_signature(front)
 
 func _native_daily_front_slot_signatures(fronts: Array) -> PackedStringArray:
-	var parts := PackedStringArray()
-	parts.resize(fronts.size())
-	for front_index in range(fronts.size()):
-		parts[front_index] = _native_daily_make_front_signature(fronts[front_index])
-	return parts
+	return FrontSignatures.slot_signatures(fronts)
 
 func _native_daily_fronts_signature_diff(prev: PackedStringArray, next: PackedStringArray) -> Dictionary:
-	var changed_slots := PackedInt32Array()
-	var unchanged: int = 0
-	var changed: int = 0
-	var added: int = 0
-	var removed: int = 0
-	var max_n: int = maxi(prev.size(), next.size())
-	for i in range(max_n):
-		var old_sig: String = prev[i] if i < prev.size() else ""
-		var new_sig: String = next[i] if i < next.size() else ""
-		if old_sig == new_sig:
-			unchanged += 1
-		else:
-			changed_slots.append(i)
-			if i >= prev.size():
-				added += 1
-			elif i >= next.size():
-				removed += 1
-			else:
-				changed += 1
-	return {
-		"changed_slots": changed_slots,
-		"changed_slots_count": changed_slots.size(),
-		"unchanged_slots": unchanged,
-		"changed_slots_existing": changed,
-		"added_slots": added,
-		"removed_slots": removed,
-	}
+	return FrontSignatures.diff(prev, next)
 
 func _apply_vegetation_succession_candidates(map: MapData,
 		indices: PackedInt32Array, to_vegetation: PackedByteArray, cp_now) -> int:

@@ -175,7 +175,7 @@ static func _mirror_shadow_chunk(host, chunk_id: int, buffer: PackedFloat32Array
 		FogDrawBounds.upload(smm, buffer, FogDrawBounds.Kind.VEGETATION_SHADOW,
 			host._chunk_nodes[chunk_id].multimesh)
 		var far_count = int(host._chunk_far_instance_counts.get(chunk_id, inst))
-		smm.visible_instance_count = host._lod_visible_count(inst, far_count)
+		smm.visible_instance_count = host.Chunk_budget._lod_visible_count(host, inst, far_count)
 	else:
 		smm.visible_instance_count = 0
 	snode.visible = _shadow_should_render(host, ) and host.visible and smm.visible_instance_count > 0
@@ -240,7 +240,7 @@ static func _sync_single_shadow(host, force_rebuild: bool = false) -> void:
 		host._shadow_mmi.visible = false
 		_sync_single_shadow_wrap_nodes(host, )
 		return
-	var combined_fraction = host._effective_visible_instance_fraction()
+	var combined_fraction = host.Chunk_budget._effective_visible_instance_fraction(host)
 	var vis = clampi(
 		int(floor(float(host._shadow_built_total) * combined_fraction)),
 		0,
@@ -313,9 +313,9 @@ static func _shadow_resources_enabled(host) -> bool:
 		return false
 	# Performance tiers: desktop LOW off, MID/HIGH zoom gated; mobile only HIGH.
 	if OS.has_feature("mobile"):
-		if host._active_quality_tier() < 2:
+		if host.ShrubScatter._active_quality_tier(host) < 2:
 			return false
-	elif host._active_quality_tier() < 1:
+	elif host.ShrubScatter._active_quality_tier(host) < 1:
 		return false
 	return _archetype_casts_shadow(host, )
 
@@ -332,7 +332,7 @@ static func _shadow_min_zoom(host) -> float:
 		return 1.25
 	# [veg-lod-high 2026-10-18] 高画质在总览 zoom 也保留树影：树木在 0.45 以上仍有 89% 密度，
 	# 影子却到 0.80 才出现，拉远后整片森林没有投影，画面立刻变平。
-	return 0.45 if host._active_quality_tier() >= 2 else 0.70
+	return 0.45 if host.ShrubScatter._active_quality_tier(host) >= 2 else 0.70
 
 
 # [shadow-zoom-fade 2026-10-18] 投影不在某个 zoom 上硬开关：门槛就是开始淡入的位置，
@@ -558,7 +558,7 @@ static func evict_dormant_detail_chunks(host, now_msec: int, retention_msec: int
 			shadow.multimesh.instance_count = 0
 		evicted += 1
 	if evicted > 0:
-		host._refresh_instance_totals_from_chunks()
+		host.Chunk_refresh._refresh_instance_totals_from_chunks(host)
 		host.invalidate_viewport_budget_cache()
 	return evicted
 
@@ -609,6 +609,3 @@ static func _ensure_chunk_node(host, chunk_id: int) -> MultiMeshInstance2D:
 		host.add_child(node)
 	host._chunk_nodes[chunk_id] = node
 	return node
-
-
-

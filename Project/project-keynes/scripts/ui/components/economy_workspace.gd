@@ -1,6 +1,18 @@
 extends Control
 class_name EconomyWorkspace
 
+const TaxCommands = preload("res://scripts/ui/components/economy_tax_commands.gd")
+
+const TaxCards = preload("res://scripts/ui/components/economy_tax_cards.gd")
+
+const WorkspacePage = preload("res://scripts/ui/components/economy_workspace_page.gd")
+
+const WorkspaceNavigation = preload("res://scripts/ui/components/economy_workspace_navigation.gd")
+
+const BudgetCommands = preload("res://scripts/ui/components/economy_budget_commands.gd")
+
+const WorkspaceControls = preload("res://scripts/ui/components/economy_workspace_controls.gd")
+
 const TradePresentation = preload("res://scripts/ui/components/economy_workspace_trade.gd")
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const NationalProcurementSliderScript = preload("res://scripts/ui/components/national_procurement_slider.gd")
@@ -107,88 +119,7 @@ var _fiscal_page: Control
 
 
 func _ready() -> void:
-	if _cash_card != null:
-		return
-	set_process(false)
-	_cash_card = get_node_or_null("Viewport/Column/Cards/CashCard") as MetricCard
-	_tax_card = get_node_or_null("Viewport/Column/Cards/TaxCard") as MetricCard
-	_subsidy_card = get_node_or_null("Viewport/Column/Cards/SubsidyCard") as MetricCard
-	_fulfillment_card = get_node_or_null("Viewport/Column/Cards/FulfillmentCard") as MetricCard
-	_country_label = get_node_or_null("Viewport/Column/Header/CountryLabel") as Label
-	_day_label = get_node_or_null("Viewport/Column/Header/DayLabel") as Label
-	_tabs = get_node_or_null("Viewport/Column/Tabs") as CategoryTabs
-	_tax_tabs = get_node_or_null("Viewport/Column/TaxTabs") as CategoryTabs
-	_insights = get_node_or_null("Viewport/Column/Insights") as InsightList
-	var ledger_root := "Viewport/Column/Ledger/LedgerColumn"
-	_search = get_node_or_null(ledger_root + "/Tools/Search") as LineEdit
-	_overrides_only = get_node_or_null(ledger_root + "/Tools/OverridesOnly") as Button
-	_group_axis_picker = get_node_or_null(ledger_root + "/Tools/GroupAxis") as OptionButton
-	_expand_all_button = get_node_or_null(ledger_root + "/Tools/ExpandAllGroups") as Button
-	_status_label = get_node_or_null(ledger_root + "/StatusLabel") as Label
-	_goods_heading = get_node_or_null(ledger_root + "/GoodsHeading") as Control
-	_scroll = get_node_or_null(ledger_root + "/Scroll") as ScrollContainer
-	_default_tax_host = get_node_or_null("%DefaultTaxHost") as Control
-	_tax_group_list = get_node_or_null("%TaxGroupList") as VBoxContainer
-	_flow = get_node_or_null("%Flow") as HFlowContainer
-	_empty_label = get_node_or_null("%EmptyLabel") as Label
-	_trade_views = get_node_or_null(ledger_root + "/Tools/TradeViews") as HBoxContainer
-	_trade_goods_button = get_node_or_null(ledger_root + "/Tools/TradeViews/Goods") as Button
-	_trade_partners_button = get_node_or_null(ledger_root + "/Tools/TradeViews/Partners") as Button
-	_trade_prev = get_node_or_null(ledger_root + "/Tools/TradePrev") as Button
-	_trade_next = get_node_or_null(ledger_root + "/Tools/TradeNext") as Button
-	_trade_page_label = get_node_or_null(ledger_root + "/Tools/TradePage") as Label
-	_ledger_title = get_node_or_null(ledger_root + "/LedgerHeading/Title") as Label
-	_ledger_subtitle = get_node_or_null(ledger_root + "/LedgerHeading/Subtitle") as Label
-	_summary_heading = get_node_or_null("Viewport/Column/SummaryHeading") as Control
-	_summary_cards = get_node_or_null("Viewport/Column/Cards") as Control
-	_fiscal_page = get_node_or_null(ledger_root + "/FiscalPage") as Control
-	var section_badge := get_node_or_null("Viewport/Column/Header/SectionIcon") as IconBadge
-	if _cash_card == null or _tax_card == null or _subsidy_card == null \
-			or _fulfillment_card == null or _country_label == null \
-			or _day_label == null or _tabs == null or _search == null \
-			or _overrides_only == null or _status_label == null \
-			or _scroll == null or _flow == null or _empty_label == null \
-			or section_badge == null:
-		push_error("EconomyWorkspace 必须通过 economy_workspace.tscn 实例化。")
-		return
-	section_badge.set_semantic(&"tax.section", UITokens.BRASS_HIGHLIGHT)
-	_tabs.tab_selected.connect(_select_page)
-	if _tax_tabs != null:
-		_tax_tabs.tab_selected.connect(_select_page)
-	_search.text_changed.connect(_apply_filter.unbind(1))
-	_overrides_only.toggled.connect(_apply_filter.unbind(1))
-	_tax_groups = TaxGroupControllerScript.new(self)
-	_tax_groups.bind_toolbar(_group_axis_picker, _expand_all_button)
-	if _trade_goods_button != null:
-		_trade_goods_button.pressed.connect(_select_trade_view.bind("goods"))
-	if _trade_partners_button != null:
-		_trade_partners_button.pressed.connect(_select_trade_view.bind("partners"))
-	if _trade_prev != null:
-		_trade_prev.pressed.connect(_trade_previous_page)
-	if _trade_next != null:
-		_trade_next.pressed.connect(_trade_next_page)
-	if _trade_prev != null:
-		IconButton.apply(_trade_prev, &"action.back", IconButton.MEDIUM, "上一页")
-	if _trade_next != null:
-		IconButton.apply(_trade_next, &"action.chevron_right", IconButton.MEDIUM, "下一页")
-	if _fiscal_page != null:
-		_fiscal_page.set_player_controller(_player_controller)
-		_fiscal_page.procurement_committed.connect(_on_procurement_committed)
-		_fiscal_page.military_budget_committed.connect(
-			_on_military_budget_committed)
-	_draft_timer = Timer.new()
-	_draft_timer.one_shot = true
-	_draft_timer.wait_time = DRAFT_COMMIT_DELAY_SEC
-	_draft_timer.process_mode = Node.PROCESS_MODE_ALWAYS
-	_draft_timer.timeout.connect(_on_draft_commit_timeout)
-	add_child(_draft_timer)
-	# 触摸档：把页签、关闭、搜索框、税率行、滚动条一次性抬到 44dp（桌面档 no-op）。
-	# 之后动态生成的税卡/贸易行由 child_entered_tree 继续兜住。
-	TouchUI.watch(self)
-	# 手机纵向只有 873 设计像素：默认就收掉摘要卡与洞察条，把高度让给可滚动的账本。
-	if TouchUI.is_short_viewport():
-		set_compact(true)
-	_select_page("treasury")
+	WorkspaceControls._ready(self)
 
 
 func set_model(model: Dictionary) -> void:
@@ -348,771 +279,192 @@ func _refresh_budget() -> void:
 ## （仍在自动分配的通道由预算卷宗传 -1，避免被钉成手动份额）。
 func _on_procurement_committed(treasury_share_bp: int, research_share_bp := -1,
 		era_share_bp := -1, colonization_share_bp := -1) -> void:
-	var research_share := research_share_bp
-	if research_share < 0:
-		if _fiscal_page != null and _fiscal_page.technology_slider() != null:
-			research_share = int(_fiscal_page.technology_slider().share_bp())
-		elif _fiscal_page != null and _fiscal_page.national_slider() != null:
-			research_share = int(_fiscal_page.national_slider().research_share_bp())
-		else:
-			research_share = NationalProcurementSliderScript.DEFAULT_RESEARCH_SHARE_BP
-	var result: Dictionary = NationalProcurementSliderScript.submit_policy(_player_controller,
-		treasury_share_bp, research_share, era_share_bp, colonization_share_bp)
-	var ok := bool(result.get("ok", false))
-	if ok:
-		_set_status("预算份额已提交")
-	else:
-		var message := String(result.get("message", result.get("reason", ""))).strip_edges()
-		if NationalProcurementSliderScript.is_unsupported(result):
-			message = "预算调配将在国库建制后启用。"
-		_set_status(message if not message.is_empty() else "预算份额提交失败", true)
-	if _fiscal_page != null:
-		if ok:
-			_fiscal_page.set_local_policy(treasury_share_bp, research_share,
-				era_share_bp, colonization_share_bp)
-		else:
-			# 失败不留覆盖：刷新会把滑条退回原生真实政策，玩家看到的就是真相。
-			_fiscal_page.clear_local_policy()
-		_fiscal_page.refresh_live(_model)
+	BudgetCommands._on_procurement_committed(self, treasury_share_bp, research_share_bp, era_share_bp, colonization_share_bp)
 
 
-## 军事预算提交（任务 9）：把板块发来的份额意图转成 `military.policy.set_budget`。
-## `-1` 原样往上传，原生按未传入项沿用当前值校验三项份额之和 <= 100%。
-## 提交成功才写本地覆盖，让滑条在快照跟上之前不被弹回旧值。
 func _on_military_budget_committed(total_bp: int, wage_bp: int, upkeep_bp: int,
 		procurement_bp: int) -> void:
-	if _player_controller == null or not _player_controller.has_method("request_command"):
-		_set_status("玩家尚未就绪，军事预算未能提交", true)
-		return
-	var args := {"total_bp": int(total_bp)}
-	if wage_bp >= 0:
-		args["wage_bp"] = int(wage_bp)
-	if upkeep_bp >= 0:
-		args["upkeep_bp"] = int(upkeep_bp)
-	if procurement_bp >= 0:
-		args["procurement_bp"] = int(procurement_bp)
-	var result: Dictionary = _player_controller.request_command(
-		PlayerControllerScript.COMMAND_MILITARY_BUDGET, args)
-	if bool(result.get("ok", false)):
-		if _fiscal_page != null:
-			_fiscal_page.set_local_military_budget(
-				int(total_bp), wage_bp, upkeep_bp, procurement_bp)
-			_fiscal_page.refresh_live(_model)
-		if wage_bp >= 0 or upkeep_bp >= 0 or procurement_bp >= 0:
-			_set_status("军事预算与通道份额已提交")
-		else:
-			_set_status("军事预算已提交")
-		return
-	var message := String(result.get("message", result.get("reason", ""))).strip_edges()
-	var code := String(result.get("code", ""))
-	if code == "unsupported_command":
-		message = "军费统筹尚未设立：先在军事页建立统辖机构，方可调配军费"
-	elif code == "command_budget_channels_exceed_10000":
-		message = "三项通道份额之和超过 100%，请下调任一项"
-	elif code.is_empty() and message.is_empty():
-		message = "军事预算提交失败"
-	_set_status(message, true)
-	# 失败不留覆盖：下一次刷新把滑条退回原生真实政策，玩家看到的就是真相。
-	if _fiscal_page != null:
-		_fiscal_page.refresh_live(_model)
+	BudgetCommands._on_military_budget_committed(self, total_bp, wage_bp, upkeep_bp, procurement_bp)
 
 
 func _refresh_tabs() -> void:
-	var treasury: Dictionary = _model.get("treasury", {})
-	var signature_parts: Array[String] = []
-	var tabs: Array = []
-	for page in TOP_PAGE_IDS:
-		if _embedded and page == "trade":
-			continue
-		var definition: Dictionary = PAGE_DEFINITIONS[page]
-		var tooltip := String(definition.label)
-		if page == "trade":
-			tooltip = "贸易"
-			signature_parts.append("trade")
-		elif page == "treasury":
-			var good_count := int(treasury.get("nonzero_good_count", 0))
-			tooltip = "国库 · %d 种物资" % good_count
-			signature_parts.append("%s:%d" % [page, good_count])
-		else:
-			tooltip = "税制"
-			signature_parts.append("tax")
-		tabs.append({"id": page, "label": String(definition.label),
-			"icon": definition.icon, "tooltip": tooltip})
-	var signature := "|".join(signature_parts)
-	if signature == _tab_signature and _tabs.get_child_count() > 0:
-		_tabs.select_tab(_top_page_for(_page))
-		return
-	_tab_signature = signature
-	_tabs.set_tabs(tabs, _top_page_for(_page), true)
+	WorkspaceNavigation._refresh_tabs(self)
 
 
 func _refresh_tax_tabs() -> void:
-	if _tax_tabs == null:
-		return
-	var tax_open := _is_tax_page(_page)
-	_tax_tabs.visible = tax_open
-	if not tax_open:
-		return
-	var presentation: Dictionary = _model.get("tax_presentation", {})
-	var signature_parts: Array[String] = []
-	var tabs: Array = []
-	for page in TAX_PAGE_IDS:
-		var definition: Dictionary = PAGE_DEFINITIONS[page]
-		var page_pres: Dictionary = presentation.get(page, {})
-		var unlocked_count := (page_pres.get("unlocked", []) as Array).size()
-		var total := int(page_pres.get("total_count", 0))
-		signature_parts.append("%s:%d:%d" % [page, unlocked_count, total])
-		tabs.append({"id": page, "label": String(definition.label),
-			"icon": definition.icon,
-			"tooltip": "%s · 已解锁 %d/%d" % [String(definition.label), unlocked_count, total]})
-	var signature := "|".join(signature_parts)
-	if signature == _tax_tab_signature and _tax_tabs.get_child_count() > 0:
-		_tax_tabs.select_tab(_page)
-		return
-	_tax_tab_signature = signature
-	_tax_tabs.set_tabs(tabs, _page, true)
+	WorkspaceNavigation._refresh_tax_tabs(self)
 
 
 func _select_page(page: String) -> void:
-	if page == "tax":
-		page = _page if _is_tax_page(_page) else "income"
-	if _is_tax_page(page):
-		_last_tax_page = page
-	_page = page
-	_apply_summary_visibility()
-	if _tabs != null:
-		_tabs.select_tab(_top_page_for(page))
-	if _tax_tabs != null:
-		_refresh_tax_tabs()
-		_tax_tabs.visible = _is_tax_page(page)
-		if _tax_tabs.visible:
-			_tax_tabs.select_tab(page)
-	if _search != null:
-		_search.visible = _is_tax_page(page)
-		_overrides_only.visible = _is_tax_page(page)
-	if _tax_groups != null:
-		_tax_groups.sync_toolbar_visibility(_is_tax_page(page), _group_axis_picker, _expand_all_button)
-	if _trade_views != null:
-		_trade_views.visible = page == "trade"
-		_trade_prev.visible = page == "trade"
-		_trade_next.visible = page == "trade"
-		_trade_page_label.visible = page == "trade"
-	if _insights != null:
-		_insights.visible = page == "treasury" and not _compact
-	if _ledger_title != null:
-		var definition: Dictionary = PAGE_DEFINITIONS.get(page, {})
-		_ledger_title.text = String(definition.get("label", "财政"))
-		_ledger_subtitle.text = _page_description(page)
-		_ledger_subtitle.visible = not _ledger_subtitle.text.is_empty()
-	_apply_budget_visibility(page)
-	_refresh_page()
-	_refresh_treasury_insights()
-	_refresh_budget()
-	_animate_cards_in()
+	WorkspaceNavigation._select_page(self, page)
 
 
 func _top_page_for(page: String) -> String:
-	return "tax" if _is_tax_page(page) else page
+	return WorkspaceNavigation._top_page_for(self, page)
 
 
-## 预算卷宗只在「国库」页出现：上半部调份额，下半部仍是国库物资列表。
-## 两者共用账本区，不再互斥，所以玩家不必先记住「预算在另一个页签里」。
 func _apply_budget_visibility(page: String) -> void:
-	var show_budget := page == "treasury" and _fiscal_page != null
-	if _goods_heading != null:
-		_goods_heading.visible = page == "treasury"
-	if _fiscal_page != null:
-		var was_visible := _fiscal_page.visible
-		_fiscal_page.visible = show_budget
-		# 打开：滑入 + 淡入（180ms）。切页是玩家动作而非模拟事件，
-		# 不做额外节流；减动效偏好直接跳过。
-		if show_budget and not was_visible:
-			_play_fiscal_entrance()
-		if show_budget:
-			_apply_budget_model()
-	# 国库页的物资卡片只占一行，把账本剩余高度全让给预算卷宗；
-	# 税制 / 贸易页仍要一整块可滚动的主列表。
-	if _scroll != null:
-		if show_budget:
-			_scroll.size_flags_vertical = Control.SIZE_FILL
-			_scroll.custom_minimum_size = Vector2(0.0, 88.0)
-		else:
-			_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-			_scroll.custom_minimum_size = Vector2(0.0, 0.0)
-	if _status_label != null:
-		_status_label.visible = _status_label.text != ""
+	WorkspaceNavigation._apply_budget_visibility(self, page)
 
 
-## 预算卷宗入场：整块滑入淡入。只对页面本身做一次，不逐板块错峰——
-## 板块里有可拖控件，错峰期间的可点击区域会和视觉位置错开。
 func _play_fiscal_entrance() -> void:
-	if _fiscal_page == null or UIAnimation.reduced_motion():
-		return
-	UIAnimation.fade_slide_in(_fiscal_page, Vector2(22.0, 0.0), 0.18)
+	WorkspaceNavigation._play_fiscal_entrance(self)
 
 
 func _apply_budget_model() -> void:
-	if _fiscal_page == null:
-		return
-	_fiscal_page.set_compact(_compact)
-	# 分区只在首次进入时构建；之后切回沿用同一批节点，只刷新读数，
-	# 这样滑条不会因为来回切页签被销毁重建。
-	_fiscal_page.set_model(_model, false)
+	WorkspaceNavigation._apply_budget_model(self)
 
 
-## 测试入口：财政页（未实例化时为 null）。
 func fiscal_page() -> Control:
-	return _fiscal_page
+	return WorkspaceNavigation.fiscal_page(self)
 
 
 func _is_tax_page(page: String) -> bool:
-	return TAX_PAGE_IDS.has(page)
+	return WorkspaceNavigation._is_tax_page(self, page)
 
 
 func _page_description(page: String) -> String:
-	return "预算调配 · 国库物资" if page == "treasury" else ""
+	return WorkspaceNavigation._page_description(self, page)
 
 
 # Visibility is synced from a wanted-set instead of hide-all-then-reshow, so a
 # daily tick never toggles a stable card and never steals focus from a SpinBox
 # the player is editing (hiding a focused control releases its focus).
 func _refresh_page() -> void:
-	if _flow == null or _model.is_empty():
-		return
-	var wanted := {}
-	if _page == "trade":
-		if _tax_groups != null:
-			_tax_groups.hide_all_groups(_default_tax_host, _tax_group_list, _flow, _rows)
-		_refresh_trade_page(wanted)
-		_sync_visibility(wanted)
-		return
-	_apply_default_summary_cards()
-	if _page == "treasury":
-		if _tax_groups != null:
-			_tax_groups.hide_all_groups(_default_tax_host, _tax_group_list, _flow, _rows)
-		_apply_goods((_model.get("treasury", {}) as Dictionary).get("goods", []), wanted)
-		_sync_visibility(wanted)
-		_set_status("")
-		return
-	var policy: Dictionary = _model.get("tax_policy", {})
-	if not bool(policy.get("ok", false)):
-		if _tax_groups != null:
-			_tax_groups.hide_all_groups(_default_tax_host, _tax_group_list, _flow, _rows)
-		_sync_visibility(wanted)
-		_empty_label.visible = false
-		_set_status(String(policy.get("reason", "税收政策暂不可用")))
-		return
-	var presentation: Dictionary = _model.get("tax_presentation", {})
-	var page_pres: Dictionary = presentation.get(_page, {})
-	var defaults := _basis_points_array(policy.get("default_rates_basis_points", PackedInt32Array()),
-		policy.get("default_rates", PackedInt32Array()))
-	var default_modes: PackedInt32Array = policy.get(
-		"default_assessment_modes", PackedInt32Array())
-	var default_card := _ensure_card(_page, "__default__", _default_title(),
-		String(&"tax.default"), true)
-	var default_data := {}
-	for kind in _page_kinds(_page):
-		var kind_id := int(TAX_KIND[kind])
-		default_data[kind] = {"base": int(defaults[kind_id]),
-			"effective": int(defaults[kind_id]), "has_override": false,
-			"mode": int(default_modes[kind_id]) if kind_id < default_modes.size() \
-				else TAX_MODE_PERCENT_BP}
-	_update_card(default_card, default_data)
-	wanted["%s:__default__" % _page] = true
-	var index_by_id := {}
-	var ids := _item_ids(policy)
-	for index in range(ids.size()):
-		index_by_id[String(ids[index])] = index
-	var kind_groups := {}
-	for kind in _page_kinds(_page):
-		kind_groups[kind] = policy.get(kind, {})
-	var tariff_ids := {}
-	for item in presentation.get("import", {}).get("unlocked", []):
-		tariff_ids[String(item.get("id", ""))] = true
-	var unlocked: Array = page_pres.get("unlocked", [])
-	for item_value in unlocked:
-		var item: Dictionary = item_value
-		var stable_id := String(item.get("id", ""))
-		if not index_by_id.has(stable_id):
-			continue
-		var index: int = index_by_id[stable_id]
-		var kind_data := {}
-		var complete := true
-		for kind in _page_kinds(_page):
-			if kind in ["import", "export"] and not tariff_ids.has(stable_id):
-				continue
-			var group: Dictionary = kind_groups[kind]
-			var rates := _group_basis_points(group, "rates")
-			if index >= rates.size():
-				complete = false
-				break
-			var effective := _group_basis_points(group, "effective_rates", rates)
-			var flags: PackedByteArray = group.get("has_override", PackedByteArray())
-			var modes: PackedInt32Array = group.get(
-				"assessment_modes", PackedInt32Array())
-			kind_data[kind] = {
-				"base": int(rates[index]),
-				"effective": int(effective[index]) if index < effective.size() \
-					else int(rates[index]),
-				"has_override": index < flags.size() and flags[index] != 0,
-				"mode": int(modes[index]) if index < modes.size() \
-					else TAX_MODE_PERCENT_BP,
-			}
-		if not complete:
-			continue
-		var card := _ensure_card(_page, stable_id,
-			String(item.get("display_name", stable_id)),
-			String(item.get("icon_key", "")), false, kind_data.keys())
-		_update_card(card, kind_data)
-		wanted["%s:%s" % [_page, stable_id]] = true
-	_sync_visibility(wanted)
-	if _tax_groups != null:
-		_tax_groups.sync_groups(_page, wanted, _default_tax_host, _tax_group_list,
-			_flow, _rows, _group_axis_picker, _expand_all_button)
-	_set_status("")
-	_apply_filter()
+	WorkspacePage._refresh_page(self)
 
 
 func _select_trade_view(view: String) -> void:
-	if view != "goods" and view != "partners":
-		return
-	_trade_view = view
-	_trade_offset = 0
-	if _trade_goods_button != null:
-		_trade_goods_button.button_pressed = view == "goods"
-	if _trade_partners_button != null:
-		_trade_partners_button.button_pressed = view == "partners"
-	_refresh_page()
+	WorkspacePage._select_trade_view(self, view)
 
 
 func _trade_previous_page() -> void:
-	_trade_offset = maxi(0, _trade_offset - 32)
-	_refresh_page()
+	WorkspacePage._trade_previous_page(self)
 
 
 func _trade_next_page() -> void:
-	var cached: Dictionary = _trade_cache.get(_trade_cache_key(), {})
-	if not bool(cached.get("has_more", false)):
-		return
-	_trade_offset += 32
-	_refresh_page()
+	WorkspacePage._trade_next_page(self)
 
 
 func _trade_cache_key() -> String:
-	return TradePresentation._trade_cache_key(self)
+	return WorkspacePage._trade_cache_key(self)
+
 
 func _trade_good_name(good_index: int) -> String:
-	return TradePresentation._trade_good_name(self, good_index)
+	return WorkspacePage._trade_good_name(self, good_index)
+
 
 func _trade_partner_name(handle: int, slot: int) -> String:
-	return TradePresentation._trade_partner_name(self, handle, slot)
+	return WorkspacePage._trade_partner_name(self, handle, slot)
+
 
 func _refresh_trade_page(wanted: Dictionary) -> void:
-	TradePresentation._refresh_trade_page(self, wanted)
+	WorkspacePage._refresh_trade_page(self, wanted)
 
 
 func _ensure_trade_row(key: String) -> Dictionary:
-	return TradePresentation._ensure_trade_row(self, key)
+	return WorkspacePage._ensure_trade_row(self, key)
+
 
 func _apply_trade_summary_cards() -> void:
-	TradePresentation._apply_trade_summary_cards(self)
+	WorkspacePage._apply_trade_summary_cards(self)
 
 
 func _apply_default_summary_cards() -> void:
-	var treasury: Dictionary = _model.get("treasury", {})
-	var fiscal: Dictionary = _model.get("fiscal", {})
-	var available := bool(_model.get("available", false))
-	var collected := _sum_i64(fiscal.get("collected", PackedInt64Array()))
-	var subsidy := _sum_i64(fiscal.get("subsidy_paid", PackedInt64Array()))
-	var requested := _sum_i64(fiscal.get("subsidy_requested", PackedInt64Array()))
-	var reserved := _sum_i64(fiscal.get("subsidy_reserved", PackedInt64Array()))
-	var cumulative_subsidy := _sum_i64(fiscal.get(
-		"cumulative_subsidy_paid", PackedInt64Array()))
-	var fulfillment := 1.0 if requested <= 0 else float(subsidy) / float(requested)
-	_cash_card.set_data("国库现金",
-		String(treasury.get("cash_text", "—")) if available else "—",
-		String(_model.get("country_name", "玩家国家")), UITokens.RESOURCE, "", "metric.treasury",
-		true)
-	_tax_card.set_data("昨日税收", _money(collected), "所得税 / 交易税 / 营业税",
-		UITokens.BRASS_HIGHLIGHT, "", "tax.section", true)
-	var subsidy_gap := maxi(0, requested - subsidy)
-	_subsidy_card.set_data("补贴缺口", _money(subsidy_gap),
-		"本批实付 %s · 累计实付 %s" % [_money(subsidy), _money(cumulative_subsidy)],
-		UITokens.CLIMATE if subsidy_gap <= 0 else UITokens.RISK, "", "tax.income", true)
-	_fulfillment_card.set_data("补贴兑现率", "%.1f%%" % (fulfillment * 100.0),
-		("未预留，等待国库预算" if requested > 0 and subsidy == 0 and reserved == 0
-		 else "昨日申请 · 预留 %s" % _money(reserved)),
-		UITokens.ACCENT, "", "tax.default")
+	WorkspacePage._apply_default_summary_cards(self)
 
 
 func _sync_visibility(wanted: Dictionary) -> void:
-	for row_value in _rows.values():
-		var card: Dictionary = row_value
-		var control := card.control as Control
-		var should_show := wanted.has("%s:%s" % [String(card.page), String(card.item_id)])
-		if control.visible != should_show:
-			control.visible = should_show
-	for row_value in _trade_rows.values():
-		var card: Dictionary = row_value
-		var control := card.control as Control
-		var should_show := wanted.has("%s:%s" % [String(card.page), String(card.item_id)])
-		if control.visible != should_show:
-			control.visible = should_show
+	WorkspacePage._sync_visibility(self, wanted)
 
 
-# 物资税卡片共用物资目录，各税种仍独立提交。
 func _page_kinds(page: String) -> Array:
-	return ["consumption", "import", "export"] if page == "consumption" else [page]
+	return WorkspacePage._page_kinds(self, page)
 
 
 func _kind_page(kind: String) -> String:
-	return "consumption" if kind == "import" or kind == "export" else kind
+	return WorkspacePage._kind_page(self, kind)
 
 
 func _default_title() -> String:
-	return "默认物资税率" if _page == "consumption" else "默认税率"
+	return WorkspacePage._default_title(self)
 
 
-## 触摸键盘的标题：卡片名 + 可见的税种名。单一税种时那一列本来就不渲染，
-## 标题只留卡片名，免得写成「所得税 · 所得税」。
 func _pad_title(label: String, kind_label: Label) -> String:
-	if kind_label != null and kind_label.visible and not kind_label.text.is_empty():
-		return "%s · %s" % [label, kind_label.text]
-	return label
+	return WorkspacePage._pad_title(self, label, kind_label)
 
 
-## 当前这条税率行用的口径（给触摸键盘定位选中态）。
 func _pad_mode(key: String, kind: String) -> int:
-	var card: Dictionary = _rows.get(key, {})
-	if card.is_empty():
-		return TAX_MODE_PERCENT_BP
-	return _card_mode(card, kind)
+	return WorkspacePage._pad_mode(self, key, kind)
 
 
-## 只改口径、不提交：下拉随之同步，SpinBox 的量程/单位换到新口径并归零。
-## 真正的税率由调用方随后一条命令提交。
 func _apply_tax_mode(card: Dictionary, kind: String, spin: SpinBox, mode: int) -> void:
-	(card.assessment_modes as Dictionary)[kind] = mode
-	var button := (card.modes as Dictionary).get(kind) as OptionButton
-	if button != null:
-		var index := button.get_item_index(mode)
-		if index >= 0 and button.selected != index:
-			button.select(index)
-	_configure_spin_for_mode(spin, mode)
-	_set_spin_basis_points(spin, 0, mode)
+	WorkspacePage._apply_tax_mode(self, card, kind, spin, mode)
 
 
 func _item_ids(policy: Dictionary) -> PackedStringArray:
-	if _page == "income":
-		return policy.get("profession_ids", PackedStringArray())
-	if _page == "business":
-		return policy.get("building_type_ids", PackedStringArray())
-	return policy.get("good_ids", PackedStringArray())
+	return WorkspacePage._item_ids(self, policy)
 
 
 func _basis_points_array(preferred, fallback) -> PackedInt32Array:
-	var source: PackedInt32Array = preferred if preferred is PackedInt32Array else PackedInt32Array()
-	if not source.is_empty():
-		return source
-	var legacy: PackedInt32Array = fallback if fallback is PackedInt32Array else PackedInt32Array()
-	var converted := PackedInt32Array()
-	converted.resize(legacy.size())
-	for i in legacy.size():
-		converted[i] = int(legacy[i]) * 100
-	return converted
+	return WorkspacePage._basis_points_array(self, preferred, fallback)
 
 
 func _group_basis_points(group: Dictionary, key: String,
 		fallback: PackedInt32Array = PackedInt32Array()) -> PackedInt32Array:
-	var preferred_key := "%s_basis_points" % key
-	var preferred: PackedInt32Array = group.get(preferred_key, PackedInt32Array())
-	if not preferred.is_empty():
-		return preferred
-	var legacy: PackedInt32Array = group.get(key, fallback)
-	if legacy.is_empty():
-		return fallback
-	var converted := PackedInt32Array()
-	converted.resize(legacy.size())
-	for i in legacy.size():
-		converted[i] = int(legacy[i]) * 100
-	return converted
+	return TaxCards._group_basis_points(self, group, key, fallback)
 
 
 func _set_spin_basis_points(spin: SpinBox, rate_basis_points: int,
 		mode: int = TAX_MODE_PERCENT_BP) -> void:
-	if spin == null:
-		return
-	_configure_spin_for_mode(spin, mode)
-	if mode == TAX_MODE_ABSOLUTE:
-		spin.set_value_no_signal(
-			TaxLaneEditor.absolute_amount_to_currency(rate_basis_points))
-		var line := spin.get_line_edit()
-		if line != null and not line.has_focus():
-			line.text = TaxLaneEditor._format_value(rate_basis_points, mode, false)
-		return
-	spin.set_value_no_signal(TaxLaneEditor.basis_points_to_percent(rate_basis_points))
-	var line := spin.get_line_edit()
-	if line == null:
-		return
-	var percent := TaxLaneEditor.basis_points_to_percent(rate_basis_points)
-	var shown := "%d" % int(round(percent)) \
-		if is_equal_approx(percent, round(percent)) else "%.2f" % percent
-	if not line.has_focus() and not String(spin.suffix).is_empty():
-		shown = "%s %s" % [shown, spin.suffix]
-	if line.text != shown:
-		line.text = shown
+	TaxCards._set_spin_basis_points(self, spin, rate_basis_points, mode)
 
 
 func _configure_spin_for_mode(spin: SpinBox, mode: int) -> void:
-	if spin == null:
-		return
-	if mode == TAX_MODE_ABSOLUTE:
-		spin.min_value = TaxLaneEditor.absolute_amount_to_currency(TAX_ABSOLUTE_MIN)
-		spin.max_value = TaxLaneEditor.absolute_amount_to_currency(TAX_ABSOLUTE_MAX)
-		spin.step = 1.0 if TouchUI.is_touch() else 0.01
-		# 单位不写字：定额模式下这一行的行尾亮起一枚金币（MoneyIcon 节点），
-		# 输入框里只剩数字，和顶栏国库纸签的读法一致。
-		spin.suffix = ""
-		spin.tooltip_text = "定额税：每人每天缴纳的金额"
-		_set_lane_money_icon(spin, true)
-	else:
-		spin.min_value = -1000.0
-		spin.max_value = 100.0
-		spin.step = 1.0 if TouchUI.is_touch() else 0.01
-		spin.suffix = "%"
-		spin.tooltip_text = "按百分比计"
-		_set_lane_money_icon(spin, false)
+	TaxCards._configure_spin_for_mode(self, spin, mode)
 
 
-## 税额行的货币图标与 SpinBox 同级（MoneyIcon），按计税模式开关。
 func _set_lane_money_icon(spin: SpinBox, shown: bool) -> void:
-	if spin == null:
-		return
-	var parent := spin.get_parent()
-	if parent == null:
-		return
-	var icon := parent.get_node_or_null("MoneyIcon") as TextureRect
-	if icon == null:
-		return
-	if icon.texture == null:
-		MoneyDisplay.apply_icon(icon, 13)
-	icon.visible = shown
+	TaxCards._set_lane_money_icon(self, spin, shown)
 
 
 func _card_mode(card: Dictionary, kind: String, fallback: int = TAX_MODE_PERCENT_BP) -> int:
-	return int((card.assessment_modes as Dictionary).get(kind, fallback))
+	return TaxCards._card_mode(self, card, kind, fallback)
 
 
 func _on_mode_selected(index: int, key: String, kind: String) -> void:
-	var card: Dictionary = _rows.get(key, {})
-	if card.is_empty():
-		return
-	var mode_button := (card.modes as Dictionary).get(kind) as OptionButton
-	var mode := TAX_MODE_PERCENT_BP
-	if mode_button != null:
-		mode = int(mode_button.get_item_id(index))
-	(card.assessment_modes as Dictionary)[kind] = mode
-	var spin := (card.spins as Dictionary)[kind] as SpinBox
-	_configure_spin_for_mode(spin, mode)
-	_set_spin_basis_points(spin, 0, mode)
-	_submit_rate(kind, String(card.item_id), 0, bool(card.is_default), mode)
+	TaxCards._on_mode_selected(self, index, key, kind)
 
 
 func _ensure_card(page: String, item_id: String, label: String,
 		icon_key: String, is_default: bool, item_kinds: Array = []) -> Dictionary:
-	var key := "%s:%s" % [page, item_id]
-	if _rows.has(key):
-		return _rows[key]
-	var accent: Color = (PAGE_DEFINITIONS[page] as Dictionary).get("accent", UITokens.ACCENT)
-	var panel := TaxCardScene.instantiate() as PanelContainer
-	panel.name = "Tax_%s_%s" % [page, item_id]
-	panel.custom_minimum_size = CARD_SIZE
-	var kinds := item_kinds if not item_kinds.is_empty() else _page_kinds(page)
-	var badge := panel.get_node("Body/Head/Icon") as IconBadge
-	badge.set_semantic(StringName(icon_key), accent)
-	var name_label := panel.get_node("Body/Head/Name") as Label
-	name_label.text = label
-	name_label.add_theme_font_override("font", UITokens.font_with_weight(600))
-	var sub_label := panel.get_node("Body/Sub") as Label
-	var spins := {}
-	var modes := {}
-	var resets := {}
-	var pendings := {}
-	var lane_host := panel.get_node("Body/Lanes") as VBoxContainer
-	for kind in kinds:
-		var kind_row := TaxLaneScene.instantiate() as HBoxContainer
-		lane_host.add_child(kind_row)
-		var kind_label := kind_row.get_node("Kind") as Label
-		kind_label.text = String(KIND_LABELS.get(kind, kind))
-		kind_label.visible = kinds.size() > 1 or page == "consumption"
-		var mode_button := kind_row.get_node_or_null("Mode") as OptionButton
-		if mode_button != null:
-			mode_button.clear()
-			mode_button.add_item("%", TAX_MODE_PERCENT_BP)
-			# 定额税的单位是货币：下拉项用金币图标顶着，不再写「（货币）」。
-			# 必须用 24px 的 MENU_ICON —— item 图标按原生像素算最小尺寸。
-			mode_button.add_icon_item(MoneyDisplay.MENU_ICON, "定额", TAX_MODE_ABSOLUTE)
-			mode_button.select(0)
-			mode_button.item_selected.connect(
-				_on_mode_selected.bind(key, kind))
-			modes[kind] = mode_button
-		var spin := kind_row.get_node("Spin") as SpinBox
-		spin.get_line_edit().alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		spin.get_line_edit().text_changed.connect(
-			_on_rate_text_changed.bind(key, kind))
-		spin.get_line_edit().text_submitted.connect(
-			_on_rate_confirmed.bind(key, kind))
-		spin.get_line_edit().focus_entered.connect(
-			_on_rate_focus_entered.bind(key, kind))
-		spin.get_line_edit().focus_exited.connect(
-			_on_rate_focus_exited.bind(key, kind))
-		spin.value_changed.connect(_on_rate_preview.bind(key, kind))
-		spins[kind] = spin
-		# 触摸档：数字那一块盖一层命中区，点开游戏内数字键盘；桌面档不挂，行为逐像素不变。
-		if TouchUI.is_touch():
-			var field := TouchValueFieldScript.new()
-			field.attach(spin, {
-				"title": _pad_title(label, kind_label),
-				"mode": func() -> int: return _pad_mode(key, kind),
-				"hint": func() -> String:
-					return "国家默认 %s" % TaxLaneEditor._format_value(
-						_default_rate(kind), _default_mode(kind)),
-				"commit": func(text: String, mode: int) -> void:
-					_on_rate_confirmed(text, key, kind, mode),
-			})
-		var reset := kind_row.get_node("Reset") as Button
-		IconButton.apply(reset, &"action.reset", IconButton.SMALL, "重置为默认税率")
-		reset.pressed.connect(_on_reset_pressed.bind(key, kind))
-		resets[kind] = reset
-		var clock_badge := kind_row.get_node("Pending") as IconBadge
-		clock_badge.set_semantic(&"system.clock", UITokens.BRASS_HIGHLIGHT)
-		pendings[kind] = clock_badge
-	_flow.add_child(panel)
-	var result := {"control": panel, "name": name_label, "sub": sub_label,
-		"spins": spins, "modes": modes, "resets": resets, "pendings": pendings,
-		"overridden": {}, "rates": {}, "assessment_modes": {}, "kinds": kinds,
-		"page": page, "item_id": item_id, "is_default": is_default,
-		"accent": accent}
-	_rows[key] = result
-	_apply_card_frame(result, false)
-	_watch_card_hover(panel)
-	return result
+	return TaxCards._ensure_card(self, page, item_id, label, icon_key, is_default, item_kinds)
 
 
 func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
-	var signature_parts: Array[String] = []
-	for kind in card.kinds:
-		var data: Dictionary = kind_data.get(kind, {})
-		var submitted_key := "%s:%s" % [kind, String(card.item_id)]
-		if _submitted_tax.has(submitted_key):
-			var submitted: Dictionary = _submitted_tax[submitted_key]
-			if _tax_submission_reflected(card, kind, data, submitted):
-				_submitted_tax.erase(submitted_key)
-			else:
-				# Preserve the player's committed value while the next authoritative
-				# snapshot is still catching up.
-				data = data.duplicate(false)
-				data["base"] = int(submitted.get("rate", data.get("base", 0)))
-				data["mode"] = int(submitted.get("mode", data.get("mode", TAX_MODE_PERCENT_BP)))
-				data["has_override"] = bool(submitted.get("has_override", false))
-		var base := int(data.get("base", 0))
-		var mode := int(data.get("mode", TAX_MODE_PERCENT_BP))
-		var overridden := bool(data.get("has_override", false))
-		var visual_rate := _visual_rate(card, kind, base, overridden)
-		signature_parts.append("%d:%d:%d:%d:%d:%d" % [
-			base,
-			visual_rate,
-			int(data.get("effective", data.get("base", 0))),
-			1 if overridden else 0,
-			1 if _pending.has("%s:%s" % [kind, String(card.item_id)]) else 0,
-			mode,
-		])
-	var signature := "|".join(signature_parts)
-	if signature == String(card.get("signature", "")):
-		return
-	card["signature"] = signature
-	for kind in card.kinds:
-		var data: Dictionary = kind_data.get(kind, {})
-		var mode := int(data.get("mode", TAX_MODE_PERCENT_BP))
-		(card.assessment_modes as Dictionary)[kind] = mode
-		var mode_button := (card.modes as Dictionary).get(kind) as OptionButton
-		if mode_button != null:
-			var select_index := mode_button.get_item_index(mode)
-			if select_index >= 0 and mode_button.selected != select_index:
-				mode_button.select(select_index)
-		var pending := _pending.has("%s:%s" % [kind, String(card.item_id)])
-		((card.pendings as Dictionary)[kind] as Control).visible = pending
-		if pending:
-			var pending_entry: Dictionary = _pending.get(
-				"%s:%s" % [kind, String(card.item_id)], {})
-			var spin := (card.spins as Dictionary)[kind] as SpinBox
-			if pending_entry.has("rate"):
-				var pending_rate := int(pending_entry.rate)
-				var pending_mode := int(pending_entry.get("mode", mode))
-				_set_spin_basis_points(spin, pending_rate, pending_mode)
-			continue
-		var spin := (card.spins as Dictionary)[kind] as SpinBox
-		var line_edit := spin.get_line_edit()
-		var draft_key := _item_draft_key(kind, String(card.item_id))
-		if line_edit.has_focus() or spin.has_focus() or _draft_overrides.has(draft_key):
-			(card.rates as Dictionary)[kind] = int(data.get("base", 0))
-			(card.overridden as Dictionary)[kind] = bool(data.get("has_override", false))
-			continue
-		var base := int(data.get("base", 0))
-		var effective := int(data.get("effective", base))
-		var overridden := bool(data.get("has_override", false))
-		var visual_rate := _visual_rate(card, kind, base, overridden)
-		_set_spin_basis_points(spin, visual_rate, mode)
-		line_edit.add_theme_color_override("font_color",
-			UITokens.BRASS_HIGHLIGHT \
-				if overridden or visual_rate != base else UITokens.ARCHIVE_INK_MUTED)
-		((card.resets as Dictionary)[kind] as Button).visible = overridden
-		(card.overridden as Dictionary)[kind] = overridden
-		(card.rates as Dictionary)[kind] = base
-		if (card.kinds as Array).size() == 1 and not bool(card.is_default):
-			var sub := card.sub as Label
-			sub.visible = visual_rate == base and effective != base \
-				and mode == TAX_MODE_PERCENT_BP
-			if sub.visible:
-				sub.text = "修正后 %s" % _format_rate(effective)
-	_refresh_override_frame(card)
+	TaxCards._update_card(self, card, kind_data)
 
 
 func _tax_submission_reflected(card: Dictionary, kind: String,
 		data: Dictionary, submitted: Dictionary) -> bool:
-	if int(data.get("base", 0)) != int(submitted.get("rate", 0)) \
-			or int(data.get("mode", TAX_MODE_PERCENT_BP)) != int(submitted.get("mode", TAX_MODE_PERCENT_BP)):
-		return false
-	return true if card.is_default else bool(data.get("has_override", false)) == bool(submitted.get("has_override", false))
+	return TaxCards._tax_submission_reflected(self, card, kind, data, submitted)
 
 
 func _visual_rate(card: Dictionary, kind: String, authoritative_rate: int,
 			 overridden: bool) -> int:
-	if bool(card.is_default) or not overridden:
-		if _preview_defaults.has(kind):
-			return int(_preview_defaults[kind])
-		var pending_default: Dictionary = _pending.get(
-			"%s:__default__" % kind, {})
-		if pending_default.has("rate"):
-			return int(pending_default.rate)
-	return authoritative_rate
+	return TaxCards._visual_rate(self, card, kind, authoritative_rate, overridden)
 
 
 func _format_rate(rate_basis_points: int) -> String:
-	var percent := TaxLaneEditor.basis_points_to_percent(rate_basis_points)
-	var shown := "%d" % int(round(percent)) \
-		if is_equal_approx(percent, round(percent)) else "%.2f" % percent
-	return "%s%%" % shown
+	return TaxCards._format_rate(self, rate_basis_points)
 
 
 func _apply_card_frame(card: Dictionary, highlighted: bool) -> void:
-	var panel := card.control as PanelContainer
-	panel.theme_type_variation = &"PKDialog" \
-		if bool(card.is_default) or highlighted else &"PKMetricCard"
+	TaxCards._apply_card_frame(self, card, highlighted)
 
 
 func _watch_card_hover(_panel: PanelContainer) -> void:
-	pass
+	TaxCards._watch_card_hover(self, _panel)
 
 
 func _refresh_treasury_insights() -> void:
@@ -1181,361 +533,90 @@ func _animate_cards_in() -> void:
 
 func _on_rate_confirmed(text: String, key: String, kind: String,
 		mode_override: int = -1) -> void:
-	var card: Dictionary = _rows.get(key, {})
-	if not card.is_empty() and (card.spins as Dictionary).has(kind):
-		var spin := (card.spins as Dictionary)[kind] as SpinBox
-		if mode_override >= 0 and mode_override != _card_mode(card, kind):
-			# 玩家在键盘上换了口径：先把下拉与解析口径对齐，再按新量纲解析，
-			# 最后只落一条命令 —— 不必先发一条「归零」再发真正的税率。
-			_apply_tax_mode(card, kind, spin, mode_override)
-		var mode := _card_mode(card, kind)
-		var fallback_value := TaxLaneEditor.currency_to_absolute_amount(float(spin.value)) \
-			if mode == TAX_MODE_ABSOLUTE else TaxLaneEditor.percent_to_basis_points(float(spin.value))
-		var fallback := int((card.rates as Dictionary).get(kind, fallback_value))
-		var rate := TaxLaneEditor.parse_value_text(text, fallback, mode)
-		if rate != fallback:
-			_set_spin_basis_points(spin, rate, mode)
-	_confirm_spin(key, kind)
+	TaxCommands._on_rate_confirmed(self, text, key, kind, mode_override)
 
 
 func _on_rate_text_changed(text: String, key: String, kind: String) -> void:
-	var card: Dictionary = _rows.get(key, {})
-	if card.is_empty() or not (card.spins as Dictionary).has(kind):
-		return
-	var mode := _card_mode(card, kind)
-	if mode != TAX_MODE_ABSOLUTE or text.strip_edges() in ["", "-", "+", ".", "-.", "+."]:
-		return
-	var spin := (card.spins as Dictionary)[kind] as SpinBox
-	var line := spin.get_line_edit()
-	if line != null and line.has_focus():
-		return
-	var fallback := int((card.rates as Dictionary).get(kind,
-		TaxLaneEditor.currency_to_absolute_amount(float(spin.value))))
-	var rate := TaxLaneEditor.parse_value_text(text, fallback, mode)
-	if rate == fallback:
-		return
-	var shown := TaxLaneEditor._format_value(rate, mode, false)
-	if line.text == shown:
-		return
-	line.set_block_signals(true)
-	line.text = shown
-	line.set_block_signals(false)
+	TaxCommands._on_rate_text_changed(self, text, key, kind)
 
 
 func _on_rate_focus_entered(key: String, kind: String) -> void:
-	if _draft_commit_key == key and _draft_commit_kind == kind:
-		_stop_draft_timer()
+	TaxCommands._on_rate_focus_entered(self, key, kind)
 
 
 func _on_rate_focus_exited(key: String, kind: String) -> void:
-	_confirm_spin(key, kind)
+	TaxCommands._on_rate_focus_exited(self, key, kind)
 
 
 func _on_rate_preview(value: float, key: String, kind: String) -> void:
-	var card: Dictionary = _rows.get(key, {})
-	if card.is_empty():
-		return
-	var mode := _card_mode(card, kind)
-	var rate := TaxLaneEditor.currency_to_absolute_amount(value) \
-		if mode == TAX_MODE_ABSOLUTE else TaxLaneEditor.percent_to_basis_points(value)
-	if bool(card.is_default):
-		var authoritative := int((card.rates as Dictionary).get(kind, 0))
-		if rate == authoritative and not _has_pending_default(kind):
-			_preview_defaults.erase(kind)
-		else:
-			_preview_defaults[kind] = rate
-		# Preview changes only presentation. The command remains confirmed on
-		# Enter/focus loss and retains its next-day authoritative boundary.
-		_refresh_page()
-		return
-	var item_id := String(card.item_id)
-	if _pending.has("%s:%s" % [kind, item_id]):
-		return
-	var current := int((card.rates as Dictionary).get(kind, 0))
-	var draft_key := _item_draft_key(kind, item_id)
-	if rate == current:
-		_draft_overrides.erase(draft_key)
-		if _draft_commit_key == key and _draft_commit_kind == kind:
-			_stop_draft_timer()
-		return
-	_draft_overrides[draft_key] = rate
-	var spin := (card.spins as Dictionary)[kind] as SpinBox
-	if spin.get_line_edit().has_focus():
-		if _draft_commit_key == key and _draft_commit_kind == kind:
-			_stop_draft_timer()
-		return
-	_schedule_draft_commit(key, kind)
+	TaxCommands._on_rate_preview(self, value, key, kind)
 
 
 func _schedule_draft_commit(key: String, kind: String) -> void:
-	_draft_commit_key = key
-	_draft_commit_kind = kind
-	if _draft_timer != null:
-		_draft_timer.start()
+	TaxCommands._schedule_draft_commit(self, key, kind)
 
 
 func _stop_draft_timer() -> void:
-	if _draft_timer != null:
-		_draft_timer.stop()
-	_draft_commit_key = ""
-	_draft_commit_kind = ""
+	TaxCommands._stop_draft_timer(self)
 
 
 func _on_draft_commit_timeout() -> void:
-	var key := _draft_commit_key
-	var kind := _draft_commit_kind
-	_draft_commit_key = ""
-	_draft_commit_kind = ""
-	if key.is_empty() or kind.is_empty():
-		return
-	_confirm_spin(key, kind)
+	TaxCommands._on_draft_commit_timeout(self)
 
 
 func _item_draft_key(kind: String, item_id: String) -> String:
-	return "%s:%s" % [kind, item_id]
+	return TaxCommands._item_draft_key(self, kind, item_id)
 
 
-# Typing a rate is the override: a value equal to the inherited default clears
-# the override instead, so no separate override toggle exists anywhere.
 func _confirm_spin(key: String, kind: String) -> void:
-	var card: Dictionary = _rows.get(key, {})
-	if card.is_empty():
-		return
-	var spin := (card.spins as Dictionary)[kind] as SpinBox
-	var mode := _card_mode(card, kind)
-	var fallback := int((card.rates as Dictionary).get(kind, 0))
-	var rate := fallback
-	if mode == TAX_MODE_ABSOLUTE:
-		rate = TaxLaneEditor.parse_value_text(
-			spin.get_line_edit().text, fallback, mode)
-	else:
-		rate = TaxLaneEditor.parse_rate_text(spin.get_line_edit().text, fallback)
-	if rate != fallback:
-		_set_spin_basis_points(spin, rate, mode)
-	var current := int((card.rates as Dictionary).get(kind, 0))
-	var overridden := bool((card.overridden as Dictionary).get(kind, false))
-	var item_id := String(card.item_id)
-	_draft_overrides.erase(_item_draft_key(kind, item_id))
-	if _draft_commit_key == key and _draft_commit_kind == kind:
-		_stop_draft_timer()
-	if bool(card.is_default):
-		if rate != current or _preview_defaults.has(kind):
-			_submit_rate(kind, String(card.item_id), rate, true, mode)
-		else:
-			_preview_defaults.erase(kind)
-			_refresh_page()
-		return
-	if not overridden and rate == _default_rate(kind) and mode == _default_mode(kind):
-		return
-	if rate == current and not overridden:
-		return
-	var default_rate := _default_rate(kind)
-	if rate == default_rate and overridden and mode == _default_mode(kind):
-		_clear_override(kind, String(card.item_id))
-	elif rate != current:
-		_submit_rate(kind, String(card.item_id), rate, false, mode)
+	TaxCommands._confirm_spin(self, key, kind)
 
 
 func _default_mode(kind: String) -> int:
-	var policy: Dictionary = _model.get("tax_policy", {})
-	var modes: PackedInt32Array = policy.get(
-		"default_assessment_modes", PackedInt32Array())
-	var kind_id := int(TAX_KIND.get(kind, -1))
-	if kind_id < 0 or kind_id >= modes.size():
-		return TAX_MODE_PERCENT_BP
-	return int(modes[kind_id])
+	return TaxCommands._default_mode(self, kind)
 
 
 func _default_rate(kind: String) -> int:
-	if _preview_defaults.has(kind):
-		return int(_preview_defaults[kind])
-	var pending_default: Dictionary = _pending.get("%s:__default__" % kind, {})
-	if pending_default.has("rate"):
-		return int(pending_default.rate)
-	var policy: Dictionary = _model.get("tax_policy", {})
-	var defaults := _basis_points_array(policy.get("default_rates_basis_points", PackedInt32Array()),
-		policy.get("default_rates", PackedInt32Array()))
-	var kind_id := int(TAX_KIND[kind])
-	return int(defaults[kind_id]) if kind_id < defaults.size() else 0
+	return TaxCommands._default_rate(self, kind)
 
 
 func _on_reset_pressed(key: String, kind: String) -> void:
-	var card: Dictionary = _rows.get(key, {})
-	if card.is_empty():
-		return
-	_clear_override(kind, String(card.item_id))
+	TaxCommands._on_reset_pressed(self, key, kind)
 
 
 func _clear_override(kind: String, item_id: String) -> void:
-	if _player_controller == null:
-		return
-	_draft_overrides.erase(_item_draft_key(kind, item_id))
-	var result: Dictionary = _player_controller.request_command(
-		&"country.tax.clear_override", {
-			"kind": int(TAX_KIND[kind]), "item_id": StringName(item_id)})
-	if bool(result.get("ok", false)):
-		_mark_pending(kind, item_id, _default_rate(kind), "clear")
-		_submitted_tax["%s:%s" % [kind, item_id]] = {
-			"rate": _default_rate(kind),
-			"mode": _default_mode(kind),
-			"has_override": false,
-		}
-		var card: Dictionary = _rows.get("%s:%s" % [_kind_page(kind), item_id], {})
-		if not card.is_empty():
-			var default_rate := _default_rate(kind)
-			var spin := (card.spins as Dictionary)[kind] as SpinBox
-			_set_spin_basis_points(spin, default_rate)
-			spin.get_line_edit().add_theme_color_override("font_color", UITokens.ARCHIVE_INK_MUTED)
-			(card.rates as Dictionary)[kind] = default_rate
-			(card.overridden as Dictionary)[kind] = false
-			((card.resets as Dictionary)[kind] as Button).visible = false
-			_refresh_override_frame(card)
-		if _tax_groups != null:
-			_tax_groups.refresh_active_headers(_page, _rows)
-	else:
-		_set_status(String(result.get("reason", "税率覆盖清除命令提交失败")))
+	TaxCommands._clear_override(self, kind, item_id)
 
 
 func _submit_rate(kind: String, item_id: String, rate: int, is_default: bool,
 		mode: int = TAX_MODE_PERCENT_BP) -> void:
-	if _player_controller == null:
-		return
-	var result: Dictionary
-	if is_default:
-		result = _player_controller.request_command(&"country.tax.set_default", {
-			"kind": int(TAX_KIND[kind]), "rate_basis_points": rate,
-			"tax_assessment_mode": mode})
-	else:
-		result = _player_controller.request_command(&"country.tax.set_override", {
-			"kind": int(TAX_KIND[kind]), "item_id": StringName(item_id),
-			"rate_basis_points": rate, "tax_assessment_mode": mode})
-	if bool(result.get("ok", false)):
-		if is_default:
-			_preview_defaults.erase(kind)
-		_mark_pending(kind, item_id, rate, "set", mode)
-		_submitted_tax["%s:%s" % [kind, item_id]] = {
-			"rate": rate,
-			"mode": mode,
-			"has_override": not is_default,
-		}
-		var card: Dictionary = _rows.get("%s:%s" % [_kind_page(kind), item_id], {})
-		if not card.is_empty():
-			var spin := (card.spins as Dictionary)[kind] as SpinBox
-			_set_spin_basis_points(spin, rate, mode)
-			spin.get_line_edit().add_theme_color_override("font_color",
-				UITokens.BRASS_HIGHLIGHT)
-			(card.rates as Dictionary)[kind] = rate
-			(card.assessment_modes as Dictionary)[kind] = mode
-			if not is_default:
-				(card.overridden as Dictionary)[kind] = true
-				((card.resets as Dictionary)[kind] as Button).visible = true
-			_refresh_override_frame(card)
-		if is_default:
-			_refresh_page()
-		elif _tax_groups != null:
-			_tax_groups.refresh_active_headers(_page, _rows)
-	else:
-		if is_default:
-			_preview_defaults.erase(kind)
-			var card: Dictionary = _rows.get(
-				"%s:__default__" % _kind_page(kind), {})
-			if not card.is_empty():
-				_set_spin_basis_points(
-					(card.spins as Dictionary)[kind] as SpinBox,
-					int((card.rates as Dictionary).get(kind, 0)),
-					_card_mode(card, kind))
-			_refresh_page()
-		_set_status(String(result.get("reason", "税率命令提交失败")))
+	TaxCommands._submit_rate(self, kind, item_id, rate, is_default, mode)
 
 
 func _refresh_override_frame(card: Dictionary) -> void:
-	var any_override := false
-	for value in (card.overridden as Dictionary).values():
-		any_override = any_override or bool(value)
-	(card.name as Label).add_theme_color_override("font_color",
-		UITokens.ARCHIVE_BRASS.lerp(UITokens.ARCHIVE_INK, 0.35) \
-			if any_override else UITokens.ARCHIVE_INK)
-	_apply_card_frame(card, any_override)
+	TaxCommands._refresh_override_frame(self, card)
 
 
 func _mark_pending(kind: String, item_id: String,
 		optimistic_rate: int = 0, op: String = "set",
 		mode: int = TAX_MODE_PERCENT_BP) -> void:
-	var key := "%s:%s" % [kind, item_id]
-	var policy: Dictionary = _model.get("tax_policy", {})
-	_pending[key] = {
-		"effective_day": _effective_day(),
-		"policy_version": int(policy.get("policy_version", -1)),
-		"rate": optimistic_rate,
-		"mode": mode,
-		"op": op,
-	}
-	var card: Dictionary = _rows.get("%s:%s" % [_kind_page(kind), item_id], {})
-	if not card.is_empty():
-		((card.pendings as Dictionary)[kind] as Control).visible = true
+	TaxCommands._mark_pending(self, kind, item_id, optimistic_rate, op, mode)
 
 
 func _has_pending_default(kind: String) -> bool:
-	return _pending.has("%s:__default__" % kind)
+	return TaxCommands._has_pending_default(self, kind)
 
 
 func _resolve_pending_commands() -> void:
-	var policy: Dictionary = _model.get("tax_policy", {})
-	if not bool(policy.get("ok", false)):
-		return
-	var current_day := int(_model.get("current_day", -1))
-	var current_version := int(policy.get("policy_version", -1))
-	var resolved: Array[String] = []
-	for key_value in _pending:
-		var key := String(key_value)
-		var pending: Dictionary = _pending[key]
-		if current_day < int(pending.get("effective_day", current_day + 1)) \
-				or current_version <= int(pending.get("policy_version", current_version)):
-			continue
-		if not _policy_reflects_pending(key, pending):
-			continue
-		resolved.append(key)
-	for key in resolved:
-		_pending.erase(key)
-		var kind := key.get_slice(":", 0)
-		var card: Dictionary = _rows.get(
-			"%s:%s" % [_kind_page(kind), key.get_slice(":", 1)], {})
-		if not card.is_empty() and (card.pendings as Dictionary).has(kind):
-			((card.pendings as Dictionary)[kind] as Control).visible = false
+	TaxCommands._resolve_pending_commands(self)
 
 
 func _policy_reflects_pending(key: String, pending: Dictionary) -> bool:
-	var policy: Dictionary = _model.get("tax_policy", {})
-	var kind := key.get_slice(":", 0)
-	var item_id := key.substr(kind.length() + 1)
-	var op := String(pending.get("op", "set"))
-	var kind_id := int(TAX_KIND.get(kind, -1))
-	if item_id == "__default__":
-		var defaults := _basis_points_array(policy.get("default_rates_basis_points", PackedInt32Array()),
-			policy.get("default_rates", PackedInt32Array()))
-		return kind_id >= 0 and kind_id < defaults.size() and pending.has("rate") \
-			and int(defaults[kind_id]) == int(pending.rate)
-	var group: Dictionary = policy.get(kind, {})
-	var ids: PackedStringArray = PackedStringArray()
-	if kind == "income":
-		ids = policy.get("profession_ids", PackedStringArray())
-	elif kind == "business":
-		ids = policy.get("building_type_ids", PackedStringArray())
-	else:
-		ids = policy.get("good_ids", PackedStringArray())
-	var index := ids.find(item_id)
-	var rates := _group_basis_points(group, "rates")
-	var flags: PackedByteArray = group.get("has_override", PackedByteArray())
-	if index < 0 or index >= rates.size():
-		return false
-	var overridden := index < flags.size() and flags[index] != 0
-	if op == "clear":
-		return not overridden
-	return overridden and int(rates[index]) == int(pending.get("rate", -1))
+	return TaxCommands._policy_reflects_pending(self, key, pending)
 
 
 func _effective_day() -> int:
-	return int(_model.get("current_day", -1)) + 1
+	return TaxCommands._effective_day(self)
 
 
 func _apply_goods(goods: Array, wanted: Dictionary) -> void:

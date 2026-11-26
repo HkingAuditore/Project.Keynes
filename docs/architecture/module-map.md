@@ -96,9 +96,9 @@ Military 的 `military_core.cpp` 保留目录、生命周期、每日编排和�
 目录增删还须检查 `Project/project-keynes/scripts/research/development_achievement_catalog.gd`、
 科技的完整门槛及生产许可，并重烘 `Project/project-keynes/tools/prebake_loading_catalogs.gd`。
 
-## 读不动的大文件
+## 拆分后的源码定位
 
-下列文件远超行数上限，不要整读；用符号搜索定位后只读相关函数。完整清单是 `tools/ci/size_baseline.json`。
+从下列入口定位运行模块，再用符号搜索找到对应的实现文件。入口内的同名前缀 `#include` 指向在同一编译范围执行的步骤。脚本协作者的路径在入口的 `preload` 和 `extends` 声明中。拆分记录见 [源文件职责拆分](source-module-splits.md)。
 
 - `gdext/src/country_runtime.cpp`（以及 `country_runtime_persistence.cpp`、`country_runtime_queries.cpp`、`country_runtime_economy_assets.cpp`、`country_runtime_research.cpp`、`country_runtime_peer.cpp`、`country_runtime_commands.cpp`、`country_runtime_internal.h`）、`gdext/src/effect_runtime.cpp` 及其 catalog/configuration/dispatch/instances/lifecycle/modifier/persistence/programs 协作者、`gdext/src/ideology_runtime.cpp` 及其 catalog/commands/daily/effects/effects_derived/offers/persistence/queries/state 协作者、`gdext/src/world_ext_climate.cpp`、`gdext/src/world_ext_climate_async.cpp`
 - `Project/project-keynes/scripts/geography/map_generator.gd`、`Project/project-keynes/scripts/rendering/map_baker.gd`、`Project/project-keynes/scripts/rendering/bakers/`、`Project/project-keynes/scripts/weather/native_bridge.gd`、`Project/project-keynes/scripts/ui/cell_inspector/construction.gd`

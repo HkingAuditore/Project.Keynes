@@ -32,12 +32,12 @@ static func _push_terrain_horizon_uniforms(host) -> void:
 		host._push_world_uniform("terrain_horizon_max_angle", host.terrain_horizon_max_angle)
 		host._push_world_uniform("terrain_horizon_cast_floor", host.terrain_horizon_cast_floor)
 		host._push_world_uniform("terrain_horizon_debug_view", host.terrain_horizon_debug_view)
-		host._push_gi_strength_uniforms(host._shader_mat)
+		_push_gi_strength_uniforms(host, host._shader_mat)
 	# [land-water-split 2026-11-02] 走 world_map 的水面 program 与陆地共用同一套
 	# horizon / GI 参数（海面也有地平线遮蔽与天空可见度）。这条路径是 GM 实时调参，
 	# 不走 _apply_uniforms，漏推会让海面光照停在旧值。
 	if host._water_mat != null and host._water_uses_world_map:
-		host._push_gi_strength_uniforms(host._water_mat)
+		_push_gi_strength_uniforms(host, host._water_mat)
 	# tiled 模式 horizon 在 visual_tiles.horizon（Texture2DArray），不写 world.terrain_horizon_tex。
 	# 若仍按 legacy tex!=null 判断，会在 _apply_uniforms 末尾把植被 bound 盖回 false →
 	# 直射遮蔽/天空 GI 全关，植株看起来「没光照」。
@@ -92,7 +92,7 @@ static func _push_gi_strength_uniforms(host, sm: ShaderMaterial) -> void:
 
 static func _push_gi_uniforms(host, sm: ShaderMaterial, tiled: bool, visual_tiles) -> void:
 
-	host._push_gi_strength_uniforms(sm)
+	_push_gi_strength_uniforms(host, sm)
 	if tiled:
 		sm.set_shader_parameter("visual_gi_occluder_tiles", visual_tiles.gi_occluder)
 	else:
@@ -113,7 +113,7 @@ static func _maybe_bake_terrain_horizon_gpu(host) -> void:
 	if host._world == null:
 		return
 	if host._visual_tiles_active() and not bool(host._world.visual_tiles.horizon_ready):
-		host._start_visual_tile_horizon_bake(host._world)
+		_start_visual_tile_horizon_bake(host, host._world)
 		return
 	if not host._world.terrain_horizon_gpu_pending:
 		return
@@ -126,7 +126,7 @@ static func _maybe_bake_terrain_horizon_gpu(host) -> void:
 		return
 	host._world.terrain_horizon_gpu_pending = false   # 防重入（regenerate 会重新置位）
 	print("[terrain_horizon] GPU bake start: hm_size=%s params=%s" % [str(host._world.hm_size), str(params)])
-	host._start_terrain_horizon_bake(host._world, params)
+	_start_terrain_horizon_bake(host, host._world, params)
 
 
 
@@ -161,7 +161,7 @@ static func _on_visual_tile_horizon_completed(host, world: WorldData, generation
 			or int(world.visual_tiles.layout.generation_id) != generation_id:
 		return
 	if success:
-		host._publish_visual_tile_horizon(world, report)
+		_publish_visual_tile_horizon(host, world, report)
 		return
 	push_warning("[visual-tiles/horizon] compute failed (%s); using native baseline resample" %
 		String(report.get("reason", "unknown")))
@@ -174,7 +174,7 @@ static func _run_visual_tile_horizon_fallback(host, world: WorldData, generation
 
 	var tiles = world.visual_tiles
 	if host._world_ext == null :
-		host._record_visual_tile_horizon_failure(world, "native_fallback_method_missing", compute_report)
+		_record_visual_tile_horizon_failure(host, world, "native_fallback_method_missing", compute_report)
 		return
 	var params = world.terrain_horizon_gpu_params
 	var expected_source_bytes: int = world.hm_size.x * world.hm_size.y * 4
@@ -217,13 +217,13 @@ static func _run_visual_tile_horizon_fallback(host, world: WorldData, generation
 			"max_distance_world": float(params.get("max_distance_world", host.hex_size * 24.0)),
 			"sea_level": clampf(float(params.get("sea_level", world.sea_level)), 0.0, 1.0),
 		}
-		var map_index_data = host._global_map_index_bytes(world)
+		var map_index_data = _global_map_index_bytes(host, world)
 		if map_index_data.size() == expected_source_bytes:
 			horizon_knobs["emit_occluder_cells"] = true
 			horizon_knobs["map_index_data"] = map_index_data
 		var source_result: Dictionary = host._world_ext.encode_bake_horizon_tex_data(horizon_knobs)
 		if bool(source_result.get("fallback", true)):
-			host._record_visual_tile_horizon_failure(world,
+			_record_visual_tile_horizon_failure(host, world,
 				"baseline_horizon_failed:%s" % String(source_result.get("reason", "unknown")),
 				compute_report)
 			return
@@ -237,7 +237,7 @@ static func _run_visual_tile_horizon_fallback(host, world: WorldData, generation
 			world.gi_occluder_tex = ImageTexture.create_from_image(Image.create_from_data(
 				world.hm_size.x, world.hm_size.y, false, Image.FORMAT_RGBA8, occluder_source))
 	if source_data.size() != expected_source_bytes:
-		host._record_visual_tile_horizon_failure(world, "baseline_horizon_size_mismatch", compute_report)
+		_record_visual_tile_horizon_failure(host, world, "baseline_horizon_size_mismatch", compute_report)
 		return
 	var occluder_available: bool = occluder_source.size() == expected_source_bytes
 
@@ -276,7 +276,7 @@ static func _run_visual_tile_horizon_fallback(host, world: WorldData, generation
 		if bool(result.get("fallback", true)) or int(result.get("generation_id", -1)) != generation_id \
 				or not tiles.upload_horizon_layer(layer_id,
 					result.get("data", PackedByteArray())):
-			host._record_visual_tile_horizon_failure(world,
+			_record_visual_tile_horizon_failure(host, world,
 				"resample_layer_failed:%d:%s" % [layer_id, String(result.get("reason", "upload"))],
 				compute_report)
 			return
@@ -301,7 +301,7 @@ static func _run_visual_tile_horizon_fallback(host, world: WorldData, generation
 		var tree = Engine.get_main_loop() as SceneTree
 		if tree != null:
 			await tree.process_frame
-	host._publish_visual_tile_horizon(world, {
+	_publish_visual_tile_horizon(host, world, {
 		"ok": true,
 		"path": "baseline_horizon_resample",
 		"source_path": source_path,
@@ -373,7 +373,7 @@ static func _start_terrain_horizon_bake(host, world: WorldData, params: Dictiona
 		push_warning("[terrain_horizon] GPU bake shader missing (%s); no cast shadow this world." % host._HORIZON_BAKE_SHADER_PATH)
 		return
 	# 清理上一次遗留的烘焙 viewport（快速连续 regenerate）。
-	host._dispose_horizon_bake_vp()
+	_dispose_horizon_bake_vp(host)
 
 	var size: Vector2i = world.hm_size
 	var vp = SubViewport.new()
@@ -420,7 +420,7 @@ static func _start_terrain_horizon_bake(host, world: WorldData, params: Dictiona
 static func _on_terrain_horizon_frame_drawn(host) -> void:
 
 	if host._horizon_bake_vp == null or not is_instance_valid(host._horizon_bake_vp):
-		host._dispose_horizon_bake_vp()
+		_dispose_horizon_bake_vp(host)
 		return
 	# 时序保险：确保 SubViewport 至少经过一次完整绘制再回读（避免 UPDATE_ONCE 首帧时序空读）。
 	if host._horizon_bake_waited < 1:
@@ -431,7 +431,7 @@ static func _on_terrain_horizon_frame_drawn(host) -> void:
 	var img: Image = vtex.get_image() if vtex != null else null
 	if img == null:
 		push_warning("[terrain_horizon] GPU bake readback returned null image; no cast shadow this world.")
-		host._dispose_horizon_bake_vp()
+		_dispose_horizon_bake_vp(host)
 		return
 	if img.get_format() != Image.FORMAT_RGBA8:
 		img.convert(Image.FORMAT_RGBA8)
@@ -459,7 +459,7 @@ static func _on_terrain_horizon_frame_drawn(host) -> void:
 	if host._world == host._horizon_bake_world:
 		host._push_terrain_horizon_uniforms()   # 同步植被层的 horizon 输入
 	print("[terrain_horizon] GPU bake applied to main shader=%s (strength=%.2f)" % [str(applied), host.terrain_horizon_strength])
-	host._dispose_horizon_bake_vp()
+	_dispose_horizon_bake_vp(host)
 
 
 static func _dispose_horizon_bake_vp(host) -> void:
@@ -679,7 +679,7 @@ static func _apply_world_quad_geometry(host) -> void:
 	# 回退）必须由陆地 quad 铺满整张地图，否则水面像素会露背景。所以这里判定
 	# _water_pass_active() 而不是 _split_active()。
 	if host._water_pass_active() and host.terrain_coverage_mesh_enabled:
-		var result = host._build_coverage_meshes(bounds, wrap_period_x)
+		var result = _build_coverage_meshes(host, bounds, wrap_period_x)
 		if bool(result.get("ok", false)):
 			land_mesh = result.get("land_mesh", null) as Mesh
 			water_mesh = result.get("water_mesh", null) as Mesh

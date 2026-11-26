@@ -1,5 +1,9 @@
 extends RefCounted
 
+const CellAppearance = preload("res://scripts/rendering/shrub/cell_appearance.gd")
+
+const CellSuitability = preload("res://scripts/rendering/shrub/cell_suitability.gd")
+
 const VegetationColors = preload("res://scripts/rendering/shrub/vegetation_colors.gd")
 
 const DECORATION_VEG_RESIDUAL := 0.12
@@ -7,322 +11,47 @@ const DECORATION_VEG_RESIDUAL := 0.12
 ## Stateless scatter and ecology helpers for ShrubLayer.
 
 static func _cell_quota(host, suitability: float, max_per_cell: int) -> Vector2:
-
-	var cap: int = maxi(1, max_per_cell)
-	var target: float = float(cap) * clampf(suitability, 0.0, 1.0)
-	var attempts: int = clampi(int(ceil(target)), 1, cap)
-	return Vector2(float(attempts), target / float(attempts))
-
+	return CellSuitability._cell_quota(host, suitability, max_per_cell)
 
 
 static func _cell_suitability(host, cell, idx: int, _key: int, state: Dictionary) -> float:
+	return CellSuitability._cell_suitability(host, cell, idx, _key, state)
 
-	var cell_is_water = _is_water_cell(host, cell, idx)
-	var domain = _spawn_domain(host)
-	if domain == host.SPAWN_LAND and cell_is_water:
-		return 0.0
-	if domain == host.SPAWN_WATER and not cell_is_water:
-		return 0.0
-
-	var lf = int(state.get("landform", LandformType.LF.PLAIN))
-	var veg = int(state.get("vegetation", VegetationType.VEG.NONE))
-	var cover = int(state.get("cover", CoverType.CV.NONE))
-	var river = _has_river_cell(host, cell, idx)
-	var arch = _detail_kind(host)
-
-	if cell_is_water:
-		return _aquatic_suitability(host, arch, lf, veg, cover, state)
-
-	# 点缀/地貌类 archetype（岩石/雪堆/枯立木）走独立 suitability：不依赖植被权重，
-	# 由地形/覆盖物/气候直接决定，能出现在植被权重为 0 的裸露/雪原/山巅。
-	if _is_decoration_archetype(host, arch):
-		return _decoration_suitability(host, arch, lf, cover, river, state)
-
-	var landform_weight = _landform_weight(host, lf)
-	if landform_weight <= 0.0:
-		return 0.0
-
-	var cover_weight = _cover_weight(host, cover)
-	if cover_weight <= 0.0:
-		return 0.0
-
-	var temp = float(state.get("temp", 0.5))
-	var moisture = float(state.get("moisture", 0.5))
-	var vitality = float(state.get("vitality", 0.7))
-	var stress = maxf(float(state.get("heat", 0.0)), maxf(float(state.get("drought", 0.0)), float(state.get("cold", 0.0))))
-	var compat = VegetationType.climate_compat_score(veg, temp, moisture)
-	var vitality_factor = _vitality_density_factor(host, state)
-
-	var suitability = _vegetation_weight(host, veg) * landform_weight * cover_weight
-	# 绝对生物量：_vegetation_weight 只表达"这一层的形态占该植被的多少比例"
-	# （沙漠灌木 100% 是灌木形态，雨林林下只有一部分），量级必须由 biomass 承担，
-	# 否则整条链全是相对适应度，沙漠会和雨林一样密。
-	suitability *= _biomass_factor(host, veg)
-	suitability *= vitality_factor
-	suitability *= lerpf(0.58, 1.0, clampf(compat, 0.0, 1.0))
-	suitability *= 1.0 - clampf(stress, 0.0, 1.0) * 0.38
-	suitability *= lerpf(0.08, 1.0, _scatter_presence(host, state))
-	suitability *= _cell_ecology_density_bias(host, state)
-	# archetype 生态位亲和（针叶/棕榈/仙人掌/芦苇/高山花）：把通用植被分布收束到各自气候带。
-	suitability *= _archetype_affinity(host, arch, veg, lf, cover, river, state)
-	# 阶段 C：海拔林线 + 强风折损。
-	suitability *= _elevation_modifier(host, arch, float(state.get("elevation", 0.4)))
-	suitability *= _wind_exposure_modifier(host, arch, float(state.get("wind_speed", 0.0)))
-	if river:
-		suitability *= _river_density_factor(host, state)
-	suitability *= _quality_density_scale(host)
-	return clampf(suitability, 0.0, 1.25)
-
-
-# 绝对生物量 → 密度乘子。曲线由 profile 的 biomass_floor / ceil / exponent 控制，
-# 让每层自己决定对生物量的敏感度：乔木层强正相关，草层几乎不敏感（草原恰恰长在
-# 树少的地方，它的选择性已经由 _grass_vegetation_weight 表达）。
 
 static func _biomass_factor(host, veg: int) -> float:
+	return CellSuitability._biomass_factor(host, veg)
 
-	var cfg = _profile(host)
-	var biomass = clampf(VegetationType.foliage_biomass(veg), 0.0, 1.0)
-	var shaped = pow(biomass, maxf(float(cfg.biomass_exponent), 0.01))
-	return lerpf(float(cfg.biomass_floor), float(cfg.biomass_ceil), shaped)
-
-
-# 河流格的密度系数。河道本体的像素已在候选点阶段被 _is_river_body_position 剔除，
-# 所以这里不该再对整格做一刀切惩罚：暖湿带的河谷是全图植被最密的地方，只有冷/旱带
-# 的河床才是负面地形。
 
 static func _river_density_factor(host, state: Dictionary) -> float:
+	return CellSuitability._river_density_factor(host, state)
 
-	var cfg = _profile(host)
-	var temp = float(state.get("temp", 0.5))
-	var wet: float = maxf(float(state.get("moisture", 0.5)), float(state.get("soil_moisture", 0.4)))
-	var warm_wet: float = smoothstep(0.35, 0.72, temp) * smoothstep(0.28, 0.62, wet)
-	var dry_factor = float(cfg.river_edge_density)
-	var lush_factor: float = maxf(dry_factor, float(cfg.river_valley_boost))
-	return lerpf(dry_factor, lush_factor, warm_wet)
-
-
-# 海拔林线：高海拔抑制乔木/棕榈，偏好高山花/针叶中带；低海拔归一。elevation∈[0,1]。
 
 static func _elevation_modifier(host, arch: int, elev: float) -> float:
+	return CellSuitability._elevation_modifier(host, arch, elev)
 
-	match arch:
-		host.DETAIL_TREE, host.DETAIL_PALM:
-			return smoothstep(0.92, 0.58, elev)
-		host.DETAIL_CONIFER:
-			return smoothstep(0.22, 0.55, elev) * smoothstep(0.97, 0.74, elev) + 0.25
-		host.DETAIL_ALPINE_FLOWER:
-			return clampf(smoothstep(0.46, 0.82, elev) + 0.12, 0.0, 1.2)
-		host.DETAIL_SHRUB, host.DETAIL_GRASS, host.DETAIL_CACTUS, host.DETAIL_REED:
-			return smoothstep(0.97, 0.62, elev)
-	return 1.0
-
-
-# 强风折损：脆弱高茎（棕榈/芦苇/枯立木/高山花）在大风带略减。wind_speed 物理量（~m/s）。
 
 static func _wind_exposure_modifier(host, arch: int, wind_speed: float) -> float:
+	return CellSuitability._wind_exposure_modifier(host, arch, wind_speed)
 
-	var w: float = clampf(wind_speed / 18.0, 0.0, 1.0)
-	match arch:
-		host.DETAIL_PALM, host.DETAIL_REED, host.DETAIL_ALPINE_FLOWER:
-			return lerpf(1.0, 0.7, w)
-		host.DETAIL_DEAD_SNAG:
-			return lerpf(1.0, 0.6, w)
-	return 1.0
-
-
-# 3..7 植被类 archetype 的生态位亲和乘子（legacy 0/1/2 恒返回 1.0）。
 
 static func _archetype_affinity(host, arch: int, veg: int, lf: int, _cover: int, river: bool, state: Dictionary) -> float:
-
-	var temp = float(state.get("temp", 0.5))
-	var moisture = float(state.get("moisture", 0.5))
-	var soil = float(state.get("soil_moisture", moisture))
-	var discharge = float(state.get("river_discharge", 0.0))
-	# 实际地表湿润 = 气候湿度与土壤湿度的较强者（土壤更贴近根系可用水）。
-	var wet = maxf(moisture, soil)
-	var dry = minf(moisture, soil)
-	var big_river: float = clampf(discharge / 80.0, 0.0, 1.0)
-	match arch:
-		host.DETAIL_CONIFER:
-			# 寒带针叶林应成片：把生态位亲和拉高到能让 suitability 在针叶带饱和到 1.0。
-			var a = 0.10
-			match veg:
-				VegetationType.VEG.TAIGA:
-					a = 2.6
-				VegetationType.VEG.TEMPERATE_CONIFER:
-					a = 2.3
-				VegetationType.VEG.BOREAL_SHRUB:
-					a = 1.3
-				VegetationType.VEG.ALPINE_TUNDRA, VegetationType.VEG.TEMPERATE_DECIDUOUS:
-					a = 0.8
-			a *= smoothstep(0.82, 0.22, temp)  # 偏冷，冷带更宽
-			return a
-		host.DETAIL_PALM:
-			var a = 0.0
-			match veg:
-				VegetationType.VEG.TROPICAL_RAINFOREST, VegetationType.VEG.SUBTROPICAL_FOREST:
-					a = 1.7
-				VegetationType.VEG.TROPICAL_DRY_FOREST, VegetationType.VEG.SAVANNA:
-					a = 1.1
-				VegetationType.VEG.MANGROVE, VegetationType.VEG.OASIS_VEG:
-					a = 1.4
-			a *= smoothstep(0.55, 0.85, temp)  # 偏暖
-			if lf == LandformType.LF.DELTA or lf == LandformType.LF.LOWLAND or river:
-				a *= 1.3
-			a *= lerpf(1.0, 1.45, big_river)  # 大河三角洲椰林
-			return a
-		host.DETAIL_CACTUS:
-			var a = 0.06
-			match veg:
-				VegetationType.VEG.DESERT_SCRUB:
-					a = 1.9
-				VegetationType.VEG.XERIC_DESERT:
-					a = 1.0
-				VegetationType.VEG.MEDITERRANEAN_SHRUB, VegetationType.VEG.SAVANNA:
-					a = 0.55
-				VegetationType.VEG.OASIS_VEG:
-					a = 0.75
-			a *= smoothstep(0.5, 0.85, temp) * smoothstep(0.55, 0.16, dry)  # 热且（气候+土壤）双干
-			return a
-		host.DETAIL_REED:
-			var a = 0.06
-			match veg:
-				VegetationType.VEG.MARSH:
-					a = 1.9
-				VegetationType.VEG.SWAMP, VegetationType.VEG.MANGROVE:
-					a = 1.6
-				VegetationType.VEG.TEMPERATE_GRASSLAND, VegetationType.VEG.SAVANNA:
-					a = 0.45
-			a *= smoothstep(0.45, 0.85, wet)  # 气候/土壤湿润取强
-			if river:
-				a *= 1.8
-			a *= lerpf(1.0, 1.6, big_river)  # 大河岸芦苇荡
-			if lf == LandformType.LF.DELTA:
-				a *= 1.4
-			return a
-		host.DETAIL_ALPINE_FLOWER:
-			var a = 0.06
-			match veg:
-				VegetationType.VEG.ALPINE_MEADOW:
-					a = 2.0
-				VegetationType.VEG.ALPINE_TUNDRA, VegetationType.VEG.TUNDRA:
-					a = 1.2
-				VegetationType.VEG.TEMPERATE_GRASSLAND:
-					a = 0.4
-			if lf == LandformType.LF.MOUNTAIN or lf == LandformType.LF.HILL:
-				a *= 1.25
-			a *= smoothstep(0.78, 0.32, temp)  # 偏冷凉
-			return a
-	return 1.0
-
+	return CellSuitability._archetype_affinity(host, arch, veg, lf, _cover, river, state)
 
 
 static func _is_decoration_archetype(host, arch: int) -> bool:
-
-	return arch == host.DETAIL_ROCK or arch == host.DETAIL_SNOW_MOUND or arch == host.DETAIL_DEAD_SNAG
-
+	return CellSuitability._is_decoration_archetype(host, arch)
 
 
 static func _aquatic_suitability(host, _arch: int, lf: int, veg: int, cover: int, state: Dictionary) -> float:
+	return CellSuitability._aquatic_suitability(host, _arch, lf, veg, cover, state)
 
-	if _spawn_domain(host) != host.SPAWN_WATER:
-		return 0.0
-	if cover == CoverType.CV.SEA_ICE or cover == CoverType.CV.GLACIER:
-		return 0.0
-	var landform_weight = _landform_weight(host, lf)
-	var vegetation_weight = _vegetation_weight(host, veg)
-	var cover_weight = _cover_weight(host, cover)
-	if landform_weight <= 0.0 or vegetation_weight <= 0.0 or cover_weight <= 0.0:
-		return 0.0
-	var temp = float(state.get("temp", 0.5))
-	var moisture = float(state.get("moisture", 0.5))
-	var suitability = vegetation_weight * landform_weight * cover_weight
-	# 水域生态不使用陆地 vegetation_vitality 做密度闸门；由温度/水体类型和 profile 权重决定。
-	suitability *= lerpf(0.74, 1.15, clampf(moisture, 0.0, 1.0))
-	suitability *= lerpf(0.70, 1.05, VegetationType.climate_compat_score(veg, temp, moisture))
-	suitability *= _quality_density_scale(host)
-	return clampf(suitability, 0.0, 1.25)
-
-
-# 点缀/地貌类 archetype 的独立 suitability（不经植被权重）。
 
 static func _decoration_suitability(host, arch: int, lf: int, cover: int, river: bool, state: Dictionary) -> float:
-
-	if LandformType.is_water(lf):
-		return 0.0
-	var temp = float(state.get("temp", 0.5))
-	var snow = float(state.get("snow", 0.0))
-	var vitality = float(state.get("vitality", 0.7))
-	var drought = float(state.get("drought", 0.0))
-	var cold = float(state.get("cold", 0.0))
-	var elev = float(state.get("elevation", 0.4))
-	var s = 0.0
-	match arch:
-		host.DETAIL_ROCK:
-			match lf:
-				LandformType.LF.MOUNTAIN, LandformType.LF.PEAK:
-					s = 1.1
-				LandformType.LF.VOLCANO:
-					s = 0.9
-				LandformType.LF.BADLANDS:
-					s = 0.95
-				LandformType.LF.HILL:
-					s = 0.5
-				LandformType.LF.SALT_FLAT:
-					s = 0.35
-				_:
-					s = 0.12
-			# 越裸露（活力低）岩石越显
-			s *= lerpf(1.25, 0.55, _vitality_normalized(host, vitality))
-			# 高海拔裸岩更多
-			s *= lerpf(0.85, 1.4, smoothstep(0.5, 0.95, elev))
-			if river:
-				s *= 0.6
-		host.DETAIL_SNOW_MOUND:
-			var snowy: float = maxf(snow, 1.0 if cover == CoverType.CV.SNOW or cover == CoverType.CV.PERMAFROST else 0.0)
-			if cover == CoverType.CV.GLACIER:
-				snowy = maxf(snowy, 0.85)
-			s = smoothstep(0.22, 0.7, snowy) * 1.1
-			s *= smoothstep(0.62, 0.2, temp)
-			# 高海拔雪线以上常年积雪堆增多
-			s *= lerpf(0.9, 1.3, smoothstep(0.55, 0.92, elev))
-		host.DETAIL_DEAD_SNAG:
-			# 低活力 + 旱/冷胁迫的"曾经有林"区域。枯立木点缀，适度可见即可。
-			var stress: float = maxf(drought, cold)
-			s = (1.0 - _vitality_normalized(host, vitality)) * lerpf(0.65, 1.5, clampf(stress, 0.0, 1.0))
-			match lf:
-				LandformType.LF.PLAIN, LandformType.LF.LOWLAND, LandformType.LF.HILL:
-					s *= 1.3
-				LandformType.LF.BADLANDS:
-					s *= 0.95
-				_:
-					s *= 0.55
-	s *= lerpf(0.18, 1.0, _climate_presence(host, state))
-	# 点缀层的形态由 archetype 决定，但配置了 vegetation_weight_overrides 的层
-	# （红树气生根、倒木、碎石坡）要靠它把自己收束到目标生物群系；不接进来的话
-	# 那几张表是死配置，红树根会按"枯立木"规则长满所有低活力旱地。
-	s *= _decoration_vegetation_filter(host, int(state.get("vegetation", VegetationType.VEG.NONE)))
-	s *= _quality_density_scale(host)
-	return clampf(s, 0.0, 1.25)
-
-
-# 点缀层没有 _vegetation_weight 那样的基准表，所以这里把非空 overrides 当白名单：
-# 列出的植被取表中权重，未列出的只留一点残量。倒木只该出现在林地、红树气生根只该
-# 出现在红树林——列表本身就是"该出现在哪"的完整表达。
+	return CellSuitability._decoration_suitability(host, arch, lf, cover, river, state)
 
 
 static func _decoration_vegetation_filter(host, veg: int) -> float:
-
-	var overrides: Dictionary = _profile(host).vegetation_weight_overrides
-	if overrides.is_empty():
-		return 1.0
-	if overrides.has(veg):
-		return maxf(float(overrides[veg]), 0.0)
-	var key = str(veg)
-	if overrides.has(key):
-		return maxf(float(overrides[key]), 0.0)
-	return host.DECORATION_VEG_RESIDUAL
-
+	return CellSuitability._decoration_vegetation_filter(host, veg)
 
 
 static func _try_append_instance(host, 
@@ -593,8 +322,8 @@ static func _candidate_position(host, center: Vector2, key: int, attempt: int) -
 	var jitter: Vector2 = Vector2(cos(angle), sin(angle)) * radius
 	var base_pos: Vector2 = center + jitter
 	var warp: Vector2 = Vector2(
-		host._value_noise2(base_pos.x * 0.033, base_pos.y * 0.033, 911) - 0.5,
-		host._value_noise2(base_pos.x * 0.033, base_pos.y * 0.033, 977) - 0.5
+		host.Diagnostics._value_noise2(host, base_pos.x * 0.033, base_pos.y * 0.033, 911) - 0.5,
+		host.Diagnostics._value_noise2(host, base_pos.x * 0.033, base_pos.y * 0.033, 977) - 0.5
 	) * (host._hex_size * cfg.world_noise_warp_strength)
 	return base_pos + warp
 
@@ -605,12 +334,12 @@ static func _world_noise_suitability(host, world_pos: Vector2) -> float:
 	var cfg = _profile(host)
 	var p = world_pos / maxf(host._hex_size, 1.0)
 	var warp = Vector2(
-		host._value_noise2(p.x * cfg.patch_frequency * 0.55, p.y * cfg.patch_frequency * 0.55, 313) - 0.5,
-		host._value_noise2(p.x * cfg.patch_frequency * 0.55, p.y * cfg.patch_frequency * 0.55, 719) - 0.5
+		host.Diagnostics._value_noise2(host, p.x * cfg.patch_frequency * 0.55, p.y * cfg.patch_frequency * 0.55, 313) - 0.5,
+		host.Diagnostics._value_noise2(host, p.x * cfg.patch_frequency * 0.55, p.y * cfg.patch_frequency * 0.55, 719) - 0.5
 	) * 7.0
-	var coarse = host._value_noise2((p.x + warp.x) * cfg.patch_frequency, (p.y + warp.y) * cfg.patch_frequency, 17)
-	var mid = host._value_noise2(p.x * cfg.patch_frequency * 3.1 + 19.0, p.y * cfg.patch_frequency * 3.1 - 11.0, 41)
-	var fine = host._value_noise2(p.x * cfg.patch_frequency * 8.5 - 37.0, p.y * cfg.patch_frequency * 8.5 + 23.0, 83)
+	var coarse = host.Diagnostics._value_noise2(host, (p.x + warp.x) * cfg.patch_frequency, (p.y + warp.y) * cfg.patch_frequency, 17)
+	var mid = host.Diagnostics._value_noise2(host, p.x * cfg.patch_frequency * 3.1 + 19.0, p.y * cfg.patch_frequency * 3.1 - 11.0, 41)
+	var fine = host.Diagnostics._value_noise2(host, p.x * cfg.patch_frequency * 8.5 - 37.0, p.y * cfg.patch_frequency * 8.5 + 23.0, 83)
 	var patch = smoothstep(cfg.patch_cutoff, 1.0, coarse)
 	patch = pow(patch, cfg.patch_contrast)
 	patch *= lerpf(1.0, lerpf(0.55, 1.35, mid), cfg.world_noise_mid_mix)
@@ -622,7 +351,7 @@ static func _world_noise_suitability(host, world_pos: Vector2) -> float:
 static func _world_micro_gap(host, world_pos: Vector2, key: int, attempt: int) -> float:
 
 	var p = world_pos / maxf(host._hex_size, 1.0)
-	var continuous = host._value_noise2(p.x * 0.82 + 23.0, p.y * 0.82 - 17.0, 131)
+	var continuous = host.Diagnostics._value_noise2(host, p.x * 0.82 + 23.0, p.y * 0.82 - 17.0, 131)
 	var dither = host._hash01(key, 9900 + attempt * 19)
 	return clampf(continuous * 0.72 + dither * 0.28, 0.0, 1.0)
 
@@ -684,362 +413,83 @@ static func _build_shrub_mesh(host) -> ArrayMesh:
 
 
 static func _sample_cell_state(host, idx: int, cell = null) -> Dictionary:
-
-	return {
-		"temp": host._f32(host._map.temp_arr, idx, cell.temperature if cell != null else 0.5),
-		"moisture": host._f32(host._map.moisture_arr, idx, cell.moisture if cell != null else 0.5),
-		"snow": host._f32(host._map.snow_cover_arr, idx, cell.snow_cover if cell != null else 0.0),
-		"weather_intensity": host._f32(host._map.weather_intensity_arr, idx, cell.weather_intensity if cell != null else 0.0),
-		"vitality": host._f32(host._map.vegetation_vitality_arr, idx, cell.vegetation_vitality if cell != null else 0.7),
-		"heat": host._f32(host._map.vegetation_heat_stress_arr, idx, cell.vegetation_heat_stress if cell != null else 0.0),
-		"drought": host._f32(host._map.vegetation_drought_stress_arr, idx, cell.vegetation_drought_stress if cell != null else 0.0),
-		"cold": host._f32(host._map.vegetation_cold_stress_arr, idx, cell.vegetation_cold_stress if cell != null else 0.0),
-		"landform": host._u8(host._map.landform_arr, idx, cell.landform if cell != null else LandformType.LF.PLAIN),
-		"vegetation": host._u8(host._map.vegetation_arr, idx, cell.vegetation if cell != null else VegetationType.VEG.NONE),
-		"cover": host._u8(host._map.cover_arr, idx, cell.cover if cell != null else CoverType.CV.NONE),
-		"weather_type": host._u8(host._map.weather_type_arr, idx, cell.weather_type if cell != null else 0),
-		# 阶段 C：放置侧全量参数（归一化 / 物理量），喂入 archetype 亲和 + 林线 + 地貌 suitability。
-		"elevation": host._f32(host._map.elevation_arr, idx, cell.elevation if cell != null else 0.40),
-		"soil_moisture": host._f32(host._map.soil_moisture_arr, idx, cell.soil_moisture if cell != null else 0.40),
-		"river_discharge": host._f32(host._map.river_discharge_arr, idx, 0.0),
-		"wind_speed": host._f32(host._map.wind_speed_arr, idx, cell.wind_speed if cell != null else 0.0),
-		"snow_visual": 0.0,
-	}
-
+	return CellAppearance._sample_cell_state(host, idx, cell)
 
 
 static func _base_color_for_state(host, state: Dictionary, variant: float) -> Color:
-
-	var veg = int(state.get("vegetation", VegetationType.VEG.NONE))
-	var base = _base_color_for_vegetation(host, veg)
-	var shade = (variant - 0.5) * 0.16
-	if shade >= 0.0:
-		base = base.lightened(shade)
-	else:
-		base = base.darkened(-shade)
-	return base
-
+	return CellAppearance._base_color_for_state(host, state, variant)
 
 
 static func _base_color_for_vegetation(host, veg: int) -> Color:
-	return VegetationColors._base_color_for_vegetation(host, veg)
-
+	return CellAppearance._base_color_for_vegetation(host, veg)
 
 
 static func _tree_base_color_for_vegetation(host, veg: int) -> Color:
-	return VegetationColors._tree_base_color_for_vegetation(host, veg)
-
+	return CellAppearance._tree_base_color_for_vegetation(host, veg)
 
 
 static func _grass_base_color_for_vegetation(host, veg: int) -> Color:
-	return VegetationColors._grass_base_color_for_vegetation(host, veg)
-
+	return CellAppearance._grass_base_color_for_vegetation(host, veg)
 
 
 static func _profile_weight_override(host, prop: StringName, key: int, fallback: float) -> float:
-
-	var cfg = _profile(host)
-	var raw = cfg.get(prop)
-	if not (raw is Dictionary):
-		return fallback
-	var dict: Dictionary = raw
-	if dict.has(key):
-		return float(dict[key])
-	var key_str = str(key)
-	if dict.has(key_str):
-		return float(dict[key_str])
-	return fallback
-
+	return CellAppearance._profile_weight_override(host, prop, key, fallback)
 
 
 static func _vegetation_weight(host, veg: int) -> float:
-
-	var base = 0.0
-	match _detail_kind(host):
-		host.DETAIL_TREE:
-			base = _tree_vegetation_weight(host, veg)
-			return _profile_weight_override(host, &"vegetation_weight_overrides", veg, base)
-		host.DETAIL_GRASS:
-			base = _grass_vegetation_weight(host, veg)
-			return _profile_weight_override(host, &"vegetation_weight_overrides", veg, base)
-	match veg:
-		VegetationType.VEG.BOREAL_SHRUB, VegetationType.VEG.MEDITERRANEAN_SHRUB:
-			base = 1.15
-		VegetationType.VEG.DESERT_SCRUB:
-			base = 0.78
-		VegetationType.VEG.TAIGA, VegetationType.VEG.TROPICAL_DRY_FOREST:
-			base = 0.92
-		VegetationType.VEG.TEMPERATE_DECIDUOUS, VegetationType.VEG.TEMPERATE_CONIFER:
-			base = 0.84
-		VegetationType.VEG.TROPICAL_RAINFOREST, VegetationType.VEG.SUBTROPICAL_FOREST:
-			base = 0.70
-		VegetationType.VEG.TUNDRA, VegetationType.VEG.ALPINE_TUNDRA:
-			base = 0.42
-		VegetationType.VEG.SAVANNA:
-			base = 0.62
-		VegetationType.VEG.TEMPERATE_STEPPE:
-			base = 0.46
-		VegetationType.VEG.SWAMP:
-			base = 0.56
-		VegetationType.VEG.MARSH:
-			base = 0.34
-		VegetationType.VEG.TEMPERATE_GRASSLAND:
-			base = 0.36
-		VegetationType.VEG.OASIS_VEG:
-			base = 0.58
-		VegetationType.VEG.XERIC_DESERT, VegetationType.VEG.POLAR_DESERT:
-			base = 0.02
-		VegetationType.VEG.NONE, VegetationType.VEG.KELP_FOREST, VegetationType.VEG.CORAL_REEF:
-			base = 0.0
-		_:
-			base = 0.10
-	return _profile_weight_override(host, &"vegetation_weight_overrides", veg, base)
-
+	return CellAppearance._vegetation_weight(host, veg)
 
 
 static func _tree_vegetation_weight(host, veg: int) -> float:
-
-	match veg:
-		VegetationType.VEG.TROPICAL_RAINFOREST, VegetationType.VEG.SUBTROPICAL_FOREST:
-			return 1.22
-		VegetationType.VEG.TEMPERATE_DECIDUOUS, VegetationType.VEG.TEMPERATE_CONIFER:
-			return 1.08
-		VegetationType.VEG.TAIGA:
-			return 0.98
-		VegetationType.VEG.TROPICAL_DRY_FOREST:
-			return 0.82
-		VegetationType.VEG.SWAMP, VegetationType.VEG.MANGROVE:
-			return 0.64
-		VegetationType.VEG.SAVANNA:
-			return 0.28
-		VegetationType.VEG.BOREAL_SHRUB, VegetationType.VEG.MEDITERRANEAN_SHRUB:
-			return 0.12
-		VegetationType.VEG.TEMPERATE_GRASSLAND, VegetationType.VEG.TEMPERATE_STEPPE:
-			return 0.05
-		VegetationType.VEG.DESERT_SCRUB, VegetationType.VEG.XERIC_DESERT:
-			return 0.0
-		VegetationType.VEG.NONE, VegetationType.VEG.KELP_FOREST, VegetationType.VEG.CORAL_REEF:
-			return 0.0
-		_:
-			return 0.04
-
+	return CellAppearance._tree_vegetation_weight(host, veg)
 
 
 static func _grass_vegetation_weight(host, veg: int) -> float:
-
-	match veg:
-		VegetationType.VEG.TEMPERATE_GRASSLAND, VegetationType.VEG.ALPINE_MEADOW:
-			return 1.22
-		VegetationType.VEG.TEMPERATE_STEPPE:
-			return 0.98
-		VegetationType.VEG.SAVANNA:
-			return 0.84
-		VegetationType.VEG.MARSH:
-			return 0.78
-		VegetationType.VEG.TUNDRA, VegetationType.VEG.ALPINE_TUNDRA:
-			return 0.62
-		VegetationType.VEG.DESERT_SCRUB:
-			return 0.32
-		VegetationType.VEG.BOREAL_SHRUB, VegetationType.VEG.MEDITERRANEAN_SHRUB:
-			return 0.44
-		VegetationType.VEG.TROPICAL_RAINFOREST, VegetationType.VEG.SUBTROPICAL_FOREST:
-			return 0.24
-		VegetationType.VEG.TAIGA, VegetationType.VEG.TEMPERATE_DECIDUOUS, VegetationType.VEG.TEMPERATE_CONIFER:
-			return 0.30
-		VegetationType.VEG.XERIC_DESERT, VegetationType.VEG.POLAR_DESERT:
-			return 0.02
-		VegetationType.VEG.NONE, VegetationType.VEG.KELP_FOREST, VegetationType.VEG.CORAL_REEF:
-			return 0.0
-		_:
-			return 0.18
-
+	return CellAppearance._grass_vegetation_weight(host, veg)
 
 
 static func _landform_weight(host, lf: int) -> float:
-
-	var base = 0.0
-	match _detail_kind(host):
-		host.DETAIL_TREE:
-			base = _tree_landform_weight(host, lf)
-			return _profile_weight_override(host, &"landform_weight_overrides", lf, base)
-		host.DETAIL_GRASS:
-			base = _grass_landform_weight(host, lf)
-			return _profile_weight_override(host, &"landform_weight_overrides", lf, base)
-	match lf:
-		LandformType.LF.PLAIN, LandformType.LF.LOWLAND:
-			base = 1.0
-		LandformType.LF.HILL:
-			base = 0.84
-		LandformType.LF.DELTA:
-			base = 0.64
-		LandformType.LF.BADLANDS:
-			base = 0.42
-		LandformType.LF.SALT_FLAT:
-			base = 0.06
-		LandformType.LF.MOUNTAIN:
-			base = 0.14
-		LandformType.LF.PEAK, LandformType.LF.VOLCANO:
-			base = 0.0
-		_:
-			base = 0.0 if LandformType.is_water(lf) else 0.55
-	return _profile_weight_override(host, &"landform_weight_overrides", lf, base)
-
+	return CellAppearance._landform_weight(host, lf)
 
 
 static func _tree_landform_weight(host, lf: int) -> float:
-
-	match lf:
-		LandformType.LF.PLAIN, LandformType.LF.LOWLAND:
-			return 1.0
-		LandformType.LF.HILL:
-			return 0.74
-		LandformType.LF.DELTA:
-			return 0.46
-		LandformType.LF.MOUNTAIN:
-			return 0.16
-		LandformType.LF.BADLANDS, LandformType.LF.SALT_FLAT:
-			return 0.0
-		LandformType.LF.PEAK, LandformType.LF.VOLCANO:
-			return 0.0
-		_:
-			return 0.0 if LandformType.is_water(lf) else 0.38
-
+	return CellAppearance._tree_landform_weight(host, lf)
 
 
 static func _grass_landform_weight(host, lf: int) -> float:
-
-	match lf:
-		LandformType.LF.PLAIN, LandformType.LF.LOWLAND:
-			return 1.0
-		LandformType.LF.HILL:
-			return 0.82
-		LandformType.LF.DELTA:
-			return 0.72
-		LandformType.LF.BADLANDS:
-			return 0.26
-		LandformType.LF.SALT_FLAT:
-			return 0.04
-		LandformType.LF.MOUNTAIN:
-			return 0.32
-		LandformType.LF.PEAK, LandformType.LF.VOLCANO:
-			return 0.0
-		_:
-			return 0.0 if LandformType.is_water(lf) else 0.58
-
+	return CellAppearance._grass_landform_weight(host, lf)
 
 
 static func _cover_weight(host, cover: int) -> float:
-
-	var base = 1.0
-	match cover:
-		CoverType.CV.GLACIER, CoverType.CV.SEA_ICE, CoverType.CV.PELAGIC_BLOOM:
-			base = 0.0
-		CoverType.CV.FLOODING:
-			base = 0.18
-		CoverType.CV.SNOW:
-			base = 0.48
-		CoverType.CV.PERMAFROST:
-			base = 0.62
-		_:
-			base = 1.0
-	return _profile_weight_override(host, &"cover_weight_overrides", cover, base)
-
+	return CellAppearance._cover_weight(host, cover)
 
 
 static func _sample_density_for_size(host, idx: int, cell = null) -> float:
-
-	var state = _sample_cell_state(host, idx, cell)
-	var veg = int(state.get("vegetation", VegetationType.VEG.NONE))
-	var lf = int(state.get("landform", LandformType.LF.PLAIN))
-	var cover = int(state.get("cover", CoverType.CV.NONE))
-	return _vegetation_weight(host, veg) * _landform_weight(host, lf) * _cover_weight(host, cover)
-
+	return CellAppearance._sample_density_for_size(host, idx, cell)
 
 
 static func _cell_ecology_density_bias(host, state: Dictionary) -> float:
-
-	var cfg = _profile(host)
-	var moisture = float(state.get("moisture", 0.5))
-	var vitality = float(state.get("vitality", 0.7))
-	var wet_corridor: float = smoothstep(0.46, 0.82, moisture) * cfg.moisture_corridor_boost
-	var vitality_boost: float = _vitality_normalized(host, vitality) * cfg.vitality_patch_boost
-	return clampf(0.68 + wet_corridor * 0.26 + vitality_boost * 0.30, 0.28, 1.35)
-
+	return CellAppearance._cell_ecology_density_bias(host, state)
 
 
 static func _climate_presence(host, state: Dictionary) -> float:
-
-	var cfg = _profile(host)
-	var moisture = float(state.get("moisture", 0.5))
-	var snow = float(state.get("snow", 0.0))
-	var vitality = float(state.get("vitality", 0.7))
-	var heat = float(state.get("heat", 0.0))
-	var drought = float(state.get("drought", 0.0))
-	var cold = float(state.get("cold", 0.0))
-	var wt = int(state.get("weather_type", 0))
-	var wi = float(state.get("weather_intensity", 0.0))
-	if wt == host._WT_DROUGHT or wt == host._WT_HEATWAVE:
-		drought = maxf(drought, wi * 0.65)
-		heat = maxf(heat, wi * 0.52)
-	elif wt == host._WT_BLIZZARD:
-		snow = maxf(snow, wi * 0.85)
-		cold = maxf(cold, wi * 0.62)
-	elif wt == host._WT_RAIN or wt == host._WT_STORM or wt == host._WT_MONSOON:
-		moisture = clampf(moisture + wi * 0.20, 0.0, 1.0)
-
-	var dry = clampf(maxf(drought, maxf(heat * 0.78, (0.34 - moisture) * 1.9)), 0.0, 1.0)
-	var snow_hide = clampf(maxf(snow, cold * 0.55), 0.0, 1.0)
-	var presence = pow(_vitality_normalized(host, vitality), cfg.vitality_alpha_power)
-	presence *= 1.0 - dry * cfg.stress_hide_strength
-	presence *= 1.0 - snow_hide * cfg.snow_hide_strength
-	return clampf(presence, 0.0, 1.0)
-
+	return CellAppearance._climate_presence(host, state)
 
 
 static func _scatter_presence(host, state: Dictionary) -> float:
-
-	if _spawn_domain(host) == host.SPAWN_WATER:
-		var cover = int(state.get("cover", CoverType.CV.NONE))
-		if cover == CoverType.CV.SEA_ICE or cover == CoverType.CV.GLACIER:
-			return 0.0
-		return 1.0
-	return _climate_presence(host, state)
-
+	return CellAppearance._scatter_presence(host, state)
 
 
 static func _vitality_normalized(host, vitality: float) -> float:
-
-	var cfg = _profile(host)
-	var dead: float = minf(cfg.vitality_dead_threshold, cfg.vitality_healthy_threshold - 0.001)
-	var healthy: float = maxf(cfg.vitality_healthy_threshold, dead + 0.001)
-	return clampf((clampf(vitality, 0.0, 1.0) - dead) / (healthy - dead), 0.0, 1.0)
-
+	return CellAppearance._vitality_normalized(host, vitality)
 
 
 static func _vitality_density_factor(host, state: Dictionary) -> float:
-
-	var cfg = _profile(host)
-	var vitality = clampf(float(state.get("vitality", 0.7)), 0.0, 1.0)
-	if vitality <= cfg.vitality_dead_threshold:
-		return 0.0
-	var normalized = _vitality_normalized(host, vitality)
-	var sparse_factor = lerpf(0.10, 0.62, smoothstep(
-		cfg.vitality_dead_threshold,
-		maxf(cfg.vitality_sparse_threshold, cfg.vitality_dead_threshold + 0.001),
-		vitality
-	))
-	var healthy_factor = lerpf(0.62, 1.20, pow(normalized, cfg.vitality_density_power))
-	return minf(sparse_factor, healthy_factor) if vitality < cfg.vitality_sparse_threshold else healthy_factor
-
+	return CellAppearance._vitality_density_factor(host, state)
 
 
 static func _vitality_size_scale(host, state: Dictionary) -> float:
-
-	var cfg = _profile(host)
-	var vitality = clampf(float(state.get("vitality", 0.7)), 0.0, 1.0)
-	var normalized = _vitality_normalized(host, vitality)
-	return lerpf(cfg.vitality_size_min, cfg.vitality_size_max, pow(normalized, 0.85))
-
+	return CellAppearance._vitality_size_scale(host, state)
 
 
 static func _is_water_cell(host, cell, idx: int) -> bool:
@@ -1325,6 +775,3 @@ static func _random_rotation_strength(host) -> float:
 static func _upright_jitter_degrees(host) -> float:
 
 	return clampf(_profile_float(host, &"upright_jitter_degrees", 6.0), 0.0, 35.0)
-
-
-

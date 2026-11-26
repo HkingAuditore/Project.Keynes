@@ -11,16 +11,26 @@ if env['PLATFORM'] == 'win32':
 else:
     env.Append(CCFLAGS=['-ffp-contract=off', '-O2'], CXXFLAGS=['-std=c++17'])
 worker = ARGUMENTS.get('worker', '0') == '1'
-sources = ['runtime_climate_physics.cpp', 'runtime_climate_physics_state.cpp',
-           'runtime_climate_formulas.cpp']
+sources = [
+    'runtime_climate_physics.cpp', 'runtime_climate_physics_ocean_solver.cpp',
+    'runtime_climate_physics_wind_transport.cpp', 'runtime_climate_physics_selftest.cpp',
+    'runtime_climate_physics_state.cpp', 'runtime_climate_formulas.cpp',
+]
 if worker:
     env.Append(CPPDEFINES=['PK_TEST_CLIMATE_WORKER'])
     sources += [
         'runtime_climate_kernel.cpp', 'runtime_climate_input_hash.cpp',
-        'runtime_climate_passes.cpp', 'runtime_climate_passes_kernels.cpp',
+        'runtime_climate_passes.cpp', 'runtime_climate_passes_input_overlay.cpp',
+        'runtime_climate_passes_surface_kernels.cpp', 'runtime_climate_passes_kernels.cpp',
+        'runtime_climate_passes_kernels_land_temperature.cpp',
+        'runtime_climate_passes_kernels_ocean_transport.cpp',
+        'runtime_climate_passes_kernels_wind.cpp',
         'runtime_climate_passes_cyclone.cpp', 'runtime_climate_passes_hydrology.cpp',
         'runtime_climate_passes_stage_b.cpp', 'runtime_climate_passes_weather.cpp',
-        'runtime_authoritative_domains.cpp', 'runtime_climate_parity.cpp',
+        'runtime_climate_passes_weather_flow_geometry.cpp',
+        'runtime_climate_passes_weather_writeback.cpp',
+        'runtime_authoritative_domains.cpp', 'runtime_authoritative_domains_environment.cpp',
+        'runtime_climate_parity.cpp',
         'native_parallel_executor.cpp', 'runtime_switch_registry.cpp',
     ]
 objects = [env.Object(str(build / name.replace('.cpp', '')), str(root / 'src' / name))

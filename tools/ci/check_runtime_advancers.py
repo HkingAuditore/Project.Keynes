@@ -10,9 +10,11 @@ import argparse
 import json
 from pathlib import Path
 import re
+from cpp_source import read_cpp_source
 
 ROOT = Path(__file__).resolve().parents[2]
 HOST = "Project/project-keynes/scripts/game/world_runtime_host.gd"
+HOST_ADAPTERS = "scripts/game/world_runtime_adapters.gd"
 REGISTRY = "tools/ci/runtime_advancers.json"
 BASELINE = "tools/ci/runtime_advancers_baseline.json"
 HEADER = "gdext/src/runtime_external_advancers.h"
@@ -30,6 +32,13 @@ def inventory(source: str) -> tuple[set[str], set[str]]:
                   word in name for word in ("last", "pending", "target", "commit", "completed")))}
     methods = set(re.findall(r"^func\s+((?:_queue|_drain)_runtime_\w*_commits?)\s*\(", code, re.M))
     return fields, methods
+
+
+def host_source(root: Path) -> str:
+    source = (root / HOST).read_text(encoding="utf-8")
+    if f'extends "res://{HOST_ADAPTERS}"' in source.splitlines():
+        source += "\n" + (root / "Project/project-keynes" / HOST_ADAPTERS).read_text(encoding="utf-8")
+    return source
 
 
 def render_header(registry: dict) -> str:
@@ -55,7 +64,7 @@ def violations(root: Path, registry: dict, baseline: dict) -> list[str]:
     errors = []
     if registry.get("version") != 1 or baseline.get("version") != 1:
         return ["unsupported registry/baseline version"]
-    fields, methods = inventory((root / HOST).read_text())
+    fields, methods = inventory(host_source(root))
     registered_fields, registered_methods, ids = set(), set(), set()
     for row in registry["advancers"]:
         if not re.fullmatch(r"[a-z][a-z0-9_]*", row["id"]) or row["id"] in ids:
@@ -66,7 +75,7 @@ def violations(root: Path, registry: dict, baseline: dict) -> list[str]:
         for key in ("reads", "writes", "trigger", "source", "entrypoint"):
             if not row.get(key): errors.append(f"missing {key}: {row['id']}")
         source = root / row["source"]
-        if not source.is_file() or row["entrypoint"] not in source.read_text():
+        if not source.is_file() or row["entrypoint"] not in read_cpp_source(source):
             errors.append(f"missing entrypoint: {row['id']} {row['entrypoint']}")
         for key, current, registered in (("host_fields", fields, registered_fields),
                                          ("host_methods", methods, registered_methods)):
@@ -96,7 +105,7 @@ def main() -> int:
     if args.write_header:
         (args.root / HEADER).write_text(render_header(registry))
     errors = violations(args.root, registry, baseline)
-    fields, methods = inventory((args.root / HOST).read_text())
+    fields, methods = inventory(host_source(args.root))
     print(f"runtime advancers: {len(registry['advancers'])} entries, {len(fields)} fields, {len(methods)} catchup methods, {len(errors)} violations")
     for error in errors: print(error)
     return int(bool(errors))

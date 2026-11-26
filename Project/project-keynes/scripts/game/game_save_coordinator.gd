@@ -1,4 +1,10 @@
 extends Node
+
+const ExecutionContract = preload("res://scripts/game/save_execution_contract.gd")
+
+const SaveSections = preload("res://scripts/game/save_state_sections.gd")
+
+const BoundaryChecks = preload("res://scripts/game/save_boundary_checks.gd")
 const NativeWorld = preload("res://scripts/data_core/native_world.gd")
 const EconomyDisplay = preload("res://scripts/economy/economy_facade_display.gd")
 signal save_completed(slot_id: String, result: Dictionary)
@@ -532,466 +538,83 @@ func _wait_for_safe_boundary(generation: int = -1) -> Dictionary:
 
 
 func _boundary_diagnostics() -> Dictionary:
-	var out := {"day": _world_clock.day_index() if _world_clock != null else -1}
-	var generator = _runtime_host.generator() if _runtime_host != null else null
-	if generator == null:
-		return out
-	var economy = generator.get_economy_facade()
-	if economy != null:
-		var report: Dictionary = economy.report()
-		out["economy"] = {"busy": report.get("busy", null),
-			"epoch_active": report.get("epoch_active", null),
-			"committed": report.get("committed", null),
-			"last_committed_day": report.get("last_committed_day", null)}
-	var country = generator.get_country_facade()
-	# 存档边界最常卡的就是 country：把「谁在拥有 country」和「country_should_run
-	# 为什么还是 true」一起记下来，否则只有一句 save_requires_idle_country
-	# 根本定位不了（web 的 pause 期间没有任何日推进者）。
-	if country != null:
-		var country_report: Dictionary = country.report()
-		out["country_busy"] = bool(country_report.get("busy", false))
-		out["country_stage"] = String(country_report.get("stage", ""))
-	if generator.has_method("runtime_graph_active"):
-		out["runtime_graph_active"] = bool(generator.runtime_graph_active())
-	if country != null and country.world_ext() != null:
-		out["country_peer"] = country.peer_protocol_status()
-		out["country_should_run"] = country.should_run(int(out["day"]))
-	if generator.has_method("get_runtime_thread_report"):
-		var thread: Dictionary = generator.get_runtime_thread_report()
-		for key in ["simulation_host_state", "simulation_committed_day", "environment_ring_pending",
-				"worker_day_inflight", "day_stall_reason_mask", "fault_code",
-				"country_worker_plan_active", "country_worker_waiting_for_peer"]:
-			out[key] = thread.get(key, null)
-	var effect = generator.get_effect_facade()
-	if effect != null and effect.world_ext() != null:
-		out["effect_adapters"] = effect.native_adapter_report()
-	return out
+	return BoundaryChecks._boundary_diagnostics(self)
 
 
 func _can_save() -> Dictionary:
-	if _runtime_host == null or _world_clock == null \
-			or not _session_active(_runtime_generation) \
-			or _runtime_host.generator() == null:
-		return _result(false, "save_runtime_missing", "游戏尚未就绪，请稍后再试。")
-	var generator := _runtime_host.generator()
-	var country_has_checkpoint := false
-	if generator.has_method("get_runtime_thread_report"):
-		var thread: Dictionary = generator.get_runtime_thread_report()
-		country_has_checkpoint = bool(thread.get("country_worker_authoritative", false))
-		if _runtime_host.is_runtime_fault_paused() or String(thread.get("simulation_host_state", "")) == "FAULTED":
-			return _blocked_result("worker_faulted", "后台模拟线程发生故障（%s），无法保存。" %
-				String(_runtime_host.get_runtime_fault_diagnostics().get("fault_code", thread.get("fault_code", "unknown"))), "worker_faulted")
-		var idle_blocker := _worker_idle_blocker(thread)
-		if not idle_blocker.is_empty():
-			return _blocked_result("save_requires_idle_worker",
-				"等待后台 worker 排空已接收的模拟输入。", idle_blocker)
-	var country = generator.get_country_facade()
-	var economy = generator.get_economy_facade()
-	if country == null or economy == null:
-		return _result(false, "save_provider_missing", "国家或经济 provider 未注册。")
-	var country_report: Dictionary = country.report()
-	var economy_report: Dictionary = economy.report()
-	var effect = generator.get_effect_facade()
-	# The Effect owner is persisted independently from the domain owners.  Do
-	# not capture PKEF/PKCN/PKEC/journal while a native POD request has crossed
-	# Effect preflight but has not received the owning domain's durable ACK.
-	if effect != null and effect.world_ext() != null:
-		var adapters: Dictionary = effect.native_adapter_report()
-		# The host checkpoint carries pending Country packets and their Effect
-		# receipt bindings. Future-day commands cannot drain with the clock paused.
-		if not country_has_checkpoint and bool(adapters.get("country_pending", false)):
-			return _blocked_result("save_requires_idle_effect_country",
-				"等待理念/Effect Country 命令提交", "effect_country_pending")
-		if bool(adapters.get("economy_pending", false)):
-			return _blocked_result("save_requires_idle_effect_economy",
-				"等待理念/Effect Economy 命令提交", "effect_economy_pending")
-		if bool(adapters.get("gameplay_pending", false)):
-			return _blocked_result("save_requires_idle_effect_gameplay",
-				"等待理念/Effect Gameplay 事件写入 journal", "effect_gameplay_pending")
-	# 已提交账本契约（写档和读档都一样）要求经济至少结算过一次；开局到首次结算
-	# 之间没有可恢复的状态。这里不进重试列表：时钟为存档暂停，等下去也不会到。
-	if int(economy_report.get("last_committed_day", -1)) < 0:
-		return _result(false, "save_requires_first_settlement",
-			"经济尚未完成第一次结算，暂时无法存档。请让游戏运行几天后再保存。")
-	var economy_busy := bool(economy_report.get("busy",
-		economy_report.get("epoch_active", false)))
-	if economy_busy or not bool(economy_report.get("committed", true)):
-		return _blocked_result("save_requires_committed_boundary",
-			"经济尚未到达联合提交边界。",
-			"economy_busy" if economy_busy else "economy_not_committed")
-	var country_busy := bool(country_report.get("busy", false))
-	var country_ext_available := country.world_ext() != null
-	if country_ext_available:
-		var peer_status: Dictionary = country.peer_protocol_status()
-		if int(peer_status.get("pending_intents", 0)) > 0 \
-			or int(peer_status.get("queued_intents", 0)) > 0 \
-			or int(peer_status.get("rejected_intents", 0)) > 0:
-			return _blocked_result("save_requires_idle_country_peer",
-				"Country peer continuation 尚未到达可保存边界。", "country_peer_intents")
-	# The checkpoint includes future commands. The calendar is one day ahead
-	# of the committed state and must not drive the synchronous Country store.
-	if not country_has_checkpoint:
-		if country_ext_available:
-			country_busy = country_busy or country.should_run(_world_clock.day_index())
-		else:
-			country_busy = country_busy or String(country_report.get("stage", "idle")) == "command_preflight"
-	if country_busy:
-		# 三个来源：report.busy / country_should_run(day) / 无扩展时的
-		# command_preflight。日志里必须能分开，否则又是一句"国家没空闲"。
-		var country_condition := "country_busy"
-		if not bool(country_report.get("busy", false)):
-			if country_ext_available:
-				country_condition = "country_should_run"
-			else:
-				country_condition = "country_command_preflight"
-		return _blocked_result("save_requires_idle_country", "国家命令图尚未空闲。",
-			country_condition)
-	if effect != null and effect.world_ext() != null \
-			and effect.should_run(_world_clock.day_index()):
-		return _blocked_result("save_requires_idle_effect",
-			"Effect transaction has not reached a safe commit boundary",
-			"effect_should_run")
-	var ideology = generator.get_ideology_facade() if generator.has_method("get_ideology_facade") else null
-	var ideology_ext_available := ideology != null and ideology.world_ext() != null
-	if ideology_ext_available \
-			and ideology.should_run(_world_clock.day_index()):
-		return _blocked_result("save_requires_idle_ideology",
-			"Ideology commands have not reached their safe boundary",
-			"ideology_should_run")
-	return _result(true, "ok", "")
+	return BoundaryChecks._can_save(self)
 
 
-## 返回阻塞原因或空串。inline 没有后台循环更新 RUNNING，按真实日边界判断；
-## 尚未消费的未来环境帧交给 native 保存服务清空。
 func _worker_idle_blocker(thread: Dictionary) -> String:
-	var host_state := String(thread.get("simulation_host_state", "STOPPED"))
-	if bool(thread.get("native_daily_inline", false)) and host_state in ["RUNNING", "PAUSED"]:
-		if int(thread.get("worker_day_inflight", 0)) > 0:
-			return "worker_day_inflight"
-		return "inline_day_pending" if bool(thread.get("inline_day_pending", false)) else ""
-	if host_state in ["STARTING", "RUNNING", "SAVE_PENDING"]:
-		return "state_%s" % host_state.to_lower()
-	if int(thread.get("worker_day_inflight", 0)) > 0:
-		return "worker_day_inflight"
-	return ""
+	return BoundaryChecks._worker_idle_blocker(self, thread)
 
 
 func _collect_sections(saved_paused: bool, saved_speed: float,
 		native_bundle: Dictionary, defer_provider_hashes: bool = false) -> Dictionary:
-	var generator := _runtime_host.generator()
-	var context := _provider_context(_runtime_host, generator, saved_paused, saved_speed)
-	context["native_runtime_bundle"] = native_bundle.get("bytes", PackedByteArray())
-	context["native_country_pkcn"] = native_bundle.get("country_pkcn", PackedByteArray())
-	context["native_economy_ecp2"] = native_bundle.get("economy_ecp2", PackedByteArray())
-	context["native_pkmi"] = native_bundle.get("pkmi", PackedByteArray())
-	context["native_pknr"] = native_bundle.get("pknr", PackedByteArray())
-	var sections := {}
-	var provider_manifest: Array = []
-	var provider_hash_payloads: Array = []
-	var profile_save := OS.get_environment("PK_SAVE_PROFILE") == "1"
-	var verify_provider_hashes := OS.get_environment("PK_SAVE_PROVIDER_HASH_VERIFY") == "1"
-	for provider in _providers:
-		var profile_start := Time.get_ticks_usec() if profile_save else 0
-		var available: Dictionary = provider.can_save(context)
-		if not bool(available.get("ok", false)):
-			return available
-		var written: Dictionary = provider.write_sections(context)
-		if not bool(written.get("ok", false)):
-			return written
-		var provider_sections: Dictionary = written.get("sections", {})
-		for section_id in provider_sections:
-			if sections.has(section_id):
-				return _result(false, "save_provider_duplicate_section",
-					"多个 provider 写入了 section：%s" % section_id)
-			sections[section_id] = provider_sections[section_id]
-		context.current_provider_sections = provider_sections
-		var profile_hash_start := Time.get_ticks_usec() if profile_save else 0
-		var manifest: Dictionary = provider.manifest_entry(context, not defer_provider_hashes)
-		if defer_provider_hashes:
-			# 在安全边界冻结与原 state_hash 完全相同的 Variant 字节；
-			# 后台只读私有字节，不能再访问 provider、Node 或活跃世界。
-			var payload := {"manifest_index": provider_manifest.size(),
-				"bytes": var_to_bytes(provider_sections)}
-			if verify_provider_hashes:
-				payload["expected_hash"] = provider.state_hash(context)
-			provider_hash_payloads.append(payload)
-		provider_manifest.append(manifest)
-		if profile_save:
-			print("[save-provider-cost] id=%s capture_ms=%.3f manifest_ms=%.3f" % [
-				provider.provider_id(), float(profile_hash_start - profile_start) / 1000.0,
-				float(Time.get_ticks_usec() - profile_hash_start) / 1000.0])
-	provider_manifest.append({
-		"provider_id": TECHNOLOGY_INDUSTRY_PROVIDER_ID,
-		"schema_version": TECHNOLOGY_INDUSTRY_REVISION,
-		"sections": PackedStringArray(),
-		"content_hash": "",
-	})
-	for required in REQUIRED_SECTIONS:
-		if not sections.has(required):
-			return _result(false, "save_provider_missing", "运行时缺少 provider：%s" % required)
-	return {"ok": true, "code": "ok", "message": "", "sections": sections,
-		"provider_manifest": provider_manifest, "provider_hash_payloads": provider_hash_payloads}
+	return SaveSections._collect_sections(self, saved_paused, saved_speed, native_bundle, defer_provider_hashes)
 
 
 func _economy_checkpoint_format() -> Dictionary:
-	if not _economy_format.is_empty():
-		return _economy_format
-	_economy_format = {"schema_version": 53, "abi_version": 2, "hash_version": 1}
-	if ClassDB.class_exists("DCWorldExt"):
-		var probe: DCWorldExt = NativeWorld.create()
-		if probe != null:
-			_economy_format = probe.get_economy_checkpoint_format()
-	return _economy_format
+	return SaveSections._economy_checkpoint_format(self)
 
 
 func _register_providers() -> void:
-	var registered := _install_provider_entries(WorldStateModules.builtins(
-		int(_economy_checkpoint_format().schema_version), PKMI_SCHEMA))
-	if not bool(registered.ok):
-		_provider_registration_error = registered
-		push_error(String(registered.message))
+	SaveSections._register_providers(self)
 
 
 func _install_provider_entries(entries: Array) -> Dictionary:
-	var resolved := ModuleRegistry.resolve(entries)
-	if not bool(resolved.ok):
-		return resolved
-	_provider_entries = entries.duplicate()
-	_providers = resolved.modules
-	_provider_registration_error.clear()
-	return {"ok": true, "code": "ok"}
+	return SaveSections._install_provider_entries(self, entries)
 
 
-## Register a new persistent module at composition time, before binding a game.
-## The module supplies its own callbacks; the coordinator needs no new branch.
 func register_state_module(provider, restore_after: PackedStringArray) -> Dictionary:
-	if is_instance_valid(_runtime_host) or _busy or not _pending_load.is_empty():
-		return _result(false, "module_registration_session_active", "请在进入游戏前登记模块。")
-	var candidate := _provider_entries.duplicate()
-	var entry := ModuleRegistry.state_entry(provider, restore_after)
-	if entry.is_empty():
-		return _result(false, "module_descriptor_invalid", "模块缺少保存接口。")
-	# Player presentation is installed after every business module, including
-	# extensions unknown to the built-in composition.
-	for index in candidate.size():
-		if String(candidate[index].id) == "player_session":
-			candidate[index] = candidate[index].duplicate(true)
-			candidate[index].after.append(String(entry.id))
-	candidate.append(entry)
-	return _install_provider_entries(candidate)
+	return SaveSections.register_state_module(self, provider, restore_after)
 
 
 func _provider_context(host: WorldRuntimeHost, generator: MapGenerator,
 		saved_paused: bool, saved_speed: float) -> Dictionary:
-	return {
-		"host": host,
-		"generator": generator,
-		"world": generator.get_data_core_world() if generator != null else null,
-		"event_bus": generator.get_gameplay_event_bus() if generator != null else null,
-		"saved_paused": saved_paused,
-		"saved_speed": saved_speed,
-		"clock": _world_clock,
-		"session": GameFlow.session(),
-		"set_session": GameFlow.set_session,
-		"player": _player_controller,
-		"viewport": get_viewport(),
-		"clock_restored": Callable(self, "_clock_restored"),
-		"set_pending_view": Callable(self, "_set_pending_view"),
-	}
+	return SaveSections._provider_context(self, host, generator, saved_paused, saved_speed)
 
 
 func _manifest_compatible(raw_manifest) -> bool:
-	if not _provider_registration_error.is_empty():
-		return false
-	if not raw_manifest is Array:
-		return false
-	var by_id := {}
-	for raw in raw_manifest:
-		if not raw is Dictionary:
-			return false
-		by_id[String(raw.get("provider_id", ""))] = raw
-	var industry_entry: Dictionary = by_id.get(TECHNOLOGY_INDUSTRY_PROVIDER_ID, {})
-	if int(industry_entry.get("schema_version", 1)) != TECHNOLOGY_INDUSTRY_REVISION:
-		return false
-	var expected_ids := {TECHNOLOGY_INDUSTRY_PROVIDER_ID: true}
-	for provider in _providers:
-		var provider_id := String(provider.provider_id())
-		expected_ids[provider_id] = true
-		if not by_id.has(provider_id):
-			if provider.allows_missing_archive():
-				continue
-			return false
-		if not provider.accepts_manifest(by_id[provider_id]):
-			return false
-	# A missing optional system must not silently erase that system's save data.
-	for provider_id in by_id:
-		if not expected_ids.has(provider_id):
-			return false
-	return true
+	return ExecutionContract._manifest_compatible(self, raw_manifest)
 
 
 func _manifest_industry_revision(raw_manifest) -> int:
-	if not raw_manifest is Array:
-		return 1
-	for raw in raw_manifest:
-		if raw is Dictionary and String(raw.get("provider_id", "")) \
-				== TECHNOLOGY_INDUSTRY_PROVIDER_ID:
-			return int(raw.get("schema_version", 1))
-	return 1
+	return ExecutionContract._manifest_industry_revision(self, raw_manifest)
 
 
-# --- Plan 11.5, the WHOLE-PACKAGE half ---------------------------------------
-#
-# `_manifest_compatible` answers "are these providers the ones this build can
-# restore?". It cannot answer "is the stored cell-program EXECUTION CONTRACT
-# this build's?" -- that identity now lives in the pkid manifest entry, and the
-# decision needs a fact the manifest does not contain: what the running runtime
-# is configured with. That fact only exists once a world has been built, so the
-# decision is a separate, PURE function (`running` and `state_present` are
-# inputs) called from three places that do not share a runtime:
-#
-#   * `list_slots()`            -- the pause menu. The runtime IS live, so a
-#                                  certified mismatch greys the slot out early.
-#   * `prepare_load()`          -- the session request, which runs BEFORE a world
-#                                  exists (`world_runtime_host.gd:527`), so
-#                                  `running` is normally 0 and the verdict
-#                                  defers instead of guessing.
-#   * `restore_prepared_game()` -- after the world was built, BEFORE the first
-#                                  provider restores anything. This is the
-#                                  authoritative gate: it is the last moment a
-#                                  refusal can still leave the world untouched.
-
-## The identity the LIVE runtime is running, or 0 when it cannot be stated
-## (no world yet, or ideology unconfigured). 0 is "unknown", never "matches":
-## the contract itself is a hash, so a zero value is not a contract.
 func _running_execution_contract(host = null) -> int:
-	var target = host if host != null else _runtime_host
-	if target == null or not target.has_method("generator"):
-		return 0
-	var generator = target.generator()
-	if generator == null or not generator.has_method("get_ideology_report"):
-		return 0
-	return _contract_from_report(generator.get_ideology_report())
+	return ExecutionContract._running_execution_contract(self, host)
 
 
 func _contract_from_report(report) -> int:
-	# The report is IdeologyFacade.report() -> DCWorldExt.get_ideology_report().
-	# `{"configured": false}` means the owner is unconfigured (the facade says so
-	# itself; the native report says so through the same key), and an older
-	# extension build has no identity field at all. All three mean 0 = unknown,
-	# never "matches": a hash of rule versions with no catalog attached is not
-	# this world's contract.
-	if not report is Dictionary:
-		return 0
-	var configured = report.get("configured", true)
-	if configured is bool and not bool(configured):
-		return 0
-	return _contract_value(report.get(EXECUTION_CONTRACT_KEY, 0))
+	return ExecutionContract._contract_from_report(self, report)
 
 
-## Normalizes an identity read from a dictionary or from the save header.
-## The header is JSON, and JSON hands a number back as int or float depending on
-## how it was written, so a raw `int(...)` is not enough to compare identities.
 func _contract_value(value) -> int:
-	if value is int:
-		return value
-	if value is float:
-		return int(value)
-	if value is String or value is StringName:
-		return String(value).to_int()
-	return 0
+	return ExecutionContract._contract_value(self, value)
 
 
 static func _manifest_entry_for(raw_manifest, provider_id: String) -> Dictionary:
-	if not raw_manifest is Array:
-		return {}
-	for raw in raw_manifest:
-		if raw is Dictionary and String(raw.get("provider_id", "")) == provider_id:
-			return raw
-	return {}
+	return ExecutionContract._manifest_entry_for(raw_manifest, provider_id)
 
 
-## Whether the archive actually carries ideology state. Needed because the
-## contract's absence only matters when there is contract-governed state that
-## could be reinterpreted: an archive with no PKID payload restores to the empty
-## ideology state, which cannot be governed by any contract.
 static func _pkid_state_present(sections) -> bool:
-	if not sections is Dictionary:
-		return false
-	return not PackedByteArray(sections.get("pkid", PackedByteArray())).is_empty()
+	return ExecutionContract._pkid_state_present(sections)
 
 
-## The whole-package execution-contract verdict.
-##
-## Returns {ok, code, detail, saved, running, deferred, message}.
-##   ok=false  ONLY when the archive certified a contract that differs from the
-##             running one (`detail == "contract_differs"`).
-##   deferred  the archive did not certify the identity, so this gate did NOT
-##             verify it. The PKID payload owns the same identity and compares it
-##             exactly (`cell_program_execution_contract_mismatch`), so the load
-##             is neither refused nor whitewashed: the deferral is recorded and
-##             logged by the caller.
-##
-## LEGACY ARCHIVES (the backward-honest half). An archive written before this
-## field existed has no key. That fact means UNSTATED -- never "matches" (which
-## would be silent acceptance of an identity nobody checked) and never "differs"
-## (which would refuse every archive on disk today, including ones whose PKID
-## payload already carries the identical identity and will be compared exactly a
-## few frames later). Plan 11.5's old-archive rule -- an older save must NOT be
-## read under an unproven contract, and the refusal it names is
-## `cell_program_execution_contract_mismatch` -- is therefore honoured by the
-## layer that owns the identity, and this gate says out loud that it did not
-## check instead of pretending it did.
 func _execution_contract_verdict(raw_manifest, running: int,
 		state_present: bool) -> Dictionary:
-	var entry := _manifest_entry_for(raw_manifest, EXECUTION_CONTRACT_PROVIDER_ID)
-	if entry.is_empty():
-		# Pre-ideology archive: no pkid provider, so no contract-governed state.
-		return _contract_verdict(true, "contract_no_provider", 0, 0, false)
-	var saved := _contract_value(entry.get(EXECUTION_CONTRACT_KEY, 0))
-	if running == 0:
-		return _contract_verdict(true, "contract_unverifiable", 0, saved, saved != 0)
-	if saved == 0:
-		return _contract_verdict(true,
-			"contract_unstated" if state_present else "contract_unstated_no_state",
-			running, 0, state_present)
-	if saved != running:
-		return _contract_verdict(false, "contract_differs", running, saved, false)
-	return _contract_verdict(true, "contract_matches", running, saved, false)
+	return ExecutionContract._execution_contract_verdict(self, raw_manifest, running, state_present)
 
 
 func _contract_verdict(ok: bool, detail: String, running: int, saved: int,
 		deferred: bool) -> Dictionary:
-	return {
-		"ok": ok,
-		"code": "" if ok else EXECUTION_CONTRACT_MANIFEST_CODE,
-		"detail": detail,
-		"saved": saved,
-		"running": running,
-		"deferred": deferred,
-		"message": _contract_verdict_message(detail, running, saved),
-	}
+	return ExecutionContract._contract_verdict(self, ok, detail, running, saved, deferred)
 
 
 func _contract_verdict_message(detail: String, running: int, saved: int) -> String:
-	match detail:
-		"contract_differs":
-			return ("Save was written under a different cell-program execution "
-				+ "contract (saved=%d running=%d); refused before any provider "
-				+ "restored state.") % [saved, running]
-		"contract_unstated":
-			return ("Save predates the pkid execution-contract manifest identity; "
-				+ "the PKID payload remains the authority (%s).") \
-				% EXECUTION_CONTRACT_PAYLOAD_CODE
-		"contract_unstated_no_state":
-			return ("Save carries no ideology state and no execution-contract "
-				+ "identity; nothing can be reinterpreted.")
-		"contract_unverifiable":
-			return ("The running execution contract is not available yet; the "
-				+ "whole-package comparison is deferred to the PKID payload.")
-		"contract_no_provider":
-			return "Save predates the ideology provider."
-	return ""
+	return ExecutionContract._contract_verdict_message(self, detail, running, saved)
 
 
 func _capture_native_runtime_bundle(generation: int = -1) -> Dictionary:

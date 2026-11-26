@@ -1,6 +1,16 @@
 extends Control
 class_name TechnologyWorkspace
 
+const WorkspaceCommands = preload("res://scripts/ui/components/technology_workspace_commands.gd")
+
+const ResearchDashboard = preload("res://scripts/ui/components/technology_research_dashboard.gd")
+
+const ResearchStateView = preload("res://scripts/ui/components/technology_research_state_view.gd")
+
+const WorkspaceNavigation = preload("res://scripts/ui/components/technology_workspace_navigation.gd")
+
+const WorkspaceControls = preload("res://scripts/ui/components/technology_workspace_controls.gd")
+
 const TechnologyDetails = preload("res://scripts/ui/components/technology_workspace_details.gd")
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
@@ -119,120 +129,7 @@ var _optimistic_reconcile_fail_logged := false
 
 
 func _ready() -> void:
-	if _tree != null:
-		return
-	set_process(false)
-	var required_paths := {
-		"policy_panel": "Root/Main/PolicyPanel",
-		"dial": "Root/Main/PolicyPanel/Scroll/Body/Allocation",
-		"budget": "Root/Main/PolicyPanel/Scroll/Body/Budget",
-		"available": "Root/Main/Available",
-		"tree": "Root/Main/Tree",
-		"overview": "Root/Main/Overview",
-		"detail_host": "Root/Main/DetailHost",
-		"detail": "Root/Main/DetailHost/Body/Detail",
-		"development_title": "Root/Main/PolicyPanel/Scroll/Body/DevelopmentTitle",
-		"development_list": "Root/Main/PolicyPanel/Scroll/Body/DevelopmentList",
-	}
-	_policy_panel = get_node_or_null(required_paths.policy_panel) as PanelContainer
-	_dial = get_node_or_null(required_paths.dial) as Control
-	_budget = get_node_or_null(required_paths.budget) as Control
-	_available = get_node_or_null(required_paths.available) as Control
-	_tree = get_node_or_null(required_paths.tree) as Control
-	_overview = get_node_or_null(required_paths.overview) as Control
-	_detail_host = get_node_or_null(required_paths.detail_host) as PanelContainer
-	_policy_rail = get_node_or_null("Root/Main/PolicyRail") as Button
-	_detail_rail = get_node_or_null("Root/Main/DetailRail") as Button
-	_policy_close = get_node_or_null("Root/Main/PolicyPanel/Scroll/Body/Header/Close") as Button
-	_detail_close = get_node_or_null("Root/Main/DetailHost/Body/Header/Close") as Button
-	_detail = get_node_or_null(required_paths.detail) as Control
-	_main = get_node_or_null("Root/Main") as Control
-	_mode_nav = get_node_or_null("Root/Toolbar/Row/ModeNav") as DossierChapterNav
-	_era_plate = get_node_or_null("Root/Toolbar/Row/EraPlate") as Control
-	_prev_era = get_node_or_null("Root/Toolbar/Row/EraPlate/EraRow/PrevEra") as Button
-	_next_era = get_node_or_null("Root/Toolbar/Row/EraPlate/EraRow/NextEra") as Button
-	_era_label = get_node_or_null("Root/Toolbar/Row/EraPlate/EraRow/EraLabel") as Label
-	_search = get_node_or_null("Root/Toolbar/Row/Search") as LineEdit
-	_detail_header = get_node_or_null("Root/Main/DetailHost/Body/Header") as Control
-	if _policy_panel == null or _dial == null or _budget == null \
-			or _available == null or _tree == null or _overview == null or _detail == null \
-			or _detail_host == null or _main == null or _mode_nav == null \
-			or _era_plate == null or _prev_era == null \
-			or _next_era == null or _era_label == null or _search == null:
-		var missing := PackedStringArray()
-		for key in required_paths:
-			if get_node_or_null(required_paths[key]) == null:
-				missing.append(String(required_paths[key]))
-		for extra in ["Root/Toolbar/Row/ModeNav",
-				"Root/Toolbar/Row/EraPlate/EraRow/PrevEra",
-				"Root/Toolbar/Row/EraPlate/EraRow/NextEra",
-				"Root/Toolbar/Row/EraPlate/EraRow/EraLabel",
-				"Root/Toolbar/Row/Search"]:
-			if get_node_or_null(extra) == null:
-				missing.append(extra)
-		push_error("TechnologyWorkspace 必须通过 technology_workspace.tscn 实例化；缺失节点：%s" \
-			% ", ".join(missing))
-		return
-	for key in KPI_IDS:
-		var card := get_node_or_null("Root/KpiBand/Row/%s" % String(key)) as DossierKpiCard
-		if card != null:
-			_kpi_cards[String(key)] = card
-	var last_card := _kpi_cards.get(KPI_IDS[KPI_IDS.size() - 1]) as DossierKpiCard
-	if last_card != null:
-		last_card.show_divider = false
-	# DossierChapterNav's _init defaults (fill width) override scene values, and
-	# a fill-width nav would resize whenever the era stepper toggles.
-	_mode_nav.custom_minimum_size = Vector2(MODE_NAV_WIDTH, DossierChapterNav.HEIGHT)
-	_mode_nav.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	_mode_nav.set_chapters([
-		{"id": "available", "label": "可研究", "icon": &"technology.state.available", "question": ""},
-		{"id": "focus", "label": "科技树", "icon": &"country.technology", "question": ""},
-		{"id": "overview", "label": "总览", "icon": &"technology.milestone", "question": ""},
-	], "available")
-	_mode_nav.chapter_selected.connect(_on_mode_chapter_selected)
-	for domain in range(DOMAIN_COUNT):
-		var header := get_node("Root/Main/PolicyPanel/Scroll/Body/Domain%d" % domain) as HBoxContainer
-		var zone := get_node("Root/Main/PolicyPanel/Scroll/Body/Zone%d" % domain)
-		_queue_headers.append({"icon": header.get_node("Icon"), "name": header.get_node("Name"), "share": header.get_node("Share")})
-		zone.configure(domain)
-		zone.move_requested.connect(_move_in_queue)
-		_queue_zones.append(zone)
-		_queue_rows.append([])
-	_dial.weights_previewed.connect(_on_weights_previewed)
-	_dial.weights_committed.connect(_on_weights_committed)
-	_budget.open_budget_requested.connect(_on_open_budget_requested)
-	_available.technology_selected.connect(_on_available_selected)
-	_available.technology_activated.connect(_on_tree_activated)
-	_available.show_in_tree_requested.connect(_focus_technology)
-	_available.enqueue_requested.connect(_enqueue)
-	_available.remove_requested.connect(_remove_from_queue)
-	_tree.technology_selected.connect(_on_tree_selected)
-	_tree.technology_activated.connect(_on_tree_activated)
-	_tree.portal_requested.connect(_focus_technology)
-	_overview.cell_activated.connect(_on_overview_cell_activated)
-	_detail.enqueue_requested.connect(_enqueue)
-	_detail.remove_requested.connect(_remove_from_queue)
-	_prev_era.pressed.connect(func() -> void: _shift_era(-1))
-	_next_era.pressed.connect(func() -> void: _shift_era(1))
-	_search.text_submitted.connect(_on_search_submitted)
-	IconButton.apply(_prev_era, &"action.back", IconButton.SMALL, "上一个已知时代")
-	IconButton.apply(_next_era, &"action.chevron_right", IconButton.SMALL, "下一个已知时代")
-	IconButton.apply(_policy_rail, &"action.chevron_right", IconButton.MEDIUM, "打开研究管理")
-	IconButton.apply(_detail_rail, &"action.back", IconButton.MEDIUM, "打开科技详情")
-	IconButton.apply(_policy_close, &"action.close", IconButton.SMALL, "收起研究管理")
-	IconButton.apply(_detail_close, &"action.close", IconButton.SMALL, "收起科技详情")
-	_policy_rail.pressed.connect(_set_policy_open.bind(true))
-	_detail_rail.pressed.connect(_set_detail_open.bind(true))
-	_policy_close.pressed.connect(_set_policy_open.bind(false))
-	_detail_close.pressed.connect(_set_detail_open.bind(false))
-	var relocate := get_node("Root/Toolbar/Row/Relocate") as Button
-	IconButton.apply(relocate, &"system.target", IconButton.SMALL, "重新定位研究前沿")
-	relocate.pressed.connect(_apply_default_focus)
-	TouchUI.watch(self)
-	if TouchUI.is_short_viewport():
-		_update_effective_compact()
-	else:
-		_apply_column_layout()
+	WorkspaceControls._ready(self)
 
 
 func set_model(model: Dictionary) -> void:
@@ -434,235 +331,65 @@ func navigation_report() -> Dictionary:
 
 
 func _ensure_focus_domain() -> void:
-	if _focus_domain.is_empty() and not _domains.is_empty():
-		_focus_domain = String((_domains[0] as Dictionary).get("id", ""))
+	WorkspaceNavigation._ensure_focus_domain(self)
 
 
 func _set_mode(mode: int) -> void:
-	if mode == MODE_OVERVIEW:
-		_mode = MODE_OVERVIEW
-	elif mode == MODE_FOCUS:
-		_mode = MODE_FOCUS
-	else:
-		_mode = MODE_AVAILABLE
-	if _mode_nav.current != MODE_IDS[_mode]:
-		_mode_nav.select(MODE_IDS[_mode])
-	_available.visible = _mode == MODE_AVAILABLE
-	_tree.visible = _mode == MODE_FOCUS
-	_overview.visible = _mode == MODE_OVERVIEW
-	_era_plate.visible = _mode == MODE_FOCUS
-	_prev_era.disabled = _mode != MODE_FOCUS
-	_next_era.disabled = _mode != MODE_FOCUS
-	if _mode == MODE_FOCUS:
-		_apply_focus(-1 if not _manual_focus else (
-			_tree.selected_technology() if _tree.selected_technology() >= 0 else -1))
-	elif _mode == MODE_OVERVIEW:
-		_overview.patch_states(_presentation_states(_research.get(
-			"technology_states", PackedInt32Array())))
-	elif _mode == MODE_AVAILABLE:
-		_available.patch_states(
-			_presentation_states(_research.get("technology_states", PackedInt32Array())),
-			_presentation_progress(_research.get("technology_progress", PackedInt64Array())))
-	var canvas := _available if _mode == MODE_AVAILABLE \
-		else (_tree if _mode == MODE_FOCUS else _overview)
-	if _mode == MODE_AVAILABLE:
-		var scroll_top := float(_available.scroll_vertical)
-		UIAnimation.reveal_technology_page(_available.list_canvas(), scroll_top, _available.size.y)
-	else:
-		UIAnimation.reveal_technology_page(canvas)
+	WorkspaceNavigation._set_mode(self, mode)
 
 
 func _on_mode_chapter_selected(chapter_id: String) -> void:
-	_set_mode(maxi(0, MODE_IDS.find(chapter_id)))
+	WorkspaceNavigation._on_mode_chapter_selected(self, chapter_id)
 
 
 func _shift_era(delta: int) -> void:
-	var target := clampi(_focus_era + delta, 0, maxi(0, _deepest_visible_era()))
-	if target == _focus_era:
-		return
-	_manual_focus = true
-	_focus_era = target
-	_apply_focus(-1)
+	WorkspaceNavigation._shift_era(self, delta)
 
 
 func _on_overview_cell_activated(domain_id: String, era_index: int,
 		technology_index: int) -> void:
-	_focus_domain = domain_id
-	_focus_era = era_index
-	_manual_focus = true
-	_set_mode(MODE_FOCUS)
-	_apply_focus(technology_index)
+	WorkspaceNavigation._on_overview_cell_activated(self, domain_id, era_index, technology_index)
 
 
 func _on_search_submitted(query: String) -> void:
-	var normalized := query.strip_edges().to_lower()
-	if normalized.is_empty():
-		return
-	var states := _presentation_states(_research.get(
-		"technology_states", PackedInt32Array()))
-	var best := -1
-	for index in range(_definitions.size()):
-		if index >= states.size() or not TechnologyTreeView.presents_state(states[index]):
-			continue
-		if _is_retired(index):
-			continue
-		var name := String((_definitions[index] as Dictionary).get("display_name", ""))
-		if name.to_lower() == normalized:
-			best = index
-			break
-		if best < 0 and name.to_lower().contains(normalized):
-			best = index
-	if best >= 0:
-		_focus_technology(best)
-		_search.text = String((_definitions[best] as Dictionary).get("display_name", ""))
-	else:
-		_search.text = ""
-		_search.placeholder_text = "未找到可见科技"
+	WorkspaceNavigation._on_search_submitted(self, query)
 
 
 func _focus_technology(index: int) -> void:
-	if index < 0 or index >= _definitions.size():
-		return
-	var states := _presentation_states(_research.get(
-		"technology_states", PackedInt32Array()))
-	var definition: Dictionary = _definitions[index]
-	if _is_retired(index):
-		# Retired era tokens have no place on the atlas. A legacy queue entry
-		# can still be inspected (and removed) from the detail column.
-		_selected_technology = index
-		_manual_focus = true
-		_refresh_detail()
-		return
-	if index >= states.size() or not TechnologyTreeView.presents_state(states[index]):
-		return
-	_focus_domain = String(definition.get("domain_id", ""))
-	_focus_era = _era_index(String(definition.get("era_id", "")))
-	_manual_focus = true
-	_selected_technology = index
-	_set_mode(MODE_FOCUS)
-	_apply_focus(index)
+	WorkspaceNavigation._focus_technology(self, index)
 
 
 func _apply_focus(preferred_index: int) -> void:
-	if _eras.is_empty() or _tree == null:
-		return
-	_ensure_focus_domain()
-	_focus_era = clampi(_focus_era, 0, maxi(0, _deepest_visible_era()))
-	_tree.set_focus(_focus_domain, _focus_era, preferred_index)
-	_era_label.text = String((_eras[_focus_era] as Dictionary).get("display_name", "—"))
-	_prev_era.disabled = _mode != MODE_FOCUS or _focus_era <= 0
-	_next_era.disabled = _mode != MODE_FOCUS or _focus_era >= _deepest_visible_era()
-	_refresh_detail()
+	WorkspaceNavigation._apply_focus(self, preferred_index)
 
 
 func _apply_default_focus() -> void:
-	if _definitions.is_empty():
-		return
-	var target := _queue_priority_target()
-	if target < 0:
-		target = _frontier_target()
-	if target < 0:
-		_set_mode(MODE_AVAILABLE)
-		_initial_focus_pending = false
-		_manual_focus = true
-		return
-	var definition: Dictionary = _definitions[target]
-	_focus_domain = String(definition.get("domain_id", ""))
-	_focus_era = _era_index(String(definition.get("era_id", "")))
-	_initial_focus_pending = false
-	_manual_focus = false
-	_set_mode(MODE_AVAILABLE)
-	_available.select_technology(target)
-	_on_available_selected(target)
+	WorkspaceNavigation._apply_default_focus(self)
 
 
 func _queue_priority_target() -> int:
-	var offsets: PackedInt32Array = _research.get("queue_offsets",
-		PackedInt32Array([0, 0, 0, 0, 0]))
-	var technologies: PackedInt32Array = _research.get("queue_technology_indices",
-		PackedInt32Array())
-	var weights: PackedInt32Array = _research.get("domain_weights_bp",
-		PackedInt32Array([2500, 2500, 2500, 2500]))
-	var best_domain := -1
-	var best_weight := -1
-	for domain in range(DOMAIN_COUNT):
-		if domain + 1 >= offsets.size() or offsets[domain] >= offsets[domain + 1]:
-			continue
-		var weight := int(weights[domain]) if domain < weights.size() else 0
-		if weight > best_weight:
-			best_weight = weight
-			best_domain = domain
-	if best_domain < 0:
-		return -1
-	var cursor := int(offsets[best_domain])
-	return int(technologies[cursor]) if cursor >= 0 and cursor < technologies.size() else -1
+	return WorkspaceNavigation._queue_priority_target(self)
 
 
 func _frontier_target() -> int:
-	var states: PackedInt32Array = _research.get("technology_states", PackedInt32Array())
-	var best := -1
-	var best_era := -1
-	for index in range(mini(states.size(), _definitions.size())):
-		if states[index] != 2 or _is_retired(index):
-			continue
-		var era := _era_index(String((_definitions[index] as Dictionary).get("era_id", "")))
-		if era > best_era:
-			best = index
-			best_era = era
-	if best >= 0:
-		return best
-	for index in range(mini(states.size(), _definitions.size())):
-		if not TechnologyTreeView.presents_state(states[index]) or _is_retired(index):
-			continue
-		var era := _era_index(String((_definitions[index] as Dictionary).get("era_id", "")))
-		if era > best_era:
-			best = index
-			best_era = era
-	return best
+	return WorkspaceNavigation._frontier_target(self)
 
 
 func _era_index(era_id: String) -> int:
-	for index in range(_eras.size()):
-		if String((_eras[index] as Dictionary).get("id", "")) == era_id:
-			return index
-	return 0
+	return WorkspaceNavigation._era_index(self, era_id)
 
 
-## Era milestones are retired from player research: they remain internal era
-## tokens granted by era advancement and never appear in research lists, the
-## atlas, the overview, search, or relation rows.
 func _is_retired(index: int) -> bool:
-	return index >= 0 and index < _definitions.size() \
-		and TechnologyTreeView.is_retired_definition(_definitions[index] as Dictionary)
+	return WorkspaceNavigation._is_retired(self, index)
 
 
 func _deepest_visible_era() -> int:
-	var states := _presentation_states(_research.get(
-		"technology_states", PackedInt32Array()))
-	var deepest := 0
-	var parents: Array = []
-	if _tree != null:
-		parents = _tree.topology_report().get("parents", [])
-	for index in range(mini(states.size(), _definitions.size())):
-		if _is_retired(index) or not _tree_visible_from_states(index, states, parents):
-			continue
-		deepest = maxi(deepest, _era_index(String(
-			(_definitions[index] as Dictionary).get("era_id", ""))))
-	return deepest
+	return WorkspaceNavigation._deepest_visible_era(self)
 
 
 func _tree_visible_from_states(index: int, states: PackedInt32Array,
 		parents: Array) -> bool:
-	if TechnologyTreeView.presents_state(int(states[index]) if index < states.size() else 0):
-		return true
-	if index < 0 or index >= parents.size():
-		return false
-	for parent in parents[index]:
-		var parent_index := int(parent)
-		if TechnologyTreeView.presents_state(
-				int(states[parent_index]) if parent_index < states.size() else 0):
-			return true
-	return false
+	return WorkspaceNavigation._tree_visible_from_states(self, index, states, parents)
 
 
 func _column_policy_width() -> float:
@@ -717,621 +444,110 @@ func _apply_column_layout() -> void:
 
 
 func _configure_queues() -> void:
-	for domain in range(mini(DOMAIN_COUNT, _queue_headers.size())):
-		var accent := _domain_accent(domain)
-		var header: Dictionary = _queue_headers[domain]
-		(header.icon as IconBadge).set_semantic(
-			IconCatalog.technology_domain_semantic(_domain_id(domain)), accent)
-		var name_label := header.name as Label
-		name_label.text = _domain_name(domain)
-		name_label.add_theme_color_override("font_color",
-			accent.lerp(UITokens.DOSSIER_INK, 0.6))
+	ResearchStateView._configure_queues(self)
 
 
 func _research_state_signature() -> int:
-	return hash([
-		int(_research.get("generation", 0)),
-		int(_research.get("technology_points_stock", 0)),
-		int(_research.get("country_cash", 0)),
-		int(_research.get("purchased_total", 0)),
-		int(_research.get("consumed_total", 0)),
-		int(_research.get("progress_total", 0)),
-		int(_research.get("deferred_unallocated_points", 0)),
-		bool(_research.get("auto_purchase_enabled", false)),
-		_research.get("technology_states", PackedInt32Array()),
-		_research.get("technology_progress", PackedInt64Array()),
-		_research.get("queue_offsets", PackedInt32Array()),
-		_research.get("queue_technology_indices", PackedInt32Array()),
-		_research.get("domain_weights_bp", PackedInt32Array()),
-		_development.get("progress_by_signal", {}),
-		_optimistic_queue.keys(),
-		_current_day,
-		_procurement,
-		_procurement_policy(),
-	])
+	return ResearchStateView._research_state_signature(self)
 
 
 func _apply_research(force: bool = false) -> void:
-	var signature := _research_state_signature()
-	if not force and signature == _research_signature:
-		return
-	_research_signature = signature
-	_refresh_count += 1
-	var research_states: PackedInt32Array = _research.get(
-		"technology_states", PackedInt32Array()).duplicate()
-	var research_progress: PackedInt64Array = _research.get(
-		"technology_progress", PackedInt64Array())
-	var offsets: PackedInt32Array = _research.get(
-		"queue_offsets", PackedInt32Array()).duplicate()
-	var technologies: PackedInt32Array = _research.get(
-		"queue_technology_indices", PackedInt32Array()).duplicate()
-	# Optimistic overlay is presentation-only. Never bake it into `_research`
-	# or a COMMIT receipt that clears the queue leaves a fake 「研究中」 forever.
-	_overlay_optimistic_into(research_states, offsets, technologies)
-	var states := _presentation_states(research_states)
-	var progress := _presentation_progress(research_progress)
-	var relations_changed := states != _last_states
-	_last_states = states
-	_tree.patch_states(states, progress)
-	_available.patch_states(states, progress)
-	if _overview.visible:
-		_overview.patch_states(states)
-	var weights: PackedInt32Array = _research.get("domain_weights_bp",
-		PackedInt32Array([2500, 2500, 2500, 2500]))
-	_dial.set_weights(weights)
-	_apply_budget_notice()
-	_patch_queues(research_states, research_progress, weights,
-		offsets, technologies)
-	_sample_history()
-	_schedule_inputs = {"states": research_states, "progress": research_progress,
-		"offsets": offsets, "technologies": technologies}
-	_patch_schedule(research_states, research_progress, weights, offsets, technologies)
-	_update_kpis(research_states)
-	if _initial_focus_pending:
-		_apply_default_focus()
-	_refresh_detail(relations_changed)
-	if not _optimistic_queue.is_empty():
-		set_process(true)
+	ResearchStateView._apply_research(self, force)
 
 
 func _optimistic_domain(entry) -> int:
-	if entry is Dictionary:
-		return int((entry as Dictionary).get("domain", -1))
-	return int(entry)
+	return ResearchStateView._optimistic_domain(self, entry)
 
 
 func _optimistic_request_id(entry) -> int:
-	if entry is Dictionary:
-		return int((entry as Dictionary).get("request_id", 0))
-	return 0
+	return ResearchStateView._optimistic_request_id(self, entry)
 
 
 func _overlay_optimistic_into(states: PackedInt32Array, offsets: PackedInt32Array,
 		technologies: PackedInt32Array, erase_confirmed: bool = true) -> void:
-	if _optimistic_queue.is_empty():
-		return
-	if offsets.size() < DOMAIN_COUNT + 1:
-		offsets.resize(DOMAIN_COUNT + 1)
-		offsets[0] = 0
-		for domain_cursor in range(1, DOMAIN_COUNT + 1):
-			offsets[domain_cursor] = technologies.size()
-	var confirmed: Array[int] = []
-	for tech_index_value in _optimistic_queue.keys():
-		var tech_index := int(tech_index_value)
-		if tech_index < 0 or tech_index >= states.size():
-			confirmed.append(tech_index)
-			continue
-		# Authoritative queued / pending / owned means the optimistic row is done.
-		if int(states[tech_index]) >= 3:
-			confirmed.append(tech_index)
-			continue
-		var domain := _optimistic_domain(_optimistic_queue[tech_index_value])
-		if domain < 0 or domain >= DOMAIN_COUNT:
-			confirmed.append(tech_index)
-			continue
-		var already := false
-		for queued_index in technologies:
-			if int(queued_index) == tech_index:
-				already = true
-				break
-		if already:
-			confirmed.append(tech_index)
-			continue
-		states[tech_index] = 3
-		var insert_at := int(offsets[domain + 1])
-		technologies.insert(insert_at, tech_index)
-		for domain_cursor in range(domain + 1, DOMAIN_COUNT + 1):
-			offsets[domain_cursor] = int(offsets[domain_cursor]) + 1
-	if erase_confirmed:
-		for tech_index in confirmed:
-			_optimistic_queue.erase(tech_index)
+	ResearchStateView._overlay_optimistic_into(self, states, offsets, technologies, erase_confirmed)
 
 
 func _resolve_research_handle() -> int:
-	var handle := _optimistic_country_handle
-	if handle == 0:
-		handle = int(_research.get("country_handle", 0))
-	if handle == 0 and _player_controller != null \
-			and _player_controller.has_method("get_player_country_handle"):
-		handle = int(_player_controller.get_player_country_handle())
-	return handle
+	return ResearchStateView._resolve_research_handle(self)
 
 
 func _force_apply_live_research() -> bool:
-	if _player_controller == null:
-		return false
-	var facade = null
-	if _player_controller.has_method("get_country_facade"):
-		facade = _player_controller.get_country_facade()
-	if facade == null or not facade.has_method("research_snapshot"):
-		return false
-	var handle := _resolve_research_handle()
-	if handle == 0:
-		if not _optimistic_reconcile_fail_logged:
-			_optimistic_reconcile_fail_logged = true
-			print("[tech-ui] live research apply skipped: country_handle=0")
-		return false
-	var live: Dictionary = facade.research_snapshot(handle)
-	if live.is_empty() or (live.has("ok") and not bool(live.get("ok", false))):
-		return false
-	var live_states = live.get("technology_states", null)
-	if not live_states is PackedInt32Array:
-		return false
-	live["country_cash"] = _research.get("country_cash", live.get("country_cash", 0))
-	_research = live
-	_has_valid_research = true
-	_apply_research()
-	return true
+	return ResearchStateView._force_apply_live_research(self)
 
 
 func _reconcile_optimistic_from_live_snapshot() -> void:
-	if _optimistic_queue.is_empty() or _player_controller == null:
-		return
-	var facade = null
-	if _player_controller.has_method("get_country_facade"):
-		facade = _player_controller.get_country_facade()
-	if facade == null or not facade.has_method("research_snapshot"):
-		return
-	var handle := _resolve_research_handle()
-	if handle == 0:
-		if not _optimistic_reconcile_fail_logged:
-			_optimistic_reconcile_fail_logged = true
-			print("[tech-ui] optimistic reconcile skipped: country_handle=0")
-		return
-	var live: Dictionary = facade.research_snapshot(handle)
-	if live.is_empty() or (live.has("ok") and not bool(live.get("ok", false))):
-		return
-	var live_states = live.get("technology_states", null)
-	if not live_states is PackedInt32Array:
-		return
-	var states: PackedInt32Array = live_states
-	var live_stock := int(live.get("technology_points_stock", -1))
-	var live_consumed := int(live.get("consumed_total", -1))
-	# Starter knowledge costs the entire treasury grant. When stock/consumed move
-	# after an optimistic enqueue, the worker already finished the node even if
-	# our local definition index and the states array briefly disagree.
-	var authority_moved := (
-		(_optimistic_baseline_stock >= 0 and live_stock >= 0
-			and live_stock != _optimistic_baseline_stock)
-		or (_optimistic_baseline_consumed >= 0 and live_consumed >= 0
-			and live_consumed != _optimistic_baseline_consumed)
-		or int(live.get("generation", -1)) != int(_research.get("generation", -1))
-	)
-	var cleared := false
-	var remaining: Array = _optimistic_queue.keys()
-	for tech_index_value in remaining:
-		var tech_index := int(tech_index_value)
-		var entry = _optimistic_queue[tech_index_value]
-		if _optimistic_request_id(entry) != 0:
-			continue
-		var technology_id := ""
-		if entry is Dictionary:
-			technology_id = String((entry as Dictionary).get("technology_id", ""))
-		var resolved := tech_index
-		if not technology_id.is_empty() and _technology_indices.has(technology_id):
-			resolved = int(_technology_indices[technology_id])
-		var authoritative_state := -1
-		if resolved >= 0 and resolved < states.size():
-			authoritative_state = int(states[resolved])
-		elif tech_index >= 0 and tech_index < states.size():
-			authoritative_state = int(states[tech_index])
-		if authoritative_state >= 3 or authority_moved:
-			_optimistic_queue.erase(tech_index)
-			cleared = true
-	if cleared or authority_moved:
-		live["country_cash"] = _research.get("country_cash", live.get("country_cash", 0))
-		_research = live
-		_has_valid_research = true
-		if _optimistic_queue.is_empty():
-			_optimistic_baseline_stock = -1
-			_optimistic_baseline_consumed = -1
-			_optimistic_reconcile_fail_logged = false
-		_apply_research()
-		print("[tech-ui] optimistic reconciled gen=%d stock=%d consumed=%d queued_left=%d" % [
-			int(live.get("generation", -1)), live_stock, live_consumed,
-			_optimistic_queue.size()])
+	ResearchStateView._reconcile_optimistic_from_live_snapshot(self)
 
 
 func _poll_optimistic_receipts() -> void:
-	if _optimistic_queue.is_empty() or _player_controller == null:
-		return
-	var facade = null
-	if _player_controller.has_method("get_country_facade"):
-		facade = _player_controller.get_country_facade()
-	if facade == null or not facade.has_method("poll_worker_command_receipts"):
-		return
-	var batch: Dictionary = facade.poll_worker_command_receipts(
-		_receipt_cursor, 64)
-	_receipt_cursor = int(batch.get("last_publication_sequence", _receipt_cursor))
-	var pending_changed := false
-	for row: Dictionary in batch.get("receipts", []):
-		var request_id := int(row.get("request_id", 0))
-		if request_id == 0:
-			continue
-		var status := String(row.get("status", ""))
-		if status not in ["Committed", "RejectedAtExecution"]:
-			continue
-		for tech_index in _optimistic_queue.keys():
-			if _optimistic_request_id(_optimistic_queue[tech_index]) != request_id:
-				continue
-			_optimistic_queue.erase(tech_index)
-			pending_changed = true
-			if status == "RejectedAtExecution":
-				var reason := String(row.get("reason", "")).strip_edges()
-				var message := _research_command_message(reason)
-				if message == "当前无法加入研究队列。" and not reason.is_empty():
-					message = reason
-				_detail.mark_rejected(message)
-	if pending_changed and not _force_apply_live_research():
-		_apply_research()
+	ResearchStateView._poll_optimistic_receipts(self)
 
 
 func _sample_history() -> void:
-	var day := int(_research.get("last_research_day", _current_day))
-	if day < 0:
-		day = _current_day
-	if day < 0:
-		return
-	var sample := {
-		"day": day,
-		"stock": int(_research.get("technology_points_stock", 0)),
-		"progress": int(_research.get("progress_total", 0)),
-		"cash": int(_research.get("country_cash", 0)),
-		"purchased": int(_research.get("purchased_total", 0)),
-	}
-	if not _history.is_empty():
-		var last_day := int((_history[_history.size() - 1] as Dictionary).day)
-		if day < last_day:
-			_history.clear()
-		elif day == last_day:
-			_history[_history.size() - 1] = sample
-			return
-	_history.append(sample)
-	while _history.size() > HISTORY_DAYS:
-		_history.pop_front()
+	ResearchDashboard._sample_history(self)
 
 
-## Scaled research points invested per day over the recent window, or -1 when
-## fewer than two research days have been observed.
 func _daily_research_rate() -> float:
-	if _history.size() < 2:
-		return -1.0
-	var first: Dictionary = _history[maxi(0, _history.size() - 8)]
-	var last: Dictionary = _history[_history.size() - 1]
-	var days := int(last.day) - int(first.day)
-	if days <= 0:
-		return -1.0
-	return maxf(0.0, float(int(last.progress) - int(first.progress)) / float(days))
+	return ResearchDashboard._daily_research_rate(self)
 
 
 func _history_series(key: String, scale: float) -> PackedFloat32Array:
-	var out := PackedFloat32Array()
-	for sample in _history:
-		out.append(float((sample as Dictionary).get(key, 0)) / scale)
-	return out
+	return ResearchDashboard._history_series(self, key, scale)
 
 
 func _daily_progress_series() -> PackedFloat32Array:
-	var out := PackedFloat32Array()
-	for cursor in range(1, _history.size()):
-		var previous: Dictionary = _history[cursor - 1]
-		var current: Dictionary = _history[cursor]
-		var days := maxi(1, int(current.day) - int(previous.day))
-		out.append(maxf(0.0, float(int(current.progress) - int(previous.progress)))
-			/ float(days) / POINT_SCALE)
-	return out
+	return ResearchDashboard._daily_progress_series(self)
 
 
 func _history_delta(key: String, scale: float) -> float:
-	if _history.size() < 2:
-		return NAN
-	return float(int((_history[_history.size() - 1] as Dictionary).get(key, 0))
-		- int((_history[_history.size() - 2] as Dictionary).get(key, 0))) / scale
+	return ResearchDashboard._history_delta(self, key, scale)
 
 
-# Queue order and ETA per queued technology. Overflow moves to the next item of
-# the same domain, and empty domains hand their share to non-empty ones, so an
-# item finishes once the domain's share has paid for everything ahead of it.
 func _patch_schedule(states: PackedInt32Array, progress: PackedInt64Array,
 		weights: PackedInt32Array, offsets: PackedInt32Array,
 		technologies: PackedInt32Array) -> void:
-	var order := {}
-	var eta := {}
-	var counts := PackedInt32Array([0, 0, 0, 0])
-	var rate := _daily_research_rate()
-	var active_weight := 0
-	if offsets.size() >= DOMAIN_COUNT + 1:
-		for domain in range(DOMAIN_COUNT):
-			var position := 0
-			for cursor in range(offsets[domain], offsets[domain + 1]):
-				if cursor < 0 or cursor >= technologies.size():
-					continue
-				var technology := int(technologies[cursor])
-				if technology < 0 or technology >= states.size() or int(states[technology]) >= 4:
-					continue
-				order[technology] = position
-				position += 1
-			counts[domain] = position
-			if position > 0 and domain < weights.size():
-				active_weight += int(weights[domain])
-		for domain in range(DOMAIN_COUNT):
-			if counts[domain] == 0:
-				continue
-			var share := float(weights[domain]) / float(active_weight) \
-				if active_weight > 0 and domain < weights.size() else 0.0
-			var domain_rate := rate * share
-			var owed := 0.0
-			for cursor in range(offsets[domain], offsets[domain + 1]):
-				if cursor < 0 or cursor >= technologies.size():
-					continue
-				var technology := int(technologies[cursor])
-				if not order.has(technology):
-					continue
-				var definition: Dictionary = _definitions[technology]
-				var cost := maxf(1.0, float(definition.get("cost_points_scaled",
-					int(definition.get("cost_points", 1)) * POINT_SCALE)))
-				var earned := float(progress[technology]) if technology < progress.size() else 0.0
-				owed += maxf(0.0, cost - earned)
-				if rate < 0.0:
-					eta[technology] = ""
-				elif domain_rate <= 0.0:
-					eta[technology] = ""
-				else:
-					var days := int(ceil(owed / domain_rate))
-					eta[technology] = "约 %d 日" % days if days <= 999 else "超过 999 日"
-	_queue_order = order
-	_queue_eta = eta
-	_dial.set_queue_counts(counts, QUEUE_CAPACITY)
-	for domain in range(mini(DOMAIN_COUNT, _queue_headers.size())):
-		((_queue_headers[domain] as Dictionary).share as Label).text = \
-			"%d / %d" % [counts[domain], QUEUE_CAPACITY]
-		for row in _queue_rows[domain]:
-			row.set_eta(String(eta.get(int(row.technology_index), "")))
-	_available.set_queue_info(order, eta)
+	ResearchDashboard._patch_schedule(self, states, progress, weights, offsets, technologies)
 
 
 func _schedule_text(index: int, state: int) -> String:
-	match state:
-		3:
-			var position := int(_queue_order.get(index, -1))
-			var eta := String(_queue_eta.get(index, ""))
-			if position < 0:
-				return eta
-			return "队列第 %d 位%s" % [position + 1, (" · %s" % eta) if not eta.is_empty() else ""]
-		4:
-			return "待生效"
-		2:
-			return "未在队列中"
-	return ""
+	return ResearchDashboard._schedule_text(self, index, state)
 
 
 func _update_kpis(states: PackedInt32Array) -> void:
-	if _kpi_cards.is_empty():
-		return
-	var completed := 0
-	var queued := 0
-	var pending := 0
-	for index in range(mini(states.size(), _research_definition_count \
-			if _research_definition_count > 0 else states.size())):
-		if _is_retired(index):
-			continue
-		var state := int(states[index])
-		if state >= 5:
-			completed += 1
-		elif state == 4:
-			pending += 1
-		elif state == 3:
-			queued += 1
-	queued += _optimistic_queue.size()
-	var stock := float(_research.get("technology_points_stock", 0)) / POINT_SCALE
-	var deferred := float(_research.get("deferred_unallocated_points", 0)) / POINT_SCALE
-	var cash := float(_research.get("country_cash", 0)) / CASH_SCALE
-	var budget := float(_daily_research_budget()) / CASH_SCALE
-	var auto_purchase := bool(_research.get("auto_purchase_enabled", false)) and budget > 0.0
-	var rate := _daily_research_rate()
-	var history_day := int((_history[_history.size() - 1] as Dictionary).day) \
-		if not _history.is_empty() else -1
-	# Each card restyles only when its own inputs move, so a research day touches
-	# the two or three cards whose numbers actually changed.
-	var era := _current_era_label(states)
-	if _kpi_changed("era", hash([era, completed])):
-		(_kpi_cards.Era as DossierKpiCard).set_metric({
-			"id": "era", "title": "当前时代", "kind": "text", "text": era,
-			"caption": "已掌握 %d 项科技" % completed, "icon": &"technology.milestone",
-			"tooltip": "按已完成的时代晋升推算；在国家顶栏的时代徽记中晋升。",
-		})
-	if _kpi_changed("stock", hash([stock, deferred, queued == 0, history_day])):
-		var stock_caption := "每日全部投入研究"
-		if deferred > 0.0:
-			stock_caption = "%s 因队列阻塞暂存" % UITokens.format_compact_number_cn(deferred, 1)
-		elif queued == 0:
-			stock_caption = "队列为空，研究暂停"
-		(_kpi_cards.Stock as DossierKpiCard).set_metric({
-			"id": "stock", "title": "科技值库存", "kind": "count", "value": stock,
-			"delta": _history_delta("stock", POINT_SCALE), "caption": stock_caption,
-			"icon": IconCatalog.good_semantic("technology_points"),
-			"spark": _history_series("stock", POINT_SCALE),
-		})
-	if _kpi_changed("output", hash([rate, history_day])):
-		var output_caption := "等待第二个研究日" if rate < 0.0 \
-			else "近 %d 日均值" % mini(7, _history.size() - 1)
-		(_kpi_cards.Output as DossierKpiCard).set_metric({
-			"id": "output", "title": "日研究投入", "kind": "count",
-			"value": maxf(0.0, rate) / POINT_SCALE if rate >= 0.0 else NAN,
-			"caption": output_caption, "icon": &"metric.technology",
-			"spark": _daily_progress_series(),
-			"tooltip": "每个研究日投入各领域队列的科技值（产出与采购合计）。",
-		})
-	if _kpi_changed("queue", hash([queued, pending])):
-		(_kpi_cards.Queue as DossierKpiCard).set_metric({
-			"id": "queue", "title": "在研项目", "kind": "text",
-			"text": "%d 项" % queued,
-			"caption": ("待生效 %d 项" % pending) if pending > 0 \
-				else "每个领域最多 %d 项" % QUEUE_CAPACITY,
-			"icon": &"technology.state.queued",
-		})
-	if _kpi_changed("treasury", hash([cash, budget, auto_purchase, history_day])):
-		(_kpi_cards.Treasury as DossierKpiCard).set_metric({
-			"id": "treasury", "title": "国库现金", "kind": "money", "value": cash,
-			"delta": _history_delta("cash", CASH_SCALE),
-			"caption": ("科技采购 %s/日" % UITokens.format_compact_number_cn(budget, 2)) \
-				if auto_purchase else "科技采购已关闭",
-			"icon": &"metric.treasury", "spark": _history_series("cash", CASH_SCALE),
-		})
+	ResearchDashboard._update_kpis(self, states)
 
 
 func _kpi_changed(id: String, signature: int) -> bool:
-	if _kpi_signatures.has(id) and int(_kpi_signatures[id]) == signature:
-		return false
-	_kpi_signatures[id] = signature
-	return true
+	return ResearchDashboard._kpi_changed(self, id, signature)
 
 
 func _development_value_text(definition: Dictionary, current: int, qualifier: int,
 		consecutive: int, target_days: int) -> String:
-	var metric_type := int(definition.get("metric_type", 0))
-	var current_text := str(current)
-	var target_text := str(qualifier)
-	if metric_type == DevelopmentAchievementCatalogScript.MetricType.SATISFACTION_Q16:
-		current_text = "%d%%" % int(round(float(current) * 100.0 / 65536.0))
-		target_text = "%d%%" % int(round(float(qualifier) * 100.0 / 65536.0))
-	elif metric_type in [DevelopmentAchievementCatalogScript.MetricType.INDUSTRY_OUTPUT,
-		DevelopmentAchievementCatalogScript.MetricType.TRADE_QUANTITY]:
-		current_text = UITokens.format_compact_number_cn(float(current) / 1000.0, 1)
-		target_text = UITokens.format_compact_number_cn(float(qualifier) / 1000.0, 1)
-	var duration := " · %d/%d日" % [mini(consecutive, target_days), target_days] \
-		if target_days > 1 else ""
-	return "%s/%s%s" % [current_text, target_text, duration]
+	return ResearchDashboard._development_value_text(self, definition, current, qualifier, consecutive, target_days)
 
 
-# The current era is the deepest era whose milestone the country already holds,
-# which never leaks how many eras remain.
 func _current_era_label(states: PackedInt32Array) -> String:
-	var key := hash(states)
-	if key == _era_label_key and not _current_era_text.is_empty():
-		return _current_era_text
-	_era_label_key = key
-	_current_era_text = _scan_era_label(states)
-	return _current_era_text
+	return ResearchDashboard._current_era_label(self, states)
 
 
 func _scan_era_label(states: PackedInt32Array) -> String:
-	if _eras.is_empty():
-		return ""
-	var reached := 0
-	for index in range(mini(states.size(), _definitions.size())):
-		var definition: Dictionary = _definitions[index]
-		# 跨时代普通科技不代表晋升；只有已生效里程碑决定当前时代。
-		if states[index] >= 5 and bool(definition.get("is_milestone", false)):
-			reached = maxi(reached, _era_index(String(definition.get("era_id", ""))))
-	return String((_eras[reached] as Dictionary).get("display_name", "—"))
+	return ResearchDashboard._scan_era_label(self, states)
 
 
-## 里程碑 ID → 时代显示名。时代闸只说「要升到哪个时代」，不点名里程碑本身。
 func _era_label_for_milestone(milestone_id: String) -> String:
-	for era in _eras:
-		if String((era as Dictionary).get("milestone_id", "")) == milestone_id:
-			return String((era as Dictionary).get("display_name", milestone_id))
-	return milestone_id
+	return ResearchDashboard._era_label_for_milestone(self, milestone_id)
 
 
 func _patch_queues(states: PackedInt32Array, progress: PackedInt64Array,
 		weights: PackedInt32Array, offsets: PackedInt32Array = PackedInt32Array(),
 		technologies: PackedInt32Array = PackedInt32Array()) -> void:
-	if offsets.is_empty():
-		offsets = _research.get(
-			"queue_offsets", PackedInt32Array([0, 0, 0, 0, 0]))
-	if technologies.is_empty():
-		technologies = _research.get(
-			"queue_technology_indices", PackedInt32Array())
-	if offsets.size() < DOMAIN_COUNT + 1:
-		return
-	# Include per-tech state so pending/owned heads force a rebuild even when
-	# the raw queue indices have not changed yet.
-	var signature_parts := PackedStringArray()
-	signature_parts.append("%s|%s" % [offsets, technologies])
-	for technology in technologies:
-		var tech := int(technology)
-		var state := int(states[tech]) if tech >= 0 and tech < states.size() else 0
-		signature_parts.append("%d:%d" % [tech, state])
-	var signature := "|".join(signature_parts)
-	if signature != _queue_signature:
-		_queue_signature = signature
-		_rebuild_queue_rows(offsets, technologies)
-	for domain in range(DOMAIN_COUNT):
-		for row in _queue_rows[domain]:
-			var index := int(row.technology_index)
-			var state := int(states[index]) if index < states.size() else 0
-			# Settled nodes belong out of the live queue; keep the row quiet
-			# until the next signature rebuild drops them.
-			if state >= 4:
-				row.visible = false
-				continue
-			row.visible = true
-			var definition: Dictionary = _definitions[index]
-			var cost := maxf(1.0, float(definition.get("cost_points_scaled",
-				int(definition.get("cost_points", 1)) * POINT_SCALE)))
-			var earned := float(progress[index]) if index < progress.size() else 0.0
-			row.update_dynamic(state, earned / cost)
+	ResearchDashboard._patch_queues(self, states, progress, weights, offsets, technologies)
 
 
 func _rebuild_queue_rows(offsets: PackedInt32Array,
 		technologies: PackedInt32Array) -> void:
-	var research_states: PackedInt32Array = _research.get(
-		"technology_states", PackedInt32Array())
-	for domain in range(DOMAIN_COUNT):
-		var zone = _queue_zones[domain]
-		zone.clear_rows()
-		_queue_rows[domain] = []
-		var visible_count := 0
-		if offsets[domain + 1] <= offsets[domain]:
-			zone.append_position = 0
-			zone.set_empty_hint(true)
-			continue
-		for position in range(offsets[domain], offsets[domain + 1]):
-			if position < 0 or position >= technologies.size():
-				continue
-			var technology := int(technologies[position])
-			if technology < 0 or technology >= _definitions.size():
-				continue
-			var state := int(research_states[technology]) \
-				if technology < research_states.size() else 0
-			# State 4 = pending adoption, 5 = owned. Neither is "in research".
-			if state >= 4:
-				continue
-			var row = TechnologyQueueRowScene.instantiate()
-			zone.add_child(row)
-			row.setup(technology, domain, visible_count,
-				String((_definitions[technology] as Dictionary).get("display_name", "")),
-				_domain_accent(domain))
-			row.set_retired(_is_retired(technology))
-			row.move_requested.connect(_move_in_queue)
-			row.remove_requested.connect(_remove_from_queue)
-			row.selected_requested.connect(_focus_technology)
-			_queue_rows[domain].append(row)
-			visible_count += 1
-		zone.append_position = visible_count
-		zone.set_empty_hint(visible_count == 0)
+	ResearchDashboard._rebuild_queue_rows(self, offsets, technologies)
 
 
 func _refresh_detail(refresh_relations: bool = true) -> void:
@@ -1383,215 +599,59 @@ func _development_definition(signal_id: String) -> Dictionary:
 
 
 func _on_available_selected(index: int) -> void:
-	_selected_technology = index
-	if _compact and index >= 0 and _manual_focus:
-		_set_detail_open(true)
-	_manual_focus = true
-	_refresh_detail()
+	WorkspaceCommands._on_available_selected(self, index)
 
 
 func _on_tree_selected(index: int) -> void:
-	_selected_technology = index
-	if _compact and index >= 0 and _manual_focus:
-		_set_detail_open(true)
-	_manual_focus = true
-	_refresh_detail()
+	WorkspaceCommands._on_tree_selected(self, index)
 
 
 func _on_tree_activated(index: int) -> void:
-	if index < 0 or index >= _definitions.size() \
-			or _is_application_definition(_definitions[index]):
-		return
-	var states: PackedInt32Array = _research.get("technology_states", PackedInt32Array())
-	var state := int(states[index]) if index < states.size() else 0
-	if state == 3 or _optimistic_queue.has(index):
-		_remove_from_queue(index)
-		return
-	if state == 2 and not _is_retired(index):
-		_enqueue(index)
+	WorkspaceCommands._on_tree_activated(self, index)
 
 
-# Dragging the allocation re-projects every ETA so the trade-off is visible
-# before anything is committed.
 func _on_weights_previewed(weights_bp: PackedInt32Array) -> void:
-	if _schedule_inputs.is_empty():
-		return
-	_patch_schedule(_schedule_inputs.states, _schedule_inputs.progress, weights_bp,
-		_schedule_inputs.offsets, _schedule_inputs.technologies)
-	_refresh_detail(false)
+	WorkspaceCommands._on_weights_previewed(self, weights_bp)
 
 
 func _on_weights_committed(weights_bp: PackedInt32Array) -> void:
-	if _player_controller == null:
-		return
-	var result: Dictionary = _player_controller.request_command(
-		PlayerControllerScript.COMMAND_RESEARCH_SET_WEIGHTS, {"weights_bp": weights_bp})
-	if bool(result.get("ok", false)):
-		policy_submitted.emit()
+	WorkspaceCommands._on_weights_committed(self, weights_bp)
 
 
-# ---- 国家购买政策：科技占比（只读展示） --------------------------------------
-
-## {treasury_share_bp, research_share_bp, source}: session → snapshot → default。
-## 这里不再提交政策，写入口统一在国民经济 · 国库的预算卷宗。
 func _procurement_policy() -> Dictionary:
-	return NationalProcurementSliderScript.resolve_policy(_player_controller, _procurement)
+	return WorkspaceCommands._procurement_policy(self)
 
 
-## Daily national procurement cash at the current policy (MONEY_SCALE). The
-## runtime's frozen value wins when the snapshot matches the policy; otherwise
-## it is estimated from treasury cash.
 func _national_daily_budget(policy: Dictionary) -> int:
-	var treasury_share := int(policy.get("treasury_share_bp", 0))
-	if treasury_share <= 0:
-		return 0
-	if bool(_procurement.get("available", false)) \
-			and bool(_procurement.get("policy_enabled", false)) \
-			and int(_procurement.get("treasury_share_bp", -1)) == treasury_share:
-		return maxi(0, int(_procurement.get("national_daily_budget", 0)))
-	return int(round(float(int(_research.get("country_cash", 0))) \
-		* float(treasury_share) / 10000.0))
+	return WorkspaceCommands._national_daily_budget(self, policy)
 
 
 func _daily_research_budget() -> int:
-	var policy := _procurement_policy()
-	if bool(_procurement.get("available", false)) \
-			and bool(_procurement.get("policy_enabled", false)) \
-			and int(_procurement.get("treasury_share_bp", -1)) == int(policy.treasury_share_bp) \
-			and int(_procurement.get("research_share_bp", -1)) == int(policy.research_share_bp):
-		return maxi(0, int(_procurement.get("research_daily_budget", 0)))
-	return int(round(float(_national_daily_budget(policy)) \
-		* float(int(policy.research_share_bp)) / 10000.0))
+	return WorkspaceCommands._daily_research_budget(self)
 
 
-## 只读便笺：把当前科技份额与折算日额写清楚，不再提供第二条可拖的滑条。
 func _apply_budget_notice() -> void:
-	if _budget == null:
-		return
-	var policy := _procurement_policy()
-	var national := _national_daily_budget(policy)
-	_budget.set_state(int(policy.research_share_bp), national,
-		int(policy.treasury_share_bp) > 0)
+	WorkspaceCommands._apply_budget_notice(self)
 
 
-## 便笺上的「前往预算调配」：沿节点树上溯到国家面板外壳，由它把
-## 「切到国民经济 · 国库」的意图交给 GameUIManager。不在本组件里持有
-## 面板引用，避免科技卷宗被单独实例化时产生悬空依赖。
 func _on_open_budget_requested() -> void:
-	var node := get_parent()
-	while node != null:
-		if node.has_signal("section_selected") \
-				and node.has_method("focus_economy_chapter"):
-			node.emit_signal("section_selected", "economy")
-			node.call("focus_economy_chapter", "treasury")
-			return
-		node = node.get_parent()
+	WorkspaceCommands._on_open_budget_requested(self)
 
 
 func _enqueue(index: int) -> void:
-	if _player_controller == null or index < 0 or index >= _definitions.size():
-		return
-	var definition: Dictionary = _definitions[index]
-	if _is_application_definition(definition) or _is_retired(index):
-		return
-	var domain := _domain_index_of(definition)
-	var result: Dictionary = _player_controller.request_command(
-		PlayerControllerScript.COMMAND_RESEARCH_ENQUEUE,
-		{"technology_id": StringName(definition.get("id", "")),
-		"domain": domain})
-	if bool(result.get("ok", false)):
-		var request_ids = result.get("request_ids", PackedInt64Array())
-		var request_id := 0
-		if request_ids is PackedInt64Array and request_ids.size() > 0:
-			request_id = int(request_ids[0])
-		elif request_ids is Array and not request_ids.is_empty():
-			request_id = int(request_ids[0])
-		_optimistic_country_handle = int(_research.get("country_handle", 0))
-		if _optimistic_country_handle == 0 \
-				and _player_controller.has_method("get_player_country_handle"):
-			_optimistic_country_handle = int(
-				_player_controller.get_player_country_handle())
-		_optimistic_baseline_stock = int(_research.get(
-			"technology_points_stock", -1))
-		_optimistic_baseline_consumed = int(_research.get("consumed_total", -1))
-		_optimistic_reconcile_fail_logged = false
-		_optimistic_queue[index] = {
-			"domain": domain,
-			"request_id": request_id,
-			"technology_id": String(definition.get("id", "")),
-		}
-		set_process(true)
-		_detail.mark_submitted()
-		_apply_research()
-		policy_submitted.emit()
-		print("[tech-ui] enqueue accepted id=%s domain=%d request=%d handle=%d stock=%d" % [
-			String(definition.get("id", "")), domain, request_id,
-			_optimistic_country_handle, _optimistic_baseline_stock])
-		# Immediate reconcile: at 50x the worker may finish the node before the
-		# next panel refresh, and optimistic rows must not outlive that.
-		_reconcile_optimistic_from_live_snapshot()
-		return
-	var reason := String(result.get("code", result.get("reason", "")))
-	var message := String(result.get("message", "")).strip_edges()
-	if message.is_empty():
-		message = _research_command_message(reason)
-	_detail.mark_rejected(message)
-	print("[tech-ui] enqueue rejected id=%s reason=%s" % [
-		String(definition.get("id", "")), reason])
+	WorkspaceCommands._enqueue(self, index)
 
 
 func _remove_from_queue(index: int) -> void:
-	if _player_controller == null or index < 0 or index >= _definitions.size():
-		return
-	if _is_application_definition(_definitions[index]):
-		return
-	_optimistic_queue.erase(index)
-	var result: Dictionary = _player_controller.request_command(
-		PlayerControllerScript.COMMAND_RESEARCH_REMOVE,
-		{"technology_id": StringName((_definitions[index] as Dictionary).get("id", ""))})
-	if bool(result.get("ok", false)):
-		_detail.mark_submitted()
-		if not _force_apply_live_research():
-			_apply_research()
-		policy_submitted.emit()
-		return
-	var reason := String(result.get("code", result.get("reason", "")))
-	# Optimistic-only rows are not on the worker yet; treat as local cancel.
-	if reason == "country_research_not_queued":
-		if not _force_apply_live_research():
-			_apply_research()
-		return
-	var message := String(result.get("message", "")).strip_edges()
-	if message.is_empty():
-		message = _research_command_message(reason)
-	_detail.mark_rejected(message)
+	WorkspaceCommands._remove_from_queue(self, index)
 
 
 func _research_command_message(code: String) -> String:
-	return {
-		"country_research_already_queued": "该科技已在研究队列中。",
-		"country_research_technology_unavailable": "该科技当前不可研究。",
-		"country_research_requirements_incomplete": "前置条件尚未完成。",
-		"country_research_domain_mismatch": "科技领域与队列不匹配。",
-		"country_research_queue_full": "该领域研究队列已满。",
-		"country_research_not_queued": "该科技不在研究队列中。",
-		"country_research_queue_argument_invalid": "研究队列参数无效。",
-		"era_reward_choice_required": "必须先完成时代奖励选择。",
-		"technology_milestone_retired": "此科技已停用，请在顶栏时代徽记中晋升。",
-	}.get(code, "当前无法加入研究队列。")
+	return WorkspaceCommands._research_command_message(self, code)
 
 
 func _move_in_queue(technology: int, domain: int, position: int) -> void:
-	if _player_controller == null or technology < 0 or technology >= _definitions.size():
-		return
-	if _is_application_definition(_definitions[technology]) or _is_retired(technology):
-		return
-	var result: Dictionary = _player_controller.request_command(
-		PlayerControllerScript.COMMAND_RESEARCH_MOVE,
-		{"technology_id": StringName((_definitions[technology] as Dictionary).get("id", "")),
-		"domain": domain, "position": position})
-	if bool(result.get("ok", false)):
-		policy_submitted.emit()
+	WorkspaceCommands._move_in_queue(self, technology, domain, position)
 
 
 func _presentation_states(research_states: PackedInt32Array) -> PackedInt32Array:

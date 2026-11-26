@@ -376,7 +376,7 @@ static func _ensure_resources(host) -> void:
 		host._shadow_material.set_shader_parameter("eternal_max_hour_angle_rad", host._eternal_max_hour_angle_rad)
 		host._shadow_material.set_shader_parameter("day_night_enabled", true)
 	if host._shadow_blob_mesh == null:
-		host._shadow_blob_mesh = host._build_shadow_blob_mesh()
+		host._shadow_blob_mesh = host.Chunk_nodes._build_shadow_blob_mesh(host)
 	if host._shadow_multimesh == null:
 		host._shadow_multimesh = MultiMesh.new()
 		host._shadow_multimesh.transform_format = MultiMesh.TRANSFORM_2D
@@ -464,7 +464,7 @@ static func _refresh_shader_variants(host) -> void:
 	# 运行期换档（tier / tiled）也要能看到编译成本；_map 为空说明还没进世界，
 	# 等 setup() 那次统一上报。
 	if host._map != null:
-		host._report_veg_shader_cost()
+		host.Diagnostics._report_veg_shader_cost(host)
 
 
 
@@ -506,7 +506,7 @@ static func _apply_profile_uniforms(host) -> void:
 		host._material.set_shader_parameter(param, style[param])
 
 	# [veg-normal-shading] 法线辅助着色 uniform + 性能分档（q2 才采高度图邻域算谷地 AO）。
-	var tier = host._active_quality_tier()
+	var tier = host.ShrubScatter._active_quality_tier(host)
 	var shading_on: bool = bool(cfg.get("shading_enabled")) if cfg.get("shading_enabled") != null else true
 	host._material.set_shader_parameter("shading_enabled", 1.0 if shading_on else 0.0)
 	host._material.set_shader_parameter("veg_shade_quality", tier)
@@ -534,10 +534,10 @@ static func _apply_profile_uniforms(host) -> void:
 		var sc = cfg.get("shadow_color")
 		host._shadow_material.set_shader_parameter("shadow_color", sc if sc is Color else Color(0.05, 0.06, 0.08, 1.0))
 		var shadow_strength = host._profile_float(&"shadow_strength", 0.32)
-		if DCFeatureFlags.uses_shader_quality_tier() and host._active_quality_tier() >= 2:
+		if DCFeatureFlags.uses_shader_quality_tier() and host.ShrubScatter._active_quality_tier(host) >= 2:
 			shadow_strength *= 0.5
 		host._shadow_strength_base = shadow_strength
-		host._push_shadow_strength()
+		host.Chunk_nodes._push_shadow_strength(host)
 		host._shadow_material.set_shader_parameter("lod_alpha", host._lod_alpha)
 		host._shadow_material.set_shader_parameter(
 			"shadow_length_scale",
@@ -558,8 +558,8 @@ static func _apply_profile_uniforms(host) -> void:
 		host._shadow_material.set_shader_parameter("vitality_healthy_threshold", cfg.vitality_healthy_threshold)
 		host._shadow_material.set_shader_parameter("vitality_alpha_power", cfg.vitality_alpha_power)
 		host._shadow_material.set_shader_parameter("snow_hide_strength", cfg.snow_hide_strength)
-		host._shadow_material.set_shader_parameter("aquatic_response", 1.0 if host._spawn_domain() == host.SPAWN_WATER else 0.0)
-	host._sync_shadow_layer(true)
+		host._shadow_material.set_shader_parameter("aquatic_response", 1.0 if host.ShrubScatter._spawn_domain(host) == host.SPAWN_WATER else 0.0)
+	host.Chunk_nodes._sync_shadow_layer(host, true)
 
 
 
@@ -642,6 +642,3 @@ static func _push_visual_tile_layout(host, material: ShaderMaterial, layout) -> 
 	material.set_shader_parameter("visual_layer_size", Vector2(layout.layer_size))
 	material.set_shader_parameter("visual_logical_resolution", Vector2(layout.logical_size))
 	material.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
-
-
-

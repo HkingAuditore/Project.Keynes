@@ -1,5 +1,15 @@
 class_name InspectorPanel
 extends PanelContainer
+
+const DetailWorkspaces = preload("res://scripts/ui/components/inspector_details.gd")
+
+const TaxPanel = preload("res://scripts/ui/components/inspector_tax.gd")
+
+const CategoryContent = preload("res://scripts/ui/components/inspector_categories.gd")
+
+const LivePresentation = preload("res://scripts/ui/components/inspector_live_presentation.gd")
+
+const SceneBindings = preload("res://scripts/ui/components/inspector_scene_bindings.gd")
 const InspectorTaxDrafts = preload("res://scripts/ui/components/inspector_tax_drafts.gd")
 
 const InspectorStructure = preload("res://scripts/ui/components/inspector_structure.gd")
@@ -134,36 +144,8 @@ var _content_structure := ""
 func _ready() -> void:
 	if _content_box != null:
 		return
-	_kicker_label = get_node_or_null("%KickerLabel") as Label
-	_title_label = get_node_or_null("%TitleLabel") as Label
-	_subtitle_label = get_node_or_null("%SubtitleLabel") as Label
-	_titles_box = get_node_or_null("%Titles") as Control
-	_summary_band = get_node_or_null("%Summary") as Control
-	var kpi_row := get_node_or_null("%KpiRow")
-	_kpi_cards.clear()
-	if kpi_row != null:
-		for child in kpi_row.get_children():
-			if child is DossierKpiCard:
-				(child as Control).custom_minimum_size = Vector2(80.0, DossierKpiCard.HEIGHT)
-				_kpi_cards.append(child)
-	_chapter_nav = get_node_or_null("%ChapterNav") as DossierChapterNav
-	_scroll = get_node_or_null("%Scroll") as ScrollContainer
-	_content_box = get_node_or_null("%ContentBox") as VBoxContainer
-	_inspector_root = get_node_or_null("%InspectorRoot") as VBoxContainer
-	_detail_shell = get_node_or_null("%DetailShell") as PanelContainer
-	_object_detail_dialog = get_node_or_null("%ObjectDetail") as ObjectDetailDialog
-	_family_workspace = get_node_or_null("%FamilyWorkspace") as FamilyWorkspace
-	_military_dossier = get_node_or_null("%MilitaryDossier") as MilitaryDossier
-	_construction_workspace = get_node_or_null("%BuildingWorkspace") as BuildingWorkspace
-	_clear_tax_confirmation = get_node_or_null("%ClearTaxConfirmation") as ConfirmationDialog
-	_colonization_button = get_node_or_null("%ColonizationButton") as Button
-	var close_button := get_node_or_null("%CloseButton") as Button
-	if _title_label == null or _subtitle_label == null or _kicker_label == null \
-			or _kpi_cards.size() != 4 or _chapter_nav == null or _scroll == null \
-			or _content_box == null or close_button == null or _detail_shell == null \
-			or _object_detail_dialog == null or _family_workspace == null \
-			or _construction_workspace == null:
-		push_error("InspectorPanel 必须通过 inspector_panel.tscn 实例化。")
+	var close_button := SceneBindings.bind(self)
+	if close_button == null:
 		return
 	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭")
 	close_button.pressed.connect(func() -> void:
@@ -223,114 +205,27 @@ func _ready() -> void:
 
 
 func set_model(model: Dictionary, _rebuild_visible: bool = true) -> void:
-	set_model_for_selection(model)
+	LivePresentation.set_model(self, model, _rebuild_visible)
 
 
 func set_player_controller(controller) -> void:
-	_player_controller = controller
-	if _object_detail_dialog != null:
-		_object_detail_dialog.set_player_controller(controller)
-	if _family_workspace != null:
-		_family_workspace.set_player_controller(controller)
+	LivePresentation.set_player_controller(self, controller)
 
 
 func set_model_for_selection(model: Dictionary) -> void:
-	if _content_box == null:
-		_ready()
-	var new_cell_index := int(model.get("cell_index", -1))
-	var cell_changed := new_cell_index != _cell_index
-	if cell_changed:
-		_scroll_by_tab.clear()
-		_pending_tax.clear()
-		_draft_tax.clear()
-		_deferred_object_detail_payload.clear()
-		_section_collapsed.clear()
-		_kpi_values.clear()
-		close_detail(false)
-		_construction_model = {}
-		_cell_index = new_cell_index
-		if _scroll != null:
-			_scroll.scroll_vertical = 0
-	_model = model
-	if _model.is_empty():
-		_publish_population_discontent({})
-		return
-	_apply_header(_model.get("header", {}), false)
-	if cell_changed and visible and is_inside_tree():
-		UIAnimation.crossfade(_titles_box, UITokens.ANIM_FAST)
-	_apply_colonization_action(_model.get("colonization_action", {}))
-	_apply_kpis(_model.get("kpis", []), not cell_changed)
-	var tabs: Array = _model.get("tabs", [])
-	if not _has_tab(tabs, _current_tab):
-		_current_tab = "geography"
-	# 页签集合会随视野状态变化（未探索 0 个 / 已探索 1 个 / 可见 5 个），
-	# 所以按签名判断是否需要重设章节索引。
-	var signature := _tabs_signature(tabs)
-	if signature != _tabs_signature_cache:
-		_tabs_signature_cache = signature
-		_chapter_nav.set_chapters(_chapter_spec(tabs), _current_tab)
-	else:
-		_chapter_nav.select(_current_tab, false)
-	_chapter_nav.visible = tabs.size() > 1
-	if not tabs.is_empty():
-		_request_tab_data_if_missing(_current_tab)
-	_render_content(false)
-	if cell_changed:
-		_animate_content_in()
+	LivePresentation.set_model_for_selection(self, model)
 
 
 func apply_live_patch(patch: Dictionary) -> void:
-	if patch.is_empty() or _content_box == null:
-		return
-	if patch.has("header"):
-		var header: Dictionary = patch.get("header", {})
-		_model["header"] = header
-		_apply_header(header, true)
-	if patch.has("kpis"):
-		var kpis: Array = patch.get("kpis", [])
-		_model["kpis"] = kpis.duplicate()
-		_apply_kpis(kpis, true)
-	var patch_tab := String(patch.get("tab_id", ""))
-	if not patch.has("category"):
-		return
-	if patch_tab != "":
-		set_tab_category(patch_tab, patch.get("category", {}))
-	if patch_tab != _current_tab:
-		return
-	var category: Dictionary = (_model.get("categories", {}) as Dictionary).get(patch_tab, {})
-	if _category_structure(category) != _content_structure:
-		_render_content(false)
-	else:
-		_apply_category_patch(category)
-		_publish_population_discontent(category)
+	LivePresentation.apply_live_patch(self, patch)
 
 
 func apply_published_gdp(gdp_kpi: Dictionary) -> void:
-	if gdp_kpi.is_empty() or _content_box == null:
-		return
-	var kpis: Array = (_model.get("kpis", []) as Array).duplicate()
-	if kpis.is_empty():
-		return
-	var target_id := String(gdp_kpi.get("id", "kpi_gdp"))
-	for i in range(kpis.size()):
-		var item = kpis[i]
-		if item is Dictionary and String((item as Dictionary).get("id", "")) == target_id:
-			kpis[i] = gdp_kpi
-			_model["kpis"] = kpis
-			_apply_kpis(kpis, true)
-			return
+	LivePresentation.apply_published_gdp(self, gdp_kpi)
 
 
 func set_tab_category(tab_id: String, category: Dictionary) -> void:
-	if tab_id == "" or category.is_empty():
-		return
-	var categories: Dictionary = _model.get("categories", {})
-	# 忙碌是暂态，不能用它覆盖已经显示的已提交内容。
-	if bool(category.get("data_pending", false)) and categories.has(tab_id) \
-			and not bool((categories[tab_id] as Dictionary).get("data_pending", false)):
-		return
-	categories[tab_id] = category
-	_model["categories"] = categories
+	LivePresentation.set_tab_category(self, tab_id, category)
 
 
 func current_tab() -> String:
@@ -370,83 +265,23 @@ func visible_node_count() -> int:
 
 
 func _apply_header(header: Dictionary, _live_patch: bool) -> void:
-	_kicker_label.text = String(header.get("kicker", ""))
-	_title_label.text = String(header.get("title", "地块"))
-	_title_label.tooltip_text = _title_label.text
-	_fit_title_font()
-	_subtitle_label.text = String(header.get("subtitle", ""))
-	_subtitle_label.tooltip_text = _subtitle_label.text
-	_subtitle_label.visible = not _subtitle_label.text.is_empty()
+	LivePresentation._apply_header(self, header, _live_patch)
 
 
-## 长地名不截断：按可用宽度自动降字号（34 → 18），短名回到 34。
-## 只在标题栏宽度变化或换地块时重算；缩字号只改高度不改宽度，不会自激。
 func _fit_title_font() -> void:
-	if _title_label == null:
-		return
-	var available := _title_label.size.x
-	if available <= 1.0:
-		return
-	var font := _title_label.get_theme_font("font")
-	if font == null:
-		return
-	var text := _title_label.text
-	if text.is_empty():
-		_title_label.add_theme_font_size_override("font_size", TITLE_FONT_BASE)
-		return
-	var size := TITLE_FONT_BASE
-	while size > TITLE_FONT_MIN and font.get_string_size(
-			text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size).x > available:
-		size -= 2
-	_title_label.add_theme_font_size_override("font_size", size)
+	LivePresentation._fit_title_font(self)
 
 
-## KPI 卡片固定 4 张：多余的隐藏，补丁只改值（卡片自带数值补间）。
-## 数值相同的补丁不重启动画，避免每日刷新时卡片反复闪动。
 func _apply_kpis(kpis: Array, live_patch: bool) -> void:
-	if _summary_band != null:
-		_summary_band.visible = not kpis.is_empty()
-	var visible_count := mini(kpis.size(), _kpi_cards.size())
-	for i in range(_kpi_cards.size()):
-		var card := _kpi_cards[i] as DossierKpiCard
-		card.visible = i < visible_count
-		card.show_divider = i < visible_count - 1
-		if i >= visible_count:
-			continue
-		var data: Dictionary = kpis[i]
-		var signature := "%s|%s|%s|%s|%s|%s|%s" % [String(data.get("id", "")),
-			String(data.get("title", "")), String(data.get("kind", "")),
-			str(data.get("value", "")), String(data.get("text", "")),
-			String(data.get("caption", "")), String(data.get("tone", ""))]
-		var slot := "kpi_%d" % i
-		if live_patch and String(_kpi_values.get(slot, "")) == signature:
-			continue
-		_kpi_values[slot] = signature
-		card.set_metric(data)
+	LivePresentation._apply_kpis(self, kpis, live_patch)
 
 
 func _apply_colonization_action(action: Dictionary) -> void:
-	if _colonization_button == null:
-		return
-	var available := bool(action.get("available", false))
-	var kind := String(action.get("kind", "colonize"))
-	_colonization_button.visible = available
-	_colonization_button.disabled = not available
-	_colonization_button.text = "迁徙" if kind == "relocate" else "开拓"
-	if available:
-		_colonization_button.tooltip_text = "向此地派遣家族分支迁徙" \
-			if kind == "relocate" else "派遣境内家族分支开拓这块无主地"
-	else:
-		_colonization_button.tooltip_text = String(action.get("reason", ""))
+	LivePresentation._apply_colonization_action(self, action)
 
 
 func _sync_kpi_density() -> void:
-	if _inspector_root == null:
-		return
-	var dense := _inspector_root.size.y > 1.0 \
-		and _inspector_root.size.y < DENSE_KPI_MAX_HEIGHT
-	for card_value in _kpi_cards:
-		(card_value as DossierKpiCard).dense = dense
+	LivePresentation._sync_kpi_density(self)
 
 
 func _clear_block_controls() -> void:
@@ -488,17 +323,11 @@ func _render_content(reset_scroll: bool) -> void:
 
 
 func _publish_population_discontent(category: Dictionary) -> void:
-	_presented_population_discontent = category.get("class_discontent", {}) \
-		if _current_tab == "population" else {}
-	_emit_population_discontent()
+	LivePresentation._publish_population_discontent(self, category)
 
 
 func _emit_population_discontent() -> void:
-	if _inspector_root != null and _inspector_root.is_visible_in_tree() \
-			and not _presented_population_discontent.is_empty():
-		population_discontent_changed.emit(_cell_index, _presented_population_discontent)
-	else:
-		population_discontent_changed.emit(-1, {})
+	LivePresentation._emit_population_discontent(self)
 
 
 func _capture_tax_drafts() -> void:
@@ -510,82 +339,11 @@ func _restore_tax_drafts() -> void:
 
 
 func _build_category_content(data: Dictionary) -> void:
-	_tax_context = data.get("tax_context", {})
-	var root_data := data.duplicate(false)
-	root_data.erase("sections")
-	root_data.erase("tax_context")
-	_build_category_block(_content_box, root_data)
-	for raw_section in data.get("sections", []):
-		var section: Dictionary = raw_section
-		var body := _add_collapsible_section(section)
-		_build_category_block(body, section)
-	_build_page_tax_section(_tax_context)
+	CategoryContent._build_category_content(self, data)
 
 
-## 一个块（页根或折叠节）的固定阅读顺序：
-## 批注（警示）→ 事实表 → 指标条 → 趋势 → 物种徽记 → 建造入口 → 列头 + 名录 → 名录附注。
-## 键存在就建控件（空则隐藏），这样补丁里内容由无到有时也只改可见性、不增删节点。
 func _build_category_block(host: Control, data: Dictionary) -> void:
-	var block_id := String(data.get("id", "_root"))
-	if data.has("insights"):
-		var notes := NoteListScene.instantiate() as InspectorNoteList
-		host.add_child(notes)
-		var insights: Array = data.get("insights", [])
-		notes.set_notes(insights)
-		notes.visible = not insights.is_empty()
-		_note_controls[block_id] = notes
-
-	if data.has("metrics"):
-		var facts := FactGridScene.instantiate() as InspectorFactGrid
-		host.add_child(facts)
-		var metrics: Array = data.get("metrics", [])
-		facts.set_facts(metrics)
-		facts.visible = not metrics.is_empty()
-		_metric_controls[block_id] = facts
-
-	if data.has("gauges"):
-		var meters := MeterListScene.instantiate() as InspectorMeterList
-		host.add_child(meters)
-		var gauges: Array = data.get("gauges", [])
-		meters.set_meters(gauges)
-		meters.visible = not gauges.is_empty()
-		_gauge_controls[block_id] = meters
-
-	var charts: Array = data.get("charts", [])
-	if not charts.is_empty():
-		for raw in charts:
-			var chart: Dictionary = raw
-			var spark := ChartAdapter.make_sparkline(
-				String(chart.get("title", "")),
-				chart.get("values", []),
-				chart.get("accent", UITokens.ACCENT),
-				float(chart.get("min_value", NAN)),
-				float(chart.get("max_value", NAN)),
-				int(chart.get("window_size", 0)),
-				String(chart.get("value_text", ""))
-			)
-			spark.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			host.add_child(spark)
-			_chart_controls[String(chart.get("id", "chart_%d" % _chart_controls.size()))] = spark
-
-	var badges: Array = data.get("badges", [])
-	if not badges.is_empty():
-		var row := BadgeRowScene.instantiate() as BadgeRow
-		host.add_child(row)
-		row.set_badges(badges)
-		_badge_row = row
-
-	if data.has("building_rows") and data.has("construction_entry"):
-		_build_construction_entry(host, data.get("construction_entry", {}))
-
-	# 军事页签：一整张撕纸台账。驻军条 / 部队 / 训练 / 三行官营建筑都由它自绘，
-	# 页面上不再有并排的大按钮，也没有解释性批注。
-	if data.has("military_cell"):
-		_build_military_ledger(host, data.get("military_cell", {}))
-
-	for row_key in ROW_LIST_KEYS:
-		if data.has(row_key):
-			_build_row_list(host, data, String(row_key), block_id)
+	CategoryContent._build_category_block(self, host, data)
 
 
 ## 军事页台账：节点树只在这里建一次（三个建筑行由组件自己在 _ready 建好），
@@ -647,74 +405,15 @@ func _build_row_list(host: Control, data: Dictionary, row_key: String,
 
 
 func _set_list_caption(caption: InspectorNoteList, text: String) -> void:
-	caption.visible = not text.is_empty()
-	caption.set_notes([] if text.is_empty() else [{"id": "list_caption", "text": text,
-		"accent": UITokens.TEXT_MUTED}])
+	CategoryContent._set_list_caption(self, caption, text)
 
 
-## 税率编辑收进页尾的折叠「税务」节：默认收起，节头直接给出当前税率，
-## 展开后才是可编辑的税档。_page_tax_section 指向整个折叠节，
-## 打开对象详情时整节隐藏（对象详情自带对象级税档）。
-##
-## 多个税档（市场页的交易 / 进口 / 出口）在节内再各占一个可折叠子节：
-## 三个税种一次全摊开会把页尾拉得很长，玩家通常只调其中一条。
 func _build_page_tax_section(context: Dictionary) -> void:
-	_page_tax_editors.clear()
-	_page_tax_lane_summaries.clear()
-	_page_tax_section = null
-	_reset_tax_button = null
-	_tax_page_cell = int(context.get("cell", -1))
-	var defaults: Array = context.get("default_lanes", [])
-	if defaults.is_empty():
-		return
-	var body := _add_collapsible_section({
-		"id": "page_tax", "title": _page_tax_title(_current_tab),
-		"icon": "tax.section", "accent": UITokens.BRASS_HIGHLIGHT,
-		"collapsed": true, "summary": _tax_summary(defaults),
-	})
-	_page_tax_section = body.get_parent() as Control
-	var section := TaxSectionScene.instantiate() as VBoxContainer
-	body.add_child(section)
-	(section.get_node("Head") as Control).visible = false
-	var editable := bool(context.get("editable", false))
-	var hint := section.get_node("Hint") as Label
-	if not bool(context.get("available", true)):
-		var reason := String(context.get("reason", ""))
-		hint.text = reason
-		hint.visible = not reason.is_empty()
-	elif not editable:
-		hint.text = "仅可查看该国当前政策。"
-		hint.visible = true
-	else:
-		# 可用时不写常驻说明：默认税率与待生效状态各自由税行自己给出。
-		hint.text = ""
-		hint.visible = false
-	var lanes := section.get_node("Lanes") as VBoxContainer
-	if defaults.size() <= 1:
-		for raw in defaults:
-			var lane: Dictionary = raw
-			_add_page_tax_lane(lanes, lane)
-	else:
-		for raw in defaults:
-			var lane: Dictionary = raw
-			_add_page_tax_lane_subsection(lanes, lane)
-	lanes.visible = not defaults.is_empty()
-	_reset_tax_button = ActionButtonScene.instantiate() as Button
-	_reset_tax_button.text = "重置本栏税收设置"
-	_reset_tax_button.tooltip_text = "清除此栏税种在本地的默认税率和全部单项覆盖，恢复沿用国家政策。"
-	_reset_tax_button.pressed.connect(_request_category_tax_reset)
-	body.add_child(_reset_tax_button)
-	_update_reset_tax_button()
-	_sync_page_tax_visibility()
+	TaxPanel._build_page_tax_section(self, context)
 
 
-## 单条税档：实例化一行并登记，草稿 / 待生效状态沿用既有那一套。
 func _add_page_tax_lane(parent: VBoxContainer, lane: Dictionary) -> void:
-	var editor := TaxLaneScene.instantiate() as TaxLaneEditor
-	parent.add_child(editor)
-	editor.set_data(lane)
-	_restore_lane_pending(editor, lane)
-	_page_tax_editors.append(editor)
+	TaxPanel._add_page_tax_lane(self, parent, lane)
 
 
 ## 一个税种一个可折叠子节：节头给出该税种当前税率，展开才是可编辑的那一行。
@@ -753,127 +452,53 @@ func _add_page_tax_lane_subsection(parent: VBoxContainer, lane: Dictionary) -> v
 
 
 func _tax_lane_icon(kind: String) -> StringName:
-	var icons := {
-		"income": &"tax.income",
-		"consumption": &"tax.consumption",
-		"business": &"tax.business",
-		"import": &"tax.tariff",
-		"export": &"tax.tariff",
-	}
-	return StringName(icons.get(kind, &"tax.section"))
+	return TaxPanel._tax_lane_icon(self, kind)
 
 
 func _page_tax_title(tab_id: String) -> String:
-	return {
-		"population": "此地所得税",
-	"market": "此地交易税与关税",
-		"buildings": "此地营业税",
-	}.get(tab_id, "此地税率")
+	return TaxPanel._page_tax_title(self, tab_id)
 
 
 func _tax_summary(lanes: Array) -> String:
-	var parts := PackedStringArray()
-	var adjusted := false
-	for lane_value in lanes:
-		var lane: Dictionary = lane_value
-		var label := String(lane.get("kind_label", "")).trim_prefix("此地")
-		parts.append("%s %s" % [label, TaxLaneEditor._format_value(
-			int(lane.get("base", 0)), int(lane.get("mode", 0)))])
-		adjusted = adjusted or bool(lane.get("has_override", false))
-	var text := " · ".join(parts) if parts.size() <= 1 \
-		else "%s 等 %d 项" % [parts[0], parts.size()]
-	return "%s · %s" % [text, "已调整" if adjusted else "沿用国家"]
+	return TaxPanel._tax_summary(self, lanes)
 
 
 func _restore_lane_pending(editor: TaxLaneEditor, lane: Dictionary) -> void:
-	InspectorTaxDrafts._restore_lane_pending(_pending_tax, _tax_key, editor, lane)
+	TaxPanel._restore_lane_pending(self, editor, lane)
 
 
 func _rebuild_tax_editor_registry() -> void:
-	_tax_editors.clear()
-	_register_tax_editors(_page_tax_editors)
-	if _object_detail_dialog != null and _object_detail_dialog.visible:
-		_register_tax_editors(_object_detail_dialog.tax_editors())
-	_sync_page_tax_visibility()
+	TaxPanel._rebuild_tax_editor_registry(self)
 
 
 func _sync_page_tax_visibility() -> void:
-	if _page_tax_section == null:
-		return
-	var inspecting := _object_detail_dialog != null and _object_detail_dialog.visible
-	_page_tax_section.visible = not inspecting
+	TaxPanel._sync_page_tax_visibility(self)
 
 
 func _apply_page_tax_patch(context: Dictionary) -> void:
-	var defaults: Array = context.get("default_lanes", [])
-	var by_kind := {}
-	for lane_value in defaults:
-		var lane: Dictionary = lane_value
-		by_kind[String(lane.get("kind", ""))] = lane
-	for editor_value in _page_tax_editors:
-		var editor := editor_value as TaxLaneEditor
-		if editor == null:
-			continue
-		var kind := String(editor.lane_data().get("kind", ""))
-		if by_kind.has(kind):
-			var lane: Dictionary = by_kind[kind]
-			editor.set_data(lane)
-			_restore_lane_pending(editor, lane)
-			var sub_summary := _page_tax_lane_summaries.get(kind) as Label
-			if is_instance_valid(sub_summary):
-				sub_summary.text = TaxLaneEditor._format_value(
-					int(lane.get("base", 0)), int(lane.get("mode", 0)))
-				sub_summary.visible = not sub_summary.text.is_empty()
-	var outer_refs: Dictionary = _section_refs.get("page_tax", {})
-	var outer_summary := outer_refs.get("summary") as Label
-	if is_instance_valid(outer_summary) and not defaults.is_empty():
-		outer_summary.text = _tax_summary(defaults)
-		outer_summary.visible = not outer_summary.text.is_empty()
+	TaxPanel._apply_page_tax_patch(self, context)
 
 
 func _register_tax_editors(editors: Array) -> void:
-	for editor_value in editors:
-		_register_tax_editor(editor_value as TaxLaneEditor)
+	TaxPanel._register_tax_editors(self, editors)
 
 
 func _register_tax_editor(editor: TaxLaneEditor) -> void:
-	if editor == null:
-		return
-	if not editor.override_requested.is_connected(_on_tax_override_requested):
-		editor.override_requested.connect(_on_tax_override_requested)
-	if not editor.reset_requested.is_connected(_on_tax_reset_requested):
-		editor.reset_requested.connect(_on_tax_reset_requested)
-	var key := editor.editor_key(_cell_index)
-	var refs: Array = _tax_editors.get(key, [])
-	if not refs.has(editor):
-		refs.append(editor)
-	_tax_editors[key] = refs
-	if _pending_tax.has(key):
-		var pending: Dictionary = _pending_tax[key]
-		editor.mark_pending(int(pending.get(
-			"rate", editor.lane_data().get("base", 0))))
+	TaxPanel._register_tax_editor(self, editor)
 
 
-## 对象详情 / 地方面板的整组轴：与总面板同源（tax_group_map.gd 的 SUBJECT_AXES），
-## 末尾再挂一条「全部」——它直接取国家税快照的整份 id，不经过目录。
-## subject 由调用方按被查看的对象给：建筑 / 物资 / 职业各一组轴。
 func tax_group_axes(subject: String = "building") -> Array:
-	var axes: Array = InspectorTaxGroups.tax_group_axes(subject)
-	axes.append({"id": TAX_GROUP_ALL_MODE, "label": "全部",
-		"hint": "该国这个税种下的全部项目"})
-	return axes
+	return TaxPanel.tax_group_axes(self, subject)
 
 
 func tax_group_ids_for(mode: String, item_id: String,
 		subject: String = "building") -> Dictionary:
-	return InspectorTaxGroups.resolve_group_ids_for(
-		_player_controller, _tax_page_cell, mode, item_id, subject)
+	return TaxPanel.tax_group_ids_for(self, mode, item_id, subject)
 
 
 func request_tax_group_override(kind: int, item_ids: PackedStringArray,
 		rate_basis_points: int, assessment_mode: int = 0) -> Dictionary:
-	return InspectorTaxGroups.submit_group_override(
-		_player_controller, kind, item_ids, rate_basis_points, assessment_mode)
+	return TaxPanel.request_tax_group_override(self, kind, item_ids, rate_basis_points, assessment_mode)
 
 
 func _on_tax_override_requested(
@@ -883,179 +508,52 @@ func _on_tax_override_requested(
 		rate: int,
 		mode: int = 0
 ) -> void:
-	if _player_controller == null or _cell_index < 0:
-		return
-	var kind_id := int(TAX_KIND_IDS.get(kind, -1))
-	if kind_id < 0:
-		return
-	var command := &"country.tax.cell.set_default" \
-		if scope == "default" else &"country.tax.cell.set_override"
-	var args := {
-		"cell": _cell_index,
-		"kind": kind_id,
-		"rate_basis_points": rate,
-		"tax_assessment_mode": mode,
-	}
-	if scope != "default":
-		args["item_id"] = StringName(item_id)
-	var result: Dictionary = _player_controller.request_command(command, args)
-	var key := _tax_key(kind, item_id if scope != "default" else "default")
-	if bool(result.get("ok", false)):
-		_mark_tax_pending(key, rate, result, "set", mode)
-	else:
-		_resolve_tax_editor_key(key)
+	TaxPanel._on_tax_override_requested(self, scope, kind, item_id, rate, mode)
 
 
 func _on_tax_reset_requested(scope: String, kind: String, item_id: String) -> void:
-	if _player_controller == null or _cell_index < 0:
-		return
-	var kind_id := int(TAX_KIND_IDS.get(kind, -1))
-	if kind_id < 0:
-		return
-	var command := &"country.tax.cell.clear_default" \
-		if scope == "default" else &"country.tax.cell.clear_override"
-	var args := {"cell": _cell_index, "kind": kind_id}
-	if scope != "default":
-		args["item_id"] = StringName(item_id)
-	var result: Dictionary = _player_controller.request_command(command, args)
-	var key := _tax_key(kind, item_id if scope != "default" else "default")
-	if bool(result.get("ok", false)):
-		var refs: Array = _tax_editors.get(key, [])
-		var rate := 0
-		if not refs.is_empty():
-			rate = int((refs[0] as TaxLaneEditor).lane_data().get("default_rate", 0))
-		_mark_tax_pending(key, rate, result, "clear")
-	else:
-		_resolve_tax_editor_key(key)
+	TaxPanel._on_tax_reset_requested(self, scope, kind, item_id)
 
 
 func _mark_tax_pending(key: String, rate: int, receipt: Dictionary, op: String,
 		mode: int = 0) -> void:
-	_pending_tax[key] = {
-		"effective_day": int(receipt.get("effective_day", -1)),
-		"sequence": int(receipt.get("sequence", -1)),
-		"policy_version": int(_tax_context.get("policy_version", -1)),
-		"rate": rate,
-		"mode": mode,
-		"op": op,
-	}
-	for editor_value in _tax_editors.get(key, []):
-		(editor_value as TaxLaneEditor).mark_pending(rate, mode)
+	TaxPanel._mark_tax_pending(self, key, rate, receipt, op, mode)
 
 
 func show_tax_rejection(result: Dictionary) -> void:
-	if int(result.get("cell", -1)) != _cell_index:
-		return
-	for key: String in _pending_tax.keys():
-		if int(_pending_tax[key].get("sequence", -1)) != int(result.get("sequence", -2)):
-			continue
-		_pending_tax.erase(key)
-		_resolve_tax_editor_key(key)
-		for editor: TaxLaneEditor in _tax_editors.get(key, []):
-			editor.show_rejection(String(result.get("message", "")))
-		return
+	TaxPanel.show_tax_rejection(self, result)
 
 
 func _resolve_tax_pending(context: Dictionary, category: Dictionary = {}) -> void:
-	var current_day := int(context.get("current_day", -1))
-	var policy_version := int(context.get("policy_version", -1))
-	var resolved: Array[String] = []
-	for key_value in _pending_tax.keys():
-		var key := String(key_value)
-		var pending: Dictionary = _pending_tax[key]
-		if current_day < int(pending.get("effective_day", current_day + 1)) \
-				or policy_version <= int(pending.get("policy_version", policy_version)):
-			continue
-		if not InspectorTaxDrafts._pending_visible_in_snapshot(key, pending, context, category):
-			continue
-		resolved.append(key)
-	for key in resolved:
-		_pending_tax.erase(key)
-		_resolve_tax_editor_key(key)
+	TaxPanel._resolve_tax_pending(self, context, category)
 
 
 func _resolve_tax_editor_key(key: String) -> void:
-	for editor_value in _tax_editors.get(key, []):
-		(editor_value as TaxLaneEditor).resolve_pending()
+	TaxPanel._resolve_tax_editor_key(self, key)
 
 
 func _tax_key(kind: String, item_key: String) -> String:
-	return "cell:%d/%s/%s" % [_cell_index, kind, item_key]
+	return TaxPanel._tax_key(self, kind, item_key)
 
 
 func _update_reset_tax_button() -> void:
-	if not is_instance_valid(_reset_tax_button):
-		return
-	_reset_tax_button.visible = bool(_tax_context.get("editable", false))
-	_reset_tax_button.disabled = (_tax_context.get("reset_targets", []) as Array).is_empty()
+	TaxPanel._update_reset_tax_button(self)
 
 
 func _request_category_tax_reset() -> void:
-	if not bool(_tax_context.get("editable", false)):
-		return
-	var targets: Array = _tax_context.get("reset_targets", [])
-	if targets.is_empty():
-		return
-	_tax_reset_request = {"cell": _cell_index, "tab": _current_tab,
-		"targets": targets.duplicate(true)}
-	_clear_tax_confirmation.title = "重置本栏税收设置"
-	_clear_tax_confirmation.dialog_text = (
-		"将清除本格%s的默认税率和全部单项覆盖，恢复沿用国家政策。"
-		% _page_tax_title(_current_tab).trim_prefix("此地"))
-	_clear_tax_confirmation.popup_centered(Vector2i(480, 220))
+	TaxPanel._request_category_tax_reset(self)
 
 
 func _on_category_tax_reset_confirmed() -> void:
-	var request := _tax_reset_request
-	_tax_reset_request = {}
-	if int(request.get("cell", -1)) != _cell_index \
-			or String(request.get("tab", "")) != _current_tab \
-			or not bool(_tax_context.get("editable", false)):
-		return
-	for target in request.get("targets", []):
-		_on_tax_reset_requested(String(target.scope), String(target.kind), String(target.item_id))
+	TaxPanel._on_category_tax_reset_confirmed(self)
 
 
 func _apply_category_patch(data: Dictionary) -> void:
-	if data.has("tax_context"):
-		_tax_context = data.get("tax_context", {})
-		_tax_page_cell = int(_tax_context.get("cell", _tax_page_cell))
-		_update_reset_tax_button()
-		_apply_page_tax_patch(_tax_context)
-		_resolve_tax_pending(_tax_context, data)
-		var tax_refs: Dictionary = _section_refs.get("page_tax", {})
-		if not tax_refs.is_empty():
-			(tax_refs.summary as Label).text = _tax_summary(
-				_tax_context.get("default_lanes", []))
-	var root_data := data.duplicate(false)
-	root_data.erase("sections")
-	_apply_category_block_patch(root_data)
-	for raw_section in data.get("sections", []):
-		_apply_category_block_patch(raw_section as Dictionary)
+	CategoryContent._apply_category_patch(self, data)
 
 
 func _apply_category_block_patch(data: Dictionary) -> void:
-	InspectorCategoryPatch._apply_category_block_patch(
-		{
-			"_note_controls": _note_controls,
-			"_metric_controls": _metric_controls,
-			"_gauge_controls": _gauge_controls,
-			"_list_caption_controls": _list_caption_controls,
-			"_section_refs": _section_refs,
-			"_badge_row": _badge_row,
-			"_military_ledger": _military_ledger,
-			"_cohort_list": _cohort_list,
-			"_family_list": _family_list,
-			"_resource_list": _resource_list,
-			"_building_list": _building_list,
-			"_construction_workspace": _construction_workspace,
-			"_construction_entry_hint": _construction_entry_hint,
-			"_market_list": _market_list,
-			"_chart_controls": _chart_controls
-		},
-		_set_list_caption,
-		_apply_section_texts,
-		data)
+	CategoryContent._apply_category_block_patch(self, data)
 
 
 func _add_collapsible_section(section: Dictionary) -> VBoxContainer:
@@ -1129,200 +627,108 @@ func _on_inspector_resized() -> void:
 	_sync_split_layout()
 
 
-## 切页或换格后正文逐块淡入：每块错开 28ms，总时长不超过约 0.3s。
 func _animate_content_in() -> void:
-	if not visible or not is_inside_tree():
-		return
-	UIAnimation.stagger_children_in(_content_box, 0.028, 8, UITokens.ANIM_FAST)
+	LivePresentation._animate_content_in(self)
 
 
 func set_construction_model(model: Dictionary) -> void:
-	_construction_model = model
-	if _construction_workspace != null:
-		_construction_workspace.set_model(_construction_model)
+	DetailWorkspaces.set_construction_model(self, model)
 
 
 func set_construction_feedback(message: String, ok: bool) -> void:
-	_construction_feedback = message
-	_construction_ok = ok
-	if _construction_workspace != null:
-		_construction_workspace.set_feedback(message, ok)
+	DetailWorkspaces.set_construction_feedback(self, message, ok)
 
 
 func building_workspace_open() -> bool:
-	return _construction_workspace != null and _construction_workspace.visible
+	return DetailWorkspaces.building_workspace_open(self)
 
 
-## 官营建筑命令被拒时解锁军事页的动作键（成功的命令保持禁用，等模型画出「在建」）。
 func release_military_ledger_busy() -> void:
-	if _military_ledger != null:
-		_military_ledger.release_busy()
+	DetailWorkspaces.release_military_ledger_busy(self)
 
 
-## 官营建筑命令的回执：写在军事台账刚按下那一行上。营造反馈条只在营造窗口
-## 打开时可见，地块档案这一页如果也只写那边，被拒的命令就完全没有回音。
 func set_military_ledger_feedback(message: String, ok: bool) -> void:
-	if _military_ledger != null:
-		_military_ledger.show_feedback(message, ok)
+	DetailWorkspaces.set_military_ledger_feedback(self, message, ok)
 
 
 func set_military_army_feedback(message: String, ok: bool) -> void:
-	if _military_ledger != null:
-		_military_ledger.show_army_feedback(message, ok)
+	DetailWorkspaces.set_military_army_feedback(self, message, ok)
 
 
-## 次日结算 / 打开窗口后重发同一张目录页的请求（查询身份由窗口自己记住）。
 func request_construction_refresh() -> void:
-	if _construction_workspace != null and _construction_workspace.visible:
-		_construction_workspace.request_refresh()
+	DetailWorkspaces.request_construction_refresh(self)
 
-
-## ── 军务档案（部队 / 战线页）──────────────────────────────────────────
-## 与对象详情同级：占用 DetailShell，让右栏变宽，并按宽度决定是否保留地块目录列。
 
 func show_military_dossier(payload: Dictionary) -> void:
-	if payload.is_empty() or _military_dossier == null:
-		return
-	_set_family_chrome(false)
-	_object_detail_dialog.visible = false
-	_family_workspace.hide_immediately()
-	_construction_workspace.visible = false
-	_military_dossier.visible = true
-	_military_dossier.set_model(payload)
-	_show_detail_shell()
+	DetailWorkspaces.show_military_dossier(self, payload)
 
 
 func refresh_military_dossier(payload: Dictionary) -> void:
-	if payload.is_empty() or _military_dossier == null or not _military_dossier.visible:
-		return
-	_military_dossier.set_model(payload)
+	DetailWorkspaces.refresh_military_dossier(self, payload)
 
 
 func military_dossier_open() -> bool:
-	return _military_dossier != null and _military_dossier.visible
+	return DetailWorkspaces.military_dossier_open(self)
 
 
 func military_dossier_identity() -> String:
-	return _military_dossier.identity() if _military_dossier != null else ""
+	return DetailWorkspaces.military_dossier_identity(self)
 
 
 func update_military_arm_order(state: Dictionary) -> void:
-	if _military_dossier != null:
-		_military_dossier.set_order_state(state)
+	DetailWorkspaces.update_military_arm_order(self, state)
 
 
 func set_military_dossier_feedback(message: String, ok: bool) -> void:
-	if _military_dossier != null:
-		_military_dossier.show_feedback(message, ok)
+	DetailWorkspaces.set_military_dossier_feedback(self, message, ok)
 
 
-## 没有地块档案可看时收起目录列：军务档案独占面板。
 func set_directory_available(available: bool) -> void:
-	if available == _directory_available:
-		return
-	_directory_available = available
-	_sync_split_layout()
+	DetailWorkspaces.set_directory_available(self, available)
 
 
 func show_object_detail(payload: Dictionary) -> void:
-	if payload.is_empty() or _object_detail_dialog == null:
-		return
-	_set_family_chrome(false)
-	if _military_dossier != null:
-		_military_dossier.visible = false
-	_construction_workspace.visible = false
-	_family_workspace.hide_immediately()
-	_deferred_object_detail_payload.clear()
-	_object_detail_dialog.visible = true
-	_object_detail_dialog.show_details(payload)
-	_rebuild_tax_editor_registry()
-	_show_detail_shell()
+	DetailWorkspaces.show_object_detail(self, payload)
 
 
 func show_family_workspace(payload: Dictionary, animate: bool = true) -> void:
-	if payload.is_empty() or _family_workspace == null:
-		return
-	var was_open := family_workspace_open()
-	_set_family_chrome(true)
-	_deferred_object_detail_payload.clear()
-	_object_detail_dialog.visible = false
-	if _military_dossier != null:
-		_military_dossier.visible = false
-	_construction_workspace.visible = false
-	_family_workspace.show_family(payload, animate)
-	if not was_open:
-		_show_detail_shell()
+	DetailWorkspaces.show_family_workspace(self, payload, animate)
 
 
 func refresh_family_workspace(payload: Dictionary) -> void:
-	if payload.is_empty() or _family_workspace == null \
-			or not _family_workspace.visible:
-		return
-	_family_workspace.set_model(payload)
+	DetailWorkspaces.refresh_family_workspace(self, payload)
 
 
 func family_workspace_open() -> bool:
-	return _family_workspace != null and _family_workspace.visible
+	return DetailWorkspaces.family_workspace_open(self)
 
 
 func refresh_object_detail(payload: Dictionary) -> void:
-	if payload.is_empty() or _object_detail_dialog == null \
-			or not _object_detail_dialog.visible:
-		return
-	if not _object_detail_dialog.refresh_details(payload):
-		_deferred_object_detail_payload = payload.duplicate(true)
-		return
-	_deferred_object_detail_payload.clear()
-	_rebuild_tax_editor_registry()
+	DetailWorkspaces.refresh_object_detail(self, payload)
 
 
 func _on_object_tax_editing_finished() -> void:
-	if _deferred_object_detail_payload.is_empty():
-		return
-	call_deferred("_apply_deferred_object_detail_refresh")
+	DetailWorkspaces._on_object_tax_editing_finished(self)
 
 
 func _apply_deferred_object_detail_refresh() -> void:
-	if _deferred_object_detail_payload.is_empty() \
-			or _object_detail_dialog == null or not _object_detail_dialog.visible:
-		return
-	var payload := _deferred_object_detail_payload
-	if not _object_detail_dialog.refresh_details(payload):
-		return
-	_deferred_object_detail_payload.clear()
-	_rebuild_tax_editor_registry()
+	DetailWorkspaces._apply_deferred_object_detail_refresh(self)
 
 
 func _request_object_detail(request: Dictionary) -> void:
-	var row_id := String(request.get("row_id", ""))
-	for list in [_cohort_list, _market_list, _building_list, _resource_list, _family_list]:
-		if list != null and list.has_method("set_selected"):
-			list.set_selected(row_id)
-	object_details_requested.emit(request)
+	DetailWorkspaces._request_object_detail(self, request)
 
 
 func close_detail(notify: bool = true) -> void:
-	_deferred_object_detail_payload.clear()
-	_detail_change_notify = notify
-	if _family_workspace != null and _family_workspace.visible:
-		if notify:
-			_family_workspace.request_close()
-		else:
-			_family_workspace.hide_immediately()
-			_on_detail_closed()
-	elif _object_detail_dialog != null and _object_detail_dialog.visible:
-		_object_detail_dialog.close_dialog()
-	else:
-		_on_detail_closed()
+	DetailWorkspaces.close_detail(self, notify)
 
 
 func detail_open() -> bool:
-	return _detail_shell != null and _detail_shell.visible
+	return DetailWorkspaces.detail_open(self)
 
 
 func set_compact_detail_mode(compact: bool) -> void:
-	_compact_detail = compact
-	_sync_split_layout()
+	DetailWorkspaces.set_compact_detail_mode(self, compact)
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -1336,153 +742,52 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 
 
-## 建筑页签里的「营造新建筑」纸笺。页签每日重建时只刷新这句话，报价留给
-## 真正打开营造窗口的那一次请求。
 func _build_construction_entry(host: Control, entry_data: Dictionary) -> void:
-	if entry_data.has("visible") and not bool(entry_data.get("visible", true)):
-		return
-	var entry := ConstructionEntryScene.instantiate() as PanelContainer
-	(entry.get_node("Row/Icon") as IconBadge).set_semantic(
-		&"economy.building", UITokens.DOSSIER_BRASS)
-	var title := entry.get_node("Row/Text/Title") as Label
-	title.text = String(entry_data.get("title", "营造新建筑"))
-	var hint := entry.get_node_or_null("Row/Text/Hint") as Label
-	if hint != null:
-		var hint_text := String(entry_data.get("hint", ""))
-		hint.text = hint_text
-		hint.visible = not hint_text.is_empty()
-		_construction_entry_hint = hint
-	var open_button := entry.get_node("Row/OpenButton") as Button
-	var available := bool(entry_data.get("available", false))
-	open_button.disabled = not available
-	open_button.tooltip_text = "" if available \
-		else String(entry_data.get("message", "只能在玩家领土内营造。"))
-	open_button.pressed.connect(_open_building_workspace)
-	host.add_child(entry)
+	DetailWorkspaces._build_construction_entry(self, host, entry_data)
 
 
 func _open_building_workspace() -> void:
-	_set_family_chrome(false)
-	_object_detail_dialog.visible = false
-	_family_workspace.hide_immediately()
-	if _military_dossier != null:
-		_military_dossier.visible = false
-	if int(_construction_model.get("cell", -1)) != _cell_index:
-		_construction_model = {}
-	_construction_workspace.visible = true
-	_construction_workspace.set_model(_construction_model)
-	_rebuild_tax_editor_registry()
-	_show_detail_shell()
-	# 打开时就按上一次的查询身份取数（首次打开由 VM 选默认部门）。
-	var query: Dictionary = _construction_model.get("query", {})
-	construction_page_requested.emit(String(query.get("sector", "")),
-		String(query.get("search", "")), String(query.get("sort", "recommended")),
-		int(query.get("offset", 0)))
+	DetailWorkspaces._open_building_workspace(self)
 
 
 func _show_detail_shell() -> void:
-	_detail_shell.visible = true
-	_sync_split_layout()
-	detail_visibility_changed.emit(true)
+	DetailWorkspaces._show_detail_shell(self)
 
 
 func _on_detail_closed() -> void:
-	if _detail_shell == null:
-		return
-	var was_open := _detail_shell.visible
-	var restore_family_focus := _family_chrome_active and _detail_change_notify
-	_object_detail_dialog.visible = false
-	_family_workspace.hide_immediately()
-	if _military_dossier != null:
-		_military_dossier.visible = false
-	_construction_workspace.visible = false
-	_detail_shell.visible = false
-	_set_family_chrome(false)
-	_sync_split_layout()
-	_inspector_root.visible = true
-	if restore_family_focus and _family_list != null:
-		_family_list.focus_selected()
-	for list in [_cohort_list, _market_list, _building_list, _resource_list, _family_list]:
-		if list != null and list.has_method("set_selected"):
-			list.set_selected("")
-	if was_open:
-		detail_visibility_changed.emit(false)
-	_detail_change_notify = true
-	_rebuild_tax_editor_registry()
+	DetailWorkspaces._on_detail_closed(self)
 
 
 func _set_family_chrome(active: bool) -> void:
-	if _family_chrome_active == active:
-		return
-	_family_chrome_active = active
-	if active:
-		# 只撤掉左侧详情的重复外框；右侧地块档案保留原有材质和边距。
-		if _detail_shell != null:
-			_detail_shell.add_theme_stylebox_override(&"panel", _empty_panel_style)
-	else:
-		if _detail_shell != null:
-			_detail_shell.remove_theme_stylebox_override(&"panel")
+	DetailWorkspaces._set_family_chrome(self, active)
 
 
 func _sync_split_layout() -> void:
-	if _inspector_root == null or _detail_shell == null:
-		return
-	var split := _inspector_root.get_parent() as Control
-	if split != null:
-		split.clip_contents = not _family_chrome_active
-	var inspecting := _detail_shell.visible
-	_detail_shell.clip_contents = not _family_chrome_active
-	# 家族栏始终保留右侧目录；普通对象详情仍沿用窄窗独占策略。
-	var family_open := _family_workspace != null and _family_workspace.visible
-	var can_split := family_open or (not _compact_detail \
-		and size.x >= SPLIT_DETAIL_MIN_WIDTH)
-	var show_dossier := (not inspecting or can_split) and _directory_available
-	_inspector_root.visible = show_dossier
-	_inspector_root.size_flags_horizontal = Control.SIZE_FILL if inspecting \
-		else Control.SIZE_EXPAND_FILL
-	_inspector_root.size_flags_stretch_ratio = 0.0 if inspecting else 1.0
-	_detail_shell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_detail_shell.size_flags_stretch_ratio = 1.0
+	DetailWorkspaces._sync_split_layout(self)
 
 
 func _on_tab_selected(tab_id: String) -> void:
-	if _scroll != null:
-		_scroll_by_tab[_current_tab] = _scroll.scroll_vertical
-	close_detail()
-	_current_tab = tab_id
-	if _chapter_nav != null:
-		_chapter_nav.select(tab_id)
-	tab_data_requested.emit(tab_id)
-	_render_content(false)
-	call_deferred("_restore_tab_scroll", tab_id)
-	_animate_content_in()
+	LivePresentation._on_tab_selected(self, tab_id)
 
 
 func _restore_tab_scroll(tab_id: String) -> void:
-	if _scroll != null and tab_id == _current_tab:
-		_scroll.scroll_vertical = int(_scroll_by_tab.get(tab_id, 0))
+	LivePresentation._restore_tab_scroll(self, tab_id)
 
 
 func _request_tab_data_if_missing(tab_id: String) -> void:
-	var categories: Dictionary = _model.get("categories", {})
-	if not categories.has(tab_id):
-		tab_data_requested.emit(tab_id)
+	LivePresentation._request_tab_data_if_missing(self, tab_id)
 
 
 func _category_structure(data: Dictionary) -> String:
-	return InspectorStructure._category_structure(data)
+	return LivePresentation._category_structure(self, data)
 
 
 func _tabs_signature(tabs: Array) -> String:
-	return InspectorStructure._tabs_signature(tabs)
+	return LivePresentation._tabs_signature(self, tabs)
 
 
 func _has_tab(tabs: Array, tab_id: String) -> bool:
-	for raw in tabs:
-		var tab: Dictionary = raw
-		if String(tab.get("id", "")) == tab_id:
-			return true
-	return false
+	return LivePresentation._has_tab(self, tabs, tab_id)
 
 
 func _count_nodes(node: Node) -> int:

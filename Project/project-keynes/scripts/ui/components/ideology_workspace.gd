@@ -1,6 +1,22 @@
 extends Control
 class_name IdeologyWorkspace
 
+const WorkspaceControls = preload("res://scripts/ui/components/ideology_workspace_controls.gd")
+
+const OfferCards = preload("res://scripts/ui/components/ideology_offer_cards.gd")
+
+const OfferCommands = preload("res://scripts/ui/components/ideology_offer_commands.gd")
+
+const IdeologyWaitingDeck = preload("res://scripts/ui/components/ideology_waiting_deck.gd")
+const DrawStack = IdeologyWaitingDeck.DrawStack
+const DeckBack = IdeologyWaitingDeck.DeckBack
+const IdeologySlotChrome = preload("res://scripts/ui/components/ideology_slot_chrome.gd")
+const SlotSectionChrome = IdeologySlotChrome.SlotSectionChrome
+const ResonanceEmblem = IdeologySlotChrome.ResonanceEmblem
+const IdeologyCollectionCard = preload("res://scripts/ui/components/ideology_collection_card.gd")
+const CollectionEntry = IdeologyCollectionCard.CollectionEntry
+const CardSurface = IdeologyCollectionCard.CardSurface
+
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const IdeologySupport = preload("res://scripts/ui/components/ideology_workspace_support.gd")
 const IdeologyWorkspacePresentationScript = preload("res://scripts/ui/components/ideology_workspace_presentation.gd")
@@ -173,127 +189,11 @@ func _ready() -> void:
 	call_deferred("_focus_initial_action")
 
 func _bind_nodes() -> void:
-	if _offer_button != null:
-		return
-	_root = get_node_or_null("Root") as VBoxContainer
-	_top_bar = get_node_or_null("Root/TopBar") as PanelContainer
-	_body = get_node_or_null("Root/Body") as HBoxContainer
-	_slot_column = get_node_or_null("Root/Body/SlotColumn") as VBoxContainer
-	_collection_column = get_node_or_null("Root/Body/CollectionColumn") as VBoxContainer
-	_deck_table = get_node_or_null("Root/Body/SlotColumn/DeckTable") as PanelContainer
-	_deck_scroll = _deck_table.get_node_or_null("DeckBody/DeckScroll") as ScrollContainer \
-		if _deck_table != null else null
-	_deck_column = _deck_scroll.get_node_or_null("DeckColumn") as VBoxContainer \
-		if _deck_scroll != null else null
-	_resonance_panel = get_node_or_null(
-		"Root/Body/SlotColumn/ResonancePanel") as PanelContainer
-	_collection_heading = get_node_or_null("Root/Body/CollectionColumn/CollectionHeading") as VBoxContainer
-	_point_scroll = %PointScroll
-	_hint = %Hint
-	_offer_button = %OpenOffer
-	_offer_layer = %OfferLayer
-	# Candidates use viewport space even when the country page is short.
-	var modal_canvas := CanvasLayer.new()
-	modal_canvas.name = "CandidateModal"
-	modal_canvas.layer = 30
-	_modal_canvas = modal_canvas
-	add_child(modal_canvas)
-	visibility_changed.connect(func() -> void:
-		modal_canvas.visible = is_visible_in_tree()
-		if not is_visible_in_tree():
-			_close_detail_modal()
-		else:
-			call_deferred("_focus_initial_action"))
-	_offer_layer.reparent(modal_canvas)
-	_offer_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_apply_offer_layer_insets()
-	_offer = %Offer
-	_offer_title = %OfferTitle
-	_choice_0 = %Choice0
-	_choice_1 = %Choice1
-	_choice_2 = %Choice2
-	_reroll_button = %Reroll
-	_dismiss_button = %Dismiss
-	_slot_counts = %SlotCounts
-	_ideology_slots = %IdeologySlots
-	_spirit_slots = %SpiritSlots
-	_resonance_bar = %ResonanceBar
-	_tabs = %SchoolTabs
-	_sort = %SortMode
-	_collection_drop = %CollectionDrop
-	_collection_margin = _collection_drop.get_node_or_null(
-		"CollectionMargin") as MarginContainer
-	_collection = %Collection
-	_scroll = %CollectionScroll
-	_empty = %EmptyState
-	_empty_icon = %EmptyIcon
-	_empty_title = %EmptyTitle
-	_empty_detail = %EmptyDetail
-	_empty_insights = %EmptyInsights
-	_fx = %Fx
-	_promotion_dialog = %PromotionDialog
-	_ledger_popup = %LedgerPopup
-	_build_promotion_overlay()
-	_build_detail_overlay()
-	_build_dynamic_parts()
+	WorkspaceControls._bind_nodes(self)
 
-## The stock ConfirmationDialog belongs to the debug theme and flashes a
-## rectangular grey window over the paper workspace. Build the promotion
-## confirmation once from the same paper material as the cards, then only
-## replace its text when a different ideology is requested. This keeps the
-## modal cheap to open and preserves the native command/ACK path underneath.
+
 func _build_detail_overlay() -> void:
-	if _detail_layer != null:
-		return
-	_detail_layer = Control.new()
-	_detail_layer.name = "DetailOverlay"
-	_detail_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_detail_layer.mouse_filter = Control.MOUSE_FILTER_STOP
-	_detail_layer.visible = false
-	_detail_layer.theme = preload("res://assets/themes/player_session_theme.tres")
-	var host: Node = _modal_canvas if _modal_canvas != null else self
-	host.add_child(_detail_layer)
-	var veil := ColorRect.new()
-	veil.name = "DetailVeil"
-	veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	veil.color = Color(0.07, 0.045, 0.025, 0.46)
-	veil.mouse_filter = Control.MOUSE_FILTER_STOP
-	veil.gui_input.connect(func(event: InputEvent) -> void:
-		if event is InputEventMouseButton:
-			var mouse := event as InputEventMouseButton
-			if mouse.button_index == MOUSE_BUTTON_LEFT and mouse.pressed:
-				_close_detail_modal()
-				veil.accept_event())
-	_detail_layer.add_child(veil)
-	var center := CenterContainer.new()
-	center.name = "DetailCenter"
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_detail_layer.add_child(center)
-	_detail_sheet = VBoxContainer.new()
-	_detail_sheet.name = "DetailSheet"
-	_detail_sheet.alignment = BoxContainer.ALIGNMENT_CENTER
-	_detail_sheet.add_theme_constant_override("separation", 8)
-	_detail_sheet.mouse_filter = Control.MOUSE_FILTER_STOP
-	center.add_child(_detail_sheet)
-	_detail_body_host = VBoxContainer.new()
-	_detail_body_host.name = "DetailBodyHost"
-	_detail_body_host.mouse_filter = Control.MOUSE_FILTER_STOP
-	_detail_sheet.add_child(_detail_body_host)
-	var actions := HBoxContainer.new()
-	actions.name = "DetailActions"
-	actions.alignment = BoxContainer.ALIGNMENT_CENTER
-	actions.mouse_filter = Control.MOUSE_FILTER_STOP
-	_detail_sheet.add_child(actions)
-	_detail_close = Button.new()
-	_detail_close.name = "DetailCloseButton"
-	_detail_close.text = "关闭"
-	_detail_close.custom_minimum_size = Vector2(132, maxf(38.0, TouchUI.min_units()))
-	_detail_close.theme_type_variation = &"PKSealPrimaryButton"
-	_detail_close.focus_mode = Control.FOCUS_ALL
-	_detail_close.pressed.connect(_close_detail_modal)
-	actions.add_child(_detail_close)
-	_apply_offer_layer_insets()
+	WorkspaceControls._build_detail_overlay(self)
 
 
 func _fill_slots(host: VBoxContainer, kind: int, hosted: Array[int], capacity: int) -> void:
@@ -389,127 +289,43 @@ func _on_sort_selected(index: int) -> void:
 # --- commands -------------------------------------------------------------
 
 func _open_offer() -> void:
-	var generation := int(_snapshot.get("offer_generation", 0))
-	if bool(_snapshot.get("offer_active", false)) and generation == _dismissed_generation:
-		_dismissed_generation = -1
-		_render_top()
-		_rebuild_offer()
-		return
-	if _player_controller == null:
-		return
-	var blocked: String = _presentation_component._blocking_confirmation_reason(self, false)
-	if not blocked.is_empty():
-		_show_result({"ok": false, "reason": blocked}); return
-	var result: Dictionary = _player_controller.request_command(PlayerControllerScript.COMMAND_IDEOLOGY_OFFER)
-	if not bool(result.get("ok", false)): _show_result(result)
+	OfferCommands._open_offer(self)
 
 
 func _reroll_offer() -> void:
-	if _player_controller == null: return
-	var blocked: String = _presentation_component._blocking_confirmation_reason(self, true)
-	if not blocked.is_empty():
-		_show_result({"ok": false, "reason": blocked}); return
-	var result: Dictionary = _player_controller.request_command(PlayerControllerScript.COMMAND_IDEOLOGY_REROLL, {
-		"offer_generation": int(_snapshot.get("offer_generation", 0)),
-	})
-	if bool(result.get("ok", false)):
-		_render_draw_waiting()
-	else:
-		_show_result(result)
+	OfferCommands._reroll_offer(self)
 
 
 func _dismiss_offer() -> void:
-	_dismissed_generation = int(_snapshot.get("offer_generation", 0))
-	if _player_controller != null and _player_controller.has_method("dismiss_ideology_offer"):
-		_player_controller.dismiss_ideology_offer(_dismissed_generation)
-	_render_top()
-	_rebuild_offer()
-	_offer_button.grab_focus()
+	OfferCommands._dismiss_offer(self)
 
 
 func _command(kind: String, ideology_id: int) -> void:
-	if _player_controller == null or ideology_id < 0:
-		return
-	var command_id := {
-		"equip": PlayerControllerScript.COMMAND_IDEOLOGY_EQUIP,
-		"unequip": PlayerControllerScript.COMMAND_IDEOLOGY_UNEQUIP,
-		"promote": PlayerControllerScript.COMMAND_IDEOLOGY_PROMOTE,
-	}.get(kind, &"") as StringName
-	var result: Dictionary = _player_controller.request_command(
-		command_id, {"ideology_id": ideology_id})
-	_show_result(result)
+	OfferCommands._command(self, kind, ideology_id)
 
 
 func _request_promotion(ideology_id: int) -> void:
-	if _promotion_layer == null or ideology_id < 0:
-		return
-	_pending_promotion_id = ideology_id
-	_promotion_copy.text = "将「%s」晋升为民族精神？\n现有国策槽位将转为民族精神，此操作不可撤销。" \
-		% _display_name(_metadata.get(ideology_id, {}), ideology_id)
-	_promotion_layer.visible = true
-	_promotion_confirm.grab_focus()
+	OfferCommands._request_promotion(self, ideology_id)
 
 
 func _confirm_promotion() -> void:
-	if _pending_promotion_id < 0:
-		return
-	var ideology_id := _pending_promotion_id
-	_pending_promotion_id = -1
-	if _promotion_layer != null:
-		_promotion_layer.visible = false
-	_command("promote", ideology_id)
+	OfferCommands._confirm_promotion(self)
 
 
 func _on_player_command_completed(id: StringName, result: Dictionary) -> void:
-	if id in [&"ideology.offer", &"ideology.reroll"] and bool(result.get("ok", false)):
-		_pending_draw_sequence = int(result.get("sequence", -1))
-		_render_top()
-		_rebuild_offer()
+	OfferCommands._on_player_command_completed(self, id, result)
 
 
 func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
-	if id not in [
-		PlayerControllerScript.COMMAND_IDEOLOGY_OFFER,
-		PlayerControllerScript.COMMAND_IDEOLOGY_CHOOSE,
-		PlayerControllerScript.COMMAND_IDEOLOGY_REROLL,
-		PlayerControllerScript.COMMAND_IDEOLOGY_EQUIP,
-		PlayerControllerScript.COMMAND_IDEOLOGY_UNEQUIP,
-		PlayerControllerScript.COMMAND_IDEOLOGY_PROMOTE,
-	]:
-		return
-	if _pending_draw_sequence == int(result.get("sequence", -2)):
-		_pending_draw_sequence = -1
-		_render_top()
-		_rebuild_offer()
-	if bool(result.get("ok", false)):
-		_flash_hint("")
-	else:
-		var message := CountryViewModel.ideology_player_reason(String(
-			result.get("reason", result.get("message", "理念命令被拒绝。"))))
-		_flash_hint(message)
-		_toast(message)
+	OfferCommands._on_player_command_settled(self, id, result)
 
 
 func _on_ideology_offer_ready(snapshot: Dictionary) -> void:
-	if snapshot.is_empty():
-		return
-	_snapshot = snapshot
-	_presentation = CountryViewModel.present_ideology(_snapshot, _catalog)
-	_index_states()
-	if bool(_snapshot.get("offer_active", false)) and int(_snapshot.get("offer_generation", 0)) > _revealed_generation:
-		_pending_draw_sequence = -1
-	_dismissed_generation = -1
-	_hint_hold_until = 0
-	_render_top()
-	_rebuild_offer()
+	OfferCommands._on_ideology_offer_ready(self, snapshot)
 
 
 func _show_result(result: Dictionary) -> void:
-	if not bool(result.get("ok", false)):
-		_flash_hint(CountryViewModel.ideology_player_reason(String(
-			result.get("reason", result.get("message", "理念命令被拒绝。")))))
-		if _compact:
-			_toast(_hint.text)
+	OfferCommands._show_result(self, result)
 
 
 func _flash_hint(text: String) -> void:
@@ -527,215 +343,55 @@ func _choice(index: int) -> Control:
 
 
 func _rebuild_offer() -> void:
-	if _offer_anim_busy:
-		return
-	var active := bool(_snapshot.get("offer_active", false))
-	var generation := int(_snapshot.get("offer_generation", 0))
-	var waiting := _draw_waiting()
-	var chosen := active and generation == _chosen_generation
-	var dismissed := active and generation == _dismissed_generation and not waiting
-	if (not active and not waiting) or chosen or dismissed:
-		_set_stage_visible(false)
-		_set_draw_stack(false)
-		for index in 3:
-			_choice(index).visible = false
-		if not active:
-			_chosen_generation = -1
-		# The stage is closed: never leave the paper cover or a face-down card
-		# armed for the next reveal.
-		return
-	_set_stage_visible(true)
-	var ids: PackedInt32Array = _snapshot.get("offer_ids", PackedInt32Array())
-	var fresh := active and generation > _revealed_generation and not waiting
-	if waiting and not fresh:
-		# Draw submitted; the one-day settlement has not published yet. Showing
-		# three face-down frames here is what read as a placeholder image before
-		# the reveal, so only the shuffled deck is on stage.
-		_render_draw_waiting()
-		return
-	_set_draw_stack(false)
-	_offer_title.text = "选择国策"
-	for index in 3:
-		var card := _choice(index)
-		var show := index < ids.size()
-		card.visible = show
-		if show:
-			var ideology_id := int(ids[index])
-			var meta: Dictionary = _metadata.get(ideology_id, {})
-			var view := CountryViewModel.present_ideology_card(meta, 0)
-			card.call("set_card", {
-				"ideology_id": ideology_id,
-				"display_name": _display_name(meta, ideology_id),
-				"school_id": String(meta.get("school_id", "")),
-				"rarity": int(meta.get("rarity", 1)),
-				"rarity_label": String(meta.get("rarity_label", "")),
-				"effects": view.get("effect_lines", PackedStringArray()),
-				"level": 0,
-				"level_count": int(view.get("level_count", 3)),
-				"level_label": String(view.get("level_label", "")),
-				"tooltip": String(view.get("tooltip", "")),
-				"detail_model": _detail_data(ideology_id, true),
-			})
-			_apply_offer_card_tilt(card, index, int(meta.get("rarity", 1)))
-	var reroll_cost := String(_presentation.get("reroll_cost_text", ""))
-	_reroll_button.text = "重抽 · %s" % reroll_cost
-	_reroll_button.disabled = not bool(_presentation.get("can_reroll", false))
-	_reroll_button.tooltip_text = "花费 %s 理念点重抽" % reroll_cost
-	_dismiss_button.disabled = false
-	if fresh:
-		_revealed_generation = generation
-		_play_reveal(ids.size())
-	else:
-		for index in 3:
-			_choice(index).call("set_face_up", true)
+	OfferCards._rebuild_offer(self)
 
 
 func _render_draw_waiting() -> void:
-	_offer_title.text = "正在抽取"
-	_offer_hint.text = "正在整理候选国策…"
-	for index in 3:
-		var card := _choice(index)
-		card.visible = false
-		card.call("reset_motion")
-	_reroll_button.disabled = true
-	_dismiss_button.disabled = true
-	_set_draw_stack(true)
+	OfferCards._render_draw_waiting(self)
 
 
 func _apply_offer_card_tilt(card: Control, _index: int, _rarity: int) -> void:
-	card.set("stage_rest_offset", Vector2.ZERO)
-	card.set("stage_rest_rotation", 0.0)
+	OfferCards._apply_offer_card_tilt(self, card, _index, _rarity)
 
 
 func _set_draw_stack(show: bool) -> void:
-	if _draw_stack == null:
-		return
-	# These are alternative views of one card-height area, never two VBox rows.
-	_offer_cards.visible = not show
-	_offer_actions.visible = not show
-	if not show and _offer_hint != null:
-		_offer_hint.text = "悬停查看详情 · 单击选定 · Esc 收起"
-	if show:
-		_draw_stack.set_card_size(_stage_card_size())
-		if not _draw_stack.visible:
-			_draw_stack.visible = true
-			_draw_stack.play(not motion_reduced())
-	else:
-		_draw_stack.stop()
-		_draw_stack.visible = false
+	OfferCards._set_draw_stack(self, show)
 
 
-## The offer tray is a modal layer over the workspace: a scrim plus the centred
-## paper stage. Showing it fades in; hiding is instant so the closing beat of the
-## choose animation is never covered by a lingering scrim.
 func _set_stage_visible(show: bool) -> void:
-	if _offer != null:
-		_offer.visible = show
-	if _offer_layer == null:
-		return
-	if not show:
-		if _offer_layer.visible:
-			_offer_layer.visible = false
-			_offer_layer.modulate.a = 1.0
-		return
-	if _offer_layer.visible:
-		return
-	_offer_layer.visible = true
-	if motion_reduced():
-		_offer_layer.modulate.a = 1.0
-		return
-	_offer_layer.modulate.a = 0.0
-	var tween := _offer_layer.create_tween()
-	tween.tween_property(_offer_layer, "modulate:a", 1.0, UITokens.ANIM_FAST)
+	OfferCards._set_stage_visible(self, show)
 
 
-## Fully open the unroll mask and lift the torn paper. Used whenever the stage
-## is shown without a reveal, so a previous cover can never linger.
 func _play_reveal(count: int) -> void:
-	if motion_reduced() or not is_visible_in_tree():
-		for index in count:
-			_choice(index).call("reset_motion")
-			_choice(index).call("set_face_up", true)
-		return
-	_offer_anim_busy = true
-	for index in count:
-		var card := _choice(index)
-		card.call("reset_motion")
-		card.call("set_face_up", true)
-		card.call("play_drop", index * 0.07, 16.0)
-		if int(card.get("_rarity")) > 1:
-			var sheen := create_tween()
-			sheen.tween_interval(0.30 + index * 0.07)
-			sheen.tween_callback(card.call.bind("play_gloss", 1))
-	var tween := create_tween()
-	tween.tween_interval(0.45 + maxf(0, count - 1) * 0.07)
-	tween.tween_callback(_finish_offer_animation)
+	OfferCards._play_reveal(self, count)
 
 
 func _finish_offer_animation() -> void:
-	_offer_anim_busy = false
-	for index in 3:
-		if _choice(index).visible:
-			_choice(index).call("set_face_up", true)
-	if is_visible_in_tree():
-		_choice_0.grab_focus()
-	_rebuild_offer()
+	OfferCards._finish_offer_animation(self)
 
 
 func _on_choice_input(event: InputEvent, index: int) -> void:
-	# Press moves keyboard/gamepad focus onto the card; the selection itself
-	# arrives through `activated` on release.
-	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
-		_choice(index).grab_focus()
+	OfferCards._on_choice_input(self, event, index)
 
 
 func _on_choice_activated(_ideology_id: int, index: int) -> void:
-	_choose_offer(index)
+	OfferCards._on_choice_activated(self, _ideology_id, index)
 
 
 func _on_choice_detail_requested(ideology_id: int) -> void:
-	_open_detail_modal(ideology_id, true)
+	OfferCards._on_choice_detail_requested(self, ideology_id)
 
 
 func _choose_offer(choice_index: int) -> void:
-	if _player_controller == null or _offer_anim_busy:
-		return
-	var generation := int(_snapshot.get("offer_generation", 0))
-	var result: Dictionary = _player_controller.request_command(
-		PlayerControllerScript.COMMAND_IDEOLOGY_CHOOSE, {
-			"offer_generation": generation,
-			"choice_index": choice_index,
-		})
-	_show_result(result)
-	if not bool(result.get("ok", false)):
-		return
-	_flash_hint("")
-	_chosen_generation = generation
-	_play_choose(choice_index)
+	OfferCards._choose_offer(self, choice_index)
 
 
 func _play_choose(choice_index: int) -> void:
-	if motion_reduced() or not is_visible_in_tree():
-		_rebuild_offer()
-		return
-	_offer_anim_busy = true
-	for index in 3:
-		if index != choice_index and _choice(index).visible:
-			_choice(index).call("fold_away", 0.18)
-	_choice(choice_index).call("stamp_punch")
-	var tween := create_tween()
-	tween.tween_interval(0.32)
-	tween.tween_property(_offer_layer, "modulate:a", 0.0, 0.16)
-	tween.tween_callback(_finish_choose_animation)
+	OfferCards._play_choose(self, choice_index)
 
 
 func _finish_choose_animation() -> void:
-	_offer_anim_busy = false
-	for index in 3:
-		_choice(index).call("reset_motion")
-	_rebuild_offer()
-	if is_visible_in_tree():
-		_offer_button.grab_focus()
+	OfferCards._finish_choose_animation(self)
 
 
 func _toast(text: String) -> void:
@@ -900,535 +556,6 @@ func niche_count(kind: int) -> int:
 	# row, so the child count would under-report the board.
 	return int(_presentation.get("slots_capacity" if kind == 1 else "spirits_capacity", 0))
 
-
-# --- inner drawing helpers --------------------------------------------------
-
-## A physical deck shares the candidate row's footprint while the worker settles.
-class DrawStack:
-	extends Control
-	const BACK_COUNT := 4
-	var _backs: Array[Control] = []
-	var _card_size := Vector2.ZERO
-	var _tween: Tween
-	var _shuffling := false
-
-	func _init() -> void:
-		name = "WaitingDeck"
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-		size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		for index in BACK_COUNT:
-			var back := DeckBack.new()
-			back.name = "DeckBack%d" % index
-			back.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			add_child(back)
-			IdeologyArt.attach_paper_shadow(back, 0.23 if index == BACK_COUNT - 1 else 0.12)
-			_backs.append(back)
-		set_card_size(Vector2(208, 276))
-
-	func set_card_size(card_size: Vector2) -> void:
-		if _card_size.is_equal_approx(card_size):
-			return
-		var resume := _shuffling
-		stop()
-		_card_size = card_size
-		custom_minimum_size = card_size
-		_layout()
-		if resume:
-			play(true)
-
-	func play(animate: bool) -> void:
-		stop()
-		if not animate:
-			return
-		_shuffling = true
-		var top := _backs.back() as Control
-		var rest := top.position
-		var rest_rotation := top.rotation
-		_tween = create_tween().set_loops()
-		_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-		_tween.tween_property(top, "position", rest + Vector2(_card_size.x * 0.12, -8), 0.65)
-		_tween.parallel().tween_property(top, "rotation", rest_rotation + 0.08, 0.65)
-		_tween.tween_property(top, "position", rest, 0.65)
-		_tween.parallel().tween_property(top, "rotation", rest_rotation, 0.65)
-
-	func stop() -> void:
-		_shuffling = false
-		if _tween != null and _tween.is_valid():
-			_tween.kill()
-		_tween = null
-		_layout()
-
-	func is_shuffling() -> bool:
-		return _shuffling
-
-	func _layout() -> void:
-		for index in _backs.size():
-			var back := _backs[index]
-			back.size = _card_size * 0.84
-			back.pivot_offset = back.size * 0.5
-			back.position = (_card_size - back.size) * 0.5 + Vector2(index * 2 - 3, -index * 2)
-			back.rotation = deg_to_rad(-5.0 + index * 2.0)
-			back.queue_redraw()
-
-
-## Paper, inset, stamped linework and emblem remain separate material layers.
-class DeckBack:
-	extends Control
-	func _draw() -> void:
-		if size.x < 20:
-			return
-		IdeologyArt.paper_style(0).draw(get_canvas_item(), Rect2(Vector2.ZERO, size))
-		var inset := maxf(8, size.x * 0.065)
-		var face := Rect2(Vector2.ZERO, size).grow(-inset)
-		IdeologyArt.paper_style(0, Color(0.27, 0.36, 0.29)).draw(get_canvas_item(), face)
-		var line := Color(0.87, 0.72, 0.42, 0.68)
-		draw_rect(face.grow(-6), line, false, 1.0)
-		draw_rect(face.grow(-10), Color(line, 0.20), false, 1.0)
-		var center := size * 0.5
-		var radius := size.x * 0.23
-		for side in [-1, 1]:
-			var y: float = center.y + side * size.y * 0.29
-			draw_line(Vector2(center.x - radius, y), Vector2(center.x + radius, y), line, 1, true)
-			draw_circle(Vector2(center.x, y), 3, line)
-		draw_circle(center + Vector2(0, 2), radius + 3, Color(0.05, 0.04, 0.02, 0.15))
-		draw_circle(center, radius, Color(0.91, 0.83, 0.65))
-		draw_arc(center, radius - 4, 0, TAU, 64, line.darkened(0.25), 1, true)
-		var emblem := IconCatalog.texture_for_key(&"hud.country.ideology")
-		if emblem != null:
-			var extent := Vector2.ONE * radius * 1.45
-			draw_texture_rect(emblem, Rect2(center - extent * 0.5, extent), false)
-
-
-## Section chrome is drawn at the section boundary so the difference is legible
-## before its rows enter the scroll viewport. Ordinary ideas get a clipped
-## vermilion bookmark; spirits get a forest ribbon with a centred gold crest.
-class SlotSectionChrome:
-	extends Control
-	var kind := 1
-
-	func _draw() -> void:
-		if size.x < 24.0 or size.y < 16.0:
-			return
-		if kind == 1:
-			var spine := Rect2(0.0, 3.0, 7.0, size.y - 6.0)
-			draw_rect(spine, Color(0.53, 0.15, 0.10, 0.84))
-			draw_rect(Rect2(7.0, 5.0, size.x - 7.0, 1.0),
-				Color(0.46, 0.29, 0.14, 0.34))
-			draw_line(Vector2(12.0, size.y - 7.0),
-				Vector2(size.x - 12.0, size.y - 7.0),
-				Color(0.46, 0.29, 0.14, 0.20), 1.0)
-			draw_colored_polygon(PackedVector2Array([
-				Vector2(0.0, 3.0), Vector2(7.0, 3.0), Vector2(7.0, 9.0),
-			]), Color(0.72, 0.52, 0.24, 0.64))
-			return
-		var inset := Rect2(2.0, 2.0, size.x - 4.0, size.y - 4.0)
-		draw_rect(inset, Color(0.10, 0.18, 0.12, 0.72))
-		draw_rect(inset.grow(-3.0), Color(0.79, 0.62, 0.30, 0.68),
-			false, 1.0)
-		draw_line(Vector2(18.0, inset.position.y + 7.0),
-			Vector2(inset.end.x - 18.0, inset.position.y + 7.0),
-			Color(0.89, 0.72, 0.39, 0.42), 1.0)
-		draw_line(Vector2(18.0, inset.end.y - 7.0),
-			Vector2(inset.end.x - 18.0, inset.end.y - 7.0),
-			Color(0.89, 0.72, 0.39, 0.26), 1.0)
-		var cx := size.x * 0.5
-		draw_line(Vector2(cx - 12.0, inset.position.y + 7.0),
-			Vector2(cx + 12.0, inset.position.y + 7.0),
-			Color(0.86, 0.68, 0.35, 0.72), 1.0)
-
-
-class ResonanceEmblem:
-	extends VBoxContainer
-	signal activated(school_id: String)
-	var school_id := ""
-	var _icon: TextureRect
-	var _count: Label
-	var _pips: HBoxContainer
-	var _pressing := false
-	var _press_pos := Vector2.ZERO
-
-	func configure(school: String) -> void:
-		school_id = school
-		mouse_filter = Control.MOUSE_FILTER_PASS
-		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		alignment = BoxContainer.ALIGNMENT_CENTER
-		add_theme_constant_override("separation", 1)
-		custom_minimum_size = Vector2(52, 0)
-		_icon = TextureRect.new()
-		_icon.texture = IdeologyArt.emblem_for(school)
-		_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		_icon.custom_minimum_size = Vector2(22, 22)
-		_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		add_child(_icon)
-		_count = IdeologyArt.label(IdeologyArt.school_name(school), 10,
-			IdeologyArt.school_color(school))
-		add_child(_count)
-		_pips = HBoxContainer.new()
-		_pips.visible = false
-		_pips.alignment = BoxContainer.ALIGNMENT_CENTER
-		_pips.add_theme_constant_override("separation", 4)
-		_pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		add_child(_pips)
-
-	func _gui_input(event: InputEvent) -> void:
-		if event is InputEventMouseButton:
-			var mouse := event as InputEventMouseButton
-			if mouse.button_index == MOUSE_BUTTON_LEFT:
-				if mouse.pressed:
-					_pressing = true
-					_press_pos = mouse.position
-				elif _pressing:
-					_pressing = false
-					if mouse.position.distance_to(_press_pos) <= 12.0:
-						activated.emit(school_id)
-						accept_event()
-
-	func set_compact(compact: bool) -> void:
-		_icon.custom_minimum_size = Vector2(18, 18) if compact else Vector2(22, 22)
-		custom_minimum_size.x = 38 if compact else 52
-		_count.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-		_pips.visible = false
-
-	func set_state(count: int, preview_count: int, tiers: Array[Dictionary]) -> void:
-		var school_label := IdeologyArt.school_name(school_id)
-		_count.text = "%s %d" % [school_label, count] if preview_count == count \
-			else "%s %d→%d" % [school_label, count, preview_count]
-		_count.add_theme_color_override("font_color", IdeologyArt.VERMILION
-			if preview_count != count else IdeologyArt.school_color(school_id))
-		for child in _pips.get_children():
-			_pips.remove_child(child)
-			child.queue_free()
-		var tips := PackedStringArray()
-		var any_active := false
-		for tier in tiers:
-			var pip := ColorRect.new()
-			pip.custom_minimum_size = Vector2(9, 9)
-			pip.pivot_offset = Vector2(4.5, 4.5)
-			# Diamonds read as inked seals; flat squares read as debug swatches.
-			pip.rotation = PI * 0.25
-			pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			var active := bool(tier.get("active", false))
-			var reach := preview_count >= int(tier.get("min_count", 99)) and not active
-			any_active = any_active or active
-			pip.color = IdeologyArt.VERMILION if active else (
-				Color(0.86, 0.67, 0.30, 0.9) if reach else Color(0.45, 0.36, 0.26, 0.30))
-			_pips.add_child(pip)
-			tips.append("%s%s" % ["● " if active else "○ ", String(tier.get("tooltip", ""))])
-		tooltip_text = "\n".join(tips)
-		_icon.modulate = Color.WHITE if any_active or count > 0 else Color(1, 1, 1, 0.45)
-
-	func celebrate() -> void:
-		pivot_offset = size * 0.5
-		var tween := create_tween()
-		tween.tween_property(self, "scale", Vector2(1.05, 1.05), 0.1)
-		tween.tween_property(self, "scale", Vector2.ONE, 0.3) \
-			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-
-
-## A collection entry is a physical card in the archive, not a text row. The
-## authored frame carries rarity; the face reserves its space for school,
-## current effect, a brass level seal and a full-width understanding track.
-class CollectionEntry:
-	extends Control
-	var _name: Label
-	var _effects: Label
-	var _emblem: TextureRect
-	var _footer: HBoxContainer
-	var _level_meter: Control
-	var _payload := {}
-	var _draggable := true
-	var _surface: CardSurface
-	var _face: MarginContainer
-	var _column: VBoxContainer
-	var _band: HBoxContainer
-	var _rarity := 1
-	var _hover_tween: Tween
-	var _status: Label
-	var _detail_model: Dictionary = {}
-	var _action_well: MarginContainer
-	var _head: HBoxContainer
-	var _compact := false
-	var _pressing := false
-	var _press_pos := Vector2.ZERO
-	var _press_moved := false
-
-	func setup(data: Dictionary) -> void:
-		_detail_model = data.get("detail_model", {})
-		_payload = data.get("payload", {}).duplicate()
-		_payload["activated"] = data.get("activated", Callable())
-		_payload["detail_requested"] = data.get("detail_requested", Callable())
-		_payload["locate_requested"] = data.get("locate_requested", Callable())
-		_draggable = bool(data.get("draggable", true))
-		_compact = bool(data.get("compact", false))
-		var compact := _compact
-		_rarity = clampi(int(data.get("rarity", 1)), 1, 3)
-		focus_mode = Control.FOCUS_ALL
-		mouse_filter = Control.MOUSE_FILTER_PASS
-		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		clip_contents = false
-		_surface = CardSurface.new()
-		_surface.rarity = _rarity
-		_surface.accent = ArtScript.school_color(String(data.get("school_id", "")))
-		_surface.compact = compact
-		_surface.rarity_glow = ArtScript.rarity_glow(_rarity)
-		_surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_surface.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		add_child(_surface)
-		_face = MarginContainer.new()
-		_face.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_face.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		# 纸面只保留统一内边距；文字、理解度和操作由同一列容器顺排。
-		for side in ["left", "top", "right", "bottom"]:
-			_face.add_theme_constant_override("margin_%s" % side, 18)
-		add_child(_face)
-		_column = VBoxContainer.new()
-		_column.add_theme_constant_override("separation", 10)
-		_column.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_face.add_child(_column)
-		_head = HBoxContainer.new()
-		_head.add_theme_constant_override("separation", 10)
-		_head.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_column.add_child(_head)
-		_emblem = TextureRect.new()
-		_emblem.texture = ArtScript.emblem_for(String(data.get("school_id", "")))
-		_emblem.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		_emblem.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		_emblem.custom_minimum_size = Vector2(36, 36)
-		_emblem.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_head.add_child(_emblem)
-		var identity := VBoxContainer.new()
-		identity.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		identity.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_head.add_child(identity)
-		_name = ArtScript.label(String(data.get("name", "")), 22,
-			ArtScript.INK, HORIZONTAL_ALIGNMENT_LEFT)
-		_name.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
-		_name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		identity.add_child(_name)
-		_status = ArtScript.label("", 15, ArtScript.VERMILION, HORIZONTAL_ALIGNMENT_LEFT)
-		identity.add_child(_status)
-		refresh_status(bool(data.get("pending", false)), int(data.get("location", 0)))
-		var edition := ArtScript.label(String(ArtScript.RARITY_NAMES[_rarity]),
-			15, ArtScript.rarity_accent(_rarity), HORIZONTAL_ALIGNMENT_RIGHT)
-		edition.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		_head.add_child(edition)
-		_effects = ArtScript.label("", 17, ArtScript.INK, HORIZONTAL_ALIGNMENT_LEFT)
-		_effects.text = "\n".join(data.get("effects", PackedStringArray()))
-		_effects.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		_effects.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_column.add_child(_effects)
-		_band = HBoxContainer.new()
-		_band.name = "LevelSealBand"
-		_band.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_band.add_theme_constant_override("separation", 8)
-		_column.add_child(_band)
-		var meter_data: Dictionary = data.get("level_progress", {})
-		meter_data["accent"] = ArtScript.GOLD_LEAF.lerp(
-			ArtScript.school_color(String(data.get("school_id", ""))), 0.12)
-		_level_meter = LevelMeterScript.new()
-		_level_meter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_level_meter.configure(meter_data, compact)
-		_band.add_child(_level_meter)
-		_action_well = MarginContainer.new()
-		_action_well.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_action_well.add_theme_constant_override("margin_top", 4)
-		_action_well.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		_column.add_child(_action_well)
-		_footer = HBoxContainer.new()
-		_footer.alignment = BoxContainer.ALIGNMENT_END
-		_footer.add_theme_constant_override("separation", 8)
-		_footer.size_flags_vertical = Control.SIZE_SHRINK_END
-		_footer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_footer.visible = false
-		_action_well.add_child(_footer)
-		_column.minimum_size_changed.connect(_queue_layout)
-
-		var tip_lines := PackedStringArray([String(data.get("name", ""))])
-		var detail := String(data.get("detail", "")).strip_edges()
-		if not detail.is_empty() and not detail.contains("."):
-			tip_lines.append(detail)
-		var effect_values: PackedStringArray = data.get("effects", PackedStringArray())
-		for effect in effect_values:
-			if not String(effect).strip_edges().is_empty():
-				tip_lines.append("· %s" % String(effect))
-		tooltip_text = String(data.get("tooltip", "\n".join(tip_lines)))
-		gui_input.connect(_on_input)
-		mouse_entered.connect(_set_hover.bind(true))
-		mouse_exited.connect(_set_hover.bind(false))
-		focus_entered.connect(_set_hover.bind(true))
-		focus_exited.connect(_set_hover.bind(false))
-		_apply_scaled_layout()
-
-	func footer() -> HBoxContainer:
-		return _footer
-
-	func refresh_status(pending: bool, location: int) -> void:
-		_status.text = "待生效" if pending else "推行中" if location == 1 else "民族精神" if location == 2 else ""
-		_status.visible = not _status.text.is_empty()
-		if not _detail_model.is_empty():
-			_detail_model["status"] = "待生效" if pending else "推行中" \
-				if location == 1 else "民族精神" if location == 2 else "尚未推行"
-
-	func refresh_support_details(supports: Array[Dictionary]) -> void:
-		if not _detail_model.is_empty():
-			_detail_model["supports"] = supports
-
-	func refresh_progress(data: Dictionary) -> void:
-		if _level_meter != null:
-			_level_meter.configure(data, _compact)
-		if not _detail_model.is_empty():
-			var progress := data.duplicate(false)
-			progress.erase("accent")
-			_detail_model["progress"] = progress
-
-	func refresh_card_data(data: Dictionary) -> void:
-		tooltip_text = String(data.get("tooltip", ""))
-		set_detail_model(data.get("detail_model", {}))
-		var effects: PackedStringArray = data.get("effects", PackedStringArray())
-		_effects.text = "\n".join(effects)
-		refresh_progress(data.get("level_progress", {}))
-
-	func level_meter() -> Control:
-		return _level_meter
-
-	func refresh_layout() -> void:
-		_apply_scaled_layout()
-
-	func _notification(what: int) -> void:
-		if what == NOTIFICATION_RESIZED:
-			_apply_scaled_layout()
-
-	func _queue_layout() -> void:
-		call_deferred("_apply_scaled_layout")
-
-	func _apply_scaled_layout() -> void:
-		if _face == null or _column == null or size.x < 1.0:
-			return
-		# 正文完整换行后决定卡高；操作始终位于理解度下方。
-		var required := ceilf(_column.get_combined_minimum_size().y + 36.0)
-		custom_minimum_size.y = maxf(208.0, required)
-
-	func _make_custom_tooltip(for_text: String) -> Object:
-		return ArtScript.detail_tooltip(for_text, _detail_model)
-
-	func set_detail_model(data: Dictionary) -> void:
-		_detail_model = data
-
-	func frame_path() -> String:
-		return ArtScript.PAPER_SHEET
-
-	func play_deal_in(delay := 0.0) -> void:
-		if not is_inside_tree() or UIAnimation.reduced_motion():
-			return
-		pivot_offset = size * 0.5
-		scale = Vector2(0.94, 0.94)
-		modulate.a = 0.0
-		var tween := create_tween().set_parallel(true)
-		tween.tween_interval(delay)
-		tween.tween_property(self, "modulate:a", 1.0, 0.24) \
-			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-		tween.tween_property(self, "scale", Vector2.ONE, 0.30) \
-			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-
-	func _set_hover(on: bool) -> void:
-		if _hover_tween != null and _hover_tween.is_valid():
-			_hover_tween.kill()
-		_hover_tween = create_tween().set_parallel(true)
-		_hover_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-		_hover_tween.tween_property(_surface, "hover_lift", 1.0 if on else 0.0, 0.15)
-		_hover_tween.tween_property(self, "self_modulate",
-			Color(1.035, 1.025, 0.985) if on else Color.WHITE, 0.15)
-
-	func _on_input(event: InputEvent) -> void:
-		if ArtScript.scroll_detail(event):
-			accept_event()
-			return
-		if event.is_action_pressed(&"ui_accept"):
-			_payload.get("activated", Callable()).call()
-			accept_event()
-			return
-		if event is InputEventMouseMotion:
-			if _pressing and (event as InputEventMouseMotion).position.distance_to(_press_pos) > 10.0:
-				_press_moved = true
-			return
-		if event is InputEventMouseButton:
-			var mouse := event as InputEventMouseButton
-			if mouse.button_index == MOUSE_BUTTON_RIGHT:
-				if mouse.pressed:
-					var locate_cb: Callable = _payload.get("locate_requested", Callable())
-					if locate_cb.is_valid():
-						locate_cb.call()
-						accept_event()
-				return
-			if mouse.button_index == MOUSE_BUTTON_LEFT:
-				if mouse.pressed:
-					_pressing = true
-					_press_pos = mouse.position
-					_press_moved = false
-				else:
-					var was_tap := _pressing and not _press_moved
-					_pressing = false
-					if mouse.double_click:
-						_payload.get("activated", Callable()).call()
-						accept_event()
-					elif was_tap:
-						var detail_cb: Callable = _payload.get("detail_requested", Callable())
-						if detail_cb.is_valid():
-							detail_cb.call()
-							accept_event()
-
-	func _get_drag_data(_at_position: Vector2) -> Variant:
-		if not _draggable or TouchUI.is_touch():
-			return null
-		var holder := Control.new()
-		var preview := NinePatchRect.new()
-		preview.texture = ArtScript.collection_frame_for(_rarity)
-		preview.size = Vector2(220, 148)
-		preview.position = -preview.size * 0.5
-		preview.patch_margin_left = 0
-		preview.patch_margin_right = 0
-		preview.patch_margin_top = 0
-		preview.patch_margin_bottom = 0
-		preview.rotation = -0.035
-		holder.add_child(preview)
-		var label := ArtScript.label(_name.text, 16, ArtScript.INK)
-		label.add_theme_font_override("font",
-			preload("res://assets/fonts/muyao/display_handwritten.tres"))
-		label.position = -preview.size * 0.5 + Vector2(18, 18)
-		label.size = Vector2(preview.size.x - 24, 24)
-		holder.add_child(label)
-		set_drag_preview(holder)
-		return _payload.duplicate()
-
-
-## Independent paper, edition edging and diffuse shadow layers.
-class CardSurface:
-	extends Control
-	var rarity := 1
-	var accent := Color(0.3, 0.22, 0.14)
-	var rarity_glow := Color(0.88, 0.79, 0.59, 0.20)
-	var compact := false
-	var hover_lift := 0.0:
-		set(value):
-			hover_lift = value
-			queue_redraw()
-
-	func _init() -> void:
-		ArtScript.attach_paper_shadow(self, 0.16)
-
-	func _draw() -> void:
-		if size.x < 20.0 or size.y < 20.0:
-			return
-		var rect := Rect2(Vector2.ZERO, size)
-		draw_style_box(ArtScript.paper_style(0.0, ArtScript.paper_tint(rarity)), rect)
-		if rarity >= 2:
-			draw_style_box(ArtScript.edition_style(rarity), rect)
-		# A school-coloured paper tab and ink rule are independent layers.
-		draw_style_box(ArtScript.paper_style(0.0, accent.lightened(0.12)),
-			Rect2(0, 16, 6, 40))
-		if hover_lift > 0.01:
-			draw_rect(rect.grow(-3), Color(accent, 0.35 * hover_lift), false, 1.0)
 
 # G5 responsibility adapters. Mutable state remains in this host.
 func _build_promotion_overlay() -> void:
@@ -1611,7 +738,7 @@ func _progress_data(ideology_id: int) -> Dictionary:
 	return _presentation_component._progress_data(self, ideology_id)
 
 func _support_details(live: Dictionary, location: int) -> Array[Dictionary]:
-	return _presentation_component._support_details(self, live, location)
+	return IdeologySupport._support_details(self, live, location)
 
 func _school_counts(extra_id: int) -> Dictionary:
 	return _presentation_component._school_counts(self, extra_id)

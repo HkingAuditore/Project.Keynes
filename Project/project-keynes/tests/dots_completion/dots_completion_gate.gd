@@ -78,12 +78,15 @@ const _DIRECT_WRITE_TARGETS: Array = [
 
 # 检查 flag registry 完整性时使用的目标 Resource 类型 + flag pattern
 const _CLIMATE_PROFILE_PATH: String = "res://scripts/data/climate_profile.gd"
+const _CLIMATE_MODELS_PATH: String = "res://scripts/data/climate_profile_models.gd"
 const _FEATURE_FLAGS_PATH: String = "res://scripts/data_core/feature_flags.gd"
 const _BASELINE_PATH: String = "res://tests/dots_completion/baseline.json"
-const _NATIVE_HOST_HEADER_PATH: String = "gdext/src/native_simulation_host.h"
-const _NATIVE_HOST_PERSISTENCE_PATH: String = "gdext/src/native_simulation_host_persistence.cpp"
+const _NATIVE_HOST_PUBLICATION_PATH: String = "gdext/src/native_simulation_host_publication.inc"
+const _NATIVE_HOST_SAVE_PATH: String = "gdext/src/native_simulation_host_persistence_section_write_bundle.inc"
+const _NATIVE_HOST_RESTORE_PATH: String = "gdext/src/native_simulation_host_persistence_section_runtime_authorities.inc"
 const _NATIVE_HOST_JOURNAL_PATH: String = "gdext/src/native_simulation_host_journal.cpp"
 const _WORLD_RUNTIME_HOST_PATH: String = "res://scripts/game/world_runtime_host.gd"
+const _WORLD_RUNTIME_ADAPTERS_PATH: String = "res://scripts/game/world_runtime_adapters.gd"
 const _ECONOMY_PERSISTENCE_PATH: String = "gdext/src/economy_runtime_persistence_codec.h"
 
 # 累积失败信息；len > 0 时以 exit 1 退出。
@@ -167,18 +170,14 @@ func _check_direct_writes(baseline: Dictionary) -> void:
 
 func _check_flag_registry() -> void:
 	print("─── (c) Flag registry 完整性 ──────────────────────")
-	# 步骤 1：从 climate_profile.gd 文本中扫描所有 `@export var use_xxx: bool`
-	var declared_flags: Array = _scan_export_use_flags(_CLIMATE_PROFILE_PATH)
-	if declared_flags.size() < 0:
-		_internal_errors.append("cannot scan %s" % _CLIMATE_PROFILE_PATH)
+	var previous_error_count := _internal_errors.size()
+	var declaration_pattern := "^\\s*@export\\s+var\\s+(use_[a-z_]+)\\s*:\\s*bool"
+	var declared_flags := _scan_required_flags(_CLIMATE_PROFILE_PATH, declaration_pattern)
+	declared_flags.append_array(_scan_required_flags(_CLIMATE_MODELS_PATH, declaration_pattern))
+	var registered_flags := _scan_required_flags(_FEATURE_FLAGS_PATH, "name\\s*=\\s*&\"(use_[a-z_]+)\"")
+	if _internal_errors.size() != previous_error_count:
 		return
 	print("declared on ClimateProfile: %d flags" % declared_flags.size())
-
-	# 步骤 2：从 feature_flags.gd 文本中扫描所有 `name = &"use_xxx"` 注册项
-	var registered_flags: Array = _scan_registered_flags(_FEATURE_FLAGS_PATH)
-	if registered_flags.size() < 0:
-		_internal_errors.append("cannot scan %s" % _FEATURE_FLAGS_PATH)
-		return
 	print("registered in FLAGS:        %d flags" % registered_flags.size())
 
 	# 步骤 3：每个 declared 必须在 registered 里命中
@@ -206,17 +205,21 @@ func _check_flag_registry() -> void:
 
 func _check_authority_contract() -> void:
 	print("─── (d) D12 authority / D7 journal contract ─────")
-	var host_header := _read_repo_text(_NATIVE_HOST_HEADER_PATH)
-	var host_persistence := _read_repo_text(_NATIVE_HOST_PERSISTENCE_PATH)
+	var host_publication := _read_repo_text(_NATIVE_HOST_PUBLICATION_PATH)
+	var host_save := _read_repo_text(_NATIVE_HOST_SAVE_PATH)
+	var host_restore := _read_repo_text(_NATIVE_HOST_RESTORE_PATH)
 	var host_journal := _read_repo_text(_NATIVE_HOST_JOURNAL_PATH)
-	var world_host := _read_text(_WORLD_RUNTIME_HOST_PATH)
+	var world_host := _read_required_text(_WORLD_RUNTIME_HOST_PATH)
+	var world_adapters := _read_required_text(_WORLD_RUNTIME_ADAPTERS_PATH)
 	var economy_persistence := _read_repo_text(_ECONOMY_PERSISTENCE_PATH)
-	if host_header == "" or host_persistence == "" or host_journal == "" \
-		or world_host == "" or economy_persistence == "":
+	if world_host.is_empty() or world_adapters.is_empty():
+		return
+	if host_publication == "" or host_save == "" or host_restore == "" or host_journal == "" \
+		or economy_persistence == "":
 		_internal_errors.append("authority contract source file missing")
 		return
 
-	var mask_block := _extract_implemented_mask_block(host_header)
+	var mask_block := _extract_implemented_mask_block(host_publication)
 	var mask_ok := mask_block != "" \
 		and mask_block.contains("runtime_domain_mask(RuntimeDomainId::COMMIT)") \
 		and mask_block.contains("runtime_domain_mask(RuntimeDomainId::CLIMATE)") \
@@ -234,8 +237,8 @@ func _check_authority_contract() -> void:
 		and startup.contains('"simulation_thread_mode": "ACTIVE"')
 	_expect_gate_contract("(d) production worker default request is exactly 0xFFF", request_ok)
 
-	var d7_marker_ok := host_persistence.contains("D7_SECTION_MARKER") \
-		and host_persistence.contains("\"D7T1\"") \
+	var d7_marker_ok := host_save.contains("D7_SECTION_MARKER") \
+		and host_restore.contains("\"D7T1\"") \
 		and host_journal.contains("constexpr uint32_t D7_TRANSACTION_MAGIC") \
 		and host_journal.contains("d7_append_u32(out, D7_TRANSACTION_MAGIC)") \
 		and economy_persistence.contains("SAVE_SECTION_FISCAL_PEER = 30")
@@ -270,6 +273,13 @@ func _read_repo_text(relative_path: String) -> String:
 		"\\", "/").trim_suffix("/")
 	var repo_root := project_root.path_join("..").path_join("..").simplify_path()
 	return _read_text(repo_root.path_join(relative_path))
+
+
+func _read_required_text(res_path: String) -> String:
+	var source := _read_text(res_path)
+	if source.is_empty():
+		_internal_errors.append("cannot read required source %s" % res_path)
+	return source
 
 
 # ─── (e) / (f) Runtime soak placeholder ────────────────────────────────
@@ -337,46 +347,22 @@ func _count_regex_matches(res_path: String, pattern: String) -> int:
 	return n
 
 
-# 从 climate_profile.gd（或同类 Resource 源文件）扫描所有
-# `@export var use_<name>: bool` 声明，返回 use_<name> 字符串数组。
-func _scan_export_use_flags(res_path: String) -> Array:
-	var f: FileAccess = FileAccess.open(res_path, FileAccess.READ)
-	if f == null:
+# 逐行收集 ClimateProfile 声明或注册表中的 use_<name>。
+func _scan_required_flags(res_path: String, pattern: String) -> Array:
+	var source := _read_required_text(res_path)
+	if source.is_empty():
 		return []
 	var rx: RegEx = RegEx.new()
-	if rx.compile("^\\s*@export\\s+var\\s+(use_[a-z_]+)\\s*:\\s*bool") != OK:
-		f.close()
+	if rx.compile(pattern) != OK:
+		_internal_errors.append("cannot compile flag scan pattern for %s" % res_path)
 		return []
 	var found: Array = []
-	while not f.eof_reached():
-		var line: String = f.get_line()
+	for line in source.split("\n"):
 		var m: RegExMatch = rx.search(line)
 		if m != null:
 			var name: String = m.get_string(1)
 			if not found.has(name):
 				found.append(name)
-	f.close()
-	return found
-
-
-# 从 feature_flags.gd 扫描所有 `name = &"use_<name>"` 注册项。
-func _scan_registered_flags(res_path: String) -> Array:
-	var f: FileAccess = FileAccess.open(res_path, FileAccess.READ)
-	if f == null:
-		return []
-	var rx: RegEx = RegEx.new()
-	if rx.compile("name\\s*=\\s*&\"(use_[a-z_]+)\"") != OK:
-		f.close()
-		return []
-	var found: Array = []
-	while not f.eof_reached():
-		var line: String = f.get_line()
-		var m: RegExMatch = rx.search(line)
-		if m != null:
-			var name: String = m.get_string(1)
-			if not found.has(name):
-				found.append(name)
-	f.close()
 	return found
 
 

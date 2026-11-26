@@ -461,7 +461,9 @@ func _check_cell_field_variant() -> void:
 			+ " order as desktop (land below, water above)")
 
 	# ⑧ 注入点：宏必须跟随**陆地 program 的数据源**，不能自己判平台/画质。
-	_check_injection_point(water_renderer, field_expanded)
+	var shader_variants := FileAccess.get_file_as_string(
+		"res://scripts/rendering/renderer_shader_variants.gd")
+	_check_injection_point(shader_variants, field_expanded)
 
 
 ## 宏的注入点契约。renderer 侧那一行由并行任务落地（本文件不拥有那个文件）：

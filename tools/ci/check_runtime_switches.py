@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import re
 from check_cpp_deps import NON_CODE
+from cpp_source import read_cpp_source
 
 ROOT = Path(__file__).resolve().parents[2]
 HEADER = "gdext/src/runtime_switch_registry.h"
@@ -30,7 +31,7 @@ def inspect(root: Path, baseline: dict) -> tuple[list[str], dict]:
     if len(set(faults)) != len(faults):
         errors.append("duplicate fault names")
     host = root / "gdext/src/native_simulation_host.cpp"
-    host_source = host.read_text() if host.exists() else ""
+    host_source = read_cpp_source(host) if host.exists() else ""
     tags_fn = re.search(r'const char \*runtime_domain_fault_tag\([^{}]*\)[^{]*\{[\s\S]*?\n}', host_source)
     tags = re.findall(r'return "([\w_]+)";', tags_fn[0]) if tags_fn else []
     for tag in tags:
@@ -45,7 +46,7 @@ def inspect(root: Path, baseline: dict) -> tuple[list[str], dict]:
         if path.suffix not in {".cpp", ".h"}:
             continue
         rel = path.relative_to(root).as_posix()
-        source = path.read_text()
+        source = read_cpp_source(path)
         code = mask(source)
         if rel != IMPLEMENTATION:
             raw[rel] += len(re.findall(r"\bgetenv\b", code))

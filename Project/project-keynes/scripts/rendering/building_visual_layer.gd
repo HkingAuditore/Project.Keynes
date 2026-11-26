@@ -1,5 +1,9 @@
 class_name BuildingVisualLayer
 extends Node2D
+
+const BuildingCatalogUpload = preload("res://scripts/rendering/building_visual_catalog_upload.gd")
+const BuildingChunkUpload = preload("res://scripts/rendering/building_visual_chunk_upload.gd")
+const BuildingMaterialState = preload("res://scripts/rendering/building_visual_material_state.gd")
 const FogDrawBounds = preload("res://scripts/rendering/fog_draw_bounds.gd")
 const BuildingVisualAssets = preload("res://scripts/rendering/building_visual_assets.gd")
 
@@ -224,103 +228,7 @@ func _configure_cache() -> void:
 ## with the square root of its workforce) and its build grade (the newest
 ## construction material it needs, which caps how modern its lot may look).
 func configure_catalog(catalog: Dictionary) -> Dictionary:
-	var ids := PackedStringArray(catalog.get("building_type_ids", PackedStringArray()))
-	var kinds := PackedInt32Array(catalog.get("building_kinds", PackedInt32Array()))
-	var sectors := PackedInt32Array(catalog.get(
-		"building_economic_sectors", PackedInt32Array()))
-	var offsets := PackedInt32Array(catalog.get(
-		"building_semantic_tag_offsets", PackedInt32Array()))
-	var tags := PackedStringArray(catalog.get(
-		"building_semantic_tags", PackedStringArray()))
-	var table: FamilyTableScript = FamilyTableScript.load_default()
-	_type_to_archetype.resize(ids.size())
-	_type_to_family.resize(ids.size())
-	_type_to_scale.resize(ids.size())
-	_type_to_grade.resize(ids.size())
-	var unresolved := PackedStringArray()
-	if kinds.size() != ids.size() or sectors.size() != ids.size() \
-			or offsets.size() != ids.size() + 1 or offsets.is_empty() \
-			or offsets[0] != 0 or offsets[-1] != tags.size():
-		_catalog_ready = false
-		return {"ok": false, "reason": "building_visual_catalog_shape_invalid"}
-	if table == null or table.family_ids() != PackedStringArray(FAMILY_NAMES):
-		_catalog_ready = false
-		return {"ok": false, "reason": "building_visual_family_table_invalid"}
-	var climate_idx := PackedInt32Array(catalog.get(
-		"building_production_climate_profile_indices", PackedInt32Array()))
-	var climate_ids := PackedStringArray(catalog.get(
-		"production_climate_profile_ids", PackedStringArray()))
-	var resource_offsets := PackedInt32Array(catalog.get(
-		"building_resource_offsets", PackedInt32Array()))
-	var resource_refs := PackedInt32Array(catalog.get(
-		"building_production_resource_ids", PackedInt32Array()))
-	var resource_names := PackedStringArray(catalog.get(
-		"building_resource_ids", PackedStringArray()))
-	var chains := PackedStringArray(catalog.get(
-		"building_industry_chain_ids", PackedStringArray()))
-	var output_offsets := PackedInt32Array(catalog.get(
-		"building_output_offsets", PackedInt32Array()))
-	var output_goods := PackedInt32Array(catalog.get(
-		"building_output_good_ids", PackedInt32Array()))
-	var good_names := PackedStringArray(catalog.get("good_ids", PackedStringArray()))
-	var owner_slots := PackedInt64Array(catalog.get("building_owner_slots", PackedInt64Array()))
-	var employee_offsets := PackedInt32Array(catalog.get(
-		"building_employee_offsets", PackedInt32Array()))
-	var employee_slots := PackedInt64Array(catalog.get(
-		"building_employee_slots", PackedInt64Array()))
-	var construction_offsets := PackedInt32Array(catalog.get(
-		"building_construction_offsets", PackedInt32Array()))
-	var construction_goods := PackedInt32Array(catalog.get(
-		"building_construction_good_ids", PackedInt32Array()))
-	var sector_names := ["agriculture", "extractive", "manufacturing", "energy", "knowledge", "service"]
-	var sources := {}
-	var family_counts := PackedInt32Array()
-	family_counts.resize(FAMILY_NAMES.size())
-	family_counts.fill(0)
-	for i in ids.size():
-		var type_tags := tags.slice(offsets[i], offsets[i + 1])
-		var climate := ""
-		if i < climate_idx.size() and climate_idx[i] >= 0 and climate_idx[i] < climate_ids.size():
-			climate = climate_ids[climate_idx[i]]
-		var resources := PackedStringArray()
-		if resource_offsets.size() == ids.size() + 1:
-			for edge in range(resource_offsets[i], resource_offsets[i + 1]):
-				var ref := resource_refs[edge] if edge < resource_refs.size() else -1
-				if ref >= 0 and ref < resource_names.size():
-					resources.append(resource_names[ref])
-		var outputs := _csr_names(output_offsets, output_goods, good_names, i, ids.size())
-		var sector: String = sector_names[sectors[i]] \
-			if sectors[i] >= 0 and sectors[i] < sector_names.size() else ""
-		var resolved := table.resolve(ids[i], sector, kinds[i], type_tags, climate,
-			resources, chains[i] if i < chains.size() else "", outputs)
-		var family := int(resolved.family)
-		var source := String(resolved.source)
-		if family < 0:
-			# Unmatched types fall back to their sector's generic family.
-			family = FALLBACK_FAMILY_BY_ARCHETYPE[5 if kinds[i] == 2 else clampi(sectors[i], 0, 4)]
-			source = "fallback"
-		sources[source] = int(sources.get(source, 0)) + 1
-		family_counts[family] += 1
-		_type_to_family[i] = family
-		_type_to_archetype[i] = table.archetype_of(family)
-		var slots := int(owner_slots[i]) if i < owner_slots.size() else 1
-		if employee_offsets.size() == ids.size() + 1:
-			for edge in range(employee_offsets[i], employee_offsets[i + 1]):
-				slots += int(employee_slots[edge]) if edge < employee_slots.size() else 0
-		_type_to_scale[i] = clampi(roundi(8.0 * sqrt(float(maxi(1, slots)))), 8, 255)
-		_type_to_grade[i] = table.grade_for(_csr_names(
-			construction_offsets, construction_goods, good_names, i, ids.size()).slice(0, 1)) \
-			if construction_offsets.size() == ids.size() + 1 else 255
-		if _type_to_archetype[i] < 0 or _type_to_archetype[i] >= ARCHETYPE_COUNT:
-			unresolved.append(ids[i])
-	_catalog_ready = unresolved.is_empty()
-	_diagnostics.catalog_types = ids.size()
-	_diagnostics.catalog_unresolved = unresolved.size()
-	_diagnostics.family_sources = sources
-	return {"ok": _catalog_ready,
-		"reason": "" if _catalog_ready else "building_visual_catalog_unresolved",
-		"type_count": ids.size(), "unresolved_ids": unresolved,
-		"family_sources": sources, "family_counts": family_counts}
+	return BuildingCatalogUpload.configure_catalog(self, catalog)
 
 
 static func _csr_names(offsets: PackedInt32Array, refs: PackedInt32Array,
@@ -538,213 +446,41 @@ func _process(_delta: float) -> void:
 
 
 func _configure_macro() -> void:
-	if _world == null or _macro_quad == null:
-		return
-	var bounds := _world.world_bounds
-	var quad := QuadMesh.new()
-	quad.size = bounds.size
-	_macro_quad.mesh = quad
-	_macro_quad.position = bounds.get_center()
-	var dims := _world.lut_dims
-	if dims.x <= 0 or dims.y <= 0:
-		dims = Vector2i(maxi(1, mini(_map.cell_count(), 2048)),
-			maxi(1, ceili(float(_map.cell_count()) / 2048.0)))
-	_macro_image = Image.create(dims.x, dims.y, false, Image.FORMAT_RGBA8)
-	_macro_image.fill(Color.TRANSPARENT)
-	_macro_texture = ImageTexture.create_from_image(_macro_image)
-	_macro_material.set_shader_parameter("building_macro_lut", _macro_texture)
-	_macro_material.set_shader_parameter("world_size", bounds.size)
-	_macro_material.set_shader_parameter("hex_size", _hex_size)
-	_configure_macro_index_high_texture()
+	BuildingChunkUpload._configure_macro(self)
 
-
-## The shared map index atlas stores only the low 16 bits in G/B. Building Macro
-## supports the 500x400 target by adding one R8 high-byte texture. The source is
-## the bake-time cell CSR, so this cold build never scans HexCell objects.
 func _configure_macro_index_high_texture() -> void:
-	if _world == null or _world.derived_size.x <= 0 or _world.derived_size.y <= 0:
-		return
-	var pixel_count := _world.derived_size.x * _world.derived_size.y
-	var first := _world.cell_first_px_arr
-	var counts := _world.cell_px_count_arr
-	var flat := _world.flat_px_indices_arr
-	var cell_count := _map.cell_count() if _map != null else 0
-	var bytes := _encode_macro_index_high_bytes(
-		cell_count, first, counts, flat, pixel_count)
-	var image := Image.create_from_data(_world.derived_size.x,
-		_world.derived_size.y, false, Image.FORMAT_R8, bytes)
-	_macro_index_high_texture = ImageTexture.create_from_image(image)
-	if _macro_material != null:
-		_macro_material.set_shader_parameter(
-			"cell_index_high_atlas", _macro_index_high_texture)
-
+	BuildingChunkUpload._configure_macro_index_high_texture(self)
 
 static func _encode_macro_index_high_bytes(cell_count: int,
 		first: PackedInt32Array, counts: PackedInt32Array,
 		flat: PackedInt32Array, pixel_count: int) -> PackedByteArray:
-	return BuildingVisualAssets._encode_macro_index_high_bytes(cell_count, first, counts, flat, pixel_count)
-
+	return BuildingChunkUpload._encode_macro_index_high_bytes(cell_count, first, counts, flat, pixel_count)
 
 func _update_macro_cell(cell: int, row: Dictionary) -> void:
-	if _macro_image == null or _world == null:
-		return
-	var dims := _world.lut_dims
-	if dims.x <= 0 or dims.y <= 0:
-		return
-	var x := cell % dims.x
-	var y := cell / dims.x
-	if row.is_empty():
-		_macro_image.set_pixel(x, y, Color.TRANSPARENT)
-		return
-	var aggregate := _aggregate_archetypes(row)
-	var counts: PackedInt64Array = aggregate.counts
-	var total: int = int(aggregate.total)
-	var dominant := 0
-	for a in range(1, ARCHETYPE_COUNT):
-		if counts[a] > counts[dominant]:
-			dominant = a
-	var density := clampf(float(_floor_log2(1 + total)) / 15.0, 0.0, 1.0)
-	var tier := int(row.get("settlement_tier", 255))
-	if tier >= 1 and tier <= 7:
-		density = maxf(density, float(tier) / 8.0)
-	var era := clampi(int(row.get("observed_era_index", -1)), 0, 10)
-	_macro_image.set_pixel(x, y, Color(density, float(dominant) / 255.0,
-		float(era) / 255.0, 1.0))
+	BuildingChunkUpload._update_macro_cell(self, cell, row)
 
-
-## Residency is chosen natively from per-chunk bounds of non-empty chunks, so a
-## camera move costs one call instead of a scan over every known cell.
 func _refresh_resident_chunks() -> void:
-	if _map == null or _visual_cache == null or _camera_rect.size == Vector2.ZERO:
-		return
-	if _camera_zoom < 0.46:
-		_clear_chunks()
-		return
-	var limit := MAX_RESIDENT_WEB if OS.has_feature("web") else MAX_RESIDENT_DESKTOP
-	var ordered: PackedInt32Array = _visual_cache.chunks_in_rect(
-		_camera_rect.grow(_hex_size * 18.0), _camera_center, limit)
-	var wanted := {}
-	for chunk_id in ordered:
-		wanted[chunk_id] = true
-		if not _chunk_nodes.has(chunk_id):
-			_enqueue_upload(chunk_id)
-	for raw_chunk in _chunk_nodes.keys():
-		if not wanted.has(int(raw_chunk)):
-			_remove_chunk(int(raw_chunk))
-
+	BuildingChunkUpload._refresh_resident_chunks(self)
 
 func _report_native_unavailable(reason: String) -> void:
-	if _native_path_warning_emitted:
-		return
-	_native_path_warning_emitted = true
-	push_warning("[building-visual] native layout cache unavailable (%s); geometry is disabled until the extension is rebuilt" % reason)
+	BuildingChunkUpload._report_native_unavailable(self, reason)
 
-
-## Concatenates the chunk's cached cells (native memcpy) and swaps the buffers
-## into the chunk's existing MultiMeshes. No layout work runs here.
 func _upload_chunk(chunk_id: int) -> void:
-	if _visual_cache == null or _camera_zoom < 0.46:
-		return
-	var begin_usec := Time.get_ticks_usec()
-	_upload_chunk_buffers(chunk_id)
-	var elapsed := float(Time.get_ticks_usec() - begin_usec) / 1000.0
-	_diagnostics.last_chunk_upload_ms = elapsed
-	_diagnostics.max_chunk_upload_ms = maxf(float(_diagnostics.max_chunk_upload_ms), elapsed)
-
+	BuildingChunkUpload._upload_chunk(self, chunk_id)
 
 func _upload_chunk_buffers(chunk_id: int) -> void:
-	var current := int(_chunk_instance_counts.get(chunk_id, 0))
-	var cap := maxi(0, int(BODY_CAP[_visual_quality])
-		- (int(_diagnostics.body_instances) - current))
-	var result: Dictionary = _visual_cache.build_chunk(chunk_id, cap)
-	if not bool(result.get("ok", false)):
-		_diagnostics.native_failures = int(_diagnostics.native_failures) + 1
-		_diagnostics.last_native_reason = String(result.get("reason", ""))
-		return
-	var buffer := PackedFloat32Array(result.get("buffer", PackedFloat32Array()))
-	var instance_count := int(result.get("instance_count", 0))
-	var decal_buffer := PackedFloat32Array(result.get("decal_buffer", PackedFloat32Array()))
-	var decal_count := int(result.get("decal_instance_count", 0))
-	_diagnostics.last_chunk_instance_count = instance_count
-	_diagnostics.last_chunk_decal_count = decal_count
-	_diagnostics.last_chunk_lot_count = int(result.get("lot_count", 0))
-	_diagnostics.last_chunk = chunk_id
-	_diagnostics.chunk_uploads = int(_diagnostics.chunk_uploads) + 1
-	if instance_count <= 0 or buffer.size() < instance_count * 16:
-		_remove_chunk(chunk_id)
-		_recount_instances()
-		return
-	var nodes: Dictionary = _chunk_nodes.get(chunk_id, {})
-	_put_batch(nodes, "body", "Body", _body_material, buffer, instance_count, null,
-		Z_BAND_BODY, FogDrawBounds.Kind.BUILDING_BODY)
-	var detailed := _visual_quality > 0
-	if detailed and decal_count > 0 and decal_buffer.size() >= decal_count * 16:
-		_put_batch(nodes, "decal", "GroundDecal", _decal_material,
-			decal_buffer, decal_count, null, Z_BAND_DECAL, FogDrawBounds.Kind.BUILDING_DECAL)
-	else:
-		_drop_batch(nodes, "decal")
-	if detailed and not OS.has_feature("web"):
-		# 投影必须留在贴花那一层（贴着地面、压在建筑主体之下）。跟着 body 一起
-		# 抬到 2 会让深色壳体刷在屋顶上。
-		_put_batch(nodes, "shadow", "Shadow", _shadow_material,
-			buffer, instance_count, _shadow_hull_mesh, Z_BAND_SHADOW,
-			FogDrawBounds.Kind.BUILDING_SHADOW, nodes.body.multimesh)
-	else:
-		_drop_batch(nodes, "shadow")
-	_chunk_nodes[chunk_id] = nodes
-	_chunk_instance_counts[chunk_id] = instance_count
-	_recount_instances()
-
+	BuildingChunkUpload._upload_chunk_buffers(self, chunk_id)
 
 func _put_batch(nodes: Dictionary, key: String, node_name: String, material: Material,
 		buffer: PackedFloat32Array, instance_count: int, mesh: Mesh,
 		layer_z: int, kind: FogDrawBounds.Kind, same_geometry: MultiMesh = null) -> void:
-	var node := nodes.get(key) as MultiMeshInstance2D
-	if is_instance_valid(node) and node.multimesh != null:
-		node.multimesh.instance_count = instance_count
-		FogDrawBounds.upload(node.multimesh, buffer, kind, same_geometry)
-		return
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_2D
-	mm.use_colors = true
-	mm.use_custom_data = true
-	mm.mesh = mesh if mesh != null else _quad_mesh
-	mm.instance_count = instance_count
-	FogDrawBounds.upload(mm, buffer, kind, same_geometry)
-	node = MultiMeshInstance2D.new()
-	node.name = node_name
-	node.multimesh = mm
-	node.material = material
-	node.z_as_relative = false
-	node.z_index = layer_z
-	add_child(node)
-	nodes[key] = node
-
+	BuildingChunkUpload._put_batch(self, nodes, key, node_name, material, buffer, instance_count, mesh, layer_z, kind, same_geometry)
 
 func _drop_batch(nodes: Dictionary, key: String) -> void:
-	var node = nodes.get(key)
-	if node != null and is_instance_valid(node):
-		node.queue_free()
-	nodes.erase(key)
-
+	BuildingChunkUpload._drop_batch(self, nodes, key)
 
 func _aggregate_archetypes(row: Dictionary) -> Dictionary:
-	var counts := PackedInt64Array()
-	counts.resize(ARCHETYPE_COUNT)
-	counts.fill(0)
-	var types := PackedInt32Array(row.get("type_indices", PackedInt32Array()))
-	var source_counts := PackedInt64Array(row.get("counts", PackedInt64Array()))
-	var total := 0
-	for i in mini(types.size(), source_counts.size()):
-		var type_idx := types[i]
-		if type_idx < 0 or type_idx >= _type_to_archetype.size():
-			continue
-		var archetype := int(_type_to_archetype[type_idx])
-		if archetype >= ARCHETYPE_COUNT:
-			continue
-		counts[archetype] += source_counts[i]
-		total += int(source_counts[i])
-	return {"counts": counts, "total": total}
+	return BuildingChunkUpload._aggregate_archetypes(self, row)
 
 
 func _enqueue_upload(chunk_id: int) -> void:
@@ -818,176 +554,29 @@ func _push_lod_fraction() -> void:
 
 
 func _rebind_world_textures() -> void:
-	if _world == null:
-		return
-	var materials := [_body_material, _shadow_material, _decal_material]
-	for material in materials:
-		if material == null:
-			continue
-		material.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
-		material.set_shader_parameter("enum_lut", _world.enum_lut_tex)
-		material.set_shader_parameter("lut_dims", Vector2(_world.lut_dims))
-		material.set_shader_parameter("cell_count",
-			float(_map.cell_count()) if _map != null else 1.0)
-	if _body_material != null:
-		_body_material.set_shader_parameter("weather_lut", _world.weather_lut_tex)
-	if _decal_material != null:
-		_decal_material.set_shader_parameter("weather_lut", _world.weather_lut_tex)
-	if _macro_material != null:
-		_macro_material.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
-		if _macro_index_high_texture != null:
-			_macro_material.set_shader_parameter(
-				"cell_index_high_atlas", _macro_index_high_texture)
-		_macro_material.set_shader_parameter("enum_lut", _world.enum_lut_tex)
-		_macro_material.set_shader_parameter("lut_dims", Vector2(_world.lut_dims))
-		if _world.enum_atlas_tex != null:
-			_macro_material.set_shader_parameter("atlas_pixel_size", Vector2(
-				1.0 / maxf(1.0, _world.enum_atlas_tex.get_width()),
-				1.0 / maxf(1.0, _world.enum_atlas_tex.get_height())))
-	var bounds := _world.world_bounds
-	var daylight_materials := [_body_material, _shadow_material, _decal_material,
-		_macro_material]
-	for material in daylight_materials:
-		if material == null:
-			continue
-		material.set_shader_parameter("world_origin", bounds.position)
-		material.set_shader_parameter("world_size", Vector2(
-			maxf(bounds.size.x, 0.0001), maxf(bounds.size.y, 0.0001)))
-		material.set_shader_parameter("wrap_origin_x", 0.0)
-		material.set_shader_parameter("wrap_period_x", _world.wrap_period_x)
-	_cloud_shadow_wrap_origin_uv = (0.0 - bounds.position.x) / maxf(bounds.size.x, 0.0001)
-	_cloud_shadow_wrap_period_uv = _world.wrap_period_x / maxf(bounds.size.x, 0.0001)
-	_sync_terrain_textures()
-	_push_material_state()
-	_push_cloud_shadow_uniforms()
-
+	BuildingMaterialState._rebind_world_textures(self)
 
 func _push_material_state() -> void:
-	for material in [_body_material, _shadow_material, _decal_material]:
-		if material != null:
-			material.set_shader_parameter("camera_zoom", _camera_zoom)
-			material.set_shader_parameter("visual_quality", _visual_quality)
-	if _shadow_material != null:
-		_shadow_material.set_shader_parameter("shadow_strength",
-			0.0 if OS.has_feature("web") else float(SHADOW_STRENGTH[_visual_quality]))
-	if _macro_material != null:
-		_macro_material.set_shader_parameter("camera_zoom", _camera_zoom)
-		# The macro pass now gates its terrain lighting on the same quality tier.
-		_macro_material.set_shader_parameter("visual_quality", _visual_quality)
-	_push_lod_fraction()
-	_set_tod_parameter("season_phase", _season_phase)
-	_set_tod_parameter("day_phase", _day_phase)
-	_set_tod_parameter("axial_tilt_rad", _axial_tilt_rad)
-	_set_tod_parameter("day_night_enabled", _day_night_enabled)
-	_set_tod_parameter("tod_debug_sun_position_enabled",
-		_tod_debug_sun_position_enabled)
-	_set_tod_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
-	_set_tod_parameter("tod_debug_sun_height_scale",
-		_tod_debug_sun_height_scale)
-	_set_tod_parameter("tod_sun_dir", _tod_sun_dir)
-	_set_tod_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
-	_set_tod_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
-	_set_tod_parameter("tod_exposure", _tod_exposure, false)
+	BuildingMaterialState._push_material_state(self)
 
-
-## [building-terrain-light 2026-10-18] 高画质建筑共享地形光照：地表法线（body/decal 在
-## vertex 每实例一次；macro 是整图 quad，只能逐像素）与 8 方向 horizon GI（fragment 逐像素）。
-## 这里只做纹理绑定与参数同步，档位门控在 shader 里按 visual_quality >= 2 短路，所以低/中
-## 画质的材质与接入前完全一致。数据源与 ShrubLayer / ResourceVisualLayer 是同一个 world +
-## 同一个地形材质，避免出现"屋顶按一套 horizon 算、脚下地形按另一套算"。
 func set_terrain_lighting(source: ShaderMaterial) -> void:
-	_sync_terrain_textures()
-	if source == null:
-		return
-	for name in TERRAIN_LIGHTING_PARAMS:
-		var value: Variant = source.get_shader_parameter(name)
-		if value == null:
-			continue
-		for material in [_body_material, _decal_material, _macro_material]:
-			if material != null:
-				material.set_shader_parameter(name, value)
-
+	BuildingMaterialState.set_terrain_lighting(self, source)
 
 func set_cloud_shadow_field(texture: Texture2D, direct_enabled: bool,
 		wrap_origin_uv: float, wrap_period_uv: float) -> void:
-	var variant_changed := _cloud_shadow_direct != direct_enabled
-	_cloud_shadow_direct = direct_enabled
-	if texture != null:
-		_cloud_shadow_texture = texture
-	_cloud_shadow_wrap_origin_uv = wrap_origin_uv
-	_cloud_shadow_wrap_period_uv = maxf(wrap_period_uv, 0.0)
-	if variant_changed:
-		_apply_cloud_shadow_shader_variants()
-	_push_cloud_shadow_uniforms()
-
+	BuildingMaterialState.set_cloud_shadow_field(self, texture, direct_enabled, wrap_origin_uv, wrap_period_uv)
 
 func _apply_cloud_shadow_shader_variants() -> void:
-	for entry in [[_body_material, _body_shader_source],
-			[_shadow_material, _shadow_shader_source],
-			[_decal_material, _decal_shader_source],
-			[_macro_material, _macro_shader_source]]:
-		_assign_shader_variant(entry[0], entry[1])
-
+	BuildingMaterialState._apply_cloud_shadow_shader_variants(self)
 
 func _push_cloud_shadow_uniforms() -> void:
-	for material in [_body_material, _shadow_material, _decal_material, _macro_material]:
-		if material == null or material.shader == null \
-				or not material.shader.code.contains("#define PK_CLOUD_SHADOW_DIRECT"):
-			continue
-		if _cloud_shadow_texture != null:
-			material.set_shader_parameter("cloud_shadow_tex", _cloud_shadow_texture)
-		material.set_shader_parameter("cloud_shadow_field_bound",
-			_cloud_shadow_direct and _cloud_shadow_texture != null)
-		material.set_shader_parameter("cloud_shadow_wrap_origin_uv", _cloud_shadow_wrap_origin_uv)
-		material.set_shader_parameter("cloud_shadow_wrap_period_uv", _cloud_shadow_wrap_period_uv)
-
+	BuildingMaterialState._push_cloud_shadow_uniforms(self)
 
 func _sync_terrain_textures() -> void:
-	if _world == null:
-		return
-	var tiles: Variant = _world.visual_tiles
-	var tiled := tiles != null and bool(tiles.ready) \
-		and String(tiles.layout.mode) == "tiled"
-	if tiled != _shader_tiled:
-		_shader_tiled = tiled
-		_apply_terrain_shader_variants()
-	for material in [_body_material, _decal_material, _macro_material]:
-		if material == null:
-			continue
-		if tiled:
-			material.set_shader_parameter("visual_horizon_tiles", tiles.horizon)
-			material.set_shader_parameter("visual_terrain_normal_tiles", tiles.terrain_normal)
-			var layout: Variant = tiles.layout
-			material.set_shader_parameter("visual_domain_origin",
-				layout.visual_domain.position)
-			material.set_shader_parameter("visual_domain_size",
-				layout.visual_domain.size)
-			for pair in [["visual_grid_size", layout.grid_size],
-					["visual_interior_size", layout.interior_size],
-					["visual_layer_size", layout.layer_size],
-					["visual_logical_resolution", layout.logical_size]]:
-				material.set_shader_parameter(pair[0], Vector2(pair[1]))
-			material.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
-		else:
-			material.set_shader_parameter("terrain_horizon_tex",
-				_world.terrain_horizon_tex)
-			material.set_shader_parameter("terrain_normal_tex",
-				_world.terrain_normal_tex)
-		material.set_shader_parameter("terrain_horizon_tex_bound",
-			bool(tiles.horizon_ready) if tiled else _world.terrain_horizon_tex != null)
-		material.set_shader_parameter("terrain_normal_tex_bound",
-			tiles.terrain_normal != null if tiled else _world.terrain_normal_tex != null)
+	BuildingMaterialState._sync_terrain_textures(self)
 
-
-## tiled 与 legacy 的地表寻址由 #ifdef 选一套：legacy 声明 sampler2D，tiled 声明
-## sampler2DArray + 图块寻址 uniform。形态切换必须换 shader 代码，否则采样器类型与
-## 绑定不匹配（与 ResourceVisualLayer 同处理）。body / decal / macro 都要换。
 func _apply_terrain_shader_variants() -> void:
-	# tiled 宏与 web 档位宏统一由 compose_shader_code 合成，避免两处前缀各写一半。
-	for entry in [[_body_material, _body_shader_source],
-			[_decal_material, _decal_shader_source],
-			[_macro_material, _macro_shader_source]]:
-		_assign_shader_variant(entry[0], entry[1])
+	BuildingMaterialState._apply_terrain_shader_variants(self)
 
 
 func _chunk_in_prefetch(chunk_id: int) -> bool:
