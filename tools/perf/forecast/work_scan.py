@@ -132,13 +132,12 @@ def godot_graph(source):
 def scan_source(path, function=None, clang_args=()):
     path = path.resolve()
     raw = path.read_bytes()
-    source = raw.decode()
     if clang_args and path.suffix not in (".c", ".cc", ".cpp", ".cxx"):
         raise ValueError("clang flags apply only to C/C++")
     if path.suffix == ".py":
-        funcs, calls, limits = python_graph(source, path)
+        funcs, calls, limits = python_graph(raw, path)
     elif path.suffix == ".gd":
-        funcs, calls, limits = godot_graph(source)
+        funcs, calls, limits = godot_graph(raw.decode("utf-8"))
     elif path.suffix in (".c", ".cc", ".cpp", ".cxx"):
         from work_clang import scan
         funcs, calls, limits = scan(path, clang_args)

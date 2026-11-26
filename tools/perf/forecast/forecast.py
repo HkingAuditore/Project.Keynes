@@ -23,19 +23,23 @@ def number(value):
 
 def calculate(node, inputs):
     if isinstance(node, ast.Constant):
-        return number(node.value)
+        return Fraction(str(number(node.value)))
     if isinstance(node, ast.Name) and node.id in inputs:
         return inputs[node.id]
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
         return -calculate(node.operand, inputs)
     if isinstance(node, ast.BinOp) and type(node.op) in OPERATORS:
-        return number(OPERATORS[type(node.op)](calculate(node.left, inputs),
-                                               calculate(node.right, inputs)))
+        return OPERATORS[type(node.op)](calculate(node.left, inputs),
+                                        calculate(node.right, inputs))
     if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
             and node.func.id in ("min", "max") and node.args and not node.keywords):
         operation = min if node.func.id == "min" else max
         return operation(calculate(arg, inputs) for arg in node.args)
     raise ValueError(f"unknown variable or unsupported expression: {ast.unparse(node)}")
+
+
+def result_number(value):
+    return number(value.numerator if value.denominator == 1 else float(value))
 
 
 def read_json(path):
@@ -100,26 +104,25 @@ def predict(request):
             or any(not isinstance(note, str) for note in basis.values())):
         raise ValueError("basis must be keyed by input name")
     target = number(request["target"]) if "target" in request else None
+    exact_target = Fraction(str(target)) if target is not None else None
     rows = []
     decisions = {key: {} for key in choices}
     for values in itertools.product(*choices.values()):
         inputs = dict(zip(choices, values))
-        before, after = (calculate(tree, inputs) for tree in expressions.values())
-        gain = number(after - before if direction == "higher" else before - after)
-        # Tolerance tracks floating point precision, independent of the metric's units.
-        if abs(gain) <= max(math.ulp(before), math.ulp(after)) * 4:
-            gain = 0
+        # Evaluate decimal inputs exactly so rounding cannot manufacture or erase a gain.
+        exact_inputs = {name: Fraction(str(value)) for name, value in inputs.items()}
+        before, after = (calculate(tree, exact_inputs) for tree in expressions.values())
+        gain = result_number(after - before if direction == "higher" else before - after)
         trend = "better" if gain > 0 else "worse" if gain < 0 else "equal"
-        row = {"inputs": inputs, "before": before, "after": after,
+        row = {"inputs": inputs, "before": result_number(before), "after": result_number(after),
                "improvement": gain, "trend": trend}
         if request["model"] == "cache":
             # For N >= 2, (N - 1) * (direct - read) must exceed one build.
-            direct, read, build = (Fraction(str(inputs[k])) for k in
-                                   ("direct_ms", "read_ms", "build_ms"))
+            direct, read, build = (exact_inputs[k] for k in ("direct_ms", "read_ms", "build_ms"))
             row["first_profitable_stable_frames"] = (
                 2 + build // (direct - read) if direct > read else None)
-        if target is not None:
-            passes = after >= target if direction == "higher" else after <= target
+        if exact_target is not None:
+            passes = after >= exact_target if direction == "higher" else after <= exact_target
             if kind == "upper_bound":
                 row["target"] = "not_ruled_out" if passes else "ruled_out"
             else:

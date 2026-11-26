@@ -139,6 +139,15 @@ class GeneralWorkTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             scan_source(CAT / "before.json")
 
+    def test_python_scan_honors_declared_source_encoding(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "encoded.py"
+            path.write_bytes("# coding: latin-1\ndef measure():\n    return len('café')\n".encode("latin-1"))
+            report = scan_source(path, "measure")
+        function, = report["functions"]
+        self.assertEqual(function["name"], "measure")
+        self.assertEqual(report["file_call_sites"], [{"line": 3, "target": "len"}])
+
     @unittest.skipUnless(shutil.which("clang++"), "clang++ needed")
     def test_clang_scan(self):
         with tempfile.TemporaryDirectory() as temp:

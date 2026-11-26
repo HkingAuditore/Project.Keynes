@@ -1,3 +1,4 @@
+from math import ulp
 import unittest
 
 from forecast import ROOT, predict, read_json
@@ -32,6 +33,21 @@ class ForecastTests(unittest.TestCase):
     def test_memory_estimate(self):
         result = predict(example("demand-memory"))
         self.assertAlmostEqual(result["scenarios"][0]["improvement"], 93.545, places=2)
+
+    def test_small_changes_are_kept_in_the_gain_range(self):
+        delta = ulp(1.0)
+        result = predict({
+            "model": {
+                "metric": "work", "kind": "estimate", "better": "lower",
+                "parameters": {"baseline": "positive", "delta": "number"},
+                "before": "baseline", "after": "baseline - delta",
+            },
+            "inputs": {"baseline": 1.0, "delta": [0, delta, -delta]},
+        })
+        self.assertEqual([row["trend"] for row in result["scenarios"]],
+                         ["equal", "better", "worse"])
+        self.assertEqual(result["improvement_range"], [-delta, delta])
+        self.assertEqual(result["decision_sensitive_inputs"], ["delta"])
 
     def test_shared_inputs_and_sensitivity(self):
         request = example("catalog")
