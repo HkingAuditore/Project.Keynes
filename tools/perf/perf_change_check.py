@@ -45,7 +45,7 @@ from perf_change_runner import (
 )
 
 
-METHOD_VERSION = 3
+METHOD_VERSION = 4
 DEFAULT_SCENARIO = {"days": 50, "speed": 50, "seed": 20260718, "width": 60, "height": 40,
                     "foreign_count": 3}
 
@@ -68,7 +68,8 @@ def identity_for(commit: str, scenario: dict, machine: dict, toolchain: dict) ->
 def ensure_records(repo: Path, archive: Archive, revs: list[str], args, busy_log: list) -> list[dict]:
     """Return one complete record per rev, measuring alternately only the missing ones."""
     check_budget(args)
-    machine, toolchain = machine_identity(), toolchain_identity(args.godot)
+    machine, toolchain = machine_identity(), toolchain_identity(args.godot, args.scons)
+    args.toolchain = toolchain["toolchain"]
     commits = {}
     plans = []
     for rev in revs:
@@ -112,25 +113,28 @@ def ensure_records(repo: Path, archive: Archive, revs: list[str], args, busy_log
         if args.tier == "full":
             wait_for_quiet_machine(args, busy_log)
             record["load_consistency"] = load_consistency_check(plan["worktree"], record_dir, args.godot)
+        save(record_dir / "record.json", record)
     for index in range(1, args.rounds + 1):
         for plan in missing:
             sample = wait_for_quiet_machine(args, busy_log)
-            plan["record"]["load_samples"].append(sample)
+            record = plan["record"]
+            record["load_samples"].append(sample)
             out = plan["dir"] / f"round-{index}"
             label = f"{plan['commit'][:12]}-r{index}"
             print(f"round {index}/{args.rounds} {plan['commit'][:12]}", flush=True)
-            plan["record"]["rounds"].append(
+            record["rounds"].append(
                 perf_round(plan["worktree"], out, args.scenario, args.tier, args.godot, label))
+            final_round = index == args.rounds
+            if final_round:
+                record["headline"] = headline(record["rounds"])
+                valid = (record["golden"]["passed"] and all(not r["errors"] for r in record["rounds"])
+                         and record.get("load_consistency", {"passed": True})["passed"])
+                record["status"] = "complete" if valid else "invalid"
+                record["finished"] = now()
+            save(plan["dir"] / "record.json", record)
+            if final_round:
+                archive.index(record)
     check_budget(args)
-    for plan in missing:
-        record = plan["record"]
-        record["headline"] = headline(record["rounds"])
-        valid = (record["golden"]["passed"] and all(not r["errors"] for r in record["rounds"])
-                 and record.get("load_consistency", {"passed": True})["passed"])
-        record["status"] = "complete" if valid else "invalid"
-        record["finished"] = now()
-        save(plan["dir"] / "record.json", record)
-        archive.index(record)
     return [plan["record"] for plan in plans]
 
 

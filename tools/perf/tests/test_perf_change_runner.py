@@ -78,6 +78,9 @@ class PerfRunValidation(unittest.TestCase):
         script = worktree / runner.PROJECT / runner.PERF_SCRIPT.removeprefix("res://")
         script.parent.mkdir(parents=True)
         script.write_text(source)
+        recorder = worktree / runner.PROJECT / "scripts/ui/perf_recorder.gd"
+        recorder.parent.mkdir(parents=True)
+        recorder.write_text("shared CSV recorder")
         path = worktree / "perf.csv"
         path.write_text("\n".join([headers, *values]) + "\n")
         days = len(values)
@@ -184,6 +187,17 @@ class PerfRunValidation(unittest.TestCase):
                 methods.append(run["recorder_method"])
         self.assertNotEqual(*methods)
         self.assertTrue(all(method.startswith("unversioned:") for method in methods))
+
+    def test_unversioned_recorder_identity_includes_shared_columns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            worktree = Path(tmp)
+            run = self.run_csv_round(tmp, "tick_idx,speed_multiplier,t_sus_ms", ["1,50,0"])
+            columns = worktree / runner.PROJECT / "scripts/ui/perf_record_columns.gd"
+            columns.write_text("first column definition")
+            new_method = runner.recorder_method(worktree)
+            self.assertNotEqual(run["recorder_method"], new_method)
+            columns.write_text("updated column definition")
+            self.assertNotEqual(new_method, runner.recorder_method(worktree))
 
 
 class ArchiveReuse(unittest.TestCase):
@@ -410,7 +424,7 @@ class TimeBudget(unittest.TestCase):
              self.assertRaisesRegex(runner.Deferred, "budget.*expired"):
             runner.wait_for_quiet_machine(self.args(), [])
 
-    def test_last_round_over_budget_cannot_complete_a_record(self):
+    def test_last_round_over_budget_defers_but_saves_a_complete_record(self):
         elapsed = 0
 
         def perf_round(*_):
@@ -418,12 +432,12 @@ class TimeBudget(unittest.TestCase):
             elapsed += 30
             return {"errors": [], "metrics": {}}
 
-        args = self.args(rev="a", godot="godot", scenario=SCENARIO, tier="quick", rounds=2, budget=1)
+        args = self.args(rev="a", godot="godot", scons=None, scenario=SCENARIO, tier="quick", rounds=2, budget=1)
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             archive = runner.Archive(repo)
             with mock.patch.object(pc, "machine_identity", return_value={"machine": "m", "machine_label": "test"}), \
-                 mock.patch.object(pc, "toolchain_identity", return_value={}), \
+                 mock.patch.object(pc, "toolchain_identity", return_value={"toolchain": "build-1"}), \
                  mock.patch.object(pc, "resolve", return_value=("a" * 40, "test")), \
                  mock.patch.object(pc, "prepare_worktree", return_value=repo), \
                  mock.patch.object(pc, "golden_check", return_value={"passed": True}), \
@@ -434,7 +448,10 @@ class TimeBudget(unittest.TestCase):
                  self.assertRaisesRegex(runner.Deferred, "budget.*expired"):
                 pc.command_measure(args, repo, archive)
             self.assertEqual(measure.call_count, 2)
-            self.assertFalse((repo / "index.jsonl").exists())
+            entry = json.loads((repo / "index.jsonl").read_text())
+            saved = json.loads((Path(entry["path"]) / "record.json").read_text())
+            self.assertEqual(saved["status"], "complete")
+            self.assertEqual(len(saved["rounds"]), 2)
 
     def test_zero_budget_is_unlimited(self):
         with mock.patch.object(runner, "cpu_idle", return_value=0.9), \
@@ -454,6 +471,27 @@ class TimeBudget(unittest.TestCase):
 
 
 class BuildRecipe(unittest.TestCase):
+    def test_refuses_cached_measurement_tree_from_a_different_toolchain(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            runner.git(repo, "init", "-q")
+            runner.git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                       "commit", "--allow-empty", "-qm", "baseline")
+            commit = runner.git(repo, "rev-parse", "HEAD")
+            archive = runner.Archive(Path(tmp) / "archive")
+            cached = archive.worktrees / commit[:12]
+            runner.add_worktree(repo, cached, commit)
+            (cached / ".perf-built").write_text(f"{commit}\nold-toolchain\n")
+            args = argparse.Namespace(toolchain="old-toolchain")
+            self.assertEqual(runner.prepare_worktree(repo, archive, commit, args, repo, []), cached)
+            args.toolchain = "new-toolchain"
+            with mock.patch.object(runner, "wait_for_quiet_machine"), \
+                 mock.patch.object(runner, "compile_commit", side_effect=runner.StepFailed("rebuilding")), \
+                 self.assertRaisesRegex(runner.StepFailed, "rebuilding"):
+                runner.prepare_worktree(repo, archive, commit, args, repo, [])
+            self.assertFalse(cached.exists())
+
     def test_refuses_to_overwrite_an_existing_unmanaged_archive_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             archive = runner.Archive(Path(tmp))
@@ -492,7 +530,7 @@ class BuildRecipe(unittest.TestCase):
             repo = Path(tmp)
             archive = runner.Archive(repo)
             args = argparse.Namespace(started=runner.time.monotonic(), wait_left=0,
-                                      budget=10, min_idle=0.5, poll_seconds=15)
+                                      budget=10, min_idle=0.5, poll_seconds=15, toolchain="build-1")
             with mock.patch.object(runner, "cpu_idle", return_value=0.1), \
                  mock.patch.object(runner, "process_table", return_value=""), \
                  mock.patch.object(runner, "compile_commit") as compile_commit, \
@@ -506,7 +544,7 @@ class BuildRecipe(unittest.TestCase):
             repo = Path(tmp)
             archive = runner.Archive(repo)
             args = argparse.Namespace(started=runner.time.monotonic(), wait_left=0,
-                                      budget=10, min_idle=0.5, poll_seconds=15)
+                                      budget=10, min_idle=0.5, poll_seconds=15, toolchain="build-1")
             with mock.patch.object(runner, "cpu_idle", side_effect=[0.9, 0.1]), \
                  mock.patch.object(runner, "process_table", return_value=""), \
                  mock.patch.object(runner, "compile_commit", return_value=[]) as compile_commit, \

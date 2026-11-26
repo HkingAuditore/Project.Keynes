@@ -15,6 +15,7 @@ import shutil
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -137,10 +138,16 @@ def machine_identity() -> dict:
     return {"machine": hashlib.sha256(label.encode()).hexdigest()[:16], "machine_label": label}
 
 
-def toolchain_identity(godot: str) -> dict:
+def toolchain_identity(godot: str, scons: str | None) -> dict:
     compiler = first_line(["c++", "--version"])
     godot_version = first_line([godot, "--version"])
-    label = f"godot {godot_version}; {compiler}; {platform.system()} {platform.release()}"
+    builder = scons or "scons"
+    version = run([builder, "--version"]).stdout
+    version_line = next((line.strip() for line in version.splitlines() if line.strip().startswith("SCons:")),
+                        (version.strip().splitlines() or ["unknown version"])[0])
+    builder_path = shutil.which(builder) or builder
+    label = (f"godot {godot_version}; {compiler}; {builder_path} {version_line}; "
+             f"{platform.system()} {platform.release()}")
     return {"toolchain": hashlib.sha256(label.encode()).hexdigest()[:16], "toolchain_label": label}
 
 
@@ -309,7 +316,14 @@ class Archive:
 
 
 def save(path: Path, value) -> None:
-    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as handle:
+        temporary = Path(handle.name)
+        try:
+            handle.write(json.dumps(value, indent=2, ensure_ascii=False) + "\n")
+            handle.close()
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------- worktrees and builds
@@ -364,9 +378,12 @@ def compile_commit(repo: Path, archive: Archive, commit: str, args, record_dir: 
     build; only the first build on a machine compiles godot-cpp and every source from scratch.
     """
     tree = archive.build
+    cache_key = tree / ".perf-toolchain"
     if tree.exists() or tree.is_symlink():
         require_managed_worktree(repo, tree)
-    else:
+        if not cache_key.is_file() or cache_key.read_text().strip() != args.toolchain:
+            git(repo, "worktree", "remove", "--force", str(tree))
+    if not tree.exists():
         add_worktree(repo, tree, commit)
     run(["git", "-C", str(tree), "checkout", "--detach", "--force", commit],
         log=record_dir / f"checkout-{commit[:12]}.log")
@@ -382,6 +399,7 @@ def compile_commit(repo: Path, archive: Archive, commit: str, args, record_dir: 
     if args.scons:
         command[0] = args.scons
     check_budget(args)
+    cache_key.write_text(args.toolchain + "\n")
     run(command, cwd=tree / "gdext", log=record_dir / f"build-{commit[:12]}.log")
     built = debug_libraries(tree, *host)
     if not built:
@@ -393,9 +411,10 @@ def prepare_worktree(repo: Path, archive: Archive, commit: str, args, record_dir
                      busy_log: list) -> Path:
     path = archive.worktrees / commit[:12]
     ready = path / ".perf-built"
+    cache_key = f"{commit}\n{args.toolchain}\n"
     if path.exists() or path.is_symlink():
         require_managed_worktree(repo, path)
-        if ready.is_file() and ready.read_text().strip() == commit and git(path, "rev-parse", "HEAD") == commit:
+        if ready.is_file() and ready.read_text() == cache_key and git(path, "rev-parse", "HEAD") == commit:
             path.touch()
             return path
         git(repo, "worktree", "remove", "--force", str(path))
@@ -420,7 +439,7 @@ def prepare_worktree(repo: Path, archive: Archive, commit: str, args, record_dir
         log=record_dir / f"import-{commit[:12]}.log")
     print(f"imported {commit[:12]} in {time.monotonic() - import_started:.0f}s"
           + (f" (cache from {seeded.name})" if seeded else " (no cache)"), flush=True)
-    ready.write_text(commit + "\n")
+    ready.write_text(cache_key)
     print(f"built {commit[:12]}: compile {compiled:.0f}s, total {time.monotonic() - started:.0f}s",
           flush=True)
     return path
@@ -466,6 +485,20 @@ def build_hash(worktree: Path) -> str:
 
 
 # ---------------------------------------------------------------- measurements
+
+def recorder_method(worktree: Path) -> str:
+    """Fingerprint the legacy measurement entry, recorder and its same-directory helpers."""
+    project = worktree / PROJECT
+    script = project / PERF_SCRIPT.removeprefix("res://")
+    ui = project / "scripts/ui"
+    recorder = ui / "perf_recorder.gd"
+    helpers = [path for pattern in ("perf_recorder_*.gd", "perf_record_*.gd") for path in ui.glob(pattern)]
+    digest = hashlib.sha256()
+    for path in sorted([script, recorder, *helpers]):
+        digest.update(str(path.relative_to(project)).encode() + b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return "unversioned:" + digest.hexdigest()[:12]
+
 
 def perf_round(worktree: Path, out: Path, scenario: dict, tier: str, godot: str, label: str) -> dict:
     out.mkdir(parents=True)
@@ -523,11 +556,8 @@ def perf_round(worktree: Path, out: Path, scenario: dict, tier: str, godot: str,
     errors += validate_perf_run(exit_code, result, rows, scenario)
     method = (result or {}).get("recorder_method")
     if result is not None and method is None:
-        # Old scripts had no version marker. Only identical unversioned
-        # scripts can be assumed to give the old metric names the same meaning.
-        script = worktree / PROJECT / PERF_SCRIPT.removeprefix("res://")
         try:
-            method = "unversioned:" + hashlib.sha256(script.read_bytes()).hexdigest()[:12]
+            method = recorder_method(worktree)
         except OSError as error:
             errors.append(f"could not identify unversioned recorder: {error}")
     return {"label": label, "command": command, "exit": exit_code, "errors": errors,
