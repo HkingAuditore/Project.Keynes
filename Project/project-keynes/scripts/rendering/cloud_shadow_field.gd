@@ -541,8 +541,9 @@ static func _shared_base_texture() -> Texture2D:
 
 
 func _resize_field() -> void:
-	var mobile_or_web := OS.has_feature("mobile") or OS.has_feature("web") or not _mobile_tier.is_empty()
-	var size := resolution_for_quality(_visual_quality, mobile_or_web)
+	var limited := DCFeatureFlags.is_limited_render_platform() \
+		or (not OS.has_feature("web") and not _mobile_tier.is_empty())
+	var size := resolution_for_quality(_visual_quality, limited)
 	if size == _field_size or _viewport == null:
 		return
 	_field_size = size
@@ -675,8 +676,11 @@ func _sync_wind_lut(force: bool) -> void:
 func _strength_for_quality() -> float:
 	if _direct_mode:
 		return _strength_high
-	if _visual_quality >= 1 and _mobile_tier.is_empty() and not OS.has_feature("mobile") and not OS.has_feature("web"):
-		return _strength_mid
+	if not DCFeatureFlags.is_limited_render_platform() and (OS.has_feature("web") or _mobile_tier.is_empty()):
+		if _visual_quality >= 2:
+			return _strength_high
+		if _visual_quality >= 1:
+			return _strength_mid
 	return _strength_low
 
 

@@ -620,7 +620,7 @@ func _refresh_resident_chunks() -> void:
 	if _camera_zoom < 0.46:
 		_clear_chunks()
 		return
-	var limit := MAX_RESIDENT_WEB if OS.has_feature("web") else MAX_RESIDENT_DESKTOP
+	var limit := MAX_RESIDENT_WEB if DCFeatureFlags.is_mobile_web() else MAX_RESIDENT_DESKTOP
 	var ordered: PackedInt32Array = _visual_cache.chunks_in_rect(
 		_camera_rect.grow(_hex_size * 18.0), _camera_center, limit)
 	var wanted := {}
@@ -683,7 +683,7 @@ func _upload_chunk_buffers(chunk_id: int) -> void:
 			decal_buffer, decal_count, null, Z_BAND_DECAL, FogDrawBounds.Kind.BUILDING_DECAL)
 	else:
 		_drop_batch(nodes, "decal")
-	if detailed and not OS.has_feature("web"):
+	if detailed and not DCFeatureFlags.is_mobile_web():
 		# 投影必须留在贴花那一层（贴着地面、压在建筑主体之下）。跟着 body 一起
 		# 抬到 2 会让深色壳体刷在屋顶上。
 		_put_batch(nodes, "shadow", "Shadow", _shadow_material,
@@ -869,7 +869,7 @@ func _push_material_state() -> void:
 			material.set_shader_parameter("visual_quality", _visual_quality)
 	if _shadow_material != null:
 		_shadow_material.set_shader_parameter("shadow_strength",
-			0.0 if OS.has_feature("web") else float(SHADOW_STRENGTH[_visual_quality]))
+			0.0 if DCFeatureFlags.is_mobile_web() else float(SHADOW_STRENGTH[_visual_quality]))
 	if _macro_material != null:
 		_macro_material.set_shader_parameter("camera_zoom", _camera_zoom)
 		# The macro pass now gates its terrain lighting on the same quality tier.

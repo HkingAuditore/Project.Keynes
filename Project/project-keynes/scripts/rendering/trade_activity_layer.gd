@@ -118,7 +118,7 @@ func set_quality(quality: int) -> void:
 	_quality = clampi(quality, 0, 2)
 	_set_parameter("visual_quality", _quality)
 	if _shadow_batch != null:
-		_shadow_batch.visible = _batch.visible and _quality >= 2 and not OS.has_feature("web")
+		_shadow_batch.visible = _batch.visible and _quality >= 2 and not DCFeatureFlags.is_mobile_web()
 	_next_refresh = 0.0
 	if _material != null and not _records.is_empty():
 		_rebuild_upload()
@@ -132,7 +132,7 @@ func set_camera_view(world_rect: Rect2, center: Vector2, zoom_value: float) -> v
 
 
 func _low_quality() -> bool:
-	return _quality == 0 or OS.has_feature("mobile") or OS.has_feature("web")
+	return _quality == 0 or DCFeatureFlags.is_limited_render_platform()
 
 
 func _route_cap() -> int:
@@ -272,7 +272,7 @@ func _process(delta: float) -> void:
 		_unsubscribe()
 		return
 	_batch.visible = true
-	_shadow_batch.visible = _quality >= 2 and not OS.has_feature("web")
+	_shadow_batch.visible = _quality >= 2 and not DCFeatureFlags.is_mobile_web()
 	_update_bounds()
 	if _clock == null or not _clock.paused:
 		_visual_time += delta

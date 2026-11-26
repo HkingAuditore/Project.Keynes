@@ -82,13 +82,13 @@ RULES: list[tuple[str, dict[str, str], int]] = [
      {"compress/mode": "1", "compress/lossy_quality": "0.80"}, 0),
 
     # 2D 数组纹理（地面覆盖 / 树冠，按 sprite 采样）。法线一旦出块状伪影会毁掉受光，
-    # 所以 q 给 0.82；mipmaps 必须保留（远处 minify 靠它）。
+    # 近景地图精灵保持高压缩质量（q=0.90），mipmaps 保留（远处 minify 靠它）。
     # 注意：已经是 s3tc+etc2 双套的 albedo 数组会被 is_vram_variant() 挡掉，不改 mode。
     ("res://assets/textures/resource_art/**",
-     {"compress/mode": "1", "compress/lossy_quality": "0.82"}, 0),
+     {"compress/mode": "1", "compress/lossy_quality": "0.90"}, 0),
 
-    # 法线：跟着 albedo 一起降分辨率，但质量档不能低于 0.90（强损会在受光上出
-    # 带状脏影，得不偿失）。这两条必须排在 resource_art/** 之后才生效。
+    # 法线：质量档不能低于 0.90（强损会在受光上出带状脏影，得不偿失）。
+    # 这两条必须排在 resource_art/** 之后才生效。
     ("res://assets/textures/resource_art/cover_normal.png",
      {"compress/mode": "1", "compress/lossy_quality": "0.90"}, 0),
     ("res://assets/textures/resource_art/crown_normal.png",
@@ -98,8 +98,8 @@ RULES: list[tuple[str, dict[str, str], int]] = [
     ("res://assets/textures/weather/**", {}, 0),
     ("res://textures/weather/**", {}, 0),
 
-    # 贸易车辆等 vfx 精灵图集
-    ("res://assets/vfx/**", {"compress/mode": "1", "compress/lossy_quality": "0.55"}, 0),
+    # 贸易车辆等地图 vfx 精灵图集：近景放大可见，给高画质档（单图体积很小）
+    ("res://assets/vfx/**", {"compress/mode": "1", "compress/lossy_quality": "0.90"}, 0),
 ]
 
 # ⚠️ 2026-11-11 撤回：这里曾经有三条 `process/size_limit`（ui 1152 / icons 1024 /
@@ -128,21 +128,44 @@ KEEP: list[tuple[str, str]] = [
 # 要么是 alpha 遮罩小图；动它们的性价比为负。
 MIN_BYTES = 128 * 1024
 
-# ---- 预烘焙材质 .res（不进 .import 流程，靠重烘焙脚本临时缩小）------------
-# [web-loading-material-shrink 2026-11-01] 只 stub **512** 那套，不再动 1024：
-#   * Web 运行时由 MapBaker._terrain_material_size() 决定档位，现在 Web 固定 512
-#     （1024 档在 Web 上被显式排除，见 export_presets.cfg 的 exclude_filter 与
-#     map_baker.gd 的注释），所以 1024 那套不进 Web 包，也不该在构建期被改写——
-#     否则同一份磁盘文件会连带影响桌面导出。
-#   * 512 -> 256：每张 1.334 MB -> 0.334 MB（RGBA8 + mipmap 链 = 4/3*w*h*4），
-#     4 张共 5.33 MB -> 1.33 MB，这是首屏关键路径（加载屏自己就要显示地面材质）。
-#   * 层尺寸由 map_baker._build_terrain_material_tex 按**实际读到的图**决定，
-#     所以文件名仍叫 material_512_*、内容是 256² 也是自洽的。
-RES_STUB_TARGETS = [
+# ---- 预烘焙材质 .res（默认保留 1024 / 512 原尺寸，仅在显式开启时缩小）------
+# PC-Web 中/高画质使用 material_1024_*.res，低画质与移动浏览器使用 material_512_*.res。
+# 默认不再把 material_512_* 重烘焙降到 256²，避免地面近景糊成色块；
+# 如需极限压缩包体，可显式设 PK_WEB_SHRINK_TERRAIN_MATERIALS=1 恢复 512->256 stub。
+RES_STUB_CANDIDATES = [
     f"assets/textures/loading_prebaked_v1/material_512_{i}.res" for i in range(4)
 ]
-RES_STUB_SIZES = "512"
+# Web 中/高画质实际读的是 material_1024_*（21.3 MB）。默认原样保留；要临时降采样时设
+# PK_WEB_TERRAIN_STUB_1024=<目标边长，如 256>：文件内容在导出期被缩小、文件名不变，
+# 导出后由同一套备份/还原逻辑恢复原值。源 PNG 与本目录的 1024 那套不做永久修改。
+RES_STUB_1024_CANDIDATES = [
+    f"assets/textures/loading_prebaked_v1/material_1024_{i}.res" for i in range(4)
+]
+RES_STUB_TARGETS: list[str] = []
 RES_STUB_SCRIPT = "res://tools/web_tex_stub_loading_materials.gd"
+
+
+def terrain_stub_1024_size() -> str:
+    raw = os.environ.get("PK_WEB_TERRAIN_STUB_1024", "").strip()
+    return raw if raw.isdigit() else ""
+
+
+def active_res_stub_targets() -> list[str]:
+    targets = list(RES_STUB_TARGETS)
+    if os.environ.get("PK_WEB_SHRINK_TERRAIN_MATERIALS") == "1":
+        targets += RES_STUB_CANDIDATES
+    if terrain_stub_1024_size():
+        targets += RES_STUB_1024_CANDIDATES
+    return targets
+
+
+def active_res_stub_sizes() -> str:
+    sizes: list[str] = []
+    if os.environ.get("PK_WEB_SHRINK_TERRAIN_MATERIALS") == "1":
+        sizes.append("512")
+    if terrain_stub_1024_size():
+        sizes.append("1024")
+    return ",".join(sizes) if sizes else "512"
 
 # ---- 源图分辨率上限（web-only，仅"单张整图"）--------------------------------
 # 只允许**单张整图**：图集（AtlasTexture）缩小后 .tres 里的 region 会整体错位。
@@ -157,24 +180,17 @@ MAX_DIM_RULES: list[tuple[str, int]] = [
 ]
 
 # ---- 按倍率缩放（web-only，单张整图）---------------------------------------
-# resource_art 的 5 张是"地表覆盖层 / 树冠 / 动物"，用户已授权 web 端降分辨率
-# （它们是地形视觉本身，桌面保持原样）。倍率由环境变量控制，`=1` 即回退：
-#   PK_WEB_RESOURCE_ART_SCALE=1    不缩
-#   PK_WEB_RESOURCE_ART_SCALE=0.5  各边减半（默认）
-# 注意：这些源图的层数是 vertical strip（512x8192 = 16 层），等比缩放不会破坏帧布局。
+# 默认保留地图精灵（地表覆盖层 / 树冠 / 动物 / 贸易车船）的桌面原尺寸（scale=1.0），
+# 保证 PC-Web 近景锐度与 PC 一致；需要极限压包时可设环境变量（如 =0.5）启用降采样：
+#   PK_WEB_RESOURCE_ART_SCALE=1.0  不缩（默认）
+#   PK_WEB_RESOURCE_ART_SCALE=0.5  各边减半
 SCALE_RULES: list[tuple[str, str, float]] = [
-    ("assets/textures/resource_art/cover_albedo.png", "PK_WEB_RESOURCE_ART_SCALE", 0.5),
-    ("assets/textures/resource_art/cover_normal.png", "PK_WEB_RESOURCE_ART_SCALE", 0.5),
-    ("assets/textures/resource_art/crown_atlas.png", "PK_WEB_RESOURCE_ART_SCALE", 0.5),
-    ("assets/textures/resource_art/crown_normal.png", "PK_WEB_RESOURCE_ART_SCALE", 0.5),
-    ("assets/textures/resource_art/fauna_atlas.png", "PK_WEB_RESOURCE_ART_SCALE", 0.5),
-    # [2026-11-24] 贸易单位俯视图：实测唯一能安全减半的图集类资源（450,266 B -> 约 149 KB）。
-    # 判据：着色器按**归一化 UV** 取图（`shaders/trade_vehicle.gdshader:42`
-    # `(vec2(col,row)+uv)/vec2(2.0,6.0)`），没有像素常量参与布局，也没有任何
-    # AtlasTexture.region / get_size() 指向它。其余图集（military_atlas_v1 等）
-    # 有 region 绝对像素或 get_size() 排版，一律**不缩**。
-    ("assets/vfx/trade/vehicles_topdown_v2.png", "PK_WEB_TRADE_VEHICLE_SCALE", 0.5),
-    # 法线跟着 albedo 同倍率缩放，但质量档见 RULES 里的 *_normal 规则（>=0.90）
+    ("assets/textures/resource_art/cover_albedo.png", "PK_WEB_RESOURCE_ART_SCALE", 1.0),
+    ("assets/textures/resource_art/cover_normal.png", "PK_WEB_RESOURCE_ART_SCALE", 1.0),
+    ("assets/textures/resource_art/crown_atlas.png", "PK_WEB_RESOURCE_ART_SCALE", 1.0),
+    ("assets/textures/resource_art/crown_normal.png", "PK_WEB_RESOURCE_ART_SCALE", 1.0),
+    ("assets/textures/resource_art/fauna_atlas.png", "PK_WEB_RESOURCE_ART_SCALE", 1.0),
+    ("assets/vfx/trade/vehicles_topdown_v2.png", "PK_WEB_TRADE_VEHICLE_SCALE", 1.0),
 ]
 
 # 平铺采样的贴图：缩小时必须用环绕卷积，否则左右/上下边不再连续（tiling seam 翻倍，
@@ -430,7 +446,7 @@ def run_import(godot: str, project: str, log_path: str) -> None:
 
 def _backup_res_stubs(project: str, backup_root: str) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
-    for rel in RES_STUB_TARGETS:
+    for rel in active_res_stub_targets():
         path = os.path.join(project, rel.replace("/", os.sep))
         if not os.path.isfile(path):
             print(f"[tex] warn: 找不到 {rel}，跳过", file=sys.stderr)
@@ -580,8 +596,8 @@ def run_res_stub(godot: str, project: str, log_path: str) -> None:
     """跑 Godot 侧的重烘焙脚本（有 PK_WEB_DG_STUB=1 守卫，误跑不会动手）。"""
     env = dict(os.environ)
     env["PK_WEB_DG_STUB"] = "1"
-    env["PK_WEB_DG_STUB_SIZES"] = RES_STUB_SIZES
-    env.setdefault("PK_WEB_DG_STUB_SIZE", "256")
+    env["PK_WEB_DG_STUB_SIZES"] = active_res_stub_sizes()
+    env.setdefault("PK_WEB_DG_STUB_SIZE", terrain_stub_1024_size() or "256")
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     t0 = time.time()
     with open(log_path, "wb") as log:
@@ -630,9 +646,10 @@ def cmd_plan(args: Any, state: str) -> int:
         print(f"| `{imp.res_path}` | {fmt(imp.params)} | {fmt({**imp.params, **changes})} | "
               f"{human(before)} | {why} |")
     print(f"\n合计 {len(rows)} 项，当前 {human(sum(r[3] for r in rows))}。")
-    res_now = sum(max(0, dest_size(project, r)) for r in RES_STUB_TARGETS)
+    stub_targets = active_res_stub_targets()
+    res_now = sum(max(0, dest_size(project, r)) for r in stub_targets)
     if res_now > 0:
-        print(f"\n另有 prebaked .res {len(RES_STUB_TARGETS)} 个：当前 {human(res_now)}"
+        print(f"\n另有 prebaked .res {len(stub_targets)} 个：当前 {human(res_now)}"
               f"，导出期重烘焙到 256²（约 1.3 MB）后还原。")
     if skipped and args.verbose:
         print(f"\n## 跳过的纹理（{len(skipped)} 项）\n")

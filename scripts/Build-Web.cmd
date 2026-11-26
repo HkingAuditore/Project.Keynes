@@ -211,8 +211,8 @@ echo [prebake] ok
 rem --- 3.5 web texture downgrade (web only, temporary import-cache swap) -------
 rem The pck ships .godot\imported\*.ctex, so the only lever is what they contain:
 rem every 2D texture is currently lossless WebP (compress/mode=0). This re-imports
-rem them as lossy WebP at per-class qualities and temporarily re-bakes
-rem loading_prebaked_v1 material_1024_*.res at 256 (web reads the 512 set).
+rem UI/icon textures as lossy WebP (q=0.55) while keeping 1024/512 terrain material
+rem .res sets and map sprites (resource_art / trade vehicles) at full desktop resolution.
 rem Resolution is untouched; desktop state is restored byte-for-byte afterwards
 rem (also on the failure path). Measured with textures only: 282.75 -> 132.17 MiB.
 rem Skipping is a supported fallback: PK_WEB_SKIP_TEXTURE_DOWNGRADE=1.
@@ -619,6 +619,20 @@ echo [html-patch] patching the exported web shell (service worker ready timing) 
 !PY! "%ROOT%tools\patch_web_shell.py" --web-root "!EXPORT_DIR!" --wait-for-pwa
 if errorlevel 1 (
     echo === ERROR: patching the exported html FAILED ===
+    exit /b 1
+)
+
+rem --- 4.6 drop FmodGodot from the shell's gdextensionLibs --------------------
+rem audio_backend_policy.gd 定的是 Web 走 Godot/Vorbis、不走 FMOD，但 Web 预设照样
+rem 把 FmodGodot 打进包，导出又把它写进 GODOT_CONFIG.gdextensionLibs，引擎启动就
+rem 加载它。它的 AudioWorklet 在第一次真实用户输入之后会调 FMOD_JS_MixerFastpathFunction
+rem （源码编的那份没这个导出），直接 abort 音频线程。2026-11-26 实测：一次点击后
+rem 13 秒内 1026 条错误，而不点击时一条都没有。
+rem 所以 shell 里不列它；libdots_ext 必须留着。脚本幂等，模板变了会大声失败。
+echo [html-no-fmod] dropping FmodGodot from gdextensionLibs ...
+!PY! "%ROOT%tools\patch_web_no_fmod.py" --html "!EXPORT_DIR!\ProjectKeynes.html"
+if errorlevel 1 (
+    echo === ERROR: dropping FmodGodot from the shell FAILED ===
     exit /b 1
 )
 

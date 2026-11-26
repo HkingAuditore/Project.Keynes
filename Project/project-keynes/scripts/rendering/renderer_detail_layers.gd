@@ -39,7 +39,7 @@ static func _platform_limited_vegetation_render(host) -> bool:
 
 	if host._force_platform_limited_render >= 0:
 		return host._force_platform_limited_render != 0
-	return OS.has_feature("web") or OS.has_feature("mobile")
+	return DCFeatureFlags.is_limited_render_platform()
 
 
 

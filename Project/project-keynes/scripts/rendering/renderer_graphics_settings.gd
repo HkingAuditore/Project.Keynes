@@ -63,6 +63,7 @@ func apply(host, settings: Dictionary) -> void:
 		host._fog_layer.set_render_scale(int(settings.get("fog_render_scale", -1)))
 	if host._weather_layer != null:
 		host._weather_layer.set_weather_detail(int(settings.get("weather_detail", -1)))
+		host._apply_weather_layer_render_gate()
 
 	var next_shadow: Variant = settings.get("cloud_shadow")
 	if next_shadow != cloud_shadow:

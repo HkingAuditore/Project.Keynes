@@ -5,12 +5,13 @@ const WaterRippleLattice = preload("res://scripts/rendering/water_ripple_lattice
 ## Stateless collaborator for ShrubLayer.
 
 static func _web_weather_layer_draw_allowed(host) -> bool:
-
 	if not OS.has_feature("web"):
 		return true
 	if not host.PK_WEB_ENABLE_WEATHER_LAYER:
 		return false
-	return host.visual_quality >= 2 or host._mobile_quality_tier_define == "MOBILE_QUALITY_HIGH"
+	var q: int = host._weather_layer._weather_quality() if host._weather_layer != null else host.visual_quality
+	var min_q: int = 2 if DCFeatureFlags.is_mobile_web() else 1
+	return q >= min_q or host._mobile_quality_tier_define == "MOBILE_QUALITY_HIGH"
 
 
 ## 上一次推给天气层的门状态（只用于首帧/切档时打一行诊断）。
@@ -207,22 +208,25 @@ const WORLD_MAP_WEB_HIGH_PREFIX := WORLD_MAP_WEB_HIGH_BASE + "#define PK_WEB_SPL
 const WATER_WEB_HIGH_PREFIX := WORLD_MAP_WEB_HIGH_BASE + "#define PK_WEB_WATER_ONLY\n"
 
 
-static func _web_pc_high_active(host) -> bool:
-
+static func web_pc_high_boot_enabled() -> bool:
+	if Engine.has_meta("pk_web_pc_high_boot"):
+		return bool(Engine.get_meta("pk_web_pc_high_boot"))
 	if not OS.has_feature("web") or not DCFeatureFlags.is_compatibility_renderer():
 		return false
-	# A runtime settings toggle must stay on the already compiled shared Web
-	# program. Full PC HIGH is selected only when the page requested it before
-	# world creation; compiling a new ANGLE program during play freezes the tab.
-	if not Engine.has_meta("pk_web_pc_high_boot"):
-		var requested = false
-		if Engine.has_singleton("JavaScriptBridge"):
-			var bridge: Object = Engine.get_singleton("JavaScriptBridge")
-			if bridge != null:
-				var raw: Variant = bridge.call("eval", "new URLSearchParams(window.location.search).get('quality') || ''")
-				requested = String(raw).to_lower() == "high"
-		Engine.set_meta("pk_web_pc_high_boot", requested)
-	return host.visual_quality >= 2 and bool(Engine.get_meta("pk_web_pc_high_boot", false))
+	var raw := ""
+	if Engine.has_singleton("JavaScriptBridge"):
+		var bridge: Object = Engine.get_singleton("JavaScriptBridge")
+		if bridge != null:
+			raw = String(bridge.call("eval", "new URLSearchParams(window.location.search).get('quality') || ''")).strip_edges().to_lower()
+	var enabled := true if raw == "high" else (false if (raw == "low" or raw == "medium") else not DCFeatureFlags.is_mobile_web())
+	Engine.set_meta("pk_web_pc_high_boot", enabled)
+	return enabled
+
+
+static func _web_pc_high_active(host) -> bool:
+	if not OS.has_feature("web") or not DCFeatureFlags.is_compatibility_renderer():
+		return false
+	return host.visual_quality >= 2 and web_pc_high_boot_enabled()
 
 
 
