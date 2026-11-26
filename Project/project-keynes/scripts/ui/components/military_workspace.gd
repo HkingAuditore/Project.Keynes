@@ -22,6 +22,7 @@ signal locate_cell_requested(cell: int)
 signal target_cells_requested(cells: PackedInt32Array)
 
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+const TouchSliderPad = preload("res://scripts/ui/components/touch_slider_pad.gd")
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 const VIEW_MODEL_SCRIPT = preload("res://scripts/ui/military_view_model.gd")
 ## 新脚本刻意不写 class_name：未进 global_script_class_cache 的类名会让引用方解析失败
@@ -207,10 +208,11 @@ func _refresh_layout() -> void:
 func _bind_forces() -> void:
 	_target_slider.drag_started.connect(func() -> void: _slider_dragging = true)
 	_target_slider.drag_ended.connect(_on_target_drag_ended)
-	# 键盘、点击轨道、无障碍调整都不会发 `drag_ended`；只挂 drag_ended 会让这些
-	# 输入永远发不出命令，下一次 200ms 刷新再把把手写回原生旧值。所以值一变就
-	# 更新读数，非拖动状态再走一次防抖提交。
 	_target_slider.value_changed.connect(_on_target_value_changed)
+	TouchSliderPad.attach_to(_target_value, _target_slider, {
+		"title": func() -> String: return "每日军费预算" if _mode_budget.button_pressed else "目标常备兵力",
+		"commit": func(_v: float) -> void: _commit_target(),
+	})
 	_mode_headcount.pressed.connect(_on_target_mode.bind(0))
 	_mode_budget.pressed.connect(_on_target_mode.bind(1))
 	_quality_best.pressed.connect(_request.bind(

@@ -189,11 +189,11 @@ func _show_settings() -> void:
 				scale.select(scale.item_count - 1)
 		if layout != null:
 			for entry in [{"label": "界面布局 · 完整", "id": "fit"},
-					{"label": "界面布局 · 铺满", "id": "fill"},
+					{"label": "界面布局 · 铺满（推荐）", "id": "fill"},
 					{"label": "界面布局 · 紧凑", "id": "dense"}]:
 				layout.add_item(String(entry.label))
 				layout.set_item_metadata(layout.item_count - 1, entry.id)
-				if String(entry.id) == String(current.get("ui_layout_mode", "fit")):
+				if String(entry.id) == String(current.get("ui_layout_mode", "fill")):
 					layout.select(layout.item_count - 1)
 	else:
 		for value in [80, 100, 125, 150]:

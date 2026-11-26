@@ -7,11 +7,36 @@
 
 [node name="IndustryPage" type="VBoxContainer" unique_id=816720221]
 size_flags_horizontal = 3
-theme_override_constants/separation = 14
+theme_override_constants/separation = 12
 script = ExtResource("1_script")
 chapter_id = "industry"
 
+[node name="MobileSectionTabs" type="HBoxContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TabOperations" type="Button" parent="MobileSectionTabs"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "建筑运营台账"
+theme_type_variation = &"PKPrimaryButton"
+
+[node name="TabInvestment" type="Button" parent="MobileSectionTabs"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+text = "资本流向与受阻"
+theme_type_variation = &"PKIconButton"
+
 [node name="Detail" type="PanelContainer" parent="." unique_id=1421944305]
+unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"PKDossierAside"
 
@@ -71,6 +96,7 @@ theme_type_variation = &"PKDossierBody"
 autowrap_mode = 3
 
 [node name="TableHeader" type="HBoxContainer" parent="." unique_id=1038266712]
+unique_name_in_owner = true
 layout_mode = 2
 
 [node name="TableKicker" type="Label" parent="TableHeader" unique_id=195876414]

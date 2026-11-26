@@ -122,9 +122,10 @@ func _on_scrolled(_value: float) -> void:
 
 func _layout_columns() -> void:
 	var available := maxf(160.0, size.x)
+	var density_factor := 1.68 if TouchUI.is_phone_landscape() else 1.0
 	var keep: Array = _columns.duplicate()
 	while true:
-		if _column_span(keep) <= available:
+		if _column_span(keep) * density_factor <= available:
 			break
 		var dropped := false
 		for i in range(keep.size() - 1, -1, -1):

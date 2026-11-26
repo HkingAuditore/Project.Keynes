@@ -309,9 +309,10 @@ func _layout_right_panel() -> void:
 	_right_panel.offset_left = -panel_width - UITokens.ARCHIVE_EDGE_INSET
 	var top_bar_height := _top_bar.size.y if _top_bar != null and _top_bar.size.y > 0.0 \
 		else PlayerTopBar.BAR_HEIGHT
-	_right_panel.offset_top = top_bar_height + UITokens.SPACE_MD
+	var full_height_touch := touch_layout_enabled() and (detail_open or family_open)
+	_right_panel.offset_top = 8.0 if full_height_touch else (top_bar_height + UITokens.SPACE_MD)
 	_right_panel.offset_right = -UITokens.ARCHIVE_EDGE_INSET
-	_right_panel.offset_bottom = -UITokens.ARCHIVE_EDGE_INSET
+	_right_panel.offset_bottom = -8.0 if full_height_touch else -UITokens.ARCHIVE_EDGE_INSET
 	_right_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_right_panel.grow_vertical = Control.GROW_DIRECTION_END
 	_right_panel.custom_minimum_size.x = panel_width

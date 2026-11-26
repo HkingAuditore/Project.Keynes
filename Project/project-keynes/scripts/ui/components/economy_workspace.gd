@@ -10,6 +10,7 @@ const TaxCardScene := preload("res://scenes/ui/economy_tax_card.tscn")
 const TaxLaneScene := preload("res://scenes/ui/economy_tax_lane.tscn")
 const TaxGroupControllerScript := preload("res://scripts/ui/components/economy_tax_group_controller.gd")
 const TouchValueFieldScript := preload("res://scripts/ui/components/touch_value_field.gd")
+const TouchTaxCardBinder := preload("res://scripts/ui/components/touch_tax_card_binder.gd")
 const TreasuryGoodScene := preload("res://scenes/ui/treasury_good_card.tscn")
 const TradeRowScene := preload("res://scenes/ui/economy_trade_row.tscn")
 
@@ -34,9 +35,6 @@ const TAX_ABSOLUTE_MAX := 1000000000
 const CARD_SIZE := Vector2(280.0, 0.0)
 const ENTRANCE_STAGGER := 0.022
 const ENTRANCE_MAX_DELAY := 0.30
-# The simulation can advance dozens of days per real second. Summary cards are
-# reading instruments, so coalesce those bursts while retaining the newest
-# authoritative snapshot for the trailing refresh.
 const LIVE_REFRESH_INTERVAL_MSEC := 200
 const DRAFT_COMMIT_DELAY_SEC := 0.18
 const SUMMARY_CARD_SIZE := Vector2(180.0, 78.0)
@@ -842,22 +840,23 @@ func _set_spin_basis_points(spin: SpinBox, rate_basis_points: int,
 		mode: int = TAX_MODE_PERCENT_BP) -> void:
 	if spin == null:
 		return
+	var line := spin.get_line_edit()
+	if line != null and line.has_focus():
+		return
 	_configure_spin_for_mode(spin, mode)
 	if mode == TAX_MODE_ABSOLUTE:
 		spin.set_value_no_signal(
 			TaxLaneEditor.absolute_amount_to_currency(rate_basis_points))
-		var line := spin.get_line_edit()
-		if line != null and not line.has_focus():
+		if line != null:
 			line.text = TaxLaneEditor._format_value(rate_basis_points, mode, false)
 		return
 	spin.set_value_no_signal(TaxLaneEditor.basis_points_to_percent(rate_basis_points))
-	var line := spin.get_line_edit()
 	if line == null:
 		return
 	var percent := TaxLaneEditor.basis_points_to_percent(rate_basis_points)
 	var shown := "%d" % int(round(percent)) \
 		if is_equal_approx(percent, round(percent)) else "%.2f" % percent
-	if not line.has_focus() and not String(spin.suffix).is_empty():
+	if not String(spin.suffix).is_empty():
 		shown = "%s %s" % [shown, spin.suffix]
 	if line.text != shown:
 		line.text = shown
@@ -996,6 +995,7 @@ func _ensure_card(page: String, item_id: String, label: String,
 	_rows[key] = result
 	_apply_card_frame(result, false)
 	_watch_card_hover(panel)
+	TouchTaxCardBinder.bind_card(self, key, result)
 	return result
 
 
@@ -1042,21 +1042,20 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 				mode_button.select(select_index)
 		var pending := _pending.has("%s:%s" % [kind, String(card.item_id)])
 		((card.pendings as Dictionary)[kind] as Control).visible = pending
-		if pending:
-			var pending_entry: Dictionary = _pending.get(
-				"%s:%s" % [kind, String(card.item_id)], {})
-			var spin := (card.spins as Dictionary)[kind] as SpinBox
-			if pending_entry.has("rate"):
-				var pending_rate := int(pending_entry.rate)
-				var pending_mode := int(pending_entry.get("mode", mode))
-				_set_spin_basis_points(spin, pending_rate, pending_mode)
-			continue
 		var spin := (card.spins as Dictionary)[kind] as SpinBox
 		var line_edit := spin.get_line_edit()
 		var draft_key := _item_draft_key(kind, String(card.item_id))
 		if line_edit.has_focus() or spin.has_focus() or _draft_overrides.has(draft_key):
 			(card.rates as Dictionary)[kind] = int(data.get("base", 0))
 			(card.overridden as Dictionary)[kind] = bool(data.get("has_override", false))
+			continue
+		if pending:
+			var pending_entry: Dictionary = _pending.get(
+				"%s:%s" % [kind, String(card.item_id)], {})
+			if pending_entry.has("rate"):
+				var pending_rate := int(pending_entry.rate)
+				var pending_mode := int(pending_entry.get("mode", mode))
+				_set_spin_basis_points(spin, pending_rate, pending_mode)
 			continue
 		var base := int(data.get("base", 0))
 		var effective := int(data.get("effective", base))
@@ -1069,12 +1068,13 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 		((card.resets as Dictionary)[kind] as Button).visible = overridden
 		(card.overridden as Dictionary)[kind] = overridden
 		(card.rates as Dictionary)[kind] = base
-		if (card.kinds as Array).size() == 1 and not bool(card.is_default):
+		if not bool(card.is_default) and (card.kinds as Array).size() == 1:
 			var sub := card.sub as Label
 			sub.visible = visual_rate == base and effective != base \
 				and mode == TAX_MODE_PERCENT_BP
 			if sub.visible:
 				sub.text = "修正后 %s" % _format_rate(effective)
+	TouchTaxCardBinder.sync_card(self, card)
 	_refresh_override_frame(card)
 
 

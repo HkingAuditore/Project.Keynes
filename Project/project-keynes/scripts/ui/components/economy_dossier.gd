@@ -471,11 +471,11 @@ func _apply_pending_section() -> void:
 
 func _update_layout_mode() -> void:
 	var width := size.x
-	var narrow := _compact or width < COMPACT_WIDTH
+	var narrow := width > 0.0 and width < COMPACT_WIDTH
 	for chapter_id in _pages:
 		var target = _pages[chapter_id]
 		if target.has_method("set_narrow"):
-			target.set_narrow(narrow, 0.0 if _compact else width)
+			target.set_narrow(narrow, width)
 	for card in _kpi_row.get_children():
 		if card is DossierKpiCard:
-			(card as Control).custom_minimum_size.x = 104.0 if narrow else 150.0
+			(card as Control).custom_minimum_size.x = 104.0 if (narrow or _compact) else 150.0

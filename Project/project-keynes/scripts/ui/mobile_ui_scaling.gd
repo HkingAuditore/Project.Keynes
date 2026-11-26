@@ -62,13 +62,16 @@ const VIEWPORT_HEIGHT := 960.0
 const DESIGN_DP_PER_UNIT := 0.5
 
 ## 触摸档布局策略（设置里的「界面布局」三档）。桌面档恒为 fit，不读这个值。
-##   fit   ：KEEP 1600×960 —— 与 PC 逐像素一致，20:9 上两侧留黑边。默认，版式最正。
-##   fill  ：EXPAND —— 铺满整屏无黑边，多出来的宽度给地图；代价是左右 anchor 的容器会被拉开。
-##   dense ：EXPAND + 0.85 —— 元素再小 15%，逻辑画布比 fit 高约 24%，同屏多显示一屏内容。
+##   fill  ：默认推荐。EXPAND 铺满无黑边 + 720p 黄金逻辑短边（20:9 上约 1600×720，元素自然放大 33%）。
+##   fit   ：KEEP 1600×960 —— 与 PC 比例一致，20:9 上两侧留黑边，适合平板或偏好完整桌面比例。
+##   dense ：EXPAND 1.0 —— 铺满无黑边且保持 960 逻辑高（20:9 上约 2133×960），同屏多显示内容。
 const LAYOUT_MODES := ["fit", "fill", "dense"]
-## dense 档的额外缩小系数。0.85 时 18px 正文 ≈ 6.3dp —— 已经是可读下限，
-## 再小就需要 token 级字阶（单独缩字号/行高），而不是继续压缩放。
-const DENSE_SCALE := 0.85
+## fill 档目标逻辑高度（设计像素）：960 / 720 = 1.3333×，让 20:9 手机横屏恰好落在 ~1600×720。
+const FILL_TARGET_HEIGHT := 720.0
+const FILL_SCALE := VIEWPORT_HEIGHT / FILL_TARGET_HEIGHT
+const DENSE_SCALE := 1.0
+## 物理短边低于此阈值（dp）视为手机横屏（Phone Landscape），高于此阈值视为平板（Tablet）。
+const PHONE_MAX_SHORT_SIDE_DP := 560.0
 ## dpi 不可信时的兜底：按 6.5 英寸对角线反推。
 const FALLBACK_DIAGONAL_INCH := 6.5
 const FALLBACK_DPI := 400.0
@@ -83,8 +86,8 @@ const SAFE_AREA_MAX_RATIO := 0.25
 
 var _is_touch := false
 var _dpi := 96.0
-## 触摸档布局策略（fit / fill / dense）。桌面档无效。
-var _layout_mode := "fit"
+## 触摸档布局策略（fill / fit / dense）。桌面档无效。
+var _layout_mode := "fill"
 ## 触摸档在布局之上的再缩放（%）。50/75/100 —— 只往下，>100 会压小画布并触发 compact。
 var _layout_scale := 100
 ## 设备倍率（[pc-fit 2026-11-17] 触摸档恒 1.0，只作诊断字段保留）。
@@ -142,9 +145,9 @@ func _on_window_resized() -> void:
 ##   乘在档位系数上：total = base_stretch × (layout_scale/100) × mode_factor。
 ##   >100 会把逻辑画布压到 1600×960 以下（200% ⇒ 800×480），`is_short_viewport()` 随之变 true，
 ##   各工作台切 compact 版式 —— 这是放大档的既定代价（玩家自己选「大 UI + 紧凑版式」）。
-func configure(user_percent: int, layout_mode: String = "fit", layout_scale_percent: int = -1) -> void:
+func configure(user_percent: int, layout_mode: String = "fill", layout_scale_percent: int = -1) -> void:
 	_user_percent = clampi(user_percent, 50, 400)
-	_layout_mode = layout_mode if layout_mode in LAYOUT_MODES else "fit"
+	_layout_mode = layout_mode if layout_mode in LAYOUT_MODES else "fill"
 	_layout_scale = clampi(layout_scale_percent, 50, 200) if layout_scale_percent > 0 else _user_percent
 	_apply()
 
@@ -196,16 +199,25 @@ func dpi() -> float:
 	return _dpi
 
 
+## 物理短边（dp）：用于区分手机横屏（< 560dp）与平板（>= 560dp）。
+func physical_short_side_dp() -> float:
+	var win := DisplayServer.window_get_size()
+	if win.x <= 0 or win.y <= 0:
+		win = REFERENCE_SIZE
+	return float(mini(win.x, win.y)) * 160.0 / maxf(_dpi, 1.0)
+
+
+func is_phone_landscape() -> bool:
+	return _is_touch and physical_short_side_dp() < PHONE_MAX_SHORT_SIDE_DP
+
+
 ## 安全区（设计像素）。left/top/right/bottom 都是「离内容区边缘多少设计像素要留白」。
 ##
-## [pc-fit 2026-11-17] KEEP 模式内容区居中、两侧有黑边，安全区常常整块落在黑边里
-## （刘海/挖孔在屏幕最外侧）。所以先算出内容区在屏幕上的左上角，再拿安全区去夹 ——
-## 否则会把「已经被黑边让开」的边距再内缩一次，白吃几十像素。
+## KEEP 模式内容区居中、两侧有黑边，安全区常常整块落在黑边里；
+## EXPAND 模式（fill / dense）内容区铺满整个窗口，原点为 (0, 0)。
 func safe_insets() -> Dictionary:
 	var insets := {"left": 0.0, "top": 0.0, "right": 0.0, "bottom": 0.0}
 	if not _is_touch:
-		# 桌面/Web：DisplayServer.get_display_safe_area() 在 Windows 上是「显示器工作区」，
-		# 跟窗口无关，直接用会算出几十像素的假刘海。
 		return insets
 	var safe := _safe_area_pixels()
 	var window := DisplayServer.window_get_size()
@@ -213,17 +225,15 @@ func safe_insets() -> Dictionary:
 		return insets
 	var origin := DisplayServer.window_get_position()
 	var scale := maxf(_total_scale, 0.01)
-	# 把安全区统一到**窗口坐标**：
-	#   真实移动端 DisplayServer.get_display_safe_area() 是屏幕坐标 → 减 origin；
-	#   QA/桌面模拟走 _safe_area_pixels() 的 override，本身就是窗口坐标 → 不减。
-	# 两种语义混用会让右侧凭空多出 origin.x 像素的内缩（实测 1600 宽窗口算出 20）。
 	var safe_pos := Vector2(safe.position)
 	if not _safe_area_is_window_local():
 		safe_pos -= Vector2(origin)
 	var safe_end := safe_pos + Vector2(safe.size)
-	# 内容区（1600×960 等比缩放后）在窗口内的原点。KEEP 下横向一般有黑边。
-	var content := Vector2(REFERENCE_SIZE) * scale
-	var content_origin := (Vector2(window) - content) * 0.5
+	var content := Vector2(window)
+	var content_origin := Vector2.ZERO
+	if _layout_mode == "fit":
+		content = Vector2(REFERENCE_SIZE) * scale
+		content_origin = (Vector2(window) - content) * 0.5
 	var limit := Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT) * SAFE_AREA_MAX_RATIO * scale
 	insets.left = clampf(safe_pos.x - content_origin.x, 0.0, limit.x) / scale
 	insets.top = clampf(safe_pos.y - content_origin.y, 0.0, limit.y) / scale
@@ -314,8 +324,9 @@ func _apply_inner() -> void:
 	# 自激成环：实测用户控制台 logical 宽度 1140→1136→994→968→867→825→823 持续收缩，
 	# 同时 terrain_render_scale 每帧按新尺寸重分配渲染目标（见 terrain_render_scale.gd:107）。
 	# 这里用「输入」做签名：输入定了输出就定了，不必等输出算完再比。
-	var input_sig := "%s|%s|%.1f|%d|%d|%d|%d" % ["touch" if _is_touch else "desktop",
-		_layout_mode, _dpi, _user_percent, _layout_scale, win.x, win.y]
+	var web_dpr := _resolve_web_dpr()
+	var input_sig := "%s|%s|%.1f|%.3f|%d|%d|%d|%d" % ["touch" if _is_touch else "desktop",
+		_layout_mode, _dpi, web_dpr, _user_percent, _layout_scale, win.x, win.y]
 	if input_sig == _last_signature:
 		return
 	_last_signature = input_sig
@@ -325,47 +336,36 @@ func _apply_inner() -> void:
 		# 与桌面百分比解耦：同一台机器切到触屏/鼠标不该互相改写对方的设置。
 		user = float(_layout_scale) / 100.0
 	if _is_touch:
-		# [pc-fit 2026-11-17] 排版优先：不做 dpi 反推放大，总缩放 = EXPAND 基准等比拉伸。
-		# 逻辑画布由 fit/fill/dense 三档决定（见 LAYOUT_MODES）。
+		# 触摸档：分离 UI 矢量清晰渲染与地图独立降采样（terrain_render_scale.gd）。
+		# 窗口统一采用 CANVAS_ITEMS 在物理分辨率上直接光栅化字体与矢量边框，告别上采样模糊。
 		_device_scale = 1.0
 		var mode_factor := 1.0
 		var aspect := Window.CONTENT_SCALE_ASPECT_KEEP
 		match _layout_mode:
 			"fill":
 				aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+				mode_factor = FILL_SCALE
 			"dense":
 				aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
 				mode_factor = DENSE_SCALE
-		# 桌面档的「界面缩放」把用户倍率直接叠进 factor；触摸档默认 100%。
 		var factor := user * mode_factor
-		# [render-scale 2026-11-17] 移动端渲染分辨率降采样：用 VIEWPORT 模式让 2D 场景
-		# 在**逻辑画布**（1600×960）上着色，再由引擎上采样到物理分辨率
-		# （2670×1200 → 1600×960，填充量 −52%，所有全屏 shader 一起受益）。
-		#
-		# 只在 factor == 1 的档位（fit / fill 默认 100%）启用：
-		#   VIEWPORT 模式下 `content_scale_factor` 是**渲染目标**的倍率，factor≠1 时
-		#   （dense 档的 0.85）画布尺寸也会跟着变，逻辑画布与 _total_scale 的换算会失配。
-		#   这种情况下退回 CANVAS_ITEMS（物理像素着色），保证版式正确。
-		# 代价：整体变软，UI 文字最明显（1.25~1.67× 上采样）。
-		var use_viewport := DCFeatureFlags.render_viewport_enabled() \
-			and is_equal_approx(factor, 1.0)
-		window.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT if use_viewport \
-			else Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+		window.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
 		window.content_scale_size = REFERENCE_SIZE
 		window.content_scale_aspect = aspect
 		_base_stretch = maxf(minf(float(win.x) / VIEWPORT_WIDTH, float(win.y) / VIEWPORT_HEIGHT),
 			0.01)
-		# _total_scale = 实际绘制缩放（物理像素 / 设计像素）。safe_insets 与地图相机补偿
-		# 都要用它；用户倍率只乘一次。
 		_total_scale = _base_stretch * factor
 		window.content_scale_factor = factor
 	else:
-		# 桌面/Web：与改动前完全一致——拉伸关闭，factor 只表示用户 UI 缩放。
-		_device_scale = 1.0
-		_total_scale = user
+		# 桌面 / PC-Web：拉伸关闭。PC-Web 解锁原生 HiDPI（DPR≤2.0）后，canvas 按物理像素
+		# 分配；同步按 DPR 抬高 _device_scale，并夹住逻辑画布不低于 1600×960（避免
+		# 1080p@150% 窗口被压进 compact 窄视口），兼顾物理像素锐度与桌面完整排版。
+		var fit_cap := maxf(1.0, minf(float(win.x) / VIEWPORT_WIDTH, float(win.y) / VIEWPORT_HEIGHT))
+		_device_scale = clampf(minf(web_dpr, fit_cap), 1.0, 4.0) if web_dpr > 1.0 else 1.0
+		_total_scale = _device_scale * user
 		_base_stretch = 1.0
 		window.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-		window.content_scale_factor = user
+		window.content_scale_factor = _total_scale
 	# 判重已在函数开头完成（输入签名），这里不再重复比较。
 	# fit（KEEP）的逻辑画布就是 REFERENCE_SIZE；fill/dense（EXPAND）与桌面档按窗口/总缩放换算。
 	var keep_logical := _is_touch and _layout_mode == "fit"
@@ -389,9 +389,28 @@ func _resolve_touch() -> bool:
 		return true
 	if override == "desktop":
 		return false
-	# 只认原生移动平台。Web（含移动浏览器）走 export_presets.cfg 的 DPR=1 方案，
-	# 由另一路负责，这里不介入。
-	return OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
+	return OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios") \
+		or DCFeatureFlags.is_mobile_web()
+
+
+func _resolve_web_dpr() -> float:
+	var forced := float(_qa_override.get("web_dpr", 0.0))
+	if forced > 0.0:
+		return clampf(forced, 0.5, 4.0)
+	if not OS.has_feature("web") or DCFeatureFlags.is_mobile_web():
+		return 1.0
+	if Engine.has_singleton("JavaScriptBridge"):
+		var bridge: Object = Engine.get_singleton("JavaScriptBridge")
+		if bridge != null:
+			var raw: Variant = bridge.call("eval", "Number(window.devicePixelRatio) || 1")
+			if raw is float or raw is int:
+				var dpr := float(raw)
+				if is_finite(dpr) and dpr > 0.0:
+					return clampf(dpr, 1.0, 4.0)
+	var screen_scale := DisplayServer.screen_get_scale()
+	if is_finite(screen_scale) and screen_scale > 1.0:
+		return clampf(screen_scale, 1.0, 2.0)
+	return 1.0
 
 
 func _resolve_dpi(win: Vector2i) -> float:

@@ -153,7 +153,7 @@ unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
-horizontal_scroll_mode = 2
+horizontal_scroll_mode = 1
 vertical_scroll_mode = 0
 
 [node name="Buttons" type="HBoxContainer" parent="SafeMargin/Main/PageArea/MobileNav"]

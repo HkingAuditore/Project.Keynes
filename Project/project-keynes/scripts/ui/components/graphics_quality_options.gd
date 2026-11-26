@@ -21,12 +21,9 @@ var _mobile := false
 
 func _ready() -> void:
 	var preset_values := QualitySettings.PRESET_IDS.duplicate()
-	if not OS.has_feature("web"):
-		preset_values.append("custom")
+	preset_values.append("custom")
 	_preset = _add_option("RenderQuality", "画质预设", PRESET_LABELS, preset_values)
 	_preset.item_selected.connect(_on_preset_selected)
-	if OS.has_feature("web"):
-		return
 	var previous := _preset
 	for key in OPTION_LABELS:
 		var labels: Array = OPTION_LABELS[key]
@@ -38,10 +35,8 @@ func _ready() -> void:
 		previous = field
 
 
-func configure(settings: Dictionary, mobile: bool = OS.has_feature("mobile")) -> void:
+func configure(settings: Dictionary, mobile: bool = OS.has_feature("mobile") or DCFeatureFlags.is_mobile_web()) -> void:
 	_draft = settings.duplicate()
-	if OS.has_feature("web"):
-		_draft["graphics_custom"] = false
 	_mobile = mobile
 	set_vsync_enabled(bool(settings.get("vsync", true)))
 	_refresh_options()

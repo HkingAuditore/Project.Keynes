@@ -24,6 +24,7 @@ var _fraction := 0.0
 var _eta := ""
 var _hover := false
 var _remove_hover := false
+var _up_hover := false
 var _retired := false
 
 
@@ -81,22 +82,37 @@ func eta_text() -> String:
 	return _eta
 
 
+func _can_move_up() -> bool:
+	return TouchUI.is_touch() and not _retired and queue_position > 0
+
+
+func _up_rect() -> Rect2:
+	return Rect2(size.x - REMOVE_SIZE * 2.0 - 8.0, (ROW_HEIGHT - REMOVE_SIZE) * 0.5 - 2.0,
+		REMOVE_SIZE, REMOVE_SIZE)
+
+
+func _up_hit_rect() -> Rect2:
+	return _up_rect().grow(6.0)
+
+
 func _remove_rect() -> Rect2:
 	return Rect2(size.x - REMOVE_SIZE - 2.0, (ROW_HEIGHT - REMOVE_SIZE) * 0.5 - 2.0,
 		REMOVE_SIZE, REMOVE_SIZE)
 
 
 func _remove_hit_rect() -> Rect2:
-	return _remove_rect().grow(8.0) if TouchUI.is_touch() else _remove_rect()
+	return _remove_rect().grow(6.0) if TouchUI.is_touch() else _remove_rect()
 
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		var position := (event as InputEventMouseMotion).position
 		var remove_hover := _remove_hit_rect().has_point(position)
-		if not _hover or remove_hover != _remove_hover:
+		var up_hover := _can_move_up() and _up_hit_rect().has_point(position)
+		if not _hover or remove_hover != _remove_hover or up_hover != _up_hover:
 			_hover = true
 			_remove_hover = remove_hover
+			_up_hover = up_hover
 			mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 			queue_redraw()
 	elif event is InputEventMouseButton:
@@ -104,26 +120,30 @@ func _gui_input(event: InputEvent) -> void:
 		if button.button_index != MOUSE_BUTTON_LEFT:
 			return
 		if not button.pressed:
-			if TouchUI.is_touch() and (_hover or _remove_hover):
+			if TouchUI.is_touch() and (_hover or _remove_hover or _up_hover):
 				_hover = false
 				_remove_hover = false
+				_up_hover = false
 				queue_redraw()
 			return
 		if _remove_hit_rect().has_point(button.position):
 			remove_requested.emit(technology_index)
+		elif _can_move_up() and _up_hit_rect().has_point(button.position):
+			move_requested.emit(technology_index, domain_index, queue_position - 1)
 		else:
 			selected_requested.emit(technology_index)
 
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_MOUSE_EXIT and (_hover or _remove_hover):
+	if what == NOTIFICATION_MOUSE_EXIT and (_hover or _remove_hover or _up_hover):
 		_hover = false
 		_remove_hover = false
+		_up_hover = false
 		queue_redraw()
 
 
 func _get_drag_data(_at_position: Vector2) -> Variant:
-	if technology_index < 0 or _retired:
+	if TouchUI.is_touch() or technology_index < 0 or _retired:
 		return null
 	var preview := DragPreviewScene.instantiate() as Label
 	preview.text = display_name
@@ -152,18 +172,25 @@ func _draw() -> void:
 		draw_rect(Rect2(0.0, 3.0, 2.0, ROW_HEIGHT - 8.0), _accent.lerp(UITokens.DOSSIER_INK, 0.2))
 	_text(Vector2(6.0, 25.0), "%d" % (queue_position + 1), 17,
 		UITokens.DOSSIER_INK_MUTED, "numeral")
-	var name_right := w - REMOVE_SIZE - 8.0
+	var right_reserve := (REMOVE_SIZE * 2.0 + 14.0) if _can_move_up() else (REMOVE_SIZE + 8.0)
+	var name_right := w - right_reserve
 	_text(Vector2(30.0, 25.0), _fit_text(display_name, 18, name_right - 30.0,
 		"sans_strong" if head else "sans"), 18, UITokens.DOSSIER_INK,
 		"sans_strong" if head else "sans")
 	if not _eta.is_empty():
 		_text(Vector2(30.0, 46.0), _fit_text(_eta, 15, name_right - 30.0), 15,
 			UITokens.DOSSIER_OXBLOOD if head else UITokens.DOSSIER_INK_MUTED)
-	var track := Rect2(22.0, ROW_HEIGHT - 8.0, maxf(8.0, w - REMOVE_SIZE - 30.0), 3.0)
+	var track := Rect2(22.0, ROW_HEIGHT - 8.0, maxf(8.0, w - right_reserve - 22.0), 3.0)
 	_rounded_bar(track, UITokens.DOSSIER_TRACK, 1.5)
 	if _fraction > 0.0:
 		_rounded_bar(Rect2(track.position, Vector2(track.size.x * _fraction, track.size.y)),
 			_accent.lerp(UITokens.DOSSIER_INK, 0.2), 1.5)
+	if _can_move_up():
+		var up := _up_rect()
+		if _up_hover:
+			draw_rect(up, UITokens.DOSSIER_SELECTED)
+		_text(Vector2(up.position.x + 8.0, up.position.y + 20.0), "↑", 18,
+			UITokens.DOSSIER_OXBLOOD if _up_hover else UITokens.DOSSIER_INK, "sans_strong")
 	var remove := _remove_rect()
 	if _remove_hover:
 		draw_rect(remove, UITokens.DOSSIER_SELECTED)

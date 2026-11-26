@@ -18,6 +18,8 @@ class_name MilitaryPeaceWindow
 const PeaceViewModelScript = preload("res://scripts/ui/military_peace_view_model.gd")
 const MilitaryViewModelScript = preload("res://scripts/ui/military_view_model.gd")
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+const TouchValueFieldScript = preload("res://scripts/ui/components/touch_value_field.gd")
+const TouchInspectable = preload("res://scripts/ui/components/touch_inspectable.gd")
 
 signal closed()
 ## The player stamped the deal. GameUIManager turns this into the command.
@@ -141,6 +143,20 @@ func _ready() -> void:
 	_annex.toggled.connect(_on_term_toggled.bind("annex"))
 	for spin in [_lump_amount, _install_amount, _install_count]:
 		(spin as SpinBox).value_changed.connect(_on_amount_changed)
+	if TouchUI.is_touch():
+		for pair in [[_lump_amount, "一次赔款金额"], [_install_amount, "每期赔款金额"], [_install_count, "分期期数"]]:
+			var sp := pair[0] as SpinBox
+			var field := TouchValueFieldScript.new()
+			field.attach(sp, {
+				"title": String(pair[1]),
+				"show_modes": false,
+				"allow_negative": false,
+				"commit": func(text: String, _m: int) -> void:
+					if text.is_valid_int() or text.is_valid_float():
+						sp.value = clampf(text.to_float(), sp.min_value, sp.max_value),
+			})
+		TouchInspectable.bind_disabled_reason(_submit, "暂不可递交和约",
+			func() -> String: return _blocked_reason())
 	_close.pressed.connect(close_panel)
 	_submit.pressed.connect(_on_submit)
 	_refresh_timer = Timer.new()
@@ -277,15 +293,17 @@ func _layout() -> void:
 	set_anchors_preset(Control.PRESET_TOP_LEFT)
 	# While the open tween runs it owns `position`; writing the resting offset here
 	# would cancel the slide halfway (same guard the inspector uses).
-	if not has_meta("_ui_active_tween"):
-		position = Vector2(UITokens.ARCHIVE_EDGE_INSET, PlayerTopBar.BAR_HEIGHT + 4.0)
 	var touch := TouchUI.is_touch()
-	var width := roundf(viewport_size.x * (0.56 if touch else 0.42))
-	width = clampf(width, 560.0 if touch else PANEL_MIN_WIDTH, PANEL_MAX_WIDTH)
+	var top_y := 8.0 if touch else (PlayerTopBar.BAR_HEIGHT + 4.0)
+	if not has_meta("_ui_active_tween"):
+		position = Vector2(UITokens.ARCHIVE_EDGE_INSET, top_y)
+	var width := roundf(viewport_size.x * (0.46 if touch else 0.42))
+	width = clampf(width, 460.0 if touch else PANEL_MIN_WIDTH, PANEL_MAX_WIDTH)
 	if touch:
 		width = minf(width, maxf(320.0, viewport_size.x - UITokens.ARCHIVE_EDGE_INSET * 2.0))
-	size = Vector2(width, maxf(0.0, viewport_size.y - position.y
-		- CountryActionBar.BAR_HEIGHT - UITokens.ARCHIVE_EDGE_INSET))
+	var bottom_reserve := UITokens.ARCHIVE_EDGE_INSET if touch \
+		else (CountryActionBar.BAR_HEIGHT + UITokens.ARCHIVE_EDGE_INSET)
+	size = Vector2(width, maxf(0.0, viewport_size.y - top_y - bottom_reserve))
 	# 720p docking only leaves ~380 px for the scroll; two KPIs in one row keep the
 	# whole terms block above the fold, the other two numbers move into the
 	# 战况 header line.
