@@ -200,7 +200,7 @@ extends Resource
 @export_range(0, 655360, 1) var wage_income_cap_ratio_q16: int = 78643
 @export_range(0, 65536, 1) var employee_profit_share_q16: int = 16384
 @export_range(-65536, 0, 1) var building_severe_loss_threshold_q16: int = -16384
-@export_range(1, 32, 1) var building_severe_loss_cycles: int = 3
+@export_range(1, 32, 1) var building_severe_loss_cycles: int = 6
 @export_range(0, 65536, 1) var building_restart_margin_q16: int = 6554
 ## Merchants keep 12.5% of frozen opening cash while procurement is active.
 @export_range(0, 65536, 1) var merchant_procurement_cash_reserve_q16: int = 8192

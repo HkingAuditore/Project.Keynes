@@ -198,10 +198,25 @@ bool NativeEconomyRuntime::commit_ready_construction(
         for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
             const auto group = building_view(pk_row);
             if (group.count > 0) continue;
-            if (_modifier_runtime != nullptr)
-                modifier_api::retire_building_identity(*_modifier_runtime,
-                    group.cell, group.type_id, group.owner_signature_id,
-                    _current_day.get());
+            // A zero-count row now stays in the store for the rest of the
+            // session (collapse v2, 2026-11-26). Retiring its identity was
+            // already idempotent, but the sweep treated the row as a fresh
+            // structural change every period, so one collapsed lot rebuilt the
+            // whole role storage and re-counted itself once per epoch forever.
+            // Only the call that actually retires an identity is a change.
+            //
+            // With no modifier runtime there is no identity to observe, so the
+            // "first visit" question cannot be answered; keep treating the row
+            // as a structural change instead of assuming it was pruned earlier.
+            // Skipping there would leave the cell topology stale, which is the
+            // fail-open this guard must not reintroduce.
+            bool retired_now = true;
+            if (_modifier_runtime != nullptr) {
+                retired_now = modifier_api::retire_building_identity(
+                    *_modifier_runtime, group.cell, group.type_id,
+                    group.owner_signature_id, _current_day.get());
+            }
+            if (!retired_now) continue;  // already pruned in an earlier period
             changed_cells.push_back(group.cell);
             topology_changed = true;
             changed = true;
