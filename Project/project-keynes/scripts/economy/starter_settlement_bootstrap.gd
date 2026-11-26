@@ -16,9 +16,6 @@ const SURVIVAL_PLAN_PATH := "res://data/economy/consumption_plans/survival_house
 
 static func build(map: MapData, facade: EconomyFacade, start_cell: int,
 		precious_resource: String) -> Dictionary:
-	if precious_resource != "gold_ore":
-		return _error("starter_context_invalid",
-			"石器时代正式开局只接受砂金路线。")
 	var fallback := _fallback_start(start_cell, precious_resource)
 	var planned := StarterEconomyPlannerScript.plan(
 		map, start_cell, fallback, facade)
@@ -57,9 +54,8 @@ static func build_many(map: MapData, facade: EconomyFacade,
 	for start in starts:
 		var start_cell := int(start.get("cell", -1))
 		var precious_resource := String(start.get("precious_resource", ""))
-		if start_cell < 0 or start_cell >= map.cell_count() \
-				or precious_resource != "gold_ore":
-			return _error("starter_context_invalid", "初始聚落地点或砂金路线无效。")
+		if start_cell < 0 or start_cell >= map.cell_count():
+			return _error("starter_context_invalid", "初始聚落地点无效。")
 		var route_buildings: PackedStringArray = start.get(
 			"starter_building_ids", PackedStringArray())
 		var route_counts: PackedInt64Array = start.get(
@@ -261,12 +257,17 @@ static func _append_population_row(signature_ids: PackedInt32Array,
 static func _fallback_start(start_cell: int, precious_resource: String) -> Dictionary:
 	var technologies := PackedStringArray([
 		"tech.gathering", "tech.hunting", "tech.early_trade",
-		"tech.deadwood_collection", "tech.gold_panning",
+		"tech.deadwood_collection",
 	])
 	var buildings := PackedStringArray([
 		"gathering_ground", "stone_age_hunting_camp", "early_merchant_post",
-		"deadwood_gathering_camp", "placer_gold_working",
+		"deadwood_gathering_camp",
 	])
+	var precious_good_id := ""
+	if precious_resource == "gold_ore":
+		technologies.append("tech.gold_panning")
+		buildings.append("placer_gold_working")
+		precious_good_id = "gold"
 	return {
 		"cell": start_cell,
 		"precious_resource": precious_resource,
@@ -286,7 +287,7 @@ static func _fallback_start(start_cell: int, precious_resource: String) -> Dicti
 		"starter_clothing_resource_id": "",
 		"starter_construction_resource_id": "timber",
 		"starter_input_buffer_good_id": "raw_hide",
-		"starter_precious_good_id": "gold",
+		"starter_precious_good_id": precious_good_id,
 		"starter_treasury_good_id": "technology_points",
 		"starter_treasury_quantity":
 			StarterEconomyPlannerScript.STARTER_TREASURY_TECHNOLOGY_POINTS,

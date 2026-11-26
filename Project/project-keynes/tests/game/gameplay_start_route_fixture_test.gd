@@ -196,7 +196,7 @@ func _init() -> void:
 		"fixed regional fixtures must produce six classified routes")
 	_assert_food_discovery_union()
 	_assert_warm_hide_not_prebuilt()
-	_assert_silver_only_not_valid_stone_start()
+	_assert_silver_only_starts_without_gold_package()
 	_assert_resource_count_monotonicity()
 	print("[PASS] six fixed geography fixtures select distinct closed starter routes")
 	quit(0)
@@ -366,7 +366,7 @@ func _assert_warm_hide_not_prebuilt() -> void:
 		"warm opening must not grant hide scraping")
 
 
-func _assert_silver_only_not_valid_stone_start() -> void:
+func _assert_silver_only_starts_without_gold_package() -> void:
 	var fixture := {
 		"temperature": 0.55, "moisture": 0.46, "elevation": 0.30,
 		"river": true, "coastal": false,
@@ -378,10 +378,23 @@ func _assert_silver_only_not_valid_stone_start() -> void:
 	var built := _make_fixture(fixture)
 	var route: Dictionary = StartPolicy.evaluate_starter_route(
 		built.map, int(built.cell))
-	assert(not bool(route.get("ok", false)),
-		"silver-only cells cannot form a formal Stone-Age starter route")
-	assert(String(route.get("code", "")) == "starter_precious_metal_unavailable",
-		"silver-only routes fail at the placer-gold starter requirement")
+	assert(bool(route.get("ok", false)),
+		"silver-only cells close a Stone-Age starter route without placer gold")
+	var technologies: PackedStringArray = route.get(
+		"starter_technology_ids", PackedStringArray())
+	var buildings: PackedStringArray = route.get(
+		"starter_building_ids", PackedStringArray())
+	assert(String(route.get("precious_resource", "")) == "",
+		"silver-only cells must not claim a placer-gold deposit")
+	assert(String(route.get("starter_precious_good_id", "")) == "",
+		"silver-only cells must not claim a precious starter good")
+	assert(not technologies.has("tech.gold_panning"),
+		"silver-only cells must not be granted gold panning")
+	assert(not buildings.has("placer_gold_working"),
+		"silver-only cells must not prebuild a placer-gold working")
+	assert(buildings.has("early_merchant_post")
+		and technologies.has("tech.early_trade"),
+		"silver-only start still closes trade and prebuilds the merchant post")
 
 
 func _assert_resource_count_monotonicity() -> void:
