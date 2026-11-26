@@ -164,8 +164,7 @@ func _connect_signals() -> void:
 	_ui_manager.exit_game_requested.connect(_request_exit_game)
 	var settings: Node = _game_settings()
 	if settings != null:
-		if not OS.has_feature("web"):
-			settings.follow_map_camera(_camera, _world_clock)
+		settings.follow_map_camera(_camera, _world_clock)
 		if not settings.settings_changed.is_connected(_on_settings_changed):
 			settings.settings_changed.connect(_on_settings_changed)
 
@@ -376,7 +375,8 @@ func _push_visual_toggles() -> void:
 	var settings: Node = _game_settings()
 	var quality_values: Dictionary = settings.values() if settings != null else {}
 	var quality_setting := String(quality_values.get("render_quality", "auto"))
-	var mobile := OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
+	var mobile := OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios") \
+		or DCFeatureFlags.is_mobile_web()
 	var graphics := GraphicsQualitySettings.resolve(quality_values, mobile)
 	# 默认触摸档保留 2x 抗锯齿来抑制地图边缘闪烁；显式低档关闭额外采样。
 	var msaa := msaa_for_quality(quality_setting, _touch_profile())
@@ -394,9 +394,8 @@ func _push_visual_toggles() -> void:
 	# USE_FILMIC_TONEMAP 全部保留）；桌面全档、Web 低/高画质行为不变。
 	if _renderer.has_method("set_terrain_materials_enabled"):
 		_renderer.set_terrain_materials_enabled(_resolved_terrain_materials(quality_setting))
-	if not OS.has_feature("web"):
-		_renderer.set_graphics_details(graphics)
-		_renderer.set_terrain_render_scale(int(graphics["map_render_scale"]), msaa)
+	_renderer.set_graphics_details(graphics)
+	_renderer.set_terrain_render_scale(int(graphics["map_render_scale"]), msaa)
 	if _trade_activity != null:
 		_trade_activity.set_quality(visual_quality)
 	if _renderer.has_method("set_perf_sampler_enabled"):
@@ -472,19 +471,16 @@ func _resolved_visual_quality(quality: String) -> int:
 		"high":
 			return 2
 		_:
-			# auto：mobile/web 默认 LOW；桌面默认 HIGH。
-			return 0 if DCFeatureFlags.uses_shader_quality_tier() else 2
+			# auto：原生移动端与移动浏览器默认 LOW；桌面与 PC-Web 默认 HIGH。
+			return 0 if DCFeatureFlags.is_limited_render_platform() else 2
 
 
 ## [terrain-materials-runtime 2026-11-25] 档位 → 是否允许采样地面材质贴图
 ## （terrain_material_tex 的 4 层 biome tile + layer4 micro）。
-## 只控制采样，不控制 vq：web 中画质翻 false 时 vq 仍是 1，光照模型一根不动
-## （material_constants.gdshaderinc:33-35 的 USE_PBR_BRDF / USE_LINEAR_LIGHTING /
-## USE_FILMIC_TONEMAP 全部保留）。
-## **只翻 web**：桌面中画质继续返回 true，桌面地面贴图不受影响。
+## 只在移动浏览器中画质翻 false；桌面与 PC-Web 中画质继续返回 true。
 ## 验证走 GM diagnostics.terrain_materials（world_runtime_gm_adapter_part1.gd:610-612）。
 func _resolved_terrain_materials(quality: String) -> bool:
-	return not (quality == "medium" and DCFeatureFlags.is_web())
+	return not (quality == "medium" and DCFeatureFlags.is_mobile_web())
 
 
 static func msaa_for_quality(quality: String, touch: bool) -> Viewport.MSAA:

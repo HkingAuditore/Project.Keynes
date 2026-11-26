@@ -21,6 +21,7 @@
 #include "runtime_climate_parity.h"
 #include "runtime_switch_registry.h"
 #include "pk_log.h"
+#include <godot_cpp/classes/os.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -240,7 +241,17 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
     // stage_ms[CLIMATE]——否则分域表会把这一天最贵的一段记成 0，读表的人会
     // 以为 Climate 是免费的。
     const auto climate_kernel_started = std::chrono::steady_clock::now();
+    const uint64_t _me0 = (plan.context.day >= 13 && plan.context.day <= 16 && godot::OS::get_singleton())
+        ? godot::OS::get_singleton()->get_static_memory_usage() : 0;
     prepare_climate_day(day);
+    const uint64_t _me1 = (plan.context.day >= 13 && plan.context.day <= 16 && godot::OS::get_singleton())
+        ? godot::OS::get_singleton()->get_static_memory_usage() : 0;
+    if (plan.context.day >= 13 && plan.context.day <= 16 && godot::OS::get_singleton()) {
+        std::fprintf(stderr, "[cpp-mem-pre] day=%lld entry=%.3fMB after_clim=%.3fMB d=%.1fKB\n",
+            static_cast<long long>(plan.context.day), double(_me0)/1048576.0, double(_me1)/1048576.0,
+            double(int64_t(_me1)-int64_t(_me0))/1024.0);
+        std::fflush(stderr);
+    }
 
     _day_waterfall.mark(RuntimeDayWaterfall::CLIMATE_COMPUTE);
     if (inline_timing) {
@@ -339,7 +350,21 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                                      std::chrono::steady_clock::now(),
                                      inline_timing};
         assert(stage.domain == modules[i].domain);
-        if (!(this->*modules[i].stage)(day, stage)) return commit;
+        const int64_t _mem_day = plan.context.day;
+        const uint64_t _mem_b = (_mem_day >= 13 && _mem_day <= 16 && godot::OS::get_singleton())
+            ? godot::OS::get_singleton()->get_static_memory_usage() : 0;
+        const bool _stage_ok = (this->*modules[i].stage)(day, stage);
+        if (_mem_day >= 13 && _mem_day <= 16 && godot::OS::get_singleton()) {
+            const uint64_t _mem_a = godot::OS::get_singleton()->get_static_memory_usage();
+            const int64_t _d = static_cast<int64_t>(_mem_a) - static_cast<int64_t>(_mem_b);
+            if (_d >= 4096 || _d <= -4096) {
+                std::fprintf(stderr, "[cpp-mem-stage] day=%lld stage=%s ok=%d delta_kb=%+.1f total_mb=%.3f\n",
+                    static_cast<long long>(_mem_day), runtime_domain_fault_tag(stage.domain), _stage_ok ? 1 : 0,
+                    static_cast<double>(_d) / 1024.0, static_cast<double>(_mem_a) / 1048576.0);
+                std::fflush(stderr);
+            }
+        }
+        if (!_stage_ok) return commit;
     }
     if (previous_domain_valid) {
         _day_waterfall.mark(RuntimeDayWaterfall::domain(

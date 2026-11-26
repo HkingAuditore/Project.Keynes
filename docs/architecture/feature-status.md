@@ -1,5 +1,14 @@
 # 专项现状与验证记录
 
+## PC-Web 画质对齐桌面高画质与原生 HiDPI（2026-11-26）
+
+- 新增 `DCFeatureFlags.is_mobile_web()` / `is_desktop_web()` / `is_limited_render_platform()`，将移动浏览器的降档策略与 PC 浏览器解耦；保留 `uses_shader_quality_tier()` 作为 Web 共享低/中档与迷雾/天气预热前缀契约。
+- PC-Web 默认（`auto`）解析为 `high`（`visual_quality=2`），启动菜单默认预热并启用 `PK_WEB_PC_HIGH` 完整陆地/水面/植被管线及 `building_shadow`（同时保留共享低/中档预热，游戏内切换画质零卡顿）；移动浏览器或显式 `?quality=low|medium` 跳过 `_high` 预热。
+- PC-Web 恢复全量植被点缀层（不裁半）与桌面散布实例上限、100% 植被阴影强度、建筑投影阴影与 128 常驻块上限、非裁剪建筑 horizon GI 光照、商队与军队阵型高画质阴影、1024×512 云影场与高档合成强度，并开放「自定义」画质与地图清晰度等全部细分选项。
+- Web 导出恢复 `loading_prebaked_v1/material_1024_*.res` 打包，默认不再将 `material_512_*.res` 压到 256²，也不再把 `resource_art` 与 `vehicles_topdown_v2` 砍半分辨率；UI/图标保持 0.55 WebP 有损瘦身。
+- `export_presets.cfg` 将 PC-Web 的 `window.devicePixelRatio` 解锁至最高 `2.0`（支持 `?dpr=` 覆盖，移动浏览器保持 `1`），`MobileUIScaling` 在桌面 Web 上按物理窗口尺寸夹取补偿 `content_scale_factor`，保证逻辑画布不低于 1600×960 且高分屏按原生物理像素清晰绘制。
+- 验证：`web_pc_quality_policy_test.gd`、`game_settings_service_test.gd`、`cloud_weather_quality_test.gd`、`terrain_shader_variant_test.gd`（含 `gl_compatibility`）、`web_water_pass_node_test.gd`、`cell_field_web_probe_test.gd`、`military_formation_shader_lighting_test.gd` 及静态架构护栏通过。
+
 ## 地块展板与图例工具栏互斥动效（2026-11-21）
 
 - 展板入场时两级图例工具栏淡出，鼠标交互即时禁用；展板完全退场后工具栏再淡入。

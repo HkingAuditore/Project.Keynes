@@ -446,8 +446,12 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
   100% 归还两个平面；水面材质重建后也放入当前绘制目标。渲染验证使用
   `tests/rendering/terrain_render_scale_test.gd`，检查图层顺序、缩放、平移和调整窗口。
 - 迷雾清晰度、天气表现、植被与点缀密度、水面、云影分别由各渲染层应用；
-  关闭云影仍保留天气云的风场输入。切档验证入口为
-  `tests/game/game_settings_service_test.gd` 和 `tests/rendering/cloud_weather_quality_test.gd`。
+  关闭云影仍保留天气云的风场输入。Web 端通过 `DCFeatureFlags.is_mobile_web()`
+  区分 PC 浏览器与移动浏览器：PC-Web 默认启用最高画质（`PK_WEB_PC_HIGH`、1024 地面材质、
+  全量植被层与桌面散布预算、建筑/军队/商队投影阴影、原生 HiDPI 上限 2.0× 及 UI 缩放补偿）
+  并开放完整自定义画质选项；移动浏览器维持低画质默认与 DPR=1。切档与平台分流验证入口为
+  `tests/game/game_settings_service_test.gd`、`tests/rendering/cloud_weather_quality_test.gd`
+  和 `tests/rendering/web_pc_quality_policy_test.gd`。
 - 每次天气发布编码一次逐格风图。天气表按地图行列重排，云影和天气云按格编号使用同一份
   字节。显示世界按地图、尺寸和发布时间交付这份数据。各贴图保留自己的过渡端点，云影
   在尺寸与字节相同时复用当前风纹理。单独预览可以直接从地图编码。
@@ -968,8 +972,12 @@ Country `preserve_effective_days` 表示逐条保留提供的日期，并不让�
   `tests/rendering/terrain_render_scale_test.gd`，检查图层顺序、缩放、平移和调整窗口。
 - 半屏浓雾按地表最终显示在主画布上的位置裁剪。低清晰度地表额外保留线性放大可能采到的一圈像素。地被和建筑底图复用同一组可见区域。水波和迷雾各自的数值纹理跟随使用它的绘制节点，切换清晰度时会在新视口里先于地表或雾层更新。
 - 迷雾清晰度、天气表现、植被与点缀密度、水面、云影分别由各渲染层应用；
-  关闭云影仍保留天气云的风场输入。切档验证入口为
-  `tests/game/game_settings_service_test.gd` 和 `tests/rendering/cloud_weather_quality_test.gd`。
+  关闭云影仍保留天气云的风场输入。Web 端通过 `DCFeatureFlags.is_mobile_web()`
+  区分 PC 浏览器与移动浏览器：PC-Web 默认启用最高画质（`PK_WEB_PC_HIGH`、1024 地面材质、
+  全量植被层与桌面散布预算、建筑/军队/商队投影阴影、原生 HiDPI 上限 2.0× 及 UI 缩放补偿）
+  并开放完整自定义画质选项；移动浏览器维持低画质默认与 DPR=1。切档与平台分流验证入口为
+  `tests/game/game_settings_service_test.gd`、`tests/rendering/cloud_weather_quality_test.gd`
+  和 `tests/rendering/web_pc_quality_policy_test.gd`。
 
 - 画质/省电开关只能关**动画与强度**，不能关**静态数据**。`has_flow_tex` 是静态河网的总闸
   （height 贴图 B 通道 = 河流 SDF；`scals.g = has_flow_tex ? height.b : 0`），只能由
