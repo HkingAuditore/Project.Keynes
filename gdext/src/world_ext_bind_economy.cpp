@@ -86,6 +86,9 @@ void DCWorldExt::_bind_economy_methods() {
         D_METHOD("apply_mobilization_result", "cell_idx", "profession",
                  "action", "success"),
         &DCWorldExt::apply_mobilization_result);
+    ClassDB::bind_method(
+        D_METHOD("clear_cell_mobilization_independence", "cell_idx"),
+        &DCWorldExt::clear_cell_mobilization_independence);
     ClassDB::bind_method(D_METHOD("resolve_player_mobilization", "choice"),
                          &DCWorldExt::resolve_player_mobilization);
     ClassDB::bind_method(D_METHOD("refresh_effect_input_digest_for_test"),

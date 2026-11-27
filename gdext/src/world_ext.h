@@ -3686,6 +3686,9 @@ private:
     // rebellion outcome to the sparse row. Never touches conserved ledgers.
     bool apply_mobilization_result(int cell_idx, int profession, int action,
                                    bool success);
+    // Cancels a pending independence bit on the sparse rows at the cell. Used
+    // when the last territory cannot leave the country.
+    int32_t clear_cell_mobilization_independence(int cell_idx);
     // Player-facing "resolve the rebellion choice" entry. The row itself is
     // applied by apply_mobilization_result above; this one owns the odds roll
     // and the choice payload, so it must read through the economy boundary.

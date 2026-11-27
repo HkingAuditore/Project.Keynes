@@ -941,8 +941,7 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
                 delta_sum += (f - 1.0);
             }
             const int32_t raw_q16 = modifier_factor_q16(1.0 + delta_sum);
-            return std::clamp<int32_t>(raw_q16,
-                OUTPUT_FACTOR_MIN_Q16, OUTPUT_FACTOR_MAX_Q16);
+            return std::max<int32_t>(raw_q16, OUTPUT_FACTOR_MIN_Q16);
         };
         if (!cell_country_valid) {
             writable_group.modifier_handle = 0;
@@ -1101,9 +1100,8 @@ int32_t NativeEconomyRuntime::resolve_target_building_output_factor_q16(
         if (!std::isfinite(f) || f <= 0.0) return 0;
         delta_sum += (f - 1.0);
     }
-    return std::clamp<int32_t>(
-        modifier_factor_q16(1.0 + delta_sum),
-        OUTPUT_FACTOR_MIN_Q16, OUTPUT_FACTOR_MAX_Q16);
+    return std::max<int32_t>(
+        modifier_factor_q16(1.0 + delta_sum), OUTPUT_FACTOR_MIN_Q16);
 }
 
 int64_t NativeEconomyRuntime::effective_building_output_quantity_for_target(

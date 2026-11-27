@@ -1,7 +1,9 @@
 extends SceneTree
 
 ## Verifies the systemic economy numerical rebalance contracts:
-## 1. Additive output stacking (not multiplicative) and hard 4.0x cap.
+## 1. Additive output stacking (not multiplicative) with no runtime ceiling:
+##    the pooled factor is `1 + ΣΔ` and is only bounded by the per-stat catalog
+##    clamp, so stacking past the old 4.0x cap must reach the output.
 ## 2. Soft-input capped productivity bonus (bare 1.0x, multi-soft strictly <= 1.40x).
 ## 3. Output-coupled production inputs (alpha = 0.60) with guaranteed net efficiency
 ##    improvement and country.production.input_factor floor >= 0.80.
@@ -184,15 +186,20 @@ func _run_multi_soft_case(source_catalog: Dictionary, source_profile: Dictionary
 func _test_additive_tech_and_input_coupling(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:
 	# Compare an industrial building (coke_ovens, hard input = coal) with
-	# zero tech bonuses vs ALL 467 technologies unlocked.
+	# zero tech bonuses vs ALL 467 technologies unlocked, and a third run that
+	# stacks one extra +4.0 city-good output add on top of all-tech.
 	# Verify:
-	# 1. All-tech output multiplier is bounded <= 4.0x (additive cap, not 15x-41x).
+	# 1. All-tech output multiplier stays additive (not the 15x-41x multiplicative
+	#    product) and there is NO 4.0x runtime ceiling: the extra +4.0 add must
+	#    push the measured multiplier past 4.0x instead of clamping there.
 	# 2. All-tech physical input strictly increases above base (input coupling > 1.0x).
 	# 3. Net material efficiency strictly improves (all_tech output/input > base output/input).
 	var bid := (source_catalog.building_type_ids as PackedStringArray).find("coke_ovens")
 	_expect("coke_ovens exists in catalog", bid >= 0)
 	var base_run := _run_industrial_tech_case(source_catalog, source_profile, bid, false, 6011)
 	var tech_run := _run_industrial_tech_case(source_catalog, source_profile, bid, true, 6012)
+	var over_cap_run := _run_industrial_tech_case(
+		source_catalog, source_profile, bid, true, 6013, 4.0)
 	var b_out := float(base_run.get("output", 0))
 	var b_in := float(base_run.get("input", 0))
 	var t_out := float(tech_run.get("output", 0))
@@ -207,8 +214,15 @@ func _test_additive_tech_and_input_coupling(source_catalog: Dictionary,
 	var tech_in_factor := float(tech_run.get("country_input_factor", 1.0))
 	print("  tech-coupling coke_ovens: out_mult=%.3fx in_mult=%.3fx net_eff_gain=%.3fx input_factor=%.3f" % [
 		out_ratio, in_ratio, tech_yield / maxf(0.0001, base_yield), tech_in_factor])
-	_expect("all-tech additive output multiplier is bounded in (1.2x, 4.0x]",
-		out_ratio > 1.20 and out_ratio <= 4.001)
+	_expect("all-tech additive output multiplier exceeds the naive 1.2x floor",
+		out_ratio > 1.20 and bool(tech_run.get("ledgers_ok", false)))
+	var c_out := float(over_cap_run.get("output", 0))
+	var c_ratio := c_out / maxf(1.0, b_out)
+	print("  tech-coupling coke_ovens +4.0 city-good add: out_mult=%.3fx" % c_ratio)
+	# The old code clamped the pooled factor at 4.0x here; the capped run must land
+	# strictly above the ceiling, which can only happen if the clamp is gone.
+	_expect("no 4.0x output ceiling: an extra +4.0 city-good add reaches output > 4.0x",
+		c_ratio > 4.0 and bool(over_cap_run.get("ledgers_ok", false)))
 	_expect("country.production.input_factor refuses to drop below 0.80 floor",
 		tech_in_factor >= 0.7999 and tech_in_factor <= 1.0001)
 	_expect("all-tech output-coupled physical inputs strictly increase (> 1.10x)",
@@ -218,7 +232,8 @@ func _test_additive_tech_and_input_coupling(source_catalog: Dictionary,
 
 
 func _run_industrial_tech_case(source_catalog: Dictionary, source_profile: Dictionary,
-		bid: int, unlock_all_tech: bool, seed: int) -> Dictionary:
+		bid: int, unlock_all_tech: bool, seed: int,
+		extra_city_good_output_add: float = 0.0) -> Dictionary:
 	var catalog := source_catalog.duplicate(true)
 	var goods: PackedStringArray = catalog.good_ids
 	var ext := _new_ext(catalog)
@@ -263,6 +278,9 @@ func _run_industrial_tech_case(source_catalog: Dictionary, source_profile: Dicti
 	ext.dispatch_effect_native_modifier()
 	ext.run_modifier_daily(0)
 	ext.ack_effect_native_modifier()
+	if extra_city_good_output_add > 0.0:
+		_apply_city_good_output_add(ext, modifiers, catalog, bid,
+			extra_city_good_output_add)
 	var handle := int(country.cell_summary(0).get("country_handle", 0))
 	var in_factor := float(ext.evaluate_modifier_stat(1, handle, 0, "country.production.input_factor", 1.0))
 	ext.configure_economy(catalog, source_profile, 1, seed)
@@ -303,6 +321,39 @@ func _run_industrial_tech_case(source_catalog: Dictionary, source_profile: Dicti
 			int(report.get("money_error", 1)) == 0 and
 			int(report.get("goods_error", 1)) == 0,
 	}
+
+
+## Queues one GROUP-scope city-good output add for cell 0, the same shape the
+## ideology city cards use. `magnitude_q16` is clamped to [0, 4] by the modifier
+## runtime, so the pool grows by `add` and nothing else.
+func _apply_city_good_output_add(ext: Object, modifiers, catalog: Dictionary,
+		bid: int, add: float) -> void:
+	var out_offsets: PackedInt32Array = catalog.get(
+		"building_output_offsets", PackedInt32Array())
+	var out_goods: PackedInt32Array = catalog.get(
+		"building_output_good_ids", PackedInt32Array())
+	var good_names: PackedStringArray = catalog.get("good_ids", PackedStringArray())
+	if bid < 0 or bid + 1 >= out_offsets.size():
+		print("  [DEBUG] building %d has no output columns" % bid)
+		return
+	var begin := int(out_offsets[bid])
+	var end := int(out_offsets[bid + 1])
+	if begin >= end:
+		print("  [DEBUG] building %d has no output good" % bid)
+		return
+	var good := int(out_goods[begin])
+	if good < 0 or good >= good_names.size():
+		print("  [DEBUG] output good index out of range: %d" % good)
+		return
+	var definition := StringName("economy.city.good.%s.output_factor"
+		% good_names[good])
+	var request: int = modifiers.queue_apply(definition, {
+		"domain": 2, "scope": 1, "entity_handle": 0, "group_handle": 0},
+		{"type": 7, "id": 77}, -1, 1, 0, 100, int(round(add * 65536.0)))
+	if request <= 0:
+		print("  [DEBUG] extra city-good definition rejected: %s" % definition)
+		return
+	ext.run_modifier_daily(0)
 
 
 func _test_wealth_scaled_consumption_beyond_16x(source_catalog: Dictionary,

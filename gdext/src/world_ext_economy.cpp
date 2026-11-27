@@ -1531,6 +1531,12 @@ bool DCWorldExt::apply_mobilization_result(
                                               success);
 }
 
+int32_t DCWorldExt::clear_cell_mobilization_independence(int cell_idx) {
+    if (_economy_runtime == nullptr) return 0;
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return runtime->clear_cell_mobilization_independence(cell_idx);
+}
+
 Dictionary DCWorldExt::resolve_player_mobilization(const Dictionary &choice) {
     if (_economy_runtime == nullptr) return unavailable();
     auto *runtime = runtime_from(_economy_runtime);

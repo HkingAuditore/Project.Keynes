@@ -262,11 +262,18 @@ void NativeEconomyRuntime::serve_read_view(bool requested) {
     const uint64_t started_us = steady_now_us();
     const bool refresh_all = stale && (requested ||
         now_us - _read_view_last_refresh_us >= READ_VIEW_MIN_INTERVAL_US);
+    // Sort keys by hash before evaluating queries so next->entries is already
+    // ordered without invoking std::sort (and Dictionary move-assignment) on
+    // ReadViewEntry values.
+    std::sort(keys.begin(), keys.end(),
+        [](const ReadKey &lhs, const ReadKey &rhs) {
+            return lhs.hash < rhs.hash;
+        });
     const int64_t day = last_committed_day();
     auto next = std::make_shared<ReadView>();
     next->entries.reserve(keys.size());
     uint64_t evaluated = 0;
-    for (ReadKey &key : keys) {
+    for (const ReadKey &key : keys) {
         if (previous != nullptr && !refresh_all) {
             if (const ReadViewEntry *entry = previous->find(key)) {
                 next->entries.push_back(*entry);
@@ -278,10 +285,6 @@ void NativeEconomyRuntime::serve_read_view(bool requested) {
         ++evaluated;
     }
     if (refresh_all) _read_view_last_refresh_us = now_us;
-    std::sort(next->entries.begin(), next->entries.end(),
-        [](const ReadViewEntry &lhs, const ReadViewEntry &rhs) {
-            return lhs.key.hash < rhs.key.hash;
-        });
     next->serial = ++_read_view_serial;
     // The view generation is that of its oldest entries, so a serve that only
     // added keys keeps the older ones due for refresh.

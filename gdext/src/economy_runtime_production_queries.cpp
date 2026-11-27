@@ -185,12 +185,13 @@ int64_t NativeEconomyRuntime::effective_building_output_quantity_at(
     const int64_t city_good_factor_q16 = city_good_output_factor_q16(cell, good_id);
     if (output_factor_q16 <= 0 || good_factor_q16 <= 0 || city_good_factor_q16 <= 0)
         return 0;
-    const int64_t combined_factor_q16 = std::clamp<int64_t>(
+    // 加法池化不设上限；三项都是 int32/Q16，int64 求和后由 mul_div_sat 的
+    // 饱和路径兜住数值边界。
+    const int64_t combined_factor_q16 = std::max<int64_t>(
         static_cast<int64_t>(output_factor_q16) +
             (good_factor_q16 - Q16_ONE) +
             (city_good_factor_q16 - Q16_ONE),
-        static_cast<int64_t>(OUTPUT_FACTOR_MIN_Q16),
-        static_cast<int64_t>(OUTPUT_FACTOR_MAX_Q16));
+        static_cast<int64_t>(OUTPUT_FACTOR_MIN_Q16));
     return mul_div_sat(utilized, combined_factor_q16, Q16_ONE, sat);
 }
 

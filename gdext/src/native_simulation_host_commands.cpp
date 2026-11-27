@@ -21,7 +21,6 @@
 #include "runtime_switch_registry.h"
 #include "runtime_golden_diagnostics.h"
 #include "pk_log.h"
-#include <godot_cpp/classes/os.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -778,7 +777,6 @@ void NativeSimulationHost::publish_day(
     };
     const auto previous = std::atomic_load_explicit(&_latest_commit,
                                                     std::memory_order_acquire);
-    const uint64_t _mc0 = (day >= 13 && day <= 16 && godot::OS::get_singleton()) ? godot::OS::get_singleton()->get_static_memory_usage() : 0;
     auto published = std::make_shared<RuntimeCommit>();
     RuntimeCommitHeader &header = published->header;
     const uint64_t produced_at_us = now_us();
@@ -830,10 +828,8 @@ void NativeSimulationHost::publish_day(
         year_length = _annual_ledger.days_per_year();
         annual_reward_pending = _annual_ledger.has_pending_reward();
     }
-    const uint64_t _m0 = (day >= 13 && day <= 16 && godot::OS::get_singleton()) ? godot::OS::get_singleton()->get_static_memory_usage() : 0;
     const auto fiscal = year_length > 0 ? capture_economy_display(day, year_length,
         *_executor_day_tail, previous ? previous->day_tail.get() : nullptr) : nullptr;
-    const uint64_t _m1 = (day >= 13 && day <= 16 && godot::OS::get_singleton()) ? godot::OS::get_singleton()->get_static_memory_usage() : 0;
     published->day_tail = std::move(_executor_day_tail);
     publish_military_day();
     if (published->day_tail && published->day_tail->era_reward)
@@ -851,7 +847,6 @@ void NativeSimulationHost::publish_day(
             std::shared_ptr<const RuntimeCommit>(published),
             std::memory_order_release);
     }
-    const uint64_t _m2 = (day >= 13 && day <= 16 && godot::OS::get_singleton()) ? godot::OS::get_singleton()->get_static_memory_usage() : 0;
     if (_world_environment) {
         uint64_t business = mix_hash(
             _climate_pod_state_hash.load(std::memory_order_relaxed),
@@ -862,18 +857,6 @@ void NativeSimulationHost::publish_day(
         business = mix_hash(business, published->day_tail->country.state_hash);
         publish_display_batch(published, {header, published->receipts, published->day_tail->golden,
             published->day_tail->notices, fiscal, business, annual_reward_pending});
-    }
-    const uint64_t _m3 = (day >= 13 && day <= 16 && godot::OS::get_singleton()) ? godot::OS::get_singleton()->get_static_memory_usage() : 0;
-    if (day >= 13 && day <= 16 && godot::OS::get_singleton()) {
-        std::fprintf(stderr, "[cpp-mem-commit] day=%lld mc0=%.3fMB pre_m0=%+.1fKB cap_econ=%+.1fKB mid=%+.1fKB pub_batch=%+.1fKB total=%.3fMB\n",
-            static_cast<long long>(day),
-            double(_mc0) / 1048576.0,
-            double(int64_t(_m0) - int64_t(_mc0)) / 1024.0,
-            double(int64_t(_m1) - int64_t(_m0)) / 1024.0,
-            double(int64_t(_m2) - int64_t(_m1)) / 1024.0,
-            double(int64_t(_m3) - int64_t(_m2)) / 1024.0,
-            double(_m3) / 1048576.0);
-        std::fflush(stderr);
     }
     _control_cv.notify_all();
     _last_commit_produced_at_us.store(produced_at_us, std::memory_order_release);

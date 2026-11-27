@@ -1020,8 +1020,9 @@
         int64_t employee_fillability_q16, int64_t &sat) const;
     int64_t projected_employee_tax_retention_q16(
         BuildingGroupConstRef group, int64_t &sat) const;
+    // 建筑产出修正按 `1 + ΣΔ` 加法池化，只保留 0.10x 下限，不设运行时上限；
+    // 倍率由数据侧加成总和决定，数值边界由 Q16/int32（约 32767x）兜底。
     static constexpr int32_t OUTPUT_FACTOR_MIN_Q16 = 6554;          // 0.10x
-    static constexpr int32_t OUTPUT_FACTOR_MAX_Q16 = 262144;        // 4.00x
     static constexpr int32_t SOFT_PRODUCTIVITY_BONUS_CAP_Q16 = 26214; // +40%
     static constexpr int32_t THROUGHPUT_INPUT_COUPLING_Q16 = 39322; // 0.60
     static constexpr int32_t PRODUCTION_INPUT_FACTOR_MIN_Q16 = 52429; // 0.80x

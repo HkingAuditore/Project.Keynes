@@ -1,6 +1,6 @@
 {
   "class": "DCWorldExt",
-  "count": 677,
+  "count": 678,
   "methods": [
     "_debug_poke_f32",
     "_debug_poke_f32_with_flush",
@@ -99,6 +99,7 @@
     "capture_runtime_inputs",
     "capture_trigger_state",
     "choose_era_reward",
+    "clear_cell_mobilization_independence",
     "clear_cell_tag_overrides_for_test",
     "clear_class_opinion_source_override_for_test",
     "clear_country_technology_metric_input_for_test",
