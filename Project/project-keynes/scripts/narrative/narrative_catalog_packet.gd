@@ -32,6 +32,17 @@ static func build(catalog: NarrativeEventCatalog, generator, clock: WorldClock,
 	var professions := {}
 	for id: String in economy.profession_ids():
 		professions[id] = economy.profession_display_name(StringName(id))
+	var good_names := {}
+	var good_ids_raw: PackedStringArray = country.get("good_ids", PackedStringArray())
+	for gid: String in good_ids_raw:
+		good_names[gid] = EffectSpec._friendly_good_name(StringName(gid))
+	var technology_names := {}
+	var tech_ids_raw: PackedStringArray = country.get("technology_ids", PackedStringArray())
+	var tech_display_raw: PackedStringArray = country.get("technology_display_names", PackedStringArray())
+	for i in range(tech_ids_raw.size()):
+		var tid := String(tech_ids_raw[i])
+		var tname := String(tech_display_raw[i]).strip_edges() if i < tech_display_raw.size() else ""
+		technology_names[tid] = tname if not tname.is_empty() else tid
 	var definitions: Array[Dictionary] = []
 	for event in catalog.events:
 		definitions.append(encode_event(event))
@@ -71,6 +82,7 @@ static func build(catalog: NarrativeEventCatalog, generator, clock: WorldClock,
 		"good_ids": country.get("good_ids", PackedStringArray()),
 		"signal_ids": country.get("research_signal_ids", PackedStringArray()),
 		"profession_names": professions, "unrest_profession_names": UNREST_PROFESSIONS,
+		"good_names": good_names, "technology_names": technology_names,
 		"ai_fact_hints": AI_FACT_HINTS,
 	}
 

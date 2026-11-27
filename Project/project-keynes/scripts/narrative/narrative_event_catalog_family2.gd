@@ -94,6 +94,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 2,
 		"max_era_index": 7,
+		"required_technologies": ["tech.writing"],
 		"conditions": [
 			{"op": Op.HAS_NOTABLE_FAMILY, "bool_value": true},
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 2},
@@ -118,8 +119,8 @@ static func append(catalog) -> void:
 				"国库拨付专款补贴笔墨束脩，族学迅速满额开课。本地学术氛围显著提振，大族亦由此确立了崇文重教的声望，成为地方人才辈出的摇篮。",
 				[
 					_grant("i005_knowledge", "学术赞助"),
-					Shared.knowledge(4, 540),
-					Shared.cash_out(1.5, 360),
+					Shared.knowledge(12, 540),
+					Shared.cash_out(4, 360),
 				]),
 			Shared.option(
 				"let_them_run_it", "赐匾嘉勉，由其自办",
@@ -127,7 +128,7 @@ static func append(catalog) -> void:
 				"官府未出分文，仅赐予嘉奖匾额以示认可。本地大族借此光耀门楣、自主扩建学舍，地方文教稳步增长，其在朝野间的政治影响力亦悄然上升。",
 				[
 					_grant("i005_knowledge", "学术赞助"),
-					Shared.knowledge(2, 540),
+					Shared.knowledge(8, 540),
 					Shared.bias(Ids.TAG_COURT, 1.15, 540),
 				]),
 			Shared.option(
@@ -135,7 +136,7 @@ static func append(catalog) -> void:
 				"族学搁置士林失望",
 				"官署以务实备荒为由驳回办校请求，勒令将款项转用于修缮粮仓。学舍重归冷清，本地教化发展受挫，大族与读书阶层对官府的疏离感随之加深。",
 				[
-					Shared.knowledge(-3, 360),
+					Shared.knowledge(-10, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 		],
@@ -178,15 +179,15 @@ static func append(catalog) -> void:
 				"官署未加干预，本地大族凭借雄厚粮储牢牢掌控了货殖渠道，商业流通有所拓展。但田租与囤积压力反噬耕作积极性，城中暗流涌动。",
 				[
 					_grant("i001_agrarian", "重农"),
-					Shared.agriculture(-3, 360),
-					Shared.trade_capacity(3, 360),
+					Shared.agriculture(-10, 360),
+					Shared.trade_capacity(8, 360),
 				]),
 			Shared.option(
 				"buy_at_the_listed_price", "依官定折价强制征购",
 				"强征族粮埋下宿怨",
 				"地方官署强令族仓按官定标准交纳粮款，部分折价充入公库。城中粮荒虽暂告缓解，但大族将此视为公然掠夺，地方官民关系骤然紧绷。",
 				[
-					Shared.cash_in(1.0, 360),
+					Shared.cash_in(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
@@ -195,8 +196,8 @@ static func append(catalog) -> void:
 				"朝廷拨款给予补偿，劝服本地大族开仓设棚施济。街面恐慌迅速平息，口粮开销明显回落，大族亦因识大体而赢得朝廷与坊间的双重信赖。",
 				[
 					_grant("j017_loyal", "老实"),
-					Shared.staple(-5, 360),
-					Shared.cash_out(1.0, 360),
+					Shared.staple(-15, 360),
+					Shared.cash_out(3, 360),
 				]),
 		],
 	}))
@@ -237,7 +238,7 @@ static func append(catalog) -> void:
 				"官断长房次房怨愤",
 				"地方官署依嫡长旧制判产业归长房，并依律收取诉讼规费。宗祠门口贴出官榜后很快遭人毁损，失意的次房势力暗中积聚不满，地方隐患未除。",
 				[
-					Shared.cash_in(1.0, 360),
+					Shared.cash_in(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
@@ -245,7 +246,7 @@ static func append(catalog) -> void:
 				"砌墙分治内耗不止",
 				"官署裁定两房各分其半、自行划界。双方随即在宅院与水源处砌墙对峙，连带拖累了族下作坊与商铺的正常运转，街面摩擦此起彼伏。",
 				[
-					Shared.manufacturing(-3, 360),
+					Shared.manufacturing(-10, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 			Shared.option(
@@ -295,7 +296,7 @@ static func append(catalog) -> void:
 				"押税举债暂解燃眉",
 				"借券画押后资金迅速到位，军饷如期发放。本地大族借此逆势扩张了金融势力，然而未来税源受制于豪强，坊间对官府债台高筑的忧虑日增。",
 				[
-					Shared.cash_in(1.5, 360),
+					Shared.cash_in(4, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					_grant("i028_counter", "逆周期经营"),
 				]),
@@ -304,8 +305,8 @@ static func append(catalog) -> void:
 				"加征田赋民怨沸腾",
 				"度支司拒绝向豪强低头，改向全城农商强行加征临时赋税。国库虽迅速充实，但苛重税负重创了农业生产，城门告示屡遭撕毁，社会动荡风险陡升。",
 				[
-					Shared.cash_in(2.0, 360),
-					Shared.agriculture(-3, 360),
+					Shared.cash_in(5, 360),
+					Shared.agriculture(-10, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 540),
 				]),
 			Shared.option(
@@ -313,7 +314,7 @@ static func append(catalog) -> void:
 				"紧缩财政拖累工坊",
 				"地方官署大幅裁减行政与营造预算，压低官营工匠酬劳。此举避免了举债与加税，但订单骤减令本地制造业萎缩，工匠阶层的活力也随之下滑。",
 				[
-					Shared.manufacturing(-3, 360),
+					Shared.manufacturing(-10, 360),
 					Shared.bias(Ids.TAG_LABOR, 0.90, 360),
 				]),
 		],
@@ -356,7 +357,7 @@ static func append(catalog) -> void:
 				"名册落笔成定局，本地大族正式跻身士绅官僚门第。政令推行虽得豪强配合，但裙带关系随即渗透营造与采购环节，公私营建成本亦水涨船高。",
 				[
 					_grant("j020_gentry", "士绅门第"),
-					Shared.build_cost(3, 540),
+					Shared.build_cost(8, 540),
 					Shared.bias(Ids.TAG_COURT, 1.15, 540),
 				]),
 			Shared.option(
@@ -364,7 +365,7 @@ static func append(catalog) -> void:
 				"婉拒私荐得罪豪强",
 				"地方官署合上名册，坚持按既有考选制度公开补缺。官府守住了程序底线，但大族深感颜面受损，随即减少对本地文教的支持，暗中掣肘政令。",
 				[
-					Shared.knowledge(-3, 360),
+					Shared.knowledge(-10, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
@@ -372,7 +373,7 @@ static func append(catalog) -> void:
 				"鬻官筹款清议哗然",
 				"空缺最终由出资更高的别家豪绅买下，国库由此进账一笔可观捐纳。然而买官者尸位素餐，不仅激怒了原有大族，更令坊间对吏治腐败怨声载道。",
 				[
-					Shared.cash_in(2.0, 360),
+					Shared.cash_in(5, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 		],
@@ -418,7 +419,7 @@ static func append(catalog) -> void:
 					# 人真的跟着族走了：族占城中人口三到四成，走一半即全城减两成。
 					# 这是守恒的人口迁出，不是「出生率下降」——改写 birth(-4) 是错位代理。
 					Shared.population_rate(-20, "本地人口 -20%（李氏一族迁出）"),
-					Shared.agriculture(3, 360),
+					Shared.agriculture(10, 360),
 				]),
 			Shared.option(
 				"forbid_the_sale", "禁售产业，强令留居",
@@ -427,15 +428,15 @@ static func append(catalog) -> void:
 				[
 					Shared.population_rate(-10, "本地人口 -10%（半数族人不告而去）"),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
-					Shared.manufacturing(2, 360),
+					Shared.manufacturing(8, 360),
 				]),
 			Shared.option(
 				"give_them_land", "拨地补贴，诚意挽留",
 				"拨地留族转危为安",
 				"国库出资购置并划拨城郊荒地归大族开垦，宗族长老终于同意留驻本地。全城人口与税基得以保全，新垦农田也很快为本地带来丰厚产出。",
 				[
-					Shared.cash_out(1.5, 360),
-					Shared.agriculture(4, 540),
+					Shared.cash_out(4, 360),
+					Shared.agriculture(12, 540),
 				]),
 		],
 	}))
@@ -453,6 +454,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 3,
 		"max_era_index": 7,
+		"required_technologies": ["tech.guild_organization"],
 		"conditions": [
 			{"op": Op.FAMILY_PRESTIGE_GTE, "int_value": 2},
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "artisan", "float_value": 0.08},
@@ -477,15 +479,15 @@ static func append(catalog) -> void:
 				"官署促成妥协，允许大族注资作坊同时悬挂族牌与行会匾额，并按章缴纳会费。资金与技艺的结合令本地制造业迅速扩张，工具供给也随之充裕。",
 				[
 					_grant("j004_craft", "工匠世家"),
-					Shared.manufacturing(4, 540),
-					Shared.tools(5, 540),
+					Shared.manufacturing(12, 540),
+					Shared.tools(15, 540),
 				]),
 			Shared.option(
 				"guild_rules", "维护行会，限制资本",
 				"行会自治得以保全",
 				"地方官署裁定作坊须摘除族徽、全归行会统管。传统匠人生产秩序得以稳定，但受挫的本地大族撤回投资，与行会及官府的隔阂进一步加深。",
 				[
-					Shared.manufacturing(3, 540),
+					Shared.manufacturing(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
@@ -494,8 +496,8 @@ static func append(catalog) -> void:
 				"官署强行取缔私挂徽记并课以重罚，大族愤而退出手工业领域。此举虽为国库带来一笔罚没收入，却导致作坊停工、本地制造元气大伤。",
 				[
 					_remove("j004_craft", "工匠世家"),
-					Shared.manufacturing(-3, 360),
-					Shared.cash_in(1.0, 360),
+					Shared.manufacturing(-10, 360),
+					Shared.cash_in(3, 360),
 				]),
 		],
 	}))
@@ -537,8 +539,8 @@ static func append(catalog) -> void:
 				"官府出资备办贺礼促成婚书签署，两大豪强正式结为政治与商业同盟。本地人口繁衍态势随之向好，但家大业大的新兴门阀也获得了前所未有的地方权势。",
 				[
 					_grant("i026_magnate", "家大业大"),
-					Shared.birth(4, 540),
-					Shared.cash_out(1.0, 360),
+					Shared.birth(12, 540),
+					Shared.cash_out(3, 360),
 				]),
 			Shared.option(
 				"call_it_off", "暗中作梗，拆散联盟",
@@ -546,15 +548,15 @@ static func append(catalog) -> void:
 				"地方官署借审查产契之名拖延作梗，两族最终不欢而散。豪强合流之患得以化解，朝廷在地方的制衡筹码增加，但两族交恶也波及了本地文教赞助。",
 				[
 					Shared.bias(Ids.TAG_COURT, 1.15, 540),
-					Shared.knowledge(-2, 360),
+					Shared.knowledge(-8, 360),
 				]),
 			Shared.option(
 				"let_them_settle", "保持中立，听凭自决",
 				"务实妥协合营商铺",
 				"官署拒绝介入豪强家务，两族最终各退一步，以合资经营商铺取代彻底并产。城中婚育风气温和向好，但豪强联手控盘也令日常口粮开销略有抬升。",
 				[
-					Shared.staple(3, 360),
-					Shared.birth(2, 540),
+					Shared.staple(10, 360),
+					Shared.birth(8, 540),
 				]),
 		],
 	}))
@@ -596,17 +598,17 @@ static func append(catalog) -> void:
 				"官署以借贷名义核准大族倾囊赈济，并借机清算了部分陈欠公款。饥荒危机与主食压力迅速缓解，本地大族亦因深明大义而赢得忠诚美誉。",
 				[
 					_grant("j017_loyal", "老实"),
-					Shared.staple(-5, 360),
-					Shared.cash_in(1.5, 360),
+					Shared.staple(-15, 360),
+					Shared.cash_in(4, 360),
 				]),
 			Shared.option(
 				"open_the_state_granary", "开启官仓，朝廷亲赈",
 				"官仓放粮重掌民心",
 				"朝廷斥资开启官仓全面接管救济，粮价随即回落，饥民队伍秩序井然。官府不仅牢牢稳住了基层民心，更在救荒调度中积累了宝贵的政务经验。",
 				[
-					Shared.cash_out(2.0, 360),
-					Shared.staple(-4, 360),
-					Shared.knowledge(2, 360),
+					Shared.cash_out(5, 360),
+					Shared.staple(-12, 360),
+					Shared.knowledge(8, 360),
 				]),
 			Shared.option(
 				"let_them_endure", "暂不介入，令其自渡",
@@ -614,7 +616,7 @@ static func append(catalog) -> void:
 				"官府既不拨款亦不支持族赈，族仓被迫匆忙闭门。大批饥民陷入绝境，口粮短缺进一步加剧，整座城池在寒冬中弥漫着随时可能爆发的动荡气息。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
-					Shared.staple(4, 360),
+					Shared.staple(12, 360),
 				]),
 		],
 	}))
@@ -632,6 +634,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 4,
 		"max_era_index": 7,
+		"required_technologies": ["tech.oceanic_navigation"],
 		"conditions": [
 			{"op": Op.IS_COASTAL, "bool_value": true},
 			{"op": Op.FAMILY_PRESTIGE_GTE, "int_value": 3},
@@ -656,14 +659,14 @@ static func append(catalog) -> void:
 					"特许凭状落地，本地大族迅速扩充商船队，成长为雄踞一方的沿海资本。港口贸易容量大幅跃升，按舱征收的关税亦源源不断充实国库。",
 					[
 						_grant("i029_coastal", "沿海资本"),
-						Shared.trade_capacity(5, 540),
-						Shared.cash_in(1.0, 360),
+						Shared.trade_capacity(12, 540),
+						Shared.cash_in(3, 360),
 					]),
 				Shared.branch(26214, "船队遇险海贸受挫", # 40%
 					"扩编后的船队在远洋遭遇飓风沉没多艘，大族血本无归。朝廷被迫出资善后，本地造船与相关制造业蒙受打击，港口人心浮躁不安。",
 					[
-						Shared.manufacturing(-3, 360),
-						Shared.cash_out(1.5, 360),
+						Shared.manufacturing(-10, 360),
+						Shared.cash_out(4, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					])),
 			Shared.option(
@@ -671,16 +674,16 @@ static func append(catalog) -> void:
 				"官营船队扬帆远航",
 				"国库斥巨资接管船队并改悬官旗，雇佣原班海员承运官货。此举虽耗费不菲，却在确保朝廷掌控海权的同时，有效拉动了本地造船制造与贸易运力。",
 				[
-					Shared.cash_out(2.5, 360),
-					Shared.trade_capacity(4, 540),
-					Shared.manufacturing(3, 540),
+					Shared.cash_out(6, 360),
+					Shared.trade_capacity(10, 540),
+					Shared.manufacturing(10, 540),
 				]),
 			Shared.option(
 				"close_the_sea", "严申海禁，封存船只",
 				"海禁封港百业萧条",
 				"官署下令封存所有远洋商船，水手与船匠被迫四散谋生。港口彻底沉寂，本地造船与关联手工业随之萎缩，沿海商民对海禁令怨声载道。",
 				[
-					Shared.manufacturing(-3, 360),
+					Shared.manufacturing(-10, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 		],

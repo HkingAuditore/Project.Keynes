@@ -62,6 +62,7 @@ static func append(catalog) -> void:
 		"one_shot": true,
 		"min_era_index": 8,
 		"max_era_index": 10,
+		"required_technologies": ["tech.nuclear_energy"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 5},
 			{"op": Op.POPULATION_GTE, "int_value": 20},
@@ -90,16 +91,16 @@ static func append(catalog) -> void:
 				Shared.branch(39322, "满载稳定运行", # 60%
 					"反应堆顺利达成满功率输出，区域电网负荷骤降，本地工业区迅速开启全天候生产。尽管能源危机暂解，周边居民对核设施安全的疑虑仍持续发酵。",
 					[
-						Shared.manufacturing(5, 540),
-						Shared.energy(5, 540),
+						Shared.manufacturing(15, 540),
+						Shared.energy(15, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 						Shared.schedule(Ids.EVT_CHAIN_ATOM_WASTE, 360, "废料池"),
 					]),
 				Shared.branch(26214, "触发紧急停机", # 40%
 					"推升功率期间冷却回路触发高温警报，控制棒紧急插入导致机组跳闸并引发短暂大停电。事故简报虽被迅速压下，但公众恐慌与问责声浪已席卷全城。",
 					[
-						Shared.energy(-4, 540),
-						Shared.manufacturing(-2, 360),
+						Shared.energy(-12, 540),
+						Shared.manufacturing(-8, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.35, 540),
 						Shared.schedule(Ids.EVT_CHAIN_ATOM_WASTE, 300, "废料池"),
 					])),
@@ -108,9 +109,9 @@ static func append(catalog) -> void:
 				"稳步接入电网",
 				"机组按半功率方案投入试运行，工程团队借此积累了详尽的堆芯运行数据。尽管未能立刻满足全部工业需求，安全局的审慎策略赢得了专业界认可。",
 				[
-					Shared.knowledge(4, 540),
-					Shared.manufacturing(2, 540),
-					Shared.staple(3, 360),
+					Shared.knowledge(12, 540),
+					Shared.manufacturing(8, 540),
+					Shared.staple(10, 360),
 					Shared.schedule(Ids.EVT_CHAIN_ATOM_WASTE, 300, "废料池"),
 				]),
 			Shared.option(
@@ -118,8 +119,8 @@ static func append(catalog) -> void:
 				"机组延期投产",
 				"政府下令暂停并网并开展为期一年的全系统安全审计。电网缺口迫使部分工厂缩减班次，但严格的审查标准为后续核电规范奠定了基础。",
 				[
-					Shared.manufacturing(-3, 540),
-					Shared.knowledge(2, 540),
+					Shared.manufacturing(-10, 540),
+					Shared.knowledge(8, 540),
 					Shared.schedule(Ids.EVT_CHAIN_ATOM_WASTE, 240, "废料池"),
 				]),
 		],
@@ -139,6 +140,7 @@ static func append(catalog) -> void:
 		"one_shot": true,
 		"min_era_index": 9,
 		"max_era_index": 10,
+		"required_technologies": ["tech.nuclear_energy"],
 		"required_events_completed": [String(Ids.EVT_CHAIN_ATOM_LIGHT)],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 5},
@@ -162,7 +164,7 @@ static func append(catalog) -> void:
 				"外围坡地划入禁区",
 				"政府强行征用外围坡地并扩建了隔离设施，核电站得以维持满载运转。失去果园与耕地的社区随即发起抗议，地方矛盾进一步激化。",
 				[
-					Shared.extraction(3, 540),
+					Shared.extraction(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					Shared.schedule(Ids.EVT_CHAIN_ATOM_VOTE, 300, "表决"),
 				]),
@@ -171,8 +173,8 @@ static func append(catalog) -> void:
 				"乏燃料转运受阻",
 				"国库拨出重金组建武装转运车队，但专列在边界屡遭邻区盘查与抗议阻拦，周转成本远超预期。外运通道虽勉强打通，区域摩擦却随之升级。",
 				[
-					Shared.cash_out(2.5, 360),
-					Shared.trade_capacity(3, 540),
+					Shared.cash_out(6, 360),
+					Shared.trade_capacity(8, 540),
 					Shared.bias(Ids.TAG_FRONTIER, 1.15, 540),
 					Shared.schedule(Ids.EVT_CHAIN_ATOM_VOTE, 240, "表决"),
 				]),
@@ -181,8 +183,8 @@ static func append(catalog) -> void:
 				"电网出力大幅缩减",
 				"安全局对半数机组实施预防性封存以减缓废料累积。区域电力供应随之吃紧，但科研部门借机获得了宝贵的乏燃料减容研究窗口。",
 				[
-					Shared.energy(-3, 540),
-					Shared.knowledge(2, 540),
+					Shared.energy(-10, 540),
+					Shared.knowledge(8, 540),
 					Shared.schedule(Ids.EVT_CHAIN_ATOM_VOTE, 180, "表决"),
 				]),
 		],
@@ -208,8 +210,8 @@ static func append(catalog) -> void:
 				"核电国策得以延续",
 				"中央政府力排众议批准机组继续运行，充沛的电力保障了工业区的长期扩张。反对派在隔离区外发起持久静坐，社会对立短期内难以弥合。",
 				[
-					Shared.energy(6, 540),
-					Shared.manufacturing(4, 540),
+					Shared.energy(18, 540),
+					Shared.manufacturing(12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 			Shared.option(
@@ -217,17 +219,17 @@ static func append(catalog) -> void:
 				"核电站进入退役程序",
 				"各机组按计划陆续停机并切换回常规电网，重工业产出与就业随之回落。社区紧张局势显著缓和，居民对地方居住环境的信心得以恢复。",
 				[
-					Shared.energy(-5, 540),
-					Shared.manufacturing(-3, 540),
-					Shared.birth(3, 540),
+					Shared.energy(-15, 540),
+					Shared.manufacturing(-10, 540),
+					Shared.birth(10, 540),
 				]),
 			Shared.option(
 				"send_it_upstairs", "冻结公投结果，行政裁定",
 				"能源争端被强行搁置",
 				"政府以国家战略安全为由冻结地方公投效力，强行维持现行运转并征收特别安全费。此举虽保住了短期财政进项，却严重折损了公信力与科研士气。",
 				[
-					Shared.knowledge(-3, 540),
-					Shared.cash_in(1.0, 360),
+					Shared.knowledge(-10, 540),
+					Shared.cash_in(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 		],

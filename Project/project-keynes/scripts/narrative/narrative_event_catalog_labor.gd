@@ -78,6 +78,7 @@ static func append(catalog) -> void:
 		"one_shot": true,
 		"min_era_index": 6,
 		"max_era_index": 8,
+		"required_technologies": ["tech.property_cadastre"],
 		"conditions": [
 			{"op": Op.TERRAIN_IN, "int_list": [TerrainTypeScript.TERRAIN.PLAIN]},
 			{"op": Op.POPULATION_GTE, "int_value": 18},
@@ -107,9 +108,9 @@ static func append(catalog) -> void:
 				"驱牧保耕",
 				"乡民连夜拔除牧场围栏，耕地与农业产出得以保全，官府顺势向涉事公司课以罚金。但强硬对抗激化了劳资与土地矛盾。",
 				[
-					Shared.agriculture(8, 540),
+					Shared.agriculture(24, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 360),
-					Shared.cash_in(1.5, 180),
+					Shared.cash_in(4, 180),
 					Shared.schedule(Ids.EVT_LABOR_BROKEN_LOOM, 90, "砸机器"),
 				]),
 			Shared.gamble(
@@ -117,17 +118,17 @@ static func append(catalog) -> void:
 				Shared.branch(39322, "股息丰厚", # 60%
 					"国库注资担保后牧场顺利投产，原毛外销畅旺，农牧产出与商贸运力同步跃升。尽管部分失地农户仍感不安，整体改革初见成效。",
 					[
-						Shared.agriculture(12, 720),
-						Shared.trade_capacity(8, 720),
-						Shared.cash_out(2.0, 180),
+						Shared.agriculture(30, 720),
+						Shared.trade_capacity(16, 720),
+						Shared.cash_out(5, 180),
 						Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 					]),
 				Shared.branch(26214, "牧业崩盘", # 40%
 					"外部原毛需求骤冷，牧场公司大幅裁员并变卖草场。失地农户既失田产又无分红，农产重挫、口粮趋紧，人口元气大伤。",
 					[
-						Shared.agriculture(-6, 540),
-						Shared.staple(8, 540),
-						Shared.birth(-5, 540),
+						Shared.agriculture(-18, 540),
+						Shared.staple(24, 540),
+						Shared.birth(-15, 540),
 					])),
 			Shared.option(
 				"petition_and_wait", "留中不发，暂搁农户土地呈文",
@@ -136,7 +137,7 @@ static func append(catalog) -> void:
 				[
 					Shared.flag(Ids.FLAG_ENCLOSURE_PETITION, 540, "标记「呈文未批」"),
 					Shared.bias(Ids.TAG_LABOR, 1.25, 540),
-					Shared.agriculture(-6, 360),
+					Shared.agriculture(-18, 360),
 					Shared.schedule(Ids.EVT_FAMILY_FATHERS_DEBT, 90, "父债"),
 				]),
 		],
@@ -156,6 +157,7 @@ static func append(catalog) -> void:
 		"one_shot": true,
 		"min_era_index": 6,
 		"max_era_index": 8,
+		"required_technologies": ["tech.textile_machinery"],
 		"required_events_completed": [String(Ids.EVT_LABOR_ENCLOSURE)],
 		"conditions": [
 			{"op": Op.UNEMPLOYMENT_GTE, "float_value": 0.08},
@@ -185,14 +187,14 @@ static func append(catalog) -> void:
 				Shared.branch(39322, "旧匠驯机", # 60%
 					"老练的手工织匠迅速摸透了机械传动脾气，反而大幅降低了织机故障率。全国制造效率与本地工业技艺皆得提振。",
 					[
-						Shared.country_sector("manufacturing", 5, 540),
-						Shared.knowledge(4, 540),
+						Shared.country_sector("manufacturing", 12, 540),
+						Shared.knowledge(12, 540),
 						Shared.schedule(Ids.EVT_LABOR_FACTORY_ACT, 45, "工时"),
 					]),
 				Shared.branch(26214, "工伤酿成罢工", # 40%
 					"缺乏防护规程的培训引发严重卷入事故，带头工匠重伤致残。工厂被迫停产整顿，全城劳工怒火彻底点燃。",
 					[
-						Shared.manufacturing(-6, 360),
+						Shared.manufacturing(-18, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.45, 540),
 						Shared.schedule(Ids.EVT_LABOR_FACTORY_ACT, 90, "工时"),
 					])),
@@ -201,9 +203,9 @@ static func append(catalog) -> void:
 				"铁腕戒严",
 				"巡警连夜搜捕为首工人并焊死厂区铁门，全国纺织工业得以强力运转且国库收缴罚金。但高压手段令地下劳工串联愈发激进。",
 				[
-					Shared.country_sector("manufacturing", 6, 540),
+					Shared.country_sector("manufacturing", 15, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 540),
-					Shared.cash_in(2.0, 180),
+					Shared.cash_in(5, 180),
 					Shared.schedule(Ids.EVT_LABOR_FACTORY_ACT, 60, "工时"),
 				]),
 			Shared.option(
@@ -211,8 +213,8 @@ static func append(catalog) -> void:
 				"换血复产",
 				"厂方草草清理现场并张榜重招廉价生手，既流失了熟练技工导致制造与技艺滑坡，也让失业劳工的积怨进一步发酵。",
 				[
-					Shared.manufacturing(-5, 360),
-					Shared.knowledge(-3, 360),
+					Shared.manufacturing(-15, 360),
+					Shared.knowledge(-10, 360),
 					Shared.bias(Ids.TAG_LABOR, 1.30, 540),
 					Shared.schedule(Ids.EVT_LABOR_FACTORY_ACT, 120, "工时"),
 				]),
@@ -240,24 +242,24 @@ static func append(catalog) -> void:
 					"国库补贴助厂方渡过排班磨合期，工人得以休养生息，人口生育回升。现代轮班与工厂管理经验随之在全国推广。",
 					[
 						Shared.flag(Ids.FLAG_HOURS_TEN, 900, "标记「十小时制」"),
-						Shared.birth(5, 720),
-						Shared.cash_out(2.0, 180),
+						Shared.birth(15, 720),
+						Shared.cash_out(5, 180),
 						Shared.research_signal("breakthrough.industrial_organization", "工厂组织"),
 					]),
 				Shared.branch(26214, "订单外流受挫", # 40%
 					"严苛工时限制令大批外商订单转向邻地无管制工场，本地制造产出下滑。资方借机克扣薪资，人口与治安皆受冲击。",
 					[
-						Shared.manufacturing(-6, 540),
+						Shared.manufacturing(-18, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 540),
-						Shared.birth(-3, 540),
+						Shared.birth(-10, 540),
 					])),
 			Shared.option(
 				"let_the_factory_decide", "否决工时立法，由厂方自主定夺",
 				"资本主导",
 				"纱厂全面延长夜班并探索夜间电气照明，全国制造产出显著拉升。但过度压榨令劳工健康与生育率骤降，社会动荡急剧加剧。",
 				[
-					Shared.country_sector("manufacturing", 6, 720),
-					Shared.birth(-6, 720),
+					Shared.country_sector("manufacturing", 15, 720),
+					Shared.birth(-18, 720),
 					Shared.research_signal("breakthrough.electrification", "电气化"),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 540),
 				]),
@@ -266,9 +268,9 @@ static func append(catalog) -> void:
 				"计件竞速",
 				"计件制彻底激发了工场产能，本地制造业产出猛增。但工人为维持生计被迫携家眷超时赶工，家庭元气与口粮负担双双恶化。",
 				[
-					Shared.manufacturing(8, 540),
-					Shared.birth(-5, 540),
-					Shared.staple(6, 540),
+					Shared.manufacturing(24, 540),
+					Shared.birth(-15, 540),
+					Shared.staple(18, 540),
 				]),
 		],
 	}))
@@ -286,6 +288,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 3,
 		"max_era_index": 6,
+		"required_technologies": ["tech.guild_organization"],
 		"conditions": [
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "artisan", "float_value": 0.08},
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 2},
@@ -315,9 +318,9 @@ static func append(catalog) -> void:
 				"行会专营",
 				"行会缴纳税款取得独占特许，作坊品控与本地制造稳步增强，外来游匠则被悉数逐出城外，唯工具耗费随之略增。",
 				[
-					Shared.manufacturing(5, 540),
-					Shared.tools(6, 540),
-					Shared.cash_in(1.5, 180),
+					Shared.manufacturing(15, 540),
+					Shared.tools(18, 540),
+					Shared.cash_in(4, 180),
 				]),
 			Shared.option(
 				"let_anyone_open", "废除行会门槛，准许游匠落籍",
@@ -326,9 +329,9 @@ static func append(catalog) -> void:
 				[
 					# 逃荒来的箍桶匠从此在镇上落了脚：一户人，按 3 人（本人+家口）算。
 					Shared.population(3, "本地人口 +3 人（逃荒匠户落籍）"),
-					Shared.country_sector("manufacturing", 4, 540),
-					Shared.tools(-6, 540),
-					Shared.manufacturing(-2, 360),
+					Shared.country_sector("manufacturing", 10, 540),
+					Shared.tools(-18, 540),
+					Shared.manufacturing(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
@@ -337,7 +340,7 @@ static func append(catalog) -> void:
 				"特许状迟迟未获批复，城内新旧匠户皆不敢放手扩产。制造产出随之滑坡，行会与游匠间的暗中摩擦日渐升级。",
 				[
 					Shared.flag(Ids.FLAG_CHARTER_PENDING, 540, "标记「火漆未干」"),
-					Shared.manufacturing(-5, 360),
+					Shared.manufacturing(-15, 360),
 					Shared.bias(Ids.TAG_LABOR, 1.30, 540),
 				]),
 		],
@@ -356,6 +359,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 600,
 		"min_era_index": 3,
 		"max_era_index": 8,
+		"required_technologies": ["tech.guild_organization"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 2},
 			{"op": Op.POPULATION_GTE, "int_value": 10},
@@ -385,8 +389,8 @@ static func append(catalog) -> void:
 				"招牌留存",
 				"遗孀补缴核验规费后得以保留独立作坊字号，手艺与产能顺利延续。此例一开，城中多家小坊亦纷纷要求确认独立产权。",
 				[
-					Shared.cash_in(1.5, 180),
-					Shared.manufacturing(4, 540),
+					Shared.cash_in(4, 180),
+					Shared.manufacturing(12, 540),
 					Shared.flag(Ids.FLAG_WIDOW_SIGN, 540, "标记「招牌未摘」"),
 				]),
 			Shared.option(
@@ -394,8 +398,8 @@ static func append(catalog) -> void:
 				"字号兼并",
 				"独立作坊被摘牌兼并，行会借机整合人力提升了整体制造产出。但失坊匠户被迫沦为雇工，生计压榨令生育下滑且民怨暗生。",
 				[
-					Shared.manufacturing(5, 540),
-					Shared.birth(-4, 540),
+					Shared.manufacturing(15, 540),
+					Shared.birth(-12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 360),
 				]),
 			Shared.option(
@@ -403,7 +407,7 @@ static func append(catalog) -> void:
 				"产权悬空",
 				"当局袖手旁观，作坊月底即被债主与行会瓜分停摆。城中中小匠户人心惶惶，本地制造产出受挫且劳工怨气随之攀升。",
 				[
-					Shared.manufacturing(-5, 360),
+					Shared.manufacturing(-15, 360),
 					Shared.bias(Ids.TAG_LABOR, 1.20, 540),
 				]),
 		],

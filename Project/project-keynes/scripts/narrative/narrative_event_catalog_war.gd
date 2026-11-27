@@ -115,7 +115,7 @@ static func append(catalog) -> void:
 				"军需物资连夜启运",
 				"地方官署强制执行战时摊派，大宗军需如期发往前线。民众虽未公开抗命，但后方怨声渐起。",
 				[
-					Shared.cash_in(1.5, 360),
+					Shared.cash_in(4, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
@@ -123,15 +123,15 @@ static func append(catalog) -> void:
 				"后方民生暂得安稳",
 				"国库拨款先行垫付军需并补贴口粮供应，战时恐慌迅速平息，代价是财政储备明显缩水。",
 				[
-					Shared.cash_out(2.0, 360),
-					Shared.staple(-3, 360),
+					Shared.cash_out(5, 360),
+					Shared.staple(-10, 360),
 				]),
 			Shared.option(
 				"wait_and_see", "暂缓加征，维持常规供应",
 				"前线补给陷入紧张",
 				"地方动员迟迟未能铺开，前线催调文书接踵而至。政令迟滞令工商业界观望不前，民间不安情绪持续扩散。",
 				[
-					Shared.manufacturing(-2, 360),
+					Shared.manufacturing(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 		],
@@ -173,8 +173,8 @@ static func append(catalog) -> void:
 				"举国欢庆重振士气",
 				"盛大的凯旋庆典极大提振了国家凝聚力与民众对未来的信心，国库虽耗资不菲，但政权威望显著攀升。",
 				[
-					Shared.cash_out(2.0, 360),
-					Shared.birth(3, 540),
+					Shared.cash_out(5, 360),
+					Shared.birth(10, 540),
 					Shared.bias(Ids.TAG_COURT, 1.15, 540),
 				]),
 			Shared.option(
@@ -182,15 +182,15 @@ static func append(catalog) -> void:
 				"阵亡遗属获妥善安置",
 				"政府取消铺张仪式，将国库专款全数用于抚恤阵亡遗属与保障口粮。低调务实的举措赢得了基层深厚民心。",
 				[
-					Shared.cash_out(2.5, 360),
-					Shared.staple(-3, 360),
+					Shared.cash_out(6, 360),
+					Shared.staple(-10, 360),
 				]),
 			Shared.option(
 				"reward_the_officers", "仅赏将领，课税充库",
 				"厚此薄彼引民怨沸腾",
 				"朝廷重赏前线有功将领却向地方征收战后附加税，底层遗属的抚恤被一再拖延，民间不满迅速发酵。",
 				[
-					Shared.cash_in(1.0, 360),
+					Shared.cash_in(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 		],
@@ -231,15 +231,15 @@ static func append(catalog) -> void:
 				"大批伤员重获生机",
 				"国库紧急增调医护与药械，临时病房挽救了大批前线将士的性命，军心与社会安定度随之回升。",
 				[
-					Shared.cash_out(1.5, 360),
-					Shared.birth(2, 540),
+					Shared.cash_out(4, 360),
+					Shared.birth(8, 540),
 				]),
 			Shared.option(
 				"send_them_home", "发给路费，遣返原籍",
 				"伤员分批疏散返乡",
 				"地方官署雇佣车队将伤员分批送返故里，减轻了本地医疗负担，但沿途凄凉的景象仍动摇了后方士气。",
 				[
-					Shared.cash_out(1.0, 360),
+					Shared.cash_out(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 				]),
 			Shared.option(
@@ -249,7 +249,7 @@ static func append(catalog) -> void:
 				[
 					# 留在庙里的活人从此算本地人口；「不问了」是不管，不是不存在。
 					Shared.population_rate(3, "本地人口 +3%（伤兵留居本地）"),
-					Shared.manufacturing(-2, 360),
+					Shared.manufacturing(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 		],
@@ -290,15 +290,15 @@ static func append(catalog) -> void:
 				"新政迅速站稳脚跟",
 				"接管当局拨款赈济并严格约束守军，全城商市很快恢复运转，新政权赢得了初步的民心认同。",
 				[
-					Shared.staple(-3, 360),
-					Shared.cash_out(1.5, 360),
+					Shared.staple(-10, 360),
+					Shared.cash_out(4, 360),
 				]),
 			Shared.option(
 				"let_the_troops_loot", "默许守军就地搜刮筹饷",
 				"全城凋敝仇恨深种",
 				"强征与劫掠在短时间内为国库聚敛了大笔财物，但商业街区元气大伤，反抗情绪在暗处疯狂滋长。",
 				[
-					Shared.cash_in(2.0, 360),
+					Shared.cash_in(5, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.40, 720),
 				]),
 			Shared.option(
@@ -306,7 +306,7 @@ static func append(catalog) -> void:
 				"军管之下百业停滞",
 				"守军查封全部仓储并实施严密戒严，物资虽未外流，但长期停摆的生产与紧绷的管制令民怨不断累积。",
 				[
-					Shared.manufacturing(-2, 360),
+					Shared.manufacturing(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 		],
@@ -350,14 +350,14 @@ static func append(catalog) -> void:
 					# 「先给口热的」之后活下来的人留在城里；birth(2) 说的是往后十年多生，
 					# 跟这些当下就要吃饭的人不是一件事。
 					Shared.population_rate(25, "本地人口 +25%（溃兵收容）"),
-					Shared.cash_out(1.5, 360),
+					Shared.cash_out(4, 360),
 				]),
 			Shared.option(
 				"blame_the_general", "军法严办主将，整肃纲纪",
 				"问责风暴震荡军政",
 				"总参谋部革除败军主将职务并展开严厉审查，军界与官僚体系人人自危，内部互信与推演效率明显受挫。",
 				[
-					Shared.knowledge(-2, 360),
+					Shared.knowledge(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
@@ -365,7 +365,7 @@ static func append(catalog) -> void:
 				"冷酷处置激起公愤",
 				"守军紧闭城防驱离溃兵，大批幸存者流离失所。此举令前线将士寒心，后方生产与治安亦随之恶化。",
 				[
-					Shared.manufacturing(-2, 360),
+					Shared.manufacturing(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 720),
 				]),
 		],
@@ -385,6 +385,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 60,
 		"min_era_index": 3,
 		"max_era_index": 10,
+		"required_technologies": ["tech.currency"],
 		"conditions": [
 			{"op": Op.POPULATION_GTE, "int_value": 8},
 		],
@@ -406,14 +407,14 @@ static func append(catalog) -> void:
 				Shared.branch(39322, "商贸迅速恢复流通", # 60%
 					"新旧货币平稳衔接，新附地区的商业网络很快融入我国贸易体系，尽管初期仍伴随些许投机风波。",
 					[
-						Shared.trade_capacity(5, 540),
+						Shared.trade_capacity(12, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					]),
 				Shared.branch(26214, "旧币信用崩盘挤兑", # 40%
 					"投机者疯狂抛售旧币引发挤兑风潮，国库被迫出资兜底，本地工商业在混乱中遭受重创。",
 					[
-						Shared.manufacturing(-3, 540),
-						Shared.cash_out(1.5, 360),
+						Shared.manufacturing(-10, 540),
+						Shared.cash_out(4, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					])),
 			Shared.option(
@@ -421,7 +422,7 @@ static func append(catalog) -> void:
 				"国库获利而商界受损",
 				"财政部门以极低折算率强行收兑旧币，为国库带来一笔可观铸币差额，但新附商民财富缩水、怨气颇深。",
 				[
-					Shared.cash_in(1.5, 360),
+					Shared.cash_in(4, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 			Shared.option(
@@ -429,7 +430,7 @@ static func append(catalog) -> void:
 				"金融震荡引发倒退",
 				"旧币一夜沦为废品，本地商业瞬间退回以物易物的原始状态，制造业停滞且动荡风险大幅攀升。",
 				[
-					Shared.manufacturing(-3, 540),
+					Shared.manufacturing(-10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 720),
 				]),
 		],

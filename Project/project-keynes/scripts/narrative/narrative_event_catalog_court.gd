@@ -99,7 +99,7 @@ static func append(catalog) -> void:
 				"幼主登基",
 				"幼主在礼官簇拥下继位，辅政重臣代掌国印并主持朝政。国库为此拨出丰厚赏赐以安抚百官，但主少国疑的隐忧已在各部悄然蔓延。",
 				[
-					Shared.cash_out(2.0, 540),
+					Shared.cash_out(5, 540),
 					Shared.flag(Ids.FLAG_THRONE_DISPUTED, 1825, "标记「主少国疑」"),
 					Shared.schedule(Ids.EVT_COURT_REGENT, 25, "掌印的人"),
 				]),
@@ -108,7 +108,7 @@ static func append(catalog) -> void:
 				"宗室承统",
 				"过继子嗣于祖庙受册，随即下令将外戚亲兵调离京畿。大兴土木重修礼仪仪仗虽耗费不菲，但政权交接的危机总算暂告平息。",
 				[
-					Shared.build_cost(4, 540),
+					Shared.build_cost(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 					Shared.bias(Ids.TAG_COURT, 1.20, 540),
 				]),
@@ -117,7 +117,7 @@ static func append(catalog) -> void:
 				"闭城戒严",
 				"朝廷封锁死讯并骤然闭城，紧急清点武库军械以防变乱。数日后城门重开，民间流言四起，对权臣密谋的猜忌迅速在地方扩散。",
 				[
-					Shared.cash_out(1.5, 360),
+					Shared.cash_out(4, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 540),
 					Shared.schedule(Ids.EVT_COURT_REGENT, 60, "掌印的人"),
 				]),
@@ -169,7 +169,7 @@ static func append(catalog) -> void:
 				"以禄换稳",
 				"朝廷按季拨付丰厚禄赐以示恩宠，辅政重臣心领神会地收敛了锋芒。各方势力暂时维持了微妙的平衡，但财政为此背上了沉重的长期包袱。",
 				[
-					Shared.cash_out(2.5, 540),
+					Shared.cash_out(6, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 					Shared.flag(Ids.FLAG_REGENT_PAID, 1825, "标记「相府有例」"),
 				]),
@@ -187,7 +187,7 @@ static func append(catalog) -> void:
 				"相府专漕",
 				"漕运大权归入相府名下，借由其严密的网络，全国商运效率显著提升。代价是各处码头皆由相党把持，地方对中枢专权的怨愤日积月累。",
 				[
-					Shared.trade_capacity(6, 540),
+					Shared.trade_capacity(15, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 					Shared.flag(Ids.FLAG_REGENT_ENTRENCHED, 1825, "标记「相府掌漕」"),
 				]),
@@ -215,7 +215,7 @@ static func append(catalog) -> void:
 				"南北分治",
 				"双方以河谷为界达成默契，勉强避免了全面内战。但一国两制的混乱重创了文教与行政协同，分裂的隐患长期悬于头顶。",
 				[
-					Shared.knowledge(-4, 540),
+					Shared.knowledge(-12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					Shared.flag(Ids.FLAG_TWO_COURTS, 1825, "标记「两印并立」"),
 				]),
@@ -224,7 +224,7 @@ static func append(catalog) -> void:
 				"兵戈既起",
 				"大军渡河展开讨伐，战事迅速吞噬了国库积蓄。为了维持庞大军费，地方铸币成色开始恶化，战火波及之处的祠堂与村落亦陷入破败。",
 				[
-					Shared.cash_out(4.0, 540),
+					Shared.cash_out(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.50, 540),
 					Shared.schedule(Ids.EVT_FISCAL_DEBASED_COIN, 40, "小钱"),
 					Shared.schedule(Ids.EVT_LAND_RUINED_SHRINE, 90, "废祠"),
@@ -234,8 +234,8 @@ static func append(catalog) -> void:
 				"共署国政",
 				"经由宗教与地方望族多方斡旋，名义上的统一得以保全。代价是此后一切重大政令皆须两派会签，行政效率与营建成本均受拖累。",
 				[
-					Shared.knowledge(-4, 360),
-					Shared.build_cost(3, 540),
+					Shared.knowledge(-12, 360),
+					Shared.build_cost(8, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.95, 540),
 					Shared.bias(Ids.TAG_FAITH, 1.20, 540),
 				]),
@@ -301,8 +301,8 @@ static func append(catalog) -> void:
 				"设馆授徒",
 				"朝廷拨付薄俸将其安置于学馆，各地士子闻风前来求学。本地学术风气大振，但其在讲学中对时政的针砭也引来保守派的侧目。",
 				[
-					Shared.cash_out(1.5, 360),
-					Shared.knowledge(5, 540),
+					Shared.cash_out(4, 360),
+					Shared.knowledge(15, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 360),
 				]),
 			Shared.option(
@@ -310,8 +310,8 @@ static func append(catalog) -> void:
 				"婉拒留任",
 				"一笔遣散费体面地化解了潜在的政治风波，谪官携家眷黯然离去。本地虽保住了表面安宁，却也错失了一位谙熟政务的干才。",
 				[
-					Shared.cash_out(1.0, 180),
-					Shared.knowledge(-2, 240),
+					Shared.cash_out(3, 180),
+					Shared.knowledge(-8, 240),
 					Shared.bias(Ids.TAG_UNREST, 0.95, 240),
 				]),
 			Shared.gamble(
@@ -319,15 +319,15 @@ static func append(catalog) -> void:
 				Shared.branch(42598, "旧账水落石出", # 65%
 					"历时两月，历年亏空与贪墨脉络被悉数厘清并登记在案。这份铁证不仅震慑了朝中权贵，也让数家涉嫌勾结的地方豪强连夜出逃。",
 					[
-						Shared.knowledge(6, 540),
+						Shared.knowledge(18, 540),
 						Shared.flag(Ids.FLAG_OLD_LEDGER, 1825, "标记「旧账在案」"),
 						Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 					]),
 				Shared.branch(22938, "清查半途而废", # 35%
 					"查账刚触及核心利益便遭遇暗中阻挠，谪官在威胁之下连夜失踪。不仅拨付的经费付诸东流，未竟的案牍反令地方谣言四起。",
 					[
-						Shared.knowledge(-3, 240),
-						Shared.cash_out(2.0, 360),
+						Shared.knowledge(-10, 240),
+						Shared.cash_out(5, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 360),
 					])),
 		],

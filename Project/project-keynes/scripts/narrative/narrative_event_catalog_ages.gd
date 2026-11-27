@@ -73,6 +73,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 900,
 		"min_era_index": 0,
 		"max_era_index": 1,
+		"required_technologies": ["tech.crop_domestication"],
 		"conditions": [
 			{"op": Op.POPULATION_GTE, "int_value": 6},
 		],
@@ -100,24 +101,24 @@ static func append(catalog) -> void:
 				"春播有继",
 				"粮窖被泥封看守，部落在严冬里勒紧裤带，口粮损耗加剧。开春时饱满谷种如期入土，新季农耕得以延续。",
 				[
-					Shared.agriculture(4, 540),
-					Shared.staple(4, 360),
+					Shared.agriculture(12, 540),
+					Shared.staple(12, 360),
 				]),
 			Shared.option(
 				"grind_it_and_eat", "开窖分食，先渡今冬荒年",
 				"权济寒冬",
 				"谷种被磨成口粮分予各户，聚落得以安然过冬，饥荒压力骤减。但来年春播无良种可用，田亩收成明显下滑。",
 				[
-					Shared.staple(-4, 180),
-					Shared.agriculture(-3, 360),
+					Shared.staple(-12, 180),
+					Shared.agriculture(-10, 360),
 				]),
 			Shared.option(
 				"share_with_neighbours", "各氏族均分谷种，共担春播",
 				"分户共耕",
 				"谷种按户分给相邻氏族共同保管耕作，既稳住了人心，也交流了选种经验，聚落人丁随之兴旺。",
 				[
-					Shared.birth(4, 540),
-					Shared.knowledge(3, 540),
+					Shared.birth(12, 540),
+					Shared.knowledge(10, 540),
 					Shared.bias(Ids.TAG_PEOPLE, 1.10, 540),
 				]),
 		],
@@ -136,6 +137,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 900,
 		"min_era_index": 0,
 		"max_era_index": 2,
+		"required_technologies": ["tech.settled_knowledge"],
 		"conditions": [
 			{"op": Op.POPULATION_GTE, "int_value": 8},
 		],
@@ -163,8 +165,8 @@ static func append(catalog) -> void:
 				"祖灵有归",
 				"高坡垒起石冢作为共同墓地，各氏族依例祭祀并传述先祖旧事，聚落工匠与礼俗传承皆有所进益。",
 				[
-					Shared.knowledge(3, 540),
-					Shared.manufacturing(2, 360),
+					Shared.knowledge(10, 540),
+					Shared.manufacturing(8, 360),
 					Shared.bias(Ids.TAG_PEOPLE, 1.10, 540),
 				]),
 			Shared.option(
@@ -172,16 +174,16 @@ static func append(catalog) -> void:
 				"简葬务农",
 				"丧仪一切从简，省下的青壮劳力尽数投入开荒耕作，当年田产略有盈余。但缺乏共同祭仪，部族记忆日渐淡薄。",
 				[
-					Shared.agriculture(2, 360),
-					Shared.knowledge(-3, 360),
+					Shared.agriculture(8, 360),
+					Shared.knowledge(-10, 360),
 				]),
 			Shared.option(
 				"bury_at_the_crossroads", "筑坟于路口，宣示定居地权",
 				"路口示疆",
 				"隆重的丧祭耗去不少口粮储备，却让往来部族知晓此处已成定居之邦。氏族凝聚力增强，聚落人口趋于稳定。",
 				[
-					Shared.birth(3, 540),
-					Shared.staple(3, 360),
+					Shared.birth(10, 540),
+					Shared.staple(10, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
 		],
@@ -200,6 +202,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 0,
 		"max_era_index": 2,
+		"required_technologies": ["tech.hand_pottery"],
 		"conditions": [
 			{"op": Op.POPULATION_GTE, "int_value": 8},
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 1},
@@ -228,17 +231,17 @@ static func append(catalog) -> void:
 				"窑火日精",
 				"陶窑分出专炉烧造陶偶，制陶控火技艺大进，精巧器物更吸引邻部前来易货。但额外柴薪消耗令冬日生计略显吃紧。",
 				[
-					Shared.manufacturing(4, 540),
-					Shared.knowledge(3, 540),
-					Shared.staple(3, 360),
+					Shared.manufacturing(12, 540),
+					Shared.knowledge(10, 540),
+					Shared.staple(10, 360),
 				]),
 			Shared.option(
 				"put_it_away", "禁造玩物，专注日用陶器",
 				"严守实用",
 				"长老会下令陶窑只准烧制盆罐，部落秩序井然却错失工艺革新契机。不久后邻部精绘陶器流入，反令本地匠作相形见绌。",
 				[
-					Shared.manufacturing(-2, 360),
-					Shared.knowledge(-2, 360),
+					Shared.manufacturing(-8, 360),
+					Shared.knowledge(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
 			Shared.option(
@@ -246,8 +249,8 @@ static func append(catalog) -> void:
 				"百态陶风",
 				"各户纷纷塑像烧窑，聚落工艺审美与文化活力大振。然而争抢河泥与窑位引发多起纠纷，地方摩擦随之抬头。",
 				[
-					Shared.knowledge(5, 540),
-					Shared.birth(3, 540),
+					Shared.knowledge(15, 540),
+					Shared.birth(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 		],
@@ -294,9 +297,9 @@ static func append(catalog) -> void:
 				"商道渐通",
 				"朝廷拨款雇请向导护送商队重返正途，外邦商号感念信义，此后逐年遣队来贸，本国商路吞吐与域外见闻皆得增益。",
 				[
-					Shared.trade_capacity(6, 360),
-					Shared.cash_out(1.5, 360),
-					Shared.knowledge(2, 360),
+					Shared.trade_capacity(15, 360),
+					Shared.cash_out(4, 360),
+					Shared.knowledge(8, 360),
 					Shared.bias(Ids.TAG_FRONTIER, 1.10, 540),
 				]),
 			Shared.option(
@@ -304,8 +307,8 @@ static func append(catalog) -> void:
 				"商誉受损",
 				"精盐与织物被悉数没收充公，国库获一笔横财。但外商愤而远遁，西境商旅视本地为畏途，边道劫掠与地方不安随之滋生。",
 				[
-					Shared.cash_in(2.0, 360),
-					Shared.manufacturing(-3, 360),
+					Shared.cash_in(5, 360),
+					Shared.manufacturing(-10, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
@@ -313,9 +316,9 @@ static func append(catalog) -> void:
 				"异邦商栈",
 				"外商获准在城南开设货栈，带来新式织法与远方货源。本地行会不满外人夺利而屡起抵制，城中商贸摩擦与生活开销一时俱增。",
 				[
-					Shared.trade_capacity(4, 540),
-					Shared.knowledge(3, 540),
-					Shared.staple(3, 360),
+					Shared.trade_capacity(10, 540),
+					Shared.knowledge(10, 540),
+					Shared.staple(10, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 		],
@@ -334,6 +337,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 4,
 		"max_era_index": 6,
+		"required_technologies": ["tech.magnetic_navigation"],
 		"conditions": [
 			{"op": Op.POPULATION_GTE, "int_value": 12},
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "scholar", "float_value": 0.01},
@@ -362,16 +366,16 @@ static func append(catalog) -> void:
 				Shared.branch(39322, "盲航凯旋", # 60%
 					"试航船队仅凭罗盘穿越连日阴雾并顺利返港，远洋航路图得以补全。尽管守旧派仍心怀忌惮，海务与学界已为之震动。",
 					[
-						Shared.trade_capacity(6, 360),
-						Shared.knowledge(4, 540),
+						Shared.trade_capacity(15, 360),
+						Shared.knowledge(12, 540),
 						Shared.research_signal("contact.maritime_vessel", "远洋航路"),
 						Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 					]),
 				Shared.branch(26214, "试航失联", # 40%
 					"远航船队因未修正磁偏误入暗礁区，逾期未归，仅余残骸漂回近海。舆论哗然，海务改革受挫，守旧之声一时大炽。",
 					[
-						Shared.manufacturing(-3, 540),
-						Shared.knowledge(-2, 360),
+						Shared.manufacturing(-10, 540),
+						Shared.knowledge(-8, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					])),
 			Shared.option(
@@ -379,16 +383,16 @@ static func append(catalog) -> void:
 				"稳步勘校",
 				"学者与舵手在内河航道反复比对磁针与岸标，详录偏角数据。虽耗去一批仪具工料，却为日后远航奠定了可靠基准。",
 				[
-					Shared.knowledge(3, 540),
-					Shared.trade_capacity(2, 360),
-					Shared.tools(4, 360),
+					Shared.knowledge(10, 540),
+					Shared.trade_capacity(6, 360),
+					Shared.tools(12, 360),
 				]),
 			Shared.option(
 				"lock_it_away", "封存官库，平息教团非议",
 				"束之高阁",
 				"罗盘被锁入官库，教团与守旧派的攻讦随之平息。但数年后外邦商船凭同类仪具纵横近海，本国航海技艺已落后一筹。",
 				[
-					Shared.knowledge(-3, 360),
+					Shared.knowledge(-10, 360),
 					Shared.bias(Ids.TAG_FAITH, 1.15, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
@@ -408,6 +412,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 8,
 		"max_era_index": 10,
+		"required_technologies": ["tech.radio", "tech.electric_grid"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 5},
 			{"op": Op.POPULATION_GTE, "int_value": 20},
@@ -436,8 +441,8 @@ static func append(catalog) -> void:
 				"公营信标启用",
 				"国有导航信号塔按期并网运行，全天候引导货轮安全靠泊，港口吞吐稳步提升。财政为此承担了持续的建设与运维开销。",
 				[
-					Shared.trade_capacity(5, 540),
-					Shared.cash_out(2.5, 360),
+					Shared.trade_capacity(12, 540),
+					Shared.cash_out(6, 360),
 					Shared.bias(Ids.TAG_LABOR, 1.10, 540),
 				]),
 			Shared.option(
@@ -445,8 +450,8 @@ static func append(catalog) -> void:
 				"私营收费信标",
 				"财团迅速建成高功率信号塔并上缴特许分成，港口运力大增。但高额导航费激怒了中小船东，偷航避费引发数起事故与抗议。",
 				[
-					Shared.trade_capacity(7, 540),
-					Shared.cash_in(2.0, 360),
+					Shared.trade_capacity(14, 540),
+					Shared.cash_in(5, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
@@ -454,7 +459,7 @@ static func append(catalog) -> void:
 				"暗夜滞航",
 				"信号塔计划被无限期搁置，恶劣天气下货轮频频在外海滞留甚至触礁。供应链延误波及本地工厂，港务舆论一片哗然。",
 				[
-					Shared.manufacturing(-2, 360),
+					Shared.manufacturing(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 				]),
 		],
@@ -473,6 +478,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 9,
 		"max_era_index": 10,
+		"required_technologies": ["tech.digital_computing"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 6},
 			{"op": Op.POPULATION_GTE, "int_value": 25},
@@ -501,8 +507,8 @@ static func append(catalog) -> void:
 				"算法高压",
 				"全时监测覆盖各大厂区，排班与物流效率大幅攀升。但无处不在的绩效压榨令劳工身心俱疲，生育意愿下滑，罢工暗流涌动。",
 				[
-					Shared.manufacturing(7, 540),
-					Shared.birth(-5, 540),
+					Shared.manufacturing(20, 540),
+					Shared.birth(-15, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 			Shared.option(
@@ -510,8 +516,8 @@ static func append(catalog) -> void:
 				"分级规制",
 				"内阁颁布细则，将监测系统严格限定于货品核验环节并引入独立审计。生产效率稳步提高，数据治理经验亦得以积累。",
 				[
-					Shared.manufacturing(3, 540),
-					Shared.knowledge(4, 540),
+					Shared.manufacturing(10, 540),
+					Shared.knowledge(12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.05, 360),
 				]),
 			Shared.option(
@@ -519,8 +525,8 @@ static func append(catalog) -> void:
 				"隐私立法",
 				"监测终端被悉数拆除，企业不得不回归人工排班与核账，工业效率短期回落。劳资对立随之缓和，人本治理赢得舆论赞誉。",
 				[
-					Shared.manufacturing(-4, 360),
-					Shared.knowledge(2, 360),
+					Shared.manufacturing(-12, 360),
+					Shared.knowledge(8, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 		],
@@ -539,6 +545,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 900,
 		"min_era_index": 7,
 		"max_era_index": 10,
+		"required_technologies": ["tech.factory_system"],
 		"conditions": [
 			{"op": Op.VEGETATION_IN, "int_list": [
 				VegetationTypeScript.VEG.TAIGA,
@@ -575,9 +582,9 @@ static func append(catalog) -> void:
 				"固本护源",
 				"原生林被划为永久禁伐区，本地建材供给趋紧，制造部门成本上升。但流域水源得以保全，生态研究与宜居环境惠及全城。",
 				[
-					Shared.knowledge(3, 540),
-					Shared.birth(3, 540),
-					Shared.manufacturing(-4, 360),
+					Shared.knowledge(10, 540),
+					Shared.birth(10, 540),
+					Shared.manufacturing(-12, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 			Shared.option(
@@ -585,8 +592,8 @@ static func append(catalog) -> void:
 				"竭泽而渔",
 				"林木被迅速伐尽并投入厂区建设，制造业短期大振。然而次年汛期水土严重流失，泥沙淤塞下游沟渠，农产减收且民怨四起。",
 				[
-					Shared.manufacturing(6, 540),
-					Shared.agriculture(-3, 540),
+					Shared.manufacturing(18, 540),
+					Shared.agriculture(-10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 			Shared.option(
@@ -594,8 +601,8 @@ static func append(catalog) -> void:
 				"变现林权",
 				"采伐特许权高价售予外地木业财团，国库进账可观并短暂带动加工业。但裸露山坡风沙渐起，环保团体与市民抗议不断。",
 				[
-					Shared.cash_in(2.0, 360),
-					Shared.manufacturing(2, 360),
+					Shared.cash_in(5, 360),
+					Shared.manufacturing(8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 		],

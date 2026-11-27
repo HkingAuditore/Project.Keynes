@@ -40,6 +40,8 @@ struct NarrativeCellView {
     int64_t unemployment = 0, subsistence_shortfall = 0;
     uint64_t primary_cohort = 0;
     int64_t primary_cash = 0, buildings = 0;
+    int32_t market_id = -1;
+    bool has_local_merchant = false;
     std::string primary_profession, dominant_profession;
     std::unordered_map<std::string, int64_t> profession_population;
     std::string settlement;

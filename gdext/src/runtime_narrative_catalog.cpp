@@ -288,6 +288,8 @@ bool RuntimeNarrativeCatalog::configure(const Dictionary &packet) {
     profession_names = Dictionary(packet.get("profession_names", Dictionary())).duplicate();
     unrest_profession_names = Dictionary(packet.get("unrest_profession_names", Dictionary())).duplicate();
     ai_fact_hints = Dictionary(packet.get("ai_fact_hints", Dictionary())).duplicate();
+    good_names = Dictionary(packet.get("good_names", Dictionary())).duplicate();
+    technology_names = Dictionary(packet.get("technology_names", Dictionary())).duplicate();
     const Array definitions = packet.get("events", Array());
     for (int32_t index = 0; index < definitions.size(); ++index)
         events.push_back(compile_event(definitions[index]));

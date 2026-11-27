@@ -103,7 +103,7 @@ static func append(catalog) -> void:
 				"大族在官署劝谕下正式承认这门恩亲并置产赡养，此举在全城传为美谈。本地大族由此赢得忠厚声望，民间婚育氛围向好，官府政声亦随之提升。",
 				[
 					TraitChanges.grant("j017_loyal", "老实"),
-					Shared.birth(3, 540),
+					Shared.birth(10, 540),
 					Shared.bias(Ids.TAG_COURT, 1.15, 540),
 				]),
 			Shared.option(
@@ -111,14 +111,14 @@ static func append(catalog) -> void:
 				"银钱了断各不相欠",
 				"国库协同大族拨付一笔丰厚遣散银两，换取遗孀不再主张名分。风波虽以金钱平稳了结，但冷峻的交易方式并未赢得坊间多少好感。",
 				[
-					Shared.cash_out(1.0, 360),
+					Shared.cash_out(3, 360),
 				]),
 			Shared.option(
 				"refuse_her", "恪守门第，断然拒斥",
 				"薄情寡义舆论哗然",
 				"宗祠大门紧闭，遗孀被拒之门外。大族冷酷无情的举动迅速引发全城清议挞伐，本地文教声誉受损，底层寒门对豪强与官府的怨怼暗中滋长。",
 				[
-					Shared.knowledge(-2, 360),
+					Shared.knowledge(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 		],
@@ -161,7 +161,7 @@ static func append(catalog) -> void:
 				"地方官署签发特许批文，官道被迫向豪强退让。大族借此彰显了显赫的士绅门第，但特权开先例后推高了本地营造规费，商民对此颇多微词。",
 				[
 					TraitChanges.grant("j020_gentry", "士绅门第"),
-					Shared.build_cost(3, 540),
+					Shared.build_cost(8, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
@@ -169,15 +169,15 @@ static func append(catalog) -> void:
 				"退线缩建折中了结",
 				"官署强令宗祠地基后退半幅并缴纳占地罚金，保住了主干官道畅通。大族虽勉强妥协，但停工改图与怨气短暂拖累了本地营造与制造进度。",
 				[
-					Shared.manufacturing(-2, 360),
-					Shared.cash_in(1.0, 360),
+					Shared.manufacturing(-8, 360),
+					Shared.cash_in(3, 360),
 				]),
 			Shared.option(
 				"forbid_it", "严禁动土，维护官道",
 				"强硬叫停官族交恶",
 				"官署断然驳回扩建图样，责令即刻撤线停工。公共路权得以严格维护，但大族颜面扫地，不仅缩减了对本地文教的资助，更令地方暗流涌动。",
 				[
-					Shared.knowledge(-2, 360),
+					Shared.knowledge(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 		],
@@ -196,6 +196,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 3,
 		"max_era_index": 8,
+		"required_technologies": ["tech.writing"],
 		"conditions": [
 			{"op": Op.FAMILY_PRESTIGE_GTE, "int_value": 3},
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "scholar", "float_value": 0.01},
@@ -220,23 +221,23 @@ static func append(catalog) -> void:
 				"官府拨款补贴营建，巍峨石牌坊矗立于要冲之上。本地大族正式确立书香门第的尊荣，极大激励了全城士子向学之风，本地知识产出随之攀升。",
 				[
 					TraitChanges.grant("j009_letters", "书香门第"),
-					Shared.knowledge(3, 540),
-					Shared.cash_out(1.0, 360),
+					Shared.knowledge(10, 540),
+					Shared.cash_out(3, 360),
 				]),
 			Shared.option(
 				"turn_it_into_money", "劝令节俭，折银入公",
 				"石料变现充实公库",
 				"官署劝说大族放弃奢华牌坊，将石料变现并按例抽成入库。国库借此获得一笔进项，但缺乏显赫旌表令本地读书人的进取热情略有降温。",
 				[
-					Shared.cash_in(1.5, 360),
-					Shared.knowledge(-1, 360),
+					Shared.cash_in(4, 360),
+					Shared.knowledge(-5, 360),
 				]),
 			Shared.option(
 				"wait", "严守旧制，暂缓批复",
 				"审批拖延士族寒心",
 				"呈文在繁琐的官僚程序中一再搁置，成堆石料在路口日晒雨淋。本地大族与士绅阶层倍感冷落，文教氛围随之低迷，对官府的积怨悄然滋长。",
 				[
-					Shared.knowledge(-2, 360),
+					Shared.knowledge(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 		],
@@ -279,7 +280,7 @@ static func append(catalog) -> void:
 				"税册移交大族账房，国库迅速收足了丰厚的承包税款，该族亦借税网拓展了商路人脉。然而豪强征税手段严苛，坊间怨声载道，动荡风险剧增。",
 				[
 					TraitChanges.grant("i019_trade", "商路人脉"),
-					Shared.cash_in(2.0, 360),
+					Shared.cash_in(5, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 			Shared.option(
@@ -287,8 +288,8 @@ static func append(catalog) -> void:
 				"坚持直征保住税权",
 				"度支司拒绝交出征税权，改以增派差役的方式继续直接征管。税款虽仍稳步入库，但冗长的查验程序牵制了部分工商业效率，收缴进度略显迟缓。",
 				[
-					Shared.cash_in(1.0, 360),
-					Shared.manufacturing(-2, 360),
+					Shared.cash_in(3, 360),
+					Shared.manufacturing(-8, 360),
 				]),
 			Shared.option(
 				"decline", "驳回包税，维持现状",
@@ -345,7 +346,7 @@ static func append(catalog) -> void:
 				"私兵解散回归法度",
 				"国库拨付一笔安抚补偿，责令大族即刻缴械遣散族丁。国家对武装的垄断权得以重申，该族亦在官府威严下收敛锋芒，展现出顺从守法的姿态。",
 				[
-					Shared.cash_out(1.5, 360),
+					Shared.cash_out(4, 360),
 					TraitChanges.grant("j017_loyal", "老实"),
 				]),
 			Shared.option(
@@ -354,7 +355,7 @@ static func append(catalog) -> void:
 				"地方官署将族丁编入官方乡勇名册并要求大族分摊军费，显著提升了战时补给与协防能力。但双重效忠的模糊体制仍令民间对豪强借官势欺人充满戒备。",
 				[
 					Shared.supply(8, 360),
-					Shared.cash_in(1.0, 360),
+					Shared.cash_in(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 		],
@@ -397,17 +398,17 @@ static func append(catalog) -> void:
 				"地方官署依律征收过户规费后核准设庄，义庄迅速开始按册发放救济粮。全城底层口粮压力明显缓解，大族亦借此举树立了忠厚仁善的地方声望。",
 				[
 					TraitChanges.grant("j017_loyal", "老实"),
-					Shared.staple(-4, 360),
-					Shared.cash_in(0.5, 360),
+					Shared.staple(-12, 360),
+					Shared.cash_in(3, 360),
 				]),
 			Shared.option(
 				"match_half", "官族合办，各出其半",
 				"官民共济建立新制",
 				"国库拨款与大族公田共同组建公私合营义庄，救济覆盖面大幅扩大。此举既稳住了主食保障，也确保了国家在地方福利体系中的主导权与治理经验。",
 				[
-					Shared.cash_out(2.0, 360),
-					Shared.staple(-3, 360),
-					Shared.knowledge(2, 360),
+					Shared.cash_out(5, 360),
+					Shared.staple(-10, 360),
+					Shared.knowledge(8, 360),
 				]),
 			Shared.option(
 				"refuse", "驳回请愿，禁设义庄",
@@ -415,7 +416,7 @@ static func append(catalog) -> void:
 				"官署出于防范豪强收买人心的考量断然否决设庄计划。孤寡贫户失去指望，本地基本口粮负担愈发沉重，社会底层的不满情绪在寒冬中迅速积聚。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
-					Shared.staple(3, 360),
+					Shared.staple(10, 360),
 				]),
 		],
 	}))

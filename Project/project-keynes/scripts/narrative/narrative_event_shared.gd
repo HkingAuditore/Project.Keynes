@@ -266,8 +266,13 @@ static func clear_flag(flag_id: StringName, label: String) -> Dictionary:
 static func bias(tag: StringName, factor: float, days: int, label: String = "") -> Dictionary:
 	var text := label
 	if text.strip_edges().is_empty():
-		text = "%s类事件权重 ×%s，%d 日" % [
-			NarrativeEffectSpecScript._friendly_tag_name(tag), _fmt(factor), days]
+		var tag_name := NarrativeEffectSpecScript._friendly_tag_name(tag)
+		if factor > 1.0:
+			text = "%s风波更易发生，%d 日" % [tag_name, days]
+		elif factor < 1.0:
+			text = "%s风波趋于平息，%d 日" % [tag_name, days]
+		else:
+			text = "%s动向平稳，%d 日" % [tag_name, days]
 	return {
 		"kind": NarrativeEffectSpecScript.Kind.ADD_EVENT_WEIGHT_BIAS,
 		"tag_key": tag,
@@ -280,13 +285,14 @@ static func bias(tag: StringName, factor: float, days: int, label: String = "") 
 ## 按 event_id 调权。
 static func bias_event(event_id: StringName, factor: float, days: int,
 		display_name: String) -> Dictionary:
+	var trend := "更易触发" if factor > 1.0 else ("较难触发" if factor < 1.0 else "维持常态")
 	return {
 		"kind": NarrativeEffectSpecScript.Kind.ADD_EVENT_WEIGHT_BIAS,
 		"target_key": event_id,
 		"int_value": 0,
 		"magnitude_q16": mul(factor),
 		"duration_days": days,
-		"custom_label": "「%s」权重 ×%s，%d 日" % [display_name, _fmt(factor), days],
+		"custom_label": "「%s」%s，%d 日" % [display_name, trend, days],
 	}
 
 ## N 日后在本地块触发。定时通道不复核条件/标记，分支必须排不同的 event_id。

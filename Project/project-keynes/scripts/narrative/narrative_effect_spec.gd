@@ -98,6 +98,15 @@ const TAG_LABELS: Dictionary = {
 	"school": "学院",
 	"law": "律法",
 	"envoy": "使节",
+	"market": "市集",
+	"people": "民生",
+	"chain": "连环变故",
+	"war": "战事",
+	"craft": "工艺",
+	"ages": "时代",
+	"town": "城镇",
+	"wilds": "荒野",
+	"waterworks": "水利",
 }
 
 @export var kind: int = Kind.CITY_MODIFIER
@@ -196,19 +205,16 @@ func describe() -> String:
 		Kind.ADD_EVENT_WEIGHT_BIAS:
 			var subject: String = ""
 			if tag_key != &"":
-				subject = "%s类事件" % _friendly_tag_name(tag_key)
+				subject = "%s风波" % _friendly_tag_name(tag_key)
 			elif target_key != &"":
-				subject = "事件 %s" % _friendly_key_name(target_key)
+				subject = "后续变故"
 			else:
-				subject = "相关事件"
-			if magnitude_q16 != Q16_ONE:
-				var pct: int = maxi(1, roundi(absf(float(magnitude_q16 - Q16_ONE)) * 100.0 / float(Q16_ONE)))
-				var sign_word: String = "+" if magnitude_q16 > Q16_ONE else "-"
-				return "%s权重 %s%d%%，%d 日" % [subject, sign_word, pct, duration_days]
-			if int_value != 0:
-				var sign_word: String = "+" if int_value > 0 else "-"
-				return "%s权重 %s%d，%d 日" % [subject, sign_word, absi(int_value), duration_days]
-			return "%s权重调整，%d 日" % [subject, duration_days]
+				subject = "相关风波"
+			if magnitude_q16 > Q16_ONE or int_value > 0:
+				return "%s更易发生，%d 日" % [subject, duration_days]
+			if magnitude_q16 < Q16_ONE or int_value < 0:
+				return "%s趋于平息，%d 日" % [subject, duration_days]
+			return "%s动向变化，%d 日" % [subject, duration_days]
 		Kind.SCHEDULE_FOLLOWUP_EVENT:
 			if target_key != &"":
 				return "%d 日后触发 %s" % [duration_days, _friendly_key_name(target_key)]

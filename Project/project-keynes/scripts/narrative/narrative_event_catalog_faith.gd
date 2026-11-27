@@ -104,8 +104,8 @@ static func append(catalog) -> void:
 				"寺田入官",
 				"丈量官强行将寺产折入官册并追缴旧税，国库获得了一笔可观入账。然而教团愤然关闭抄经讲堂，大批僧侣离城，本地文教事业遭受重创。",
 				[
-					Shared.cash_in(2.0, 540, "向本地人数最多的{primary_profession}征收其现金的 2%（补缴旧租折税）"),
-					Shared.knowledge(-6, 540),
+					Shared.cash_in(5, 540, "向本地人数最多的{primary_profession}征收其现金的 5%（补缴旧租折税）"),
+					Shared.knowledge(-18, 540),
 					Shared.flag(Ids.FLAG_TEMPLE_SEIZED, 900, "标记「田入官册」"),
 				]),
 			Shared.gamble(
@@ -113,15 +113,15 @@ static func append(catalog) -> void:
 				Shared.branch(36045, "开仓济市", # 55%
 					"教团如约开启私仓，大批粮食运抵城中，显著压低了本地主食开销。但作为交换，教团大兴土木扩建经楼，世俗学术的影响力随之萎缩。",
 					[
-						Shared.staple(-8, 360),
-						Shared.knowledge(-3, 360),
+						Shared.staple(-24, 360),
+						Shared.knowledge(-10, 360),
 						Shared.flag(Ids.FLAG_TEMPLE_BARGAINED, 900, "标记「折税未动」"),
 						Shared.schedule(Ids.EVT_FAITH_ONE_BOOK, 120, "一本书"),
 					]),
 				Shared.branch(29491, "以次充好", # 45%
 					"直到秋末教团才敷衍送来数车掺沙陈米，反手却向佃户加征地租。主食开销不降反升，民间对官府姑息教团的怨气迅速积聚。",
 					[
-						Shared.staple(10, 360),
+						Shared.staple(25, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 						Shared.flag(Ids.FLAG_TEMPLE_BARGAINED, 900, "标记「折税未动」"),
 					])),
@@ -151,6 +151,7 @@ static func append(catalog) -> void:
 		"one_shot": true,
 		"min_era_index": 3,
 		"max_era_index": 6,
+		"required_technologies": ["tech.writing"],
 		"required_events_completed": [String(Ids.EVT_FAITH_TEMPLE_ESTATE)],
 		"conditions": [
 			{"op": Op.POPULATION_GTE, "int_value": 12},
@@ -187,7 +188,7 @@ static func append(catalog) -> void:
 				"焚书息争",
 				"全部抄本在广场付之一炬，教团满意离去，地方动荡风险暂时平息。但书院复课后讲席被经学派接管，本地学术与科研产出陷入长期低迷。",
 				[
-					Shared.knowledge(-6, 540),
+					Shared.knowledge(-18, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 360),
 					Shared.schedule(Ids.EVT_FAITH_NEW_ALTAR, 150, "新坛"),
 				]),
@@ -196,7 +197,7 @@ static func append(catalog) -> void:
 				Shared.branch(39322, "星历胜出", # 60%
 					"学者精准预言了月食时刻，令教团历官哑口无言。星历典籍随即风行全城并催生了印刷术的探索热情，但也彻底激怒了保守教派。",
 					[
-						Shared.knowledge(5, 540),
+						Shared.knowledge(15, 540),
 						Shared.research_signal("breakthrough.printing", "印刷"),
 						Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 						Shared.schedule(Ids.EVT_FAITH_NEW_ALTAR, 150, "新坛"),
@@ -204,7 +205,7 @@ static func append(catalog) -> void:
 				Shared.branch(26214, "推演失准", # 40%
 					"公开推演的时刻竟出现明显偏差，教团趁机大造声势并将讲席彻底清场。书院颜面扫地，本地学术元气大伤，派系冲突愈演愈烈。",
 					[
-						Shared.knowledge(-4, 360),
+						Shared.knowledge(-12, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 						Shared.schedule(Ids.EVT_FAITH_NEW_ALTAR, 120, "新坛"),
 					])),
@@ -240,15 +241,15 @@ static func append(catalog) -> void:
 					"铜镜在盛大仪仗中登上圣坛，教团协助稳定了民间秩序并折纳寺田税赋。代价是书院被迫改制，世俗学术在正统神权压制下大幅萎缩。",
 					[
 						Shared.bias(Ids.TAG_UNREST, 0.80, 720),
-						Shared.knowledge(-5, 720),
-						Shared.cash_in(1.5, 540, "向本地人数最多的{primary_profession}征收其现金的 1.5%（寺田折租入库）"),
+						Shared.knowledge(-15, 720),
+						Shared.cash_in(4, 540, "向本地人数最多的{primary_profession}征收其现金的 4%（寺田折租入库）"),
 						Shared.flag(Ids.FLAG_ALTAR_OFFICIAL, 900, "标记「国坛已立」"),
 					]),
 				Shared.branch(29491, "坛前骚乱", # 45%
 					"仪仗登坛之际遭到书院学子冲撞，铜镜摔损，民间信众趁乱将泥像抬上正位。圣坛沦为派系分裂的现场，学术与社会秩序双双受创。",
 					[
 						Shared.bias(Ids.TAG_UNREST, 1.35, 720),
-						Shared.knowledge(-3, 540),
+						Shared.knowledge(-10, 540),
 						Shared.flag(Ids.FLAG_ALTAR_SPLIT, 900, "标记「坛前分家」"),
 					])),
 			Shared.option(
@@ -256,9 +257,9 @@ static func append(catalog) -> void:
 				"三方合议",
 				"历时数月的辩论最终诞生了一套折中礼制，虽耗费国库资金并一度拖累地方制造，但思想碰撞极大提振了全国的学术与知识产出。",
 				[
-					Shared.country_sector("knowledge", 6, 720),
-					Shared.cash_out(2.0),
-					Shared.manufacturing(-4, 360),
+					Shared.country_sector("knowledge", 15, 720),
+					Shared.cash_out(5),
+					Shared.manufacturing(-12, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 720),
 				]),
 			Shared.option(
@@ -267,7 +268,7 @@ static func append(catalog) -> void:
 				"三方圣物皆被封存，空荡的圣坛成为世俗政权中立的象征。然而缺乏官方精神寄托导致城外私龛遍地开花，营建与治安成本随之抬升。",
 				[
 					Shared.flag(Ids.FLAG_ALTAR_EMPTY, 900, "标记「坛上无像」"),
-					Shared.build_cost(3, 540),
+					Shared.build_cost(8, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 720),
 				]),
 		],
@@ -341,8 +342,8 @@ static func append(catalog) -> void:
 				"浩荡的巡游队伍抬着铜镜出城祈福，恐慌情绪一时大为缓解。但密集聚集导致疫病进一步蔓延，本地人口出生率与作坊开工均受重创。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 0.90, 270),
-					Shared.birth(-6, 540),
-					Shared.manufacturing(-4, 360),
+					Shared.population_rate(-8),
+					Shared.manufacturing(-12, 360),
 				]),
 			Shared.option(
 				"three_streets_only", "限制规模，仅许仪仗在主街简行",
@@ -350,15 +351,15 @@ static func append(catalog) -> void:
 				"祭典被限制在城内数条街道举行，勉强兼顾了民情与管控。然而街口拥挤仍加剧了传播与物资紧张，出生率下滑且主食开销随之增加。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 0.95, 270),
-					Shared.birth(-4, 540),
-					Shared.staple(4, 270),
+					Shared.population_rate(-5),
+					Shared.staple(12, 270),
 				]),
 			Shared.option(
 				"bar_the_gate_three_days", "严令封城三日，禁止一切聚集",
 				"破门强行",
 				"强硬封城阻断了初期传染，保住了人口生机。但连日高压彻底激怒了恐慌的民众，第三夜人群冲破城门强行抬神出城，社会动荡风险陡增。",
 				[
-					Shared.birth(3, 180),
+					Shared.birth(10, 180),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 540),
 				]),
 		],

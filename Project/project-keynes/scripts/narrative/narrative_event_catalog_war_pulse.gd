@@ -65,7 +65,7 @@ static func append(catalog) -> void:
 				"兵源补齐而民怨沸腾",
 				"地方官署动用强制手段补足了征兵配额，青壮年大批离乡令人口增长放缓，基层社会暗潮涌动。",
 				[
-					Shared.birth(-3, 540),
+					Shared.birth(-10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 			Shared.option(
@@ -73,7 +73,7 @@ static func append(catalog) -> void:
 				"富户买免充实国库",
 				"富商与豪绅纷纷缴纳巨额免役金，国库获益颇丰，但穷人上阵、富人留乡的不公激起了底层愤慨。",
 				[
-					Shared.cash_in(1.5, 360),
+					Shared.cash_in(4, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
@@ -81,7 +81,7 @@ static func append(catalog) -> void:
 				"征兵折半拖累军务",
 				"政府下令减半执行本期征额以安抚地方，前线催调文书不断，后方工商业也因战局胶着而士气低迷。",
 				[
-					Shared.manufacturing(-2, 360),
+					Shared.manufacturing(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 				]),
 		],
@@ -122,7 +122,7 @@ static func append(catalog) -> void:
 				"军心迅速恢复稳定",
 				"国库紧急拨付现款结清全部欠饷，哗变危机烟消云散，驻军秩序与地方治安随之回稳。",
 				[
-					Shared.cash_out(2.5, 360),
+					Shared.cash_out(6, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
 			Shared.option(
@@ -130,7 +130,7 @@ static func append(catalog) -> void:
 				"白条抵饷引发不满",
 				"官兵们对空头支票普遍心怀怨怼，军纪松弛波及地方商市，社会动荡风险显著攀升。",
 				[
-					Shared.manufacturing(-2, 360),
+					Shared.manufacturing(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 			Shared.option(
@@ -138,7 +138,7 @@ static func append(catalog) -> void:
 				"遣散官兵引发骚动",
 				"裁军虽暂时减轻了财政负担并腾出部分地方资金，但大批失意退伍兵滞留街头，令治安形势骤然恶化。",
 				[
-					Shared.cash_in(1.0, 360),
+					Shared.cash_in(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.40, 720),
 				]),
 		],
@@ -179,23 +179,23 @@ static func append(catalog) -> void:
 				"伤员救治率显著提高",
 				"国库紧急增援医疗队伍与足量药品，大批伤员转危为安，国家对将士的担当极大稳住了后方民心。",
 				[
-					Shared.cash_out(2.0, 360),
-					Shared.birth(3, 540),
+					Shared.cash_out(5, 360),
+					Shared.birth(10, 540),
 				]),
 			Shared.option(
 				"send_them_home", "发给抚恤，遣返乡里",
 				"伤员分批返乡休养",
 				"政府出资雇车将伤员送归原籍，减轻了医院运转压力，但大批伤残者返乡也加重了地方口粮负担。",
 				[
-					Shared.cash_out(1.0, 360),
-					Shared.staple(3, 540),
+					Shared.cash_out(3, 360),
+					Shared.staple(10, 540),
 				]),
 			Shared.option(
 				"only_the_savable", "实行残酷分诊，放弃重伤",
 				"冷血分诊重创士气",
 				"医疗资源全部向轻伤员倾斜，重伤者被无情放弃。消息传出后举城哗然，学术界与民间一致谴责当局冷酷。",
 				[
-					Shared.knowledge(-2, 360),
+					Shared.knowledge(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 		],
@@ -238,7 +238,7 @@ static func append(catalog) -> void:
 				"地方官署敞开城防接纳难民并就地登记落籍，城市人口显著增长，但口粮消耗与治安摩擦也随之骤增。",
 				[
 					Shared.population_rate(15, "本地人口 +15%（难民入城）"),
-					Shared.staple(4, 540),
+					Shared.staple(12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
@@ -246,7 +246,7 @@ static func append(catalog) -> void:
 				"城外营地勉强维系",
 				"国库拨出专款在城外搭建临时收容营并派发口粮，既保住了城区秩序，也令营地内的苦难与不满持续积聚。",
 				[
-					Shared.cash_out(1.5, 360),
+					Shared.cash_out(4, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
@@ -254,7 +254,7 @@ static func append(catalog) -> void:
 				"驱离难民保全城内",
 				"守军坚决驱离城外人群，保住了城内的口粮供应与短期安宁，但见死不救的恶名迅速传遍全国。",
 				[
-					Shared.staple(-2, 360),
+					Shared.staple(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 720),
 				]),
 		],
@@ -295,7 +295,7 @@ static func append(catalog) -> void:
 				"官营军市充实国库",
 				"官署正式接管营外商市并征收固定税费，国库进项增加，但官营体系的克扣引发了驻军与小贩的不满。",
 				[
-					Shared.cash_in(1.5, 360),
+					Shared.cash_in(4, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 				]),
 			Shared.option(
@@ -303,7 +303,7 @@ static func append(catalog) -> void:
 				"商号包税获利颇丰",
 				"大商号缴足特许押金后垄断了军市经营权，财政大为宽裕，但商号盘剥令底层劳工与士兵摩擦不断。",
 				[
-					Shared.cash_in(2.0, 360),
+					Shared.cash_in(5, 360),
 					Shared.bias(Ids.TAG_LABOR, 1.15, 540),
 				]),
 			Shared.option(
@@ -311,7 +311,7 @@ static func append(catalog) -> void:
 				"强制清场反致私贸",
 				"军市被强行拆除，商业流通受阻且地下黑市转入暗处，士兵私自越营寻欢的事件反而层出不穷。",
 				[
-					Shared.manufacturing(-2, 360),
+					Shared.manufacturing(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 		],
@@ -352,8 +352,8 @@ static func append(catalog) -> void:
 				"厚恤遗属休养生息",
 				"国家不惜重金向阵亡将士遗属发放足额抚恤，战争创伤逐渐抚平，地方人口与生育意愿稳步回升。",
 				[
-					Shared.cash_out(2.5, 360),
-					Shared.birth(2, 540),
+					Shared.cash_out(6, 360),
+					Shared.birth(8, 540),
 				]),
 			Shared.option(
 				"settle_the_fields", "颁布垦荒令，招民复耕",
@@ -362,16 +362,16 @@ static func append(catalog) -> void:
 				[
 					# 「从北边回来的」是真的往回填人：荒田得有人种，人才算真回来。
 					Shared.population_rate(10, "本地人口 +10%（回流农户落籍垦荒）"),
-					Shared.cash_out(1.5, 360),
-					Shared.agriculture(4, 540),
-					Shared.manufacturing(-2, 360),
+					Shared.cash_out(4, 360),
+					Shared.agriculture(12, 540),
+					Shared.manufacturing(-8, 360),
 				]),
 			Shared.option(
 				"collect_the_taxes", "强行清缴战时全部欠税",
 				"严苛追税激化怨愤",
 				"税吏逐户催缴战时欠赋，国库虽迅速回血，但向阵亡将士家庭逼税的冷酷行径在民间埋下了深重仇恨。",
 				[
-					Shared.cash_in(2.0, 360),
+					Shared.cash_in(5, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 		],
@@ -415,14 +415,14 @@ static func append(catalog) -> void:
 				[
 					Shared.flag(Ids.FLAG_WAR_KINDRED_SENT, 1825, "族中子弟从军"),
 					Shared.schedule(Ids.EVT_WAR_KINDRED_WAIT, 150, "家书", &"war_kindred"),
-					Shared.cash_out(1.0, 360),
+					Shared.cash_out(3, 360),
 				]),
 			Shared.option(
 				"buy_him_out", "默许其以财物抵免兵役",
 				"特权免役暗生非议",
 				"大族借关系保住了自家子弟，朝廷为此妥协并承担了额外替补安置费用，政界围绕豪强特权的攻讦随之升温。",
 				[
-					Shared.cash_out(1.5, 360),
+					Shared.cash_out(4, 360),
 					Shared.bias(Ids.TAG_COURT, 1.15, 540),
 				]),
 			Shared.option(
@@ -469,8 +469,8 @@ static func append(catalog) -> void:
 				"失踪者最终在后方医院被寻获，虽负重伤致残，仍获国库拨款妥善安置返乡。劫后余生的消息令地方民心大慰。",
 				[
 					Shared.clear_flag(Ids.FLAG_WAR_KINDRED_SENT, "家书已读"),
-					Shared.birth(2, 540),
-					Shared.cash_out(1.0, 360),
+					Shared.birth(8, 540),
+					Shared.cash_out(3, 360),
 				]),
 			Shared.option(
 				"no_news", "暂列失踪，搁置善后定论",
@@ -478,7 +478,7 @@ static func append(catalog) -> void:
 				"军方既不宣告阵亡亦无力继续搜寻，悬而未决的状态消耗了地方耐心，生产士气与社会信任随之受挫。",
 				[
 					Shared.clear_flag(Ids.FLAG_WAR_KINDRED_SENT, "家书已读"),
-					Shared.manufacturing(-2, 360),
+					Shared.manufacturing(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 		],
@@ -508,15 +508,15 @@ static func append(catalog) -> void:
 				"朝廷拨款资助建祠立碑并敕封士绅门第，忠义事迹传为佳话，地方文教风气与士气皆受鼓舞。",
 				[
 					_grant("j020_gentry", "士绅门第"),
-					Shared.knowledge(2, 540),
-					Shared.cash_out(1.5, 360),
+					Shared.knowledge(8, 540),
+					Shared.cash_out(4, 360),
 				]),
 			Shared.option(
 				"no_shrine", "以财政紧缩为由严辞驳回",
 				"寒心之举折损声望",
 				"建祠奏请遭到冷漠否决，地方名族与民众深感报国无门，文教士气低落且离心倾向加剧。",
 				[
-					Shared.knowledge(-2, 360),
+					Shared.knowledge(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
@@ -524,7 +524,7 @@ static func append(catalog) -> void:
 				"折中旌表平稳收场",
 				"朝廷批准将其事迹载入地方史志与宗谱而不另费土木。此举既守住了国库预算，也维系了与地方豪强的体面关系。",
 				[
-					Shared.knowledge(1, 360),
+					Shared.knowledge(5, 360),
 					Shared.bias(Ids.TAG_COURT, 1.15, 540),
 				]),
 		],

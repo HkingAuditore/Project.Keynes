@@ -35,7 +35,8 @@ String name_at(const PackedStringArray &column, int32_t index, const char *fallb
     return index >= 0 && index < column.size() ? column[index] : text(fallback);
 }
 
-String requirement(const NarrativeOptionRule &option, const NarrativeCountryView &country, bool unrest) {
+String requirement(const NarrativeOptionRule &option, const NarrativeCountryView &country,
+        bool unrest, const Dictionary &tech_names) {
     if (option.cash > 0 && option.cash > (unrest ? 0 : country.treasury_cash)) {
         return text("国库资金不足（需 ") + decimal(option.cash / 10000.0) + text(" 资金）");
     }
@@ -45,8 +46,11 @@ String requirement(const NarrativeOptionRule &option, const NarrativeCountryView
             return text("缺少 ") + option.good_name + text("（需 ") +
                 decimal(option.quantity / 1000.0) + text(" 单位）");
     }
-    if (!option.technology.empty() && (unrest || !country.technologies.count(option.technology)))
-        return text("缺少科技 ") + text(option.technology);
+    if (!option.technology.empty() && (unrest || !country.technologies.count(option.technology))) {
+        const String tech_key = text(option.technology);
+        const String display = String(tech_names.get(tech_key, tech_key)).strip_edges();
+        return text("缺少科技「") + (display.is_empty() ? tech_key : display) + text("」");
+    }
     return {};
 }
 
@@ -219,7 +223,13 @@ Dictionary RuntimeNarrative::context(const NarrativeDay &input, const NarrativeC
     out["building_counts_by_id"] = buildings;
     out["natural_resources_by_id"] = resources;
     out["max_price_ratio"] = cell.max_price_ratio;
-    out["highlight_good_name"] = cell.expensive_good.empty() ? text("粮食") : text(cell.expensive_good);
+    const auto good_display = [&](const std::string &good_id) -> String {
+        if (good_id.empty()) return text("粮食");
+        const String key = text(good_id);
+        const String mapped = String(_catalog.good_names.get(key, key)).strip_edges();
+        return mapped.is_empty() ? key : mapped;
+    };
+    out["highlight_good_name"] = good_display(cell.expensive_good);
     for (int32_t ring = 0; ring < 2; ++ring) {
         PackedInt32Array cells;
         for (const int32_t value : cell.nearby[ring]) cells.push_back(value);
@@ -236,7 +246,7 @@ Dictionary RuntimeNarrative::context(const NarrativeDay &input, const NarrativeC
                 row["name"] = text(neighbor.settlement);
                 row["population"] = neighbor.population;
                 row["shortage_good"] = neighbor.max_price_ratio >= 1.30 ?
-                    text(neighbor.expensive_good) : String();
+                    good_display(neighbor.expensive_good) : String();
                 neighbors.push_back(row);
             }
         }
@@ -266,7 +276,7 @@ bool RuntimeNarrative::ai_event_eligible(const NarrativeDefinition &def, const N
         const NarrativeCellView &cell) const {
     return weight(def, input, cell) > 0 &&
         std::any_of(def.options.begin(), def.options.end(), [&](const auto &option) {
-            return requirement(option, input.country, false).is_empty();
+            return requirement(option, input.country, false, _catalog.technology_names).is_empty();
         });
 }
 
@@ -304,7 +314,7 @@ bool RuntimeNarrative::enqueue(const NarrativeDefinition &def, const NarrativeDa
         PackedInt32Array probabilities = def.options[i].probabilities;
         if (i < odds.size()) probabilities = odds[i];
         else if (probabilities.size() != outcomes.size()) probabilities = normalized(outcomes);
-        const String reason = requirement(def.options[i], input.country, rebellion);
+        const String reason = requirement(def.options[i], input.country, rebellion, _catalog.technology_names);
         Dictionary option;
         option["index"] = i;
         option["option_id"] = source.get("option_id", "");

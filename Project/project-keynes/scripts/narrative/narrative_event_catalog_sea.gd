@@ -68,6 +68,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 4,
 		"max_era_index": 6,
+		"required_technologies": ["tech.oceanic_navigation"],
 		"conditions": [
 			{"op": Op.IS_COASTAL, "bool_value": true},
 			{"op": Op.POPULATION_GTE, "int_value": 12},
@@ -96,25 +97,25 @@ static func append(catalog) -> void:
 				"新航路入档",
 				"港务官署购得羊皮海图并悬于公库供各船参阅。首批商船依图绕开礁区，航程较往年显著缩短，本地航海图籍也随之充实。",
 				[
-					Shared.cash_out(1.5, 540, "国库拨付本地人数最多的{primary_profession}，占国库现金 1.5%（图钱从库里出）"),
-					Shared.trade_capacity(4, 720),
-					Shared.knowledge(3, 540),
+					Shared.cash_out(4, 540, "国库拨付本地人数最多的{primary_profession}，占国库现金 4%（图钱从库里出）"),
+					Shared.trade_capacity(10, 720),
+					Shared.knowledge(10, 540),
 				]),
 			Shared.option(
 				"copy_it_first", "摹录海图，派轻舟勘验",
 				"实测校正水文",
 				"港务官署抽调船坞工匠与水手趁平潮试航测深，修正了图上数处礁位偏差。虽短暂耽误港口工坊作业，却换来一份可靠的水文图志。",
 				[
-					Shared.manufacturing(-3, 540),
-					Shared.knowledge(5, 720),
-					Shared.trade_capacity(2, 540),
+					Shared.manufacturing(-10, 540),
+					Shared.knowledge(15, 720),
+					Shared.trade_capacity(6, 540),
 				]),
 			Shared.option(
 				"send_it_back", "驳回所请，仍走旧航道",
 				"墨守旧航线",
 				"外邦船队被拒后起锚北去，本港商船继续沿旧道绕行。遇逆风时补给船期频频延误，城中主食周转趋紧，海商行会对此颇有微词。",
 				[
-					Shared.staple(4, 540),
+					Shared.staple(12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 720),
 				]),
 		],
@@ -133,6 +134,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 4,
 		"max_era_index": 6,
+		"required_technologies": ["tech.oceanic_navigation"],
 		"conditions": [
 			{"op": Op.IS_COASTAL, "bool_value": true},
 			{"op": Op.POPULATION_GTE, "int_value": 12},
@@ -162,24 +164,24 @@ static func append(catalog) -> void:
 				"信风既稳始启航",
 				"港务官署顶住商界压力暂缓放行，港口索具与腌货作坊随之停歇半月。待风势稳固后船队平安往返，官署亦将此番风期变化载入海志。",
 				[
-					Shared.manufacturing(-3, 540),
-					Shared.trade_capacity(4, 720),
-					Shared.knowledge(2, 360),
+					Shared.manufacturing(-10, 540),
+					Shared.trade_capacity(10, 720),
+					Shared.knowledge(8, 360),
 				]),
 			Shared.gamble(
 				"catch_the_first_breath", "抢乘初风，全队拔锚",
 				Shared.branch(39322, "抢得先机满载归", # 60%
 					"船队趁初风抢先出港，在外海恰逢顺风相送，较常年提前半月抵达。整批货品毫发无损，不仅充实了港口工坊，亦缓解了城中主食负担。",
 					[
-						Shared.trade_capacity(6, 720),
-						Shared.manufacturing(3, 540),
-						Shared.staple(-3, 720),
+						Shared.trade_capacity(15, 720),
+						Shared.manufacturing(10, 540),
+						Shared.staple(-10, 720),
 					]),
 				Shared.branch(26214, "逆风折戟损兵折船", # 40%
 					"信风行至半途骤歇，返航时又遭逆风阻隔，数艘商船漂失外洋。水手折损令港城生计承压，遇难家属与行帮对官署的冒险决断怨声载道。",
 					[
-						Shared.birth(-4, 540),
-						Shared.staple(4, 540),
+						Shared.population_rate(-6),
+						Shared.staple(12, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					])),
 			Shared.option(
@@ -187,9 +189,9 @@ static func append(catalog) -> void:
 				"轻舟探路大船殿后",
 				"国库垫资雇佣浅吃水轻舟满载急货先行，主力大船留港候风。轻舟如期回笼资金，既保住了商队信誉，也带动了本地作坊的备货运转。",
 				[
-					Shared.cash_out(1.5, 540, "国库拨付本地人数最多的{primary_profession}，占国库现金 1.5%（雇小船的钱先垫）"),
-					Shared.trade_capacity(3, 540),
-					Shared.manufacturing(2, 540),
+					Shared.cash_out(4, 540, "国库拨付本地人数最多的{primary_profession}，占国库现金 4%（雇小船的钱先垫）"),
+					Shared.trade_capacity(8, 540),
+					Shared.manufacturing(8, 540),
 				]),
 		],
 	}))
@@ -207,6 +209,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 4,
 		"max_era_index": 6,
+		"required_technologies": ["tech.oceanic_navigation"],
 		"conditions": [
 			{"op": Op.IS_COASTAL, "bool_value": true},
 			{"op": Op.POPULATION_GTE, "int_value": 14},
@@ -235,8 +238,8 @@ static func append(catalog) -> void:
 				"破财买路患根未除",
 				"地方按户摊派凑齐财物送往口外，海盗暂退让出水道，港口工坊得以维持运转。然此举无异于养虎为患，来年贼众加码勒索，港城怨声渐起。",
 				[
-					Shared.cash_in(2.0, 540, "向本地人数最多的{primary_profession}征收其现金的 2%（按船摊买路钱）"),
-					Shared.manufacturing(2, 540),
+					Shared.cash_in(5, 540, "向本地人数最多的{primary_profession}征收其现金的 5%（按船摊买路钱）"),
+					Shared.manufacturing(8, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 720),
 				]),
 			Shared.gamble(
@@ -244,15 +247,15 @@ static func append(catalog) -> void:
 				Shared.branch(36045, "礁盘大捷航道肃清", # 55%
 					"防务水师趁退潮合围礁盘，搁浅的贼船无处遁形。官兵悉数俘获贼众并追回大批劫货，港城补给宽裕，民心大振。",
 					[
-						Shared.manufacturing(4, 540),
-						Shared.staple(-4, 540),
+						Shared.manufacturing(12, 540),
+						Shared.staple(-12, 540),
 						Shared.bias(Ids.TAG_UNREST, 0.90, 720),
 					]),
 				Shared.branch(29491, "清剿受挫商船被劫", # 45%
 					"贼众提前察觉潮信退入深水，双方苦战半日未能建功。水师与水手伤亡惨重，两艘货船遭劫，港口制造受挫且城中动荡加剧。",
 					[
-						Shared.birth(-4, 540),
-						Shared.manufacturing(-5, 720),
+						Shared.population_rate(-6),
+						Shared.manufacturing(-15, 720),
 						Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					])),
 			Shared.gamble(
@@ -260,14 +263,14 @@ static func append(catalog) -> void:
 				Shared.branch(42598, "化盗为吏暗流尽掌", # 65%
 					"贼首受抚后交出近海暗流秘图，率部编入港口引航与缆绳工役。商船进出效率大增，唯安置这批人手令本地口粮供给略显吃紧。",
 					[
-						Shared.knowledge(3, 540),
-						Shared.trade_capacity(4, 720),
-						Shared.staple(3, 540),
+						Shared.knowledge(10, 540),
+						Shared.trade_capacity(10, 720),
+						Shared.staple(10, 540),
 					]),
 				Shared.branch(22938, "招安反噬携图潜逃", # 35%
 					"招安流于形式，半年后这批人摸清港防与水道后携船潜逃。外洋商路再度受阻，城中主食补给承压，舆论对官署失察大为不满。",
 					[
-						Shared.staple(6, 540),
+						Shared.staple(18, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 720),
 					])),
 		],
@@ -286,6 +289,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 4,
 		"max_era_index": 6,
+		"required_technologies": ["tech.oceanic_navigation"],
 		"conditions": [
 			{"op": Op.IS_COASTAL, "bool_value": true},
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "merchant", "float_value": 0.03},
@@ -314,8 +318,8 @@ static func append(catalog) -> void:
 				"特许包税民怨渐生",
 				"包税契约签立当日，巨额现款即解入国库。但商号接管码头后旋即提高停泊苛捐，挑夫与船户罢工抗议，本地主食周转亦受波及。",
 				[
-					Shared.cash_in(2.0, 540),
-					Shared.staple(3, 540),
+					Shared.cash_in(5, 540),
+					Shared.staple(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 720),
 				]),
 			Shared.option(
@@ -323,17 +327,17 @@ static func append(catalog) -> void:
 				"官署直征商路稳健",
 				"国库拨款增派税吏驻港直征，虽前期行政开支不菲、核验略慢，但税则公允透明，中小商船络绎不绝，贸易运力与工坊产出同步攀升。",
 				[
-					Shared.cash_out(1.0, 540, "国库拨付本地人数最多的{primary_profession}，占国库现金 1%（两个税吏的工食）"),
-					Shared.trade_capacity(3, 720),
-					Shared.manufacturing(2, 540),
+					Shared.cash_out(3, 540, "国库拨付本地人数最多的{primary_profession}，占国库现金 3%（两个税吏的工食）"),
+					Shared.trade_capacity(8, 720),
+					Shared.manufacturing(8, 540),
 				]),
 			Shared.option(
 				"split_among_three", "拆分码头，分包三家",
 				"分段竞包互相掣肘",
 				"港务官署将码头分段发包给三家中小商号以防垄断，既收得部分包费又平息了民怨。然而各段边界屡起争执，装卸效率下滑拖累了港口制造。",
 				[
-					Shared.manufacturing(-2, 360),
-					Shared.cash_in(1.0, 540),
+					Shared.manufacturing(-8, 360),
+					Shared.cash_in(3, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 		],
@@ -352,6 +356,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 4,
 		"max_era_index": 6,
+		"required_technologies": ["tech.oceanic_navigation"],
 		"conditions": [
 			{"op": Op.IS_COASTAL, "bool_value": true},
 			{"op": Op.POPULATION_GTE, "int_value": 10},
@@ -381,8 +386,8 @@ static func append(catalog) -> void:
 				"竭力搜救民心归附",
 				"船坞工匠冒险破开底舱救出多名幸存水手，国库随即为遇难者家庭发放抚恤。此番义举赢得港城上下交口称赞，沿海秩序更趋稳固。",
 				[
-					Shared.cash_out(1.0, 540, "国库拨付本地人数最多的{primary_profession}，占国库现金 1%（抚恤按户发）"),
-					Shared.birth(2, 540),
+					Shared.cash_out(3, 540, "国库拨付本地人数最多的{primary_profession}，占国库现金 3%（抚恤按户发）"),
+					Shared.birth(8, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 			Shared.option(
@@ -390,8 +395,8 @@ static func append(catalog) -> void:
 				"重货轻人非议四起",
 				"大批货箱在涨潮前抢运上岸，充实了城中补给并减轻主食开销。然而底舱受困船员错失生机，水手行帮对官署冷酷逐利之举深感愤慨。",
 				[
-					Shared.birth(-3, 540),
-					Shared.staple(-3, 540),
+					Shared.population_rate(-5),
+					Shared.staple(-10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 				]),
 			Shared.option(
@@ -399,8 +404,8 @@ static func append(catalog) -> void:
 				"循章封滩错失良机",
 				"港务官署拉绳封滩禁止闲人靠近，滩涂作坊被迫停工数日。待勘验官船抵达时半数漂货已被海浪卷走，仅留下一份详尽的失事档案。",
 				[
-					Shared.manufacturing(-3, 540),
-					Shared.knowledge(2, 360),
+					Shared.manufacturing(-10, 540),
+					Shared.knowledge(8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.05, 540),
 				]),
 		],
@@ -419,6 +424,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 900,
 		"min_era_index": 5,
 		"max_era_index": 6,
+		"required_technologies": ["tech.oceanic_navigation", "tech.coastal_shipyards"],
 		"conditions": [
 			{"op": Op.IS_COASTAL, "bool_value": true},
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 3},
@@ -448,27 +454,27 @@ static func append(catalog) -> void:
 				"石坞落成航运大兴",
 				"国库拨出专款从上游采运石料，历时一秋终成坚固石坞。本港修船与造船产能跃升，次年便有外邦商船慕名入坞检修，港口运力大增。",
 				[
-					Shared.cash_out(2.0, 720),
-					Shared.manufacturing(5, 720),
-					Shared.trade_capacity(4, 720),
+					Shared.cash_out(5, 720),
+					Shared.manufacturing(15, 720),
+					Shared.trade_capacity(10, 720),
 				]),
 			Shared.option(
 				"dig_an_earth_slip", "开挖土坡，架设绞盘",
 				"简陋土坡难承重船",
 				"官署就地挖坡并改制旧桅杆为绞盘，虽勉强疏通了中小船只周转，但大型商船仍须分段拆修，反倒牵扯工匠精力、推高营造负担。",
 				[
-					Shared.manufacturing(-3, 540),
-					Shared.build_cost(3, 540),
-					Shared.trade_capacity(2, 540),
+					Shared.manufacturing(-10, 540),
+					Shared.build_cost(8, 540),
+					Shared.trade_capacity(6, 540),
 				]),
 			Shared.option(
 				"rent_a_foreign_dock", "出资租借外邦船坞",
 				"借坞修船耗费器械",
 				"商船轮番驶往邻邦船坞检修，虽维持了航运周转并借机窥得外邦造船工艺，但往返损耗与外埠修缮令本地工具器械消耗显著上升。",
 				[
-					Shared.tools(4, 540),
-					Shared.knowledge(2, 360),
-					Shared.trade_capacity(2, 360),
+					Shared.tools(12, 540),
+					Shared.knowledge(8, 360),
+					Shared.trade_capacity(6, 360),
 				]),
 		],
 	}))
@@ -486,6 +492,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 4,
 		"max_era_index": 6,
+		"required_technologies": ["tech.oceanic_navigation"],
 		"conditions": [
 			{"op": Op.IS_COASTAL, "bool_value": true},
 			{"op": Op.POPULATION_GTE, "int_value": 12},
@@ -514,27 +521,27 @@ static func append(catalog) -> void:
 				"水文绝学薪火相传",
 				"港务官署拨发津贴设立引航学徒制，资深领航员倾囊相授并将数十年浅滩水文绘成官图。虽见效较缓，却为本港筑牢了自主航运根基。",
 				[
-					Shared.cash_out(1.0, 540, "国库拨付本地人数最多的{primary_profession}，占国库现金 1%（徒弟的口粮从库里出）"),
-					Shared.knowledge(4, 720),
-					Shared.trade_capacity(2, 540),
+					Shared.cash_out(3, 540, "国库拨付本地人数最多的{primary_profession}，占国库现金 3%（徒弟的口粮从库里出）"),
+					Shared.knowledge(12, 720),
+					Shared.trade_capacity(6, 540),
 				]),
 			Shared.option(
 				"hire_the_foreigner", "高薪礼聘外邦引水员",
 				"外籍引航提速通商",
 				"外邦引水员驻港后商船进出大为提速，连带港口作坊周转兴旺。唯其随行人员与往来船队日众，令港城主食供给压力有所加重。",
 				[
-					Shared.staple(3, 540),
-					Shared.trade_capacity(4, 720),
-					Shared.manufacturing(2, 540),
+					Shared.staple(10, 540),
+					Shared.trade_capacity(10, 720),
+					Shared.manufacturing(8, 540),
 				]),
 			Shared.option(
 				"set_the_marker_posts", "浅滩立桩，标定水道",
 				"白灰标桩指引通航",
 				"官署抽调船坞人手在浅滩两侧竖起刷白标桩，短期内拖慢了港口制造。然航道轮廓自此一目了然，即便外邦商船亦可依桩自主进港。",
 				[
-					Shared.manufacturing(-2, 360),
-					Shared.knowledge(3, 720),
-					Shared.trade_capacity(3, 720),
+					Shared.manufacturing(-8, 360),
+					Shared.knowledge(10, 720),
+					Shared.trade_capacity(8, 720),
 				]),
 		],
 	}))

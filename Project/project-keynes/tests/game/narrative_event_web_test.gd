@@ -747,12 +747,27 @@ func _test_behaviour(catalog) -> void:
 	if loan != null:
 		var open_ctx := _synthetic_ctx(true)
 		open_ctx["era_index"] = 5
+		open_ctx["technology_ids"] = PackedStringArray(["tech.bills_of_exchange"])
 		_expect("state_loan opens without a warlord",
 			_authored_weight(loan, open_ctx) > 0)
 		var blocked_ctx := open_ctx.duplicate(true)
 		blocked_ctx["story_flags"] = {String(NarrativeEventIdsScript.FLAG_WARLORD): true}
 		_expect("a warlord blocks state_loan",
 			_authored_weight(loan, blocked_ctx) == 0)
+
+	# 科技前置门：未解锁手工制陶时，陶俑与窑火事件不可触发；解锁后方可入池。
+	var clay = catalog.get_event(NarrativeEventIdsScript.EVT_AGES_CLAY_FIGURE)
+	_expect("clay_figure is registered", clay != null)
+	if clay != null:
+		var pre_pottery := _synthetic_ctx(true)
+		pre_pottery["era_index"] = 0
+		pre_pottery["technology_ids"] = PackedStringArray()
+		_expect("clay_figure stays closed without hand_pottery",
+			_authored_weight(clay, pre_pottery) == 0)
+		var with_pottery := pre_pottery.duplicate(true)
+		with_pottery["technology_ids"] = PackedStringArray(["tech.hand_pottery"])
+		_expect("clay_figure opens with hand_pottery",
+			_authored_weight(clay, with_pottery) > 0)
 
 	# 市场增补：原生要求该格有商人，条件里必须写出来。
 	for def in _web_events(catalog):

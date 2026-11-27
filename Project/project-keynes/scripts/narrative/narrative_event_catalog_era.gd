@@ -70,6 +70,7 @@ static func append(catalog) -> void:
 		"one_shot": true,
 		"min_era_index": 8,
 		"max_era_index": 10,
+		"required_technologies": ["tech.industrialization"],
 		"required_events_completed": [String(Ids.EVT_LABOR_FACTORY_ACT)],
 		"conditions": [
 			{"op": Op.POPULATION_GTE, "int_value": 25},
@@ -100,9 +101,9 @@ static func append(catalog) -> void:
 				"三班抢工",
 				"追加预算到位后，工地实行三班倒全速推进并强制迁村。设施如期落成并带动全国科研与制造，但强硬征地留下持久民怨。",
 				[
-					Shared.cash_out(3.0, 90),
-					Shared.manufacturing(5, 540),
-					Shared.country_sector("knowledge", 6, 540),
+					Shared.cash_out(8, 90),
+					Shared.manufacturing(15, 540),
+					Shared.country_sector("knowledge", 15, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 360),
 				]),
 			Shared.gamble(
@@ -110,16 +111,16 @@ static func append(catalog) -> void:
 				Shared.branch(42598, "河鼓试车成功", # 65%
 					"试验装置在剧烈震鸣中稳定运行数秒，核心电气参数全部达标。尽管观测区多处受损，全国科学界仍为这一历史性突破振奋。",
 					[
-						Shared.knowledge(6, 540),
-						Shared.country_sector("knowledge", 6, 540),
+						Shared.knowledge(18, 540),
+						Shared.country_sector("knowledge", 15, 540),
 						Shared.research_signal("breakthrough.electrification", "电气化"),
 						Shared.flag(Ids.FLAG_HEGU_FIRED, 900, "标记「河鼓已响」"),
 					]),
 				Shared.branch(22938, "管道爆裂事故", # 35%
 					"未加固的承压管线在点火瞬间爆裂回火，造成多名技术员与工人死伤。重大安全事故震惊朝野，工程署公信力跌入谷底。",
 					[
-						Shared.birth(-6, 540),
-						Shared.knowledge(-5, 360),
+						Shared.population_rate(-6),
+						Shared.knowledge(-15, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 720),
 					])),
 			Shared.option(
@@ -127,8 +128,8 @@ static func append(catalog) -> void:
 				"停工待料",
 				"工地全面停工封存，巨型塔吊在荒原上闲置生锈。高昂的前期投入未能见效，配套工厂与地方民众的不满情绪持续发酵。",
 				[
-					Shared.knowledge(-4, 540),
-					Shared.manufacturing(-3, 540),
+					Shared.knowledge(-12, 540),
+					Shared.manufacturing(-10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 				]),
 		],
@@ -148,6 +149,7 @@ static func append(catalog) -> void:
 		"one_shot": true,
 		"min_era_index": 9,
 		"max_era_index": 10,
+		"required_technologies": ["tech.rail_logistics"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 5},
 			{"op": Op.POPULATION_GTE, "int_value": 25},
@@ -177,9 +179,9 @@ static func append(catalog) -> void:
 				"强制并轨",
 				"全国铁路强制推行北线宽轨，干线贸易运力大增且基建标准趋同。但南线矿区换装积压严重，大批旧车皮报废引发剧烈震荡。",
 				[
-					Shared.trade_capacity(8, 540),
-					Shared.build_cost(5, 900),
-					Shared.manufacturing(-5, 540),
+					Shared.trade_capacity(16, 540),
+					Shared.build_cost(12, 900),
+					Shared.manufacturing(-15, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 360),
 				]),
 			Shared.option(
@@ -187,9 +189,9 @@ static func append(catalog) -> void:
 				"专营扣件",
 				"度量衡总局接管双制模具并按件抽成，国库进账可观且全国制造业得以兼容运转。但厂方将税负转嫁压低工薪，激起工人不满。",
 				[
-					Shared.cash_in(2.0, 270),
+					Shared.cash_in(5, 270),
 					Shared.stock("wrought_iron", 20),
-					Shared.country_sector("manufacturing", 5, 540),
+					Shared.country_sector("manufacturing", 12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 360),
 				]),
 			Shared.option(
@@ -197,8 +199,8 @@ static func append(catalog) -> void:
 				"折中换装",
 				"两轨之间建起机械化换装站，本地制造与工具消耗随之攀升。尽管眼下免去改轨剧痛，标准悬而未决的隐患仍被留给未来。",
 				[
-					Shared.manufacturing(4, 540),
-					Shared.tools(8, 540),
+					Shared.manufacturing(12, 540),
+					Shared.tools(24, 540),
 					Shared.flag(Ids.FLAG_STD_OPEN, 900, "标记「标准未定」"),
 				]),
 		],
@@ -217,6 +219,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 540,
 		"min_era_index": 9,
 		"max_era_index": 10,
+		"required_technologies": ["tech.digital_computing"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 5},
 			{"op": Op.POPULATION_GTE, "int_value": 30},
@@ -246,9 +249,9 @@ static func append(catalog) -> void:
 				"铁腕提效",
 				"严格计时的排班制覆盖各大厂区，本地与全国制造产能显著跃升。但高强度轮班导致工伤与过劳频发，生育率下滑且动荡风险飙升。",
 				[
-					Shared.manufacturing(6, 540),
-					Shared.country_sector("manufacturing", 5, 540),
-					Shared.birth(-6, 540),
+					Shared.manufacturing(18, 540),
+					Shared.country_sector("manufacturing", 12, 540),
+					Shared.birth(-18, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 			Shared.option(
@@ -256,7 +259,7 @@ static func append(catalog) -> void:
 				"双轨并行",
 				"新场实行标准排班，老场沿用旧制，产能略有起色。然而同工不同酬的两套工价迅速激化内部矛盾，管理摩擦日渐增多。",
 				[
-					Shared.manufacturing(4, 540),
+					Shared.manufacturing(12, 540),
 					Shared.flag(Ids.FLAG_SHIFT_PENDING, 720, "标记「两套工价」"),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
@@ -265,15 +268,15 @@ static func append(catalog) -> void:
 				Shared.branch(39322, "班组自治见效", # 60%
 					"经过短暂磨合，老工人自发优化了轮换节奏，货场效率反超测时表。劳工健康与家庭生活得以保全，只是厂方仍对放权心存芥蒂。",
 					[
-						Shared.manufacturing(6, 720),
-						Shared.birth(5, 540),
+						Shared.manufacturing(18, 720),
+						Shared.birth(15, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					]),
 				Shared.branch(26214, "班组争抢失序", # 40%
 					"不同班组为抢占白班与大型吊机爆发激烈冲突，大批物资滞压货场。混乱令工业产出重挫，生活物资供应随之紧张。",
 					[
-						Shared.manufacturing(-6, 540),
-						Shared.staple(10, 360),
+						Shared.manufacturing(-18, 540),
+						Shared.staple(25, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					])),
 		],
@@ -292,6 +295,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 480,
 		"min_era_index": 8,
 		"max_era_index": 10,
+		"required_technologies": ["tech.national_laboratories"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 4},
 			{"op": Op.POPULATION_GTE, "int_value": 12},
@@ -321,19 +325,19 @@ static func append(catalog) -> void:
 				"理论告破",
 				"国库代付违约金后整层静默三日，核心理论如期告破，全国科研水平为之一振。但延误的矿业测算令本地采掘进度短暂受阻。",
 				[
-					Shared.cash_out(2.0, 90),
-					Shared.knowledge(6, 540),
-					Shared.extraction(-4, 540),
-					Shared.country_sector("knowledge", 6, 720),
+					Shared.cash_out(5, 90),
+					Shared.knowledge(18, 540),
+					Shared.extraction(-12, 540),
+					Shared.country_sector("knowledge", 15, 720),
 				]),
 			Shared.option(
 				"felt_the_walls", "加装隔振设施，商业机时照旧",
 				"折中修缮",
 				"设计院拨款为实验室加装隔振层，商业与矿业测算得以照常推进。但隔振效果有限且经费分配不均，科研人员怨声渐起。",
 				[
-					Shared.cash_out(2.0, 180),
-					Shared.knowledge(2, 540),
-					Shared.extraction(3, 540),
+					Shared.cash_out(5, 180),
+					Shared.knowledge(8, 540),
+					Shared.extraction(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 360),
 				]),
 			Shared.option(
@@ -341,7 +345,7 @@ static func append(catalog) -> void:
 				"错失先机",
 				"理论团队被迫让出算力配额，次月却传出他国同行抢先发表同等成果的消息。学术界士气受挫，指责当局短视的舆论四起。",
 				[
-					Shared.knowledge(-4, 540),
+					Shared.knowledge(-12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 				]),
 		],

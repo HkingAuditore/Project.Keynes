@@ -91,8 +91,8 @@ static func append(catalog) -> void:
 				"新户垦荒扩充田亩",
 				"地方官署核准旁支分户，将城外荒坡拨归新户开垦。新增耕地提升了本地农业产出，但分家另灶短期内也推高了全城基本口粮消耗。",
 				[
-					Shared.agriculture(4, 540),
-					Shared.staple(4, 360),
+					Shared.agriculture(12, 540),
+					Shared.staple(12, 360),
 					Shared.flag(Ids.FLAG_SECOND_SON_SPLIT, 900, "标记「坡地新户」"),
 				]),
 			Shared.option(
@@ -100,7 +100,7 @@ static func append(catalog) -> void:
 				"次子从军田产归一",
 				"多余青壮被征调入伍吃粮，原有农田得以完整保留于长房名下。本地农忙劳力短期内有所流失，而这批远赴边关的士卒终有一日将带着战伤归乡。",
 				[
-					Shared.agriculture(-3, 360),
+					Shared.agriculture(-10, 360),
 					Shared.schedule(Ids.EVT_FAMILY_RETURNING_SOLDIER, 210, "回家的兵"),
 				]),
 			Shared.option(
@@ -108,8 +108,8 @@ static func append(catalog) -> void:
 				"分家搁置积怨暗生",
 				"官署将析产呈文压下不议，强令宗族暂维合灶共耕。虽在短期内稳住了规模耕作，但同室操戈的裂痕与生计摩擦正迫使更多家族矛盾浮出水面。",
 				[
-					Shared.agriculture(3, 270),
-					Shared.staple(3, 360),
+					Shared.agriculture(10, 270),
+					Shared.staple(10, 360),
 					Shared.flag(Ids.FLAG_SECOND_SON_PENDING, 540, "标记「分家未决」"),
 					Shared.bias(Ids.TAG_PEOPLE, 1.20, 540),
 				]),
@@ -169,23 +169,23 @@ static func append(catalog) -> void:
 				"重聘成婚契税入库",
 				"地方官署为这份高额田产契约加盖官印并征收契税，两族终成秦晋之好，带动了本地婚育风气。但水田割裂重组短期内打乱了原有耕作安排。",
 				[
-					Shared.agriculture(-3, 360),
-					Shared.birth(4, 540),
-					Shared.cash_in(1.0, 360, "向本地人数最多的{primary_profession}征收其现金的 1%（婚书立契，官账抽一份）"),
+					Shared.agriculture(-10, 360),
+					Shared.birth(12, 540),
+					Shared.cash_in(3, 360, "向本地人数最多的{primary_profession}征收其现金的 3%（婚书立契，官账抽一份）"),
 				]),
 			Shared.gamble(
 				"swap_slope_for_debt", "折中调解，以坡抵债",
 				Shared.branch(39322, "折中立契联姻告成", # 60%
 					"在官署斡旋与贴补下，双方同意以坡地与清债折抵聘礼。荒坡随之得以开垦增产，但勉强达成的妥协仍令两族心存芥蒂。",
 					[
-						Shared.agriculture(3, 540),
-						Shared.cash_out(1.0, 360),
+						Shared.agriculture(10, 540),
+						Shared.cash_out(3, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 					]),
 				Shared.branch(26214, "议婚破裂两族交恶", # 40%
 					"女方长老愤然回绝折中方案，婚事彻底告吹。大族间由此结怨，高攀无门的僵局也令本地婚嫁意愿随之低迷。",
 					[
-						Shared.birth(-3, 540),
+						Shared.birth(-10, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 					])),
 			Shared.option(
@@ -193,7 +193,7 @@ static func append(catalog) -> void:
 				"婚契悬置议论纷起",
 				"官署暂缓公证婚书，两族礼聘无果而终。受高额聘礼风气拖累，本地适龄男女成婚推迟，围绕家产与婚配的民间纠纷仍将反复浮现。",
 				[
-					Shared.birth(-3, 540),
+					Shared.birth(-10, 540),
 					Shared.flag(Ids.FLAG_BRIDE_PENDING, 540, "标记「婚书未立」"),
 					Shared.bias(Ids.TAG_PEOPLE, 1.20, 540),
 				]),
@@ -213,6 +213,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 600,
 		"min_era_index": 2,
 		"max_era_index": 9,
+		"required_technologies": ["tech.currency"],
 		"conditions": [
 			{"op": Op.SATISFACTION_LTE, "float_value": 0.45},
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "merchant", "float_value": 0.001},
@@ -242,23 +243,23 @@ static func append(catalog) -> void:
 				"严守债契农户失畜",
 				"地方官署裁定依约执行，欠户变卖耕畜与坡地结清宿债，官账亦按律抽取过户规费。商业信用得以维系，但失去农具与牲畜的农户产出随之下滑。",
 				[
-					Shared.agriculture(-3, 360),
-					Shared.cash_in(1.5, 360, "向本地人数最多的{primary_profession}征收其现金的 1.5%（债款过官账代还）"),
+					Shared.agriculture(-10, 360),
+					Shared.cash_in(4, 360, "向本地人数最多的{primary_profession}征收其现金的 4%（债款过官账代还）"),
 				]),
 			Shared.option(
 				"acknowledge_and_repay", "官署作保，分季缓还",
 				"分期偿债保住耕作",
 				"官署居中订立分季偿还协议，保住了欠户的耕畜与农田，令其得以全力投入生产。然而秋收粮谷多半用于抵债，基层家庭的日常口粮顿时捉襟见肘。",
 				[
-					Shared.agriculture(4, 540),
-					Shared.staple(4, 360),
+					Shared.agriculture(12, 540),
+					Shared.staple(12, 360),
 				]),
 			Shared.option(
 				"put_it_under_the_rice_jar", "暂压债案，不予受理",
 				"债案悬置信贷收紧",
 				"官署将追债诉状束之高阁，欠户暂时保住了家产。但地方钱庄随即收紧春耕赊贷，周边农户因缺种少本致使耕地撂荒，宿债隐患日后恐将变本加厉。",
 				[
-					Shared.agriculture(-3, 360),
+					Shared.agriculture(-10, 360),
 					Shared.flag(Ids.FLAG_DEBT_PENDING, 540, "标记「债字未销」"),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
@@ -305,15 +306,15 @@ static func append(catalog) -> void:
 				"归乡伤兵习艺谋生",
 				"官署责成原籍宗族腾出居所并安排轻省手艺，伤残老兵得以自食其力，本地手工业略有增益。但平添赡养负担仍让本就紧巴的家庭口粮愈发吃紧。",
 				[
-					Shared.manufacturing(3, 540),
-					Shared.staple(4, 360),
+					Shared.manufacturing(10, 540),
+					Shared.staple(12, 360),
 				]),
 			Shared.option(
 				"report_for_a_stipend", "核准名簿，拨发抚恤",
 				"抚恤落地安抚军心",
 				"地方官署迅速核验兵役名簿，由国库拨付定额伤残抚恤金。此举虽增加了财政支出，却在民间树立了优待功臣的典范，令宗族与军属大感宽慰。",
 				[
-					Shared.cash_out(1.2, 360),
+					Shared.cash_out(3, 360),
 					Shared.bias(Ids.TAG_PEOPLE, 1.15, 540),
 				]),
 			Shared.option(
@@ -321,7 +322,7 @@ static func append(catalog) -> void:
 				"冷遇功臣寒彻民心",
 				"官署仅草草安排了简陋栖身之所，将抚恤事宜无限期搁置。伤残老兵流落乡里凄凉度日，坊间对此议论纷纷，民众对兵役与官府的怨怼暗自滋长。",
 				[
-					Shared.staple(3, 360),
+					Shared.staple(10, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 		],

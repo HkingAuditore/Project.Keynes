@@ -101,9 +101,9 @@ static func append(catalog) -> void:
 				"戍军屯垦",
 				"荒地按编制分拨各营，地方摊派了首批农具与种粮。首年收成虽微，但次年便初见成效，不仅缓解了军粮压力，也提升了周边农垦产出。",
 				[
-					Shared.agriculture(5, 360, 1, 0),
+					Shared.agriculture(15, 360, 1, 0),
 					Shared.supply(10, 360),
-					Shared.cash_in(1.0, 360, "向本地人数最多的{primary_profession}征收其现金的 1%（农具与种粮的摊派）"),
+					Shared.cash_in(3, 360, "向本地人数最多的{primary_profession}征收其现金的 3%（农具与种粮的摊派）"),
 					Shared.bias(Ids.TAG_COURT, 1.10, 540),
 				]),
 			Shared.option(
@@ -113,8 +113,8 @@ static func append(catalog) -> void:
 				[
 					# 募来的民户是真迁入：之前只给 agriculture + birth，人在册上根本没多。
 					Shared.population_rate(20, "本地人口 +20%（募民落籍屯垦）"),
-					Shared.cash_out(2.5, 360),
-					Shared.agriculture(3, 540),
+					Shared.cash_out(6, 360),
+					Shared.agriculture(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 360),
 				]),
 			Shared.option(
@@ -123,7 +123,7 @@ static func append(catalog) -> void:
 				"筹粮任务被层层摊派至各营与地方百姓，荒地未曾开垦分毫，摊派重负却迅速激化了军民矛盾。边军自筹粮草的先例一开，中枢威信随之削弱。",
 				[
 					Shared.flag(Ids.FLAG_FRONTIER_SELFRAISE, 900, "标记「营中自筹」"),
-					Shared.cash_in(1.5, 360, "向本地人数最多的{primary_profession}征收其现金的 1.5%（营中摊派）"),
+					Shared.cash_in(4, 360, "向本地人数最多的{primary_profession}征收其现金的 4%（营中摊派）"),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 		],
@@ -181,7 +181,7 @@ static func append(catalog) -> void:
 				"朝廷赐予新节钺以换取名义上的效忠，边境商路与军需得以维持。代价是商税与文书从此皆须经其手，边将坐大的格局正式成型。",
 				[
 					Shared.flag(Ids.FLAG_WARLORD, 1825, "标记「边将坐大」"),
-					Shared.trade_capacity(4, 540),
+					Shared.trade_capacity(10, 540),
 					Shared.supply(8, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
@@ -190,7 +190,7 @@ static func append(catalog) -> void:
 				"断粮激变",
 				"运粮车队奉命在关隘外停发，断粮的戍军迅速陷入骚动。营中哗变接连发生，本地农事遭到劫掠，大批无粮之兵正拔营向城下开进。",
 				[
-					Shared.agriculture(-6, 360),
+					Shared.agriculture(-18, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.45, 540),
 					Shared.schedule(Ids.EVT_FRONTIER_GENERAL_AT_GATE, 45, "城下的兵"),
 				]),
@@ -217,7 +217,7 @@ static func append(catalog) -> void:
 				"城下议和",
 				"边将卸甲入城谈判半日，朝廷最终以地方摊派补发欠饷换取了退兵。城外哗变总算和平平息，但中枢向骄兵妥协的先例已然留下。",
 				[
-					Shared.cash_in(2.0, 360, "向本地人数最多的{primary_profession}征收其现金的 2%（补发欠饷）"),
+					Shared.cash_in(5, 360, "向本地人数最多的{primary_profession}征收其现金的 5%（补发欠饷）"),
 					Shared.supply(8, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
@@ -226,7 +226,7 @@ static func append(catalog) -> void:
 				"血溅城下",
 				"箭雨倾泻而下，叛军丢下数十具遗体后溃退，边将负伤被亲兵救走。城池虽得以保全，但战火重创了本地作坊，财政与流兵善后接踵而至。",
 				[
-					Shared.manufacturing(-4, 360),
+					Shared.manufacturing(-12, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.50, 540),
 					Shared.schedule(Ids.EVT_FAMILY_RETURNING_SOLDIER, 60, "回家的兵"),
 					Shared.schedule(Ids.EVT_FISCAL_STATE_LOAN, 90, "借饷"),
@@ -236,7 +236,7 @@ static func append(catalog) -> void:
 				"城外扎营",
 				"戍军在城外筑起长期营垒，既不攻城也不撤离。兵营截留过往菜蔬并私设关卡，导致城内主食开销大涨，朝廷权威荡然无存。",
 				[
-					Shared.staple(6, 360),
+					Shared.staple(18, 360),
 					Shared.bias(Ids.TAG_COURT, 1.20, 540),
 				]),
 		],
@@ -282,8 +282,8 @@ static func append(catalog) -> void:
 				"留质育才",
 				"邻邦使团空手而归，质子继续留馆研读典籍，促进了本地文教交流。朝廷为此征收了质子馆用度，而这份筹码日后是福是祸尚难预料。",
 				[
-					Shared.knowledge(4, 540),
-					Shared.cash_in(1.0, 360, "向本地人数最多的{primary_profession}征收其现金的 1%（质子馆的用度）"),
+					Shared.knowledge(12, 540),
+					Shared.cash_in(3, 360, "向本地人数最多的{primary_profession}征收其现金的 3%（质子馆的用度）"),
 					Shared.bias(Ids.TAG_COURT, 1.15, 540),
 				]),
 			Shared.option(
@@ -292,8 +292,8 @@ static func append(catalog) -> void:
 				"二十匹精良战马充实了本地马政与商运，质子则随使团安然离境。然而失去质子牵制后，邻邦骑兵次年便频频在边境试探，扰乱了农事。",
 				[
 					Shared.stock("horses", 20),
-					Shared.trade_capacity(5, 360),
-					Shared.agriculture(-2, 360),
+					Shared.trade_capacity(12, 360),
+					Shared.agriculture(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 360),
 				]),
 			Shared.gamble(
@@ -301,15 +301,15 @@ static func append(catalog) -> void:
 				Shared.branch(39322, "暗得敌情", # 60%
 					"质子借归途之便详尽测绘了西疆隐蔽渡口与水道，并秘密传回详图。这份珍贵情报大幅拓宽了我朝的地理认知与边境商路。",
 					[
-						Shared.knowledge(3, 540),
-						Shared.trade_capacity(4, 360),
+						Shared.knowledge(10, 540),
+						Shared.trade_capacity(10, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.10, 360),
 					]),
 				Shared.branch(26214, "误入绝境", # 40%
 					"随行斥候被质子引入险峻断谷，折损战马与经费后狼狈撤回。此事不仅暴露了我方意图，也让邻邦彻底加强了边境防务。",
 					[
-						Shared.cash_out(2.0, 360),
-						Shared.knowledge(-2, 360),
+						Shared.cash_out(5, 360),
+						Shared.knowledge(-8, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					])),
 		],

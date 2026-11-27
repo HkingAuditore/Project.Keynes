@@ -108,17 +108,17 @@ static func append(catalog) -> void:
 				"航道疏浚商船复通",
 				"地方官署按货摊派筹措经费，清淤船昼夜作业数十日终将河口挖通。大船重新直抵码头，本地制造与对外运力迅速恢复。",
 				[
-					Shared.manufacturing(5, 360),
-					Shared.trade_capacity(6, 360),
-					Shared.cash_in(1.0, 360, "向本地人数最多的{primary_profession}征收其现金的 1%（疏浚摊派，按货抽一份）"),
+					Shared.manufacturing(15, 360),
+					Shared.trade_capacity(15, 360),
+					Shared.cash_in(3, 360, "向本地人数最多的{primary_profession}征收其现金的 3%（疏浚摊派，按货抽一份）"),
 				]),
 			Shared.option(
 				"move_downstream", "迁港下游，重筑码头",
 				"新埠落成老港凋敝",
 				"新码头在下游深水滩地打桩建成，带动了周边工坊扩张。然而工程占去沿岸良田，老港搬运工群体失计，地方怨气随之滋长。",
 				[
-					Shared.manufacturing(6, 540),
-					Shared.agriculture(-3, 540),
+					Shared.manufacturing(18, 540),
+					Shared.agriculture(-10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 			Shared.gamble(
@@ -126,15 +126,15 @@ static func append(catalog) -> void:
 				Shared.branch(39322, "夏汛冲淤航道自开", # 60%
 					"盛夏一场大水恰将河口泥沙冲出深槽，商船得以复航，工坊随之回暖。唯地方商民对官署听天由命的治理姿态仍颇感不满。",
 					[
-						Shared.trade_capacity(4, 360),
-						Shared.manufacturing(3, 360),
+						Shared.trade_capacity(10, 360),
+						Shared.manufacturing(10, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.15, 360),
 					]),
 				Shared.branch(26214, "枯水淤塞港口瘫痪", # 40%
 					"当年河水未涨，入冬后连浅水驳船也难以进港，货品全赖人力背负过滩。港口制造大受拖累，城中主食补给开销随之攀升。",
 					[
-						Shared.manufacturing(-4, 540),
-						Shared.staple(5, 540),
+						Shared.manufacturing(-12, 540),
+						Shared.staple(15, 540),
 						Shared.flag(Ids.FLAG_SILT_WAITING, 900, "标记「泥封港口」"),
 					])),
 		],
@@ -153,6 +153,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 2,
 		"max_era_index": 8,
+		"required_technologies": ["tech.copper_mine_engineering"],
 		"blocked_story_flags": [String(Ids.FLAG_MINE_SEALED)],
 		"conditions": [
 			{"op": Op.HAS_NATURAL_RESOURCE, "int_value": 1},
@@ -187,8 +188,8 @@ static func append(catalog) -> void:
 				"排水奏效矿产回升",
 				"地方摊派筹款购置了新式排水器具与支护木料，矿井产量稳步回升。尽管额外征费引发些许怨言，矿区生计总算得以维系。",
 				[
-					Shared.extraction(6, 540),
-					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（换斗与撑架的摊派）"),
+					Shared.extraction(18, 540),
+					Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（换斗与撑架的摊派）"),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.gamble(
@@ -196,15 +197,15 @@ static func append(catalog) -> void:
 				Shared.branch(36045, "斜巷贯通得遇富矿", # 55%
 					"矿队冒险斜掘数日后撞上成色极佳的厚矿脉，本地及全国采掘均获提振，并留存了珍贵矿样。唯井下惊险仍令矿工群体心有余悸。",
 					[
-						Shared.extraction(8, 540),
-						Shared.country_sector("extractive", 4, 360),
+						Shared.extraction(24, 540),
+						Shared.country_sector("extractive", 10, 360),
 						Shared.research_signal("resource.iron_ore", "铁帽石"),
 						Shared.bias(Ids.TAG_UNREST, 1.10, 360),
 					]),
 				Shared.branch(29491, "斜巷塌方矿井停摆", # 45%
 					"斜巷支护未能承压，塌方砸毁矿车并造成人员遇难。矿场被迫停工整顿，采掘产出大跌，矿区上下对冒险政令愤慨不已。",
 					[
-						Shared.extraction(-4, 540),
+						Shared.extraction(-12, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.35, 540),
 						Shared.flag(Ids.FLAG_MINE_COLLAPSE, 900, "标记「井下塌方」"),
 					])),
@@ -213,8 +214,8 @@ static func append(catalog) -> void:
 				"矿井封死众户失计",
 				"官署下令封死井口，将拆除的支护梁木转作他用。采掘彻底停摆且工料周转反受牵连，失业的矿户群体令地方动荡风险骤增。",
 				[
-					Shared.extraction(-6, 540),
-					Shared.build_cost(4, 540),
+					Shared.extraction(-18, 540),
+					Shared.build_cost(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.40, 540),
 					Shared.flag(Ids.FLAG_MINE_SEALED, 1825, "标记「井口封死」"),
 				]),
@@ -283,7 +284,7 @@ static func append(catalog) -> void:
 				"山林得保怨气渐起",
 				"地方官署强制封禁山坡林缘，水土得以涵养，坡下农田收成随之稳步提升。然伐木工与扩垦农户断了近利，对禁令颇多抵触。",
 				[
-					Shared.agriculture(5, 540),
+					Shared.agriculture(15, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					Shared.flag(Ids.FLAG_FOREST_CLOSED, 900, "标记「坡上封林」"),
 				]),
@@ -292,9 +293,9 @@ static func append(catalog) -> void:
 				"炭产大增农田遭殃",
 				"炭窑扩产为本地工坊提供了充足燃料，制造产出随之走高。但山坡失林导致春汛泥沙冲入低田，农事受损且主食供给显著承压。",
 				[
-					Shared.manufacturing(4, 540),
-					Shared.agriculture(-4, 540),
-					Shared.staple(6, 540),
+					Shared.manufacturing(12, 540),
+					Shared.agriculture(-12, 540),
+					Shared.staple(18, 540),
 				]),
 			Shared.option(
 				"report_and_wait", "沿用旧籍，暂缓定界",
@@ -303,7 +304,7 @@ static func append(catalog) -> void:
 				[
 					Shared.flag(Ids.FLAG_FOREST_PENDING, 900, "标记「林界未定」"),
 					Shared.bias(Ids.TAG_LAND, 1.20, 540),
-					Shared.agriculture(-3, 540),
+					Shared.agriculture(-10, 540),
 				]),
 		],
 	}))
@@ -347,8 +348,8 @@ static func append(catalog) -> void:
 				"拆祠建仓务实招怨",
 				"旧祠条石悉数拆运砌入新仓，城中储粮条件改善、主食开销显著下降，工坊亦得余料之利。唯传统乡绅与信众深感冒犯，民间怨言四起。",
 				[
-					Shared.staple(-6, 540),
-					Shared.manufacturing(3, 360),
+					Shared.staple(-18, 540),
+					Shared.manufacturing(10, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
@@ -356,7 +357,7 @@ static func append(catalog) -> void:
 				"旧祠重光人心安靖",
 				"国库拨出专款按原制修复坍墙，落成之日地方乡绅与民众齐聚致谢。虽耗费一笔公帑，却有效安抚了地方情绪，稳固了基层秩序。",
 				[
-					Shared.cash_out(2.0, 540),
+					Shared.cash_out(5, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 					Shared.flag(Ids.FLAG_SHRINE_KEPT, 900, "标记「旧祠重立」"),
 				]),

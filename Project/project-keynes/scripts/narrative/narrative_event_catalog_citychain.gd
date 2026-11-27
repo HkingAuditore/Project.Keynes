@@ -92,8 +92,8 @@ static func append(catalog) -> void:
 				"城垣初成格局已变",
 				"经过整整一秋的繁重劳役，巍峨城垣终于在坡口合拢，聚落的营造与手工业技艺大进。尽管误了农时致使口粮吃紧，但一座真正的城邦已具雏形。",
 				[
-					Shared.manufacturing(3, 540),
-					Shared.staple(4, 360),
+					Shared.manufacturing(10, 540),
+					Shared.staple(12, 360),
 					Shared.schedule(Ids.EVT_CHAIN_CITY_KING, 120, "城里的主"),
 				]),
 			Shared.option(
@@ -101,8 +101,8 @@ static func append(catalog) -> void:
 				"木栅速成难抵大敌",
 				"削尖的木栅在数日内便围绕坡口立起，省下了大量存粮消耗。然而单薄的栅栏难令部众安心，围绕城防与权责的争论很快便在聚落内部发酵。",
 				[
-					Shared.agriculture(-2, 360),
-					Shared.staple(-3, 180),
+					Shared.agriculture(-8, 360),
+					Shared.staple(-10, 180),
 					Shared.schedule(Ids.EVT_CHAIN_CITY_KING, 90, "城里的主"),
 				]),
 			Shared.option(
@@ -110,7 +110,7 @@ static func append(catalog) -> void:
 				"丰收背后隐患丛生",
 				"聚落全力投入秋耕，仓廪一时充盈。但无城可守的弱点很快招致西面游骑袭掠，牲畜被劫令各氏族人人自危，要求推举强力领袖的呼声日高。",
 				[
-					Shared.agriculture(5, 540),
+					Shared.agriculture(15, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					Shared.schedule(Ids.EVT_CHAIN_CITY_KING, 180, "城里的主"),
 				]),
@@ -153,9 +153,9 @@ static func append(catalog) -> void:
 				"长老执政礼法渐兴",
 				"德高望重的长老坐上高位，重划地界、广兴教化，城邦人口与知识稳步增长。但议事迟缓耗费了不少公粮储备，面对外部强敌时恐显优柔。",
 				[
-					Shared.birth(3, 540),
-					Shared.knowledge(3, 540),
-					Shared.staple(3, 360),
+					Shared.birth(10, 540),
+					Shared.knowledge(10, 540),
+					Shared.staple(10, 360),
 					Shared.schedule(Ids.EVT_CHAIN_CITY_SIEGE, 240, "围城"),
 				]),
 			Shared.option(
@@ -163,8 +163,8 @@ static func append(catalog) -> void:
 				"世袭王权初立城邦",
 				"强权氏族确立了世袭统治，开始大兴营造并垄断工坊管理，城邦制造力随之跃升。然而世袭特权引发工匠阶层不满，营建成本亦水涨船高。",
 				[
-					Shared.manufacturing(4, 540),
-					Shared.build_cost(3, 540),
+					Shared.manufacturing(12, 540),
+					Shared.build_cost(8, 540),
 					Shared.bias(Ids.TAG_LABOR, 1.10, 540),
 					Shared.schedule(Ids.EVT_CHAIN_CITY_SIEGE, 240, "围城"),
 				]),
@@ -200,8 +200,8 @@ static func append(catalog) -> void:
 				"苦守解围元气大伤",
 				"全城实行严苛配给苦撑四十日，敌军终因粮尽拔营撤离。城邦得以保全，但城外良田尽毁、人丁折损，劫后余生的惊悸与怨怼久久未散。",
 				[
-					Shared.staple(-4, 540),
-					Shared.agriculture(-3, 540),
+					Shared.staple(-12, 540),
+					Shared.agriculture(-10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
@@ -209,8 +209,8 @@ static func append(catalog) -> void:
 				"城下之盟换取生机",
 				"城门开启，双方达成城下之盟，城邦以缴纳岁贡为代价换取免遭屠戮，并由此打通了通往西方的商路。虽损及尊严，却暂时稳住了城内民心。",
 				[
-					Shared.cash_in(1.5, 360),
-					Shared.trade_capacity(4, 540),
+					Shared.cash_in(4, 360),
+					Shared.trade_capacity(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.95, 540),
 				]),
 			Shared.gamble(
@@ -218,16 +218,16 @@ static func append(catalog) -> void:
 				Shared.branch(39322, "夜袭奏凯敌军溃退", # 60%
 					"守城武士借暗夜潜出城垣，火焚敌军粮草大营，西来之敌仓皇溃逃。此战不仅缴获物资振奋了农工生产，更确立了城邦在河谷的赫赫威名。",
 					[
-						Shared.agriculture(3, 540),
-						Shared.manufacturing(4, 540),
-						Shared.staple(3, 360),
+						Shared.agriculture(10, 540),
+						Shared.manufacturing(12, 540),
+						Shared.staple(10, 360),
 						Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 					]),
 				Shared.branch(26214, "劫营败绩城垣失守", # 40%
 					"夜袭行动半途败露，出城精锐遭敌反包围损失惨重。失去骨干守军的城垣被迫洞开，城邦制造业与人口惨遭重创，动荡阴影笼罩全城。",
 					[
-						Shared.manufacturing(-5, 360),
-						Shared.birth(-4, 540),
+						Shared.manufacturing(-15, 360),
+						Shared.population_rate(-8),
 						Shared.bias(Ids.TAG_UNREST, 1.35, 540),
 					])),
 		],

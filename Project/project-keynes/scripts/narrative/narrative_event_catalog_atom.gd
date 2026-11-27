@@ -71,6 +71,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 900,
 		"min_era_index": 8,
 		"max_era_index": 10,
+		"required_technologies": ["tech.nuclear_energy"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 5},
 			{"op": Op.POPULATION_GTE, "int_value": 20},
@@ -99,34 +100,34 @@ static func append(catalog) -> void:
 				"工业供电优先落地",
 				"引水泵站按期竣工，充沛的电力迅速推动工业区扩张。下游农田因枯水期减流而连季歉收，农业团体的怨气随之积聚。",
 				[
-					Shared.energy(7, 540),
-					Shared.manufacturing(3, 540),
-					Shared.agriculture(-4, 540),
+					Shared.energy(20, 540),
+					Shared.manufacturing(10, 540),
+					Shared.agriculture(-12, 540),
 				]),
 			Shared.option(
 				"build_cooling_towers", "追加预算兴建冷却塔",
 				"闭式循环工程竣工",
 				"高耸的冷却塔投入运转，兼顾了核电出力与下游灌溉。但为弥补工程超支而开征的地方附加税，令本地市民背负了沉重压力。",
 				[
-					Shared.energy(5, 540),
-					Shared.knowledge(3, 540),
-					Shared.cash_in(1.5, 360),
-					Shared.build_cost(3, 540),
+					Shared.energy(15, 540),
+					Shared.knowledge(10, 540),
+					Shared.cash_in(4, 360),
+					Shared.build_cost(8, 540),
 				]),
 			Shared.gamble(
 				"run_it_low", "先期低功率试运行",
 				Shared.branch(42598, "试运平稳达标", # 65%
 					"反应堆在低功率区间平稳运行，不仅缓解了部分用电缺口，还为国家电网积累了宝贵的核能工程经验。",
 					[
-						Shared.energy(6, 540),
-						Shared.knowledge(5, 540),
+						Shared.energy(18, 540),
+						Shared.knowledge(15, 540),
 						Shared.research_signal("breakthrough.electrification", "电气化"),
 					]),
 				Shared.branch(22938, "冷却回路过热事故", # 35%
 					"试运行期间堆芯温度异常攀升，机组被迫紧急停堆并疏散外围人员。事故震动全城，能源部门公信力遭受重创。",
 					[
-						Shared.energy(-6, 540),
-						Shared.birth(-4, 540),
+						Shared.energy(-18, 540),
+						Shared.population_rate(-6),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					])),
 		],
@@ -145,6 +146,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 780,
 		"min_era_index": 8,
 		"max_era_index": 10,
+		"required_technologies": ["tech.nuclear_energy"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 5},
 			{"op": Op.POPULATION_GTE, "int_value": 18},
@@ -173,8 +175,8 @@ static func append(catalog) -> void:
 				"近郊矿区划为禁区",
 				"近郊石场随即关停并改建为深层封存库，本地采掘产能因此受限。严格的隔离措施暂时平息了市民的恐慌情绪。",
 				[
-					Shared.extraction(-3, 540),
-					Shared.knowledge(2, 540),
+					Shared.extraction(-10, 540),
+					Shared.knowledge(8, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
 			Shared.option(
@@ -182,9 +184,9 @@ static func append(catalog) -> void:
 				"专列转运北方矿区",
 				"特种专列连夜将废料运往北方深矿封存，本地工业与科研未受干扰。但分摊到各行业的高额转运税引发了商界不满。",
 				[
-					Shared.cash_in(2.0, 360),
-					Shared.manufacturing(2, 540),
-					Shared.knowledge(3, 540),
+					Shared.cash_in(5, 360),
+					Shared.manufacturing(8, 540),
+					Shared.knowledge(10, 540),
 				]),
 			Shared.option(
 				"leave_it_open", "拨款暂存，强化监测",
@@ -192,8 +194,8 @@ static func append(catalog) -> void:
 				"政府拨款设立全天候监测站与隔离区，暂缓永久处置。长期暴露的风险令周边社区人心惶惶，抗议活动此起彼伏。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
-					Shared.cash_out(1.5, 540),
-					Shared.knowledge(2, 540),
+					Shared.cash_out(4, 540),
+					Shared.knowledge(8, 540),
 				]),
 		],
 	}))
@@ -211,6 +213,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 840,
 		"min_era_index": 9,
 		"max_era_index": 10,
+		"required_technologies": ["tech.satellite_observation"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 6},
 			{"op": Op.POPULATION_GTE, "int_value": 20},
@@ -238,9 +241,9 @@ static func append(catalog) -> void:
 				"民用科研获益匪浅",
 				"接收站向全国高校与民间机构敞开大门，全国科研活力显著提升。但蜂拥而至的申请令本地站点的日常调度一度陷入混乱。",
 				[
-					Shared.knowledge(-3, 540),
+					Shared.knowledge(-10, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
-					Shared.country_sector("knowledge", 4, 540),
+					Shared.country_sector("knowledge", 10, 540),
 				]),
 			Shared.option(
 				"seal_it_for_the_state", "划归国家机密专用",
@@ -248,17 +251,17 @@ static func append(catalog) -> void:
 				"安全部门全面接管接收站，高空影像成为中央统筹战略资源的利器。但全天候监控的传闻迅速在民间蔓延，引发对权力的猜忌。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
-					Shared.knowledge(4, 540),
-					Shared.country_sector("knowledge", 5, 540),
+					Shared.knowledge(12, 540),
+					Shared.country_sector("knowledge", 12, 540),
 				]),
 			Shared.option(
 				"rent_half_of_it", "开放商业频段有偿租赁",
 				"卫星数据实现创收",
 				"农垦企业与物流巨头竞相购买遥感测绘服务，国库进账颇丰，工业与科研部门也借由商业化运作同步升级了分析设备。",
 				[
-					Shared.cash_in(1.5, 360),
-					Shared.manufacturing(2, 540),
-					Shared.knowledge(2, 540),
+					Shared.cash_in(4, 360),
+					Shared.manufacturing(8, 540),
+					Shared.knowledge(8, 540),
 				]),
 		],
 	}))
@@ -276,6 +279,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 8,
 		"max_era_index": 10,
+		"required_technologies": ["tech.radio", "tech.electric_grid"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 4},
 			{"op": Op.POPULATION_GTE, "int_value": 20},
@@ -304,8 +308,8 @@ static func append(catalog) -> void:
 				"频道沦为官方通告",
 				"枯燥的政令播报省下了可观的工业电力，政令传达效率大增，但文化生活陷入沉闷，市民对公共广播几乎失去兴趣。",
 				[
-					Shared.knowledge(-3, 540),
-					Shared.manufacturing(2, 540),
+					Shared.knowledge(-10, 540),
+					Shared.manufacturing(8, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.95, 540),
 				]),
 			Shared.option(
@@ -313,8 +317,8 @@ static func append(catalog) -> void:
 				"公共娱乐凝聚民心",
 				"精彩的文艺演出与赛事转播迅速风靡全城，社会氛围显著缓和。按户征收的广播视听费也为国库补齐了运营开支。",
 				[
-					Shared.cash_in(1.0, 360),
-					Shared.knowledge(3, 540),
+					Shared.cash_in(3, 360),
+					Shared.knowledge(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 				]),
 			Shared.option(
@@ -323,8 +327,8 @@ static func append(catalog) -> void:
 				"各社区与民间团体纷纷借电台发声，本土文化与公共讨论空前活跃，但立场交锋与地域争执也随之频频登上荧屏。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
-					Shared.knowledge(4, 540),
-					Shared.birth(2, 540),
+					Shared.knowledge(12, 540),
+					Shared.birth(8, 540),
 				]),
 		],
 	}))
@@ -342,6 +346,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 840,
 		"min_era_index": 9,
 		"max_era_index": 10,
+		"required_technologies": ["tech.networked_computing"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 6},
 			{"op": Op.POPULATION_GTE, "int_value": 25},
@@ -369,9 +374,9 @@ static func append(catalog) -> void:
 				"数字统筹体系成型",
 				"政府以行政令强推全面并网并向商界分摊线路费。国家对全国产业链的调度能力跃上新台阶，催生了全新的工业组织形态。",
 				[
-					Shared.cash_in(2.0, 360),
-					Shared.knowledge(5, 540),
-					Shared.country_sector("manufacturing", 3, 540),
+					Shared.cash_in(5, 360),
+					Shared.knowledge(15, 540),
+					Shared.country_sector("manufacturing", 8, 540),
 					Shared.research_signal("breakthrough.industrial_organization", "工业组织"),
 				]),
 			Shared.option(
@@ -379,8 +384,8 @@ static func append(catalog) -> void:
 				"公私账目分轨运行",
 				"财政部退让一步，仅将公营资产纳入数据网络。商界抵触情绪得以缓和，但半吊子的信息化改造限制了整体数据效能。",
 				[
-					Shared.knowledge(-3, 540),
-					Shared.manufacturing(2, 540),
+					Shared.knowledge(-10, 540),
+					Shared.manufacturing(8, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 			Shared.option(
@@ -389,8 +394,8 @@ static func append(catalog) -> void:
 				"部分并网导致电子台账与民间纸账频频冲突，月末核销屡现巨额差额。官商互相推诿，行政效率与市场秩序双双受损。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
-					Shared.knowledge(2, 540),
-					Shared.manufacturing(-2, 540),
+					Shared.knowledge(8, 540),
+					Shared.manufacturing(-8, 540),
 				]),
 		],
 	}))
@@ -408,6 +413,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 780,
 		"min_era_index": 9,
 		"max_era_index": 10,
+		"required_technologies": ["tech.networked_computing"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 5},
 			{"op": Op.POPULATION_GTE, "int_value": 20},
@@ -437,25 +443,25 @@ static func append(catalog) -> void:
 				"全域档案系统全面铺开，治安管理与行政效率明显提升，但无处不在的监视感令市民怨声载道，暗流在民间滋长。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
-					Shared.knowledge(3, 540),
-					Shared.manufacturing(2, 540),
+					Shared.knowledge(10, 540),
+					Shared.manufacturing(8, 540),
 				]),
 			Shared.option(
 				"to_the_gate_only", "收窄至要道卡口核验",
 				"治安与隐私暂得平衡",
 				"安全部门撤除了社区级监控，改为在交通干道增配巡逻器械。此举虽增加了运维耗材开支，却有效安抚了公众的不安情绪。",
 				[
-					Shared.tools(3, 540),
+					Shared.tools(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
-					Shared.manufacturing(2, 540),
+					Shared.manufacturing(8, 540),
 				]),
 			Shared.option(
 				"names_without_hours", "立法脱敏，禁录行踪时间",
 				"隐私法案获得通过",
 				"地方议会通过数据脱敏条款，只保留基础身份核验并向商界征收合规审计费。情报颗粒度虽有下降，社会信任却得以维系。",
 				[
-					Shared.cash_in(1.2, 360),
-					Shared.knowledge(-2, 540),
+					Shared.cash_in(3, 360),
+					Shared.knowledge(-8, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.95, 540),
 				]),
 		],
@@ -474,6 +480,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 900,
 		"min_era_index": 9,
 		"max_era_index": 10,
+		"required_technologies": ["tech.robotic_control"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 6},
 			{"op": Op.POPULATION_GTE, "int_value": 25},
@@ -503,8 +510,8 @@ static func append(catalog) -> void:
 				"自动化产线全速运转，制造业产出大幅飙升并催生了新的技术突破。但骤增的失业人群令工会与地方治安陷入高度紧张。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.35, 540),
-					Shared.manufacturing(6, 540),
-					Shared.country_sector("manufacturing", 4, 540),
+					Shared.manufacturing(18, 540),
+					Shared.country_sector("manufacturing", 10, 540),
 					Shared.research_signal("breakthrough.automation", "自动化"),
 				]),
 			Shared.option(
@@ -512,8 +519,8 @@ static func append(catalog) -> void:
 				"人机并存缓和冲击",
 				"政府强制要求产线保留核心人工岗位，工人抗议迅速平息，技师也在协作中积累了运维心得，代价则是产能增长显著放缓。",
 				[
-					Shared.manufacturing(-3, 540),
-					Shared.knowledge(2, 540),
+					Shared.manufacturing(-10, 540),
+					Shared.knowledge(8, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 				]),
 			Shared.option(
@@ -521,8 +528,8 @@ static func append(catalog) -> void:
 				"富余劳力转投基建",
 				"财政部向高利润工厂征收转岗基金，将失业工人编入农田水利与生态修复工程。社会动荡得以化解，农业基础设施亦获加强。",
 				[
-					Shared.cash_in(2.0, 360),
-					Shared.agriculture(3, 540),
+					Shared.cash_in(5, 360),
+					Shared.agriculture(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 		],

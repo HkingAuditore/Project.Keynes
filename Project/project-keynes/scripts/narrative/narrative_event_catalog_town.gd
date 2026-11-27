@@ -102,8 +102,8 @@ static func append(catalog) -> void:
 				"夜巡扩编落地",
 				"市政署按铺面等级摊派巡防捐，巡防司得以增设双班夜哨。商栈失窃案随即锐减，工坊得以安心赶工，虽有中小商贩抱怨税负加重，整体治安已显著改观。",
 				[
-					Shared.cash_in(1.5, 540, "向本地人数最多的{primary_profession}征收其现金的 1.5%（铺捐转拨更夫）"),
-					Shared.manufacturing(3, 540),
+					Shared.cash_in(4, 540, "向本地人数最多的{primary_profession}征收其现金的 4%（铺捐转拨更夫）"),
+					Shared.manufacturing(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 				]),
 			Shared.option(
@@ -111,7 +111,7 @@ static func append(catalog) -> void:
 				"旧制勉强维持",
 				"朝廷拨款补贴原有守夜人手，未动商铺分毫。然而旧有巡逻编组难以兼顾偏远街区，入冬后窃案再度抬头，各商栈只得自行雇佣护院，街面猜忌日深。",
 				[
-					Shared.cash_out(1.0, 360),
+					Shared.cash_out(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
@@ -120,7 +120,7 @@ static func append(catalog) -> void:
 				"市政署搁置了巡防改革方案，夜间巡逻仍捉襟见肘。随着入室盗窃频发，工坊被迫缩短夜班工时，商民对地方治理的不满在坊间迅速蔓延。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 720),
-					Shared.manufacturing(-3, 540),
+					Shared.manufacturing(-10, 540),
 				]),
 		],
 	}))
@@ -167,8 +167,8 @@ static func append(catalog) -> void:
 				"灰产转为规管",
 				"市政署在城郊划定收容区，将流民首领纳入街面杂役编外管理，并从商铺规费中抽成入库。商业区秩序迅速恢复，但城郊收容区内的隐性矛盾仍被压在台面之下。",
 				[
-					Shared.manufacturing(3, 540),
-					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（铺子那笔钱里抽一份）"),
+					Shared.manufacturing(10, 540),
+					Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（铺子那笔钱里抽一份）"),
 					Shared.bias(Ids.TAG_UNREST, 0.80, 540),
 				]),
 			Shared.option(
@@ -176,9 +176,9 @@ static func append(catalog) -> void:
 				"清剿激化对立",
 				"巡防司耗费公帑逮捕流民首领并将闲散人员驱出城区。虽一时震慑了私收规费之风，但被逐流民在城外聚拢滋事，商路受阻，坊市人心愈发惶惶。",
 				[
-					Shared.cash_out(1.5, 360),
+					Shared.cash_out(4, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 720),
-					Shared.manufacturing(-3, 540),
+					Shared.manufacturing(-10, 540),
 				]),
 			Shared.option(
 				"look_the_other_way", "默许现状，暂不介入",
@@ -186,7 +186,7 @@ static func append(catalog) -> void:
 				"市政署仅张贴禁令便不再深究，商号与地下帮派在暗中达成了脆弱的妥协。街面生意虽未停摆，但官府公信力大损，各方势力皆在试探法度底线。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 720),
-					Shared.manufacturing(2, 540),
+					Shared.manufacturing(8, 540),
 				]),
 		],
 	}))
@@ -204,6 +204,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 3,
 		"max_era_index": 7,
+		"required_technologies": ["tech.currency"],
 		"conditions": [
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "merchant", "float_value": 0.02},
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 2},
@@ -232,8 +233,8 @@ static func append(catalog) -> void:
 				"私炉收归官营",
 				"国库拨款收购私铸工坊，将熟练炉匠一并编入钱监体系，统一铸造新式官币。铸币权得以保全，全国制造工艺亦受益于炉匠技术，但民间工匠对官营压价渐生怨怼。",
 				[
-					Shared.cash_out(2.0, 720),
-					Shared.country_sector("manufacturing", 3, 540),
+					Shared.cash_out(5, 720),
+					Shared.country_sector("manufacturing", 8, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 					Shared.bias(Ids.TAG_LABOR, 1.10, 540),
 				]),
@@ -243,7 +244,7 @@ static func append(catalog) -> void:
 				"巡防司雷霆查封私铸作坊，拆毁炉膛并将查获的金属充入市面储备。官府权威虽得以维护，但本地作坊资金链受创，商民对成色不足的官币益发不满。",
 				[
 					Shared.stock("wrought_iron", 15),
-					Shared.manufacturing(-4, 540),
+					Shared.manufacturing(-12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 720),
 				]),
 			Shared.option(
@@ -251,8 +252,8 @@ static func append(catalog) -> void:
 				"双轨通货并行",
 				"市政署对私钱睁一只眼闭一只眼，唯独在征收赋税时要求折算足色好钱。市面交易借此保持活跃，但货币主权旁落，潜藏的金融与社会风险正悄然积聚。",
 				[
-					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（秋税收进好钱）"),
-					Shared.manufacturing(3, 540),
+					Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（秋税收进好钱）"),
+					Shared.manufacturing(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 720),
 				]),
 		],
@@ -300,9 +301,9 @@ static func append(catalog) -> void:
 				"断火止损成功",
 				"巡防司果断拆除东侧连片木屋，火势抵近隔离带后终于受控，核心作坊得以保全。国库拨款抚恤拆迁户，但无家可归的怨气与重建建材紧缺仍困扰着市政署。",
 				[
-					Shared.cash_out(2.0, 540),
-					Shared.manufacturing(3, 540),
-					Shared.build_cost(4, 540),
+					Shared.cash_out(5, 540),
+					Shared.manufacturing(10, 540),
+					Shared.build_cost(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 				]),
 			Shared.option(
@@ -310,8 +311,8 @@ static func append(catalog) -> void:
 				"粮仓无恙工坊损",
 				"救火力量尽数压向常平仓，全城冬粮安然无恙，稳住了基本口粮供应。然而周边数座工坊与商铺未能幸免，本地制造业元气大伤，受灾坊民怨声载道。",
 				[
-					Shared.staple(-5, 540),
-					Shared.manufacturing(-4, 540),
+					Shared.staple(-15, 540),
+					Shared.manufacturing(-12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.gamble(
@@ -319,16 +320,16 @@ static func append(catalog) -> void:
 				Shared.branch(39322, "风息火灭侥幸过关", # 60%
 					"风势在午夜前骤然减弱，火头烧尽外围棚屋后自行熄灭。核心街区与粮仓仅受轻微波及，但险象环生的救灾过程仍令坊间对市政应急能力颇有微词。",
 					[
-						Shared.manufacturing(-2, 360),
-						Shared.staple(3, 360),
+						Shared.manufacturing(-8, 360),
+						Shared.staple(10, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.05, 360),
 					]),
 				Shared.branch(26214, "风向骤变火烧连营", # 40%
 					"大风突转北向，烈焰越过仓墙直扑核心商业区，大片工坊与商栈化为焦土。此次惨重火灾不仅重创本地产能与口粮储备，更导致人口折损与深重创伤。",
 					[
-						Shared.manufacturing(-6, 720),
-						Shared.staple(6, 540),
-						Shared.birth(-5, 540),
+						Shared.manufacturing(-18, 720),
+						Shared.staple(18, 540),
+						Shared.population_rate(-8),
 					])),
 		],
 	}))
@@ -375,8 +376,8 @@ static func append(catalog) -> void:
 				"特许契约得以维护",
 				"市政署强令无证商贩迁入偏僻巷道，严格保障持证商户的独占区位。摊税如期入库，商业秩序趋于规范，但失去生计渠道的底层商贩积怨日深。",
 				[
-					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（摊地钱照收）"),
-					Shared.manufacturing(2, 540),
+					Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（摊地钱照收）"),
+					Shared.manufacturing(8, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 				]),
 			Shared.option(
@@ -384,8 +385,8 @@ static func append(catalog) -> void:
 				"全面划界征税",
 				"官府在要冲重新划定摊位标线，将所有流动商贩一并纳入摊税名册。财政收入随之增加，但加重的交易成本很快转嫁至日用饮食，令市民与商贩两头不悦。",
 				[
-					Shared.cash_in(1.5, 540, "向本地人数最多的{primary_profession}征收其现金的 1.5%（两家都交地钱）"),
-					Shared.staple(3, 540),
+					Shared.cash_in(4, 540, "向本地人数最多的{primary_profession}征收其现金的 4%（两家都交地钱）"),
+					Shared.staple(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
@@ -393,7 +394,7 @@ static func append(catalog) -> void:
 				"市集陷入混乱",
 				"市政署迟迟未作裁断，持证商户与流动商贩的摩擦愈演愈烈。多名纳捐商户愤而撤摊停业，桥口商贸日渐萧条，官府的市集管理威信也随之扫地。",
 				[
-					Shared.manufacturing(-3, 540),
+					Shared.manufacturing(-10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 720),
 				]),
 		],
@@ -440,8 +441,8 @@ static func append(catalog) -> void:
 				"公开账目平息恐慌",
 				"市政署敞开常平仓大门允许市民代表查验，并刊印详尽存粮告示广为张贴。粮价随即回落，抢购潮迅速退去，官府借此积累了印务公示的治理经验，唯行政耗费颇多。",
 				[
-					Shared.staple(-5, 540),
-					Shared.manufacturing(-3, 540),
+					Shared.staple(-15, 540),
+					Shared.manufacturing(-10, 540),
 					Shared.research_signal("breakthrough.printing", "印版告示"),
 				]),
 			Shared.option(
@@ -449,18 +450,18 @@ static func append(catalog) -> void:
 				"高压弹压适得其反",
 				"巡防司动用经费抓捕数名传谣者并游街示众。明面上的议论虽骤然消声，但私下里的猜疑却愈演愈烈，官民之间的信任裂痕进一步扩大。",
 				[
-					Shared.cash_out(1.0, 360),
+					Shared.cash_out(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 720),
-					Shared.manufacturing(2, 360),
+					Shared.manufacturing(8, 360),
 				]),
 			Shared.option(
 				"let_it_cool", "冷处理，待恐慌自息",
 				"囤积推高粮价",
 				"官府选择置之不理，恐慌情绪在沉默中持续放大。各大粮栈趁机抬高标价，民众生活成本骤增，坊间怨气积聚，连带正常工商业生产也受到拖累。",
 				[
-					Shared.staple(6, 720),
+					Shared.staple(18, 720),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
-					Shared.manufacturing(-3, 540),
+					Shared.manufacturing(-10, 540),
 				]),
 		],
 	}))
@@ -478,6 +479,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 2,
 		"max_era_index": 8,
+		"required_technologies": ["tech.market_institutions"],
 		"conditions": [
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "artisan", "float_value": 0.08},
 			{"op": Op.POPULATION_GTE, "int_value": 12},
@@ -507,9 +509,9 @@ static func append(catalog) -> void:
 				"盛大丧仪耗资不菲",
 				"市政署批准并补贴了盛大丧仪，纸扎礼器需求大增，沿街铺面一时兴盛。行会高层的颜面得以保全，但公产基金几近见底，基层匠人对执事团的怨愤随之加深。",
 				[
-					Shared.cash_out(2.0, 540),
+					Shared.cash_out(5, 540),
 					Shared.stock("paper", 10),
-					Shared.manufacturing(3, 360),
+					Shared.manufacturing(10, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
@@ -517,7 +519,7 @@ static func append(catalog) -> void:
 				"公产章程得以确立",
 				"丧仪一切从简，公产基金被严格锁定用于抚恤帮工与遗属。此举赢得广大匠人拥护，行会趁势拟定了更规范的互助章程，劳工组织意识亦随之抬头。",
 				[
-					Shared.cash_out(1.0, 360),
+					Shared.cash_out(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 					Shared.research_signal("breakthrough.industrial_organization", "公匣与帮工章程"),
 					Shared.bias(Ids.TAG_LABOR, 1.10, 540),
@@ -527,9 +529,9 @@ static func append(catalog) -> void:
 				"分摊丧费引发众怒",
 				"官府驳回动用公产的请求，改令各作坊另行凑集丧费并从中抽成入库。发丧一拖再拖，匠人停工抗议，行会内部与官民之间的裂痕双双加剧。",
 				[
-					Shared.manufacturing(-4, 360),
+					Shared.manufacturing(-12, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 720),
-					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（各家凑的丧仪，抽一份入官）"),
+					Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（各家凑的丧仪，抽一份入官）"),
 				]),
 		],
 	}))
@@ -576,8 +578,8 @@ static func append(catalog) -> void:
 				"水源重归公用",
 				"水务局动用公款雇工填平私渠，公共主井的水位在数日后逐渐回升。城区饮水危机得以解除，但上游农园收成锐减，业主群体的不满情绪持续发酵。",
 				[
-					Shared.cash_out(1.0, 360),
-					Shared.agriculture(-4, 540),
+					Shared.cash_out(3, 360),
+					Shared.agriculture(-12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
@@ -585,9 +587,9 @@ static func append(catalog) -> void:
 				"副井完工缓解水荒",
 				"市政署向相关户主摊派工程款，在下游另凿副井供浆洗与作坊使用。新井虽水质偏苦仅作杂用，却有效分担了主井压力，唯连带推高了本地营建成本。",
 				[
-					Shared.cash_in(1.5, 540, "向本地人数最多的{primary_profession}征收其现金的 1.5%（按户摊井钱）"),
-					Shared.manufacturing(3, 540),
-					Shared.build_cost(4, 540),
+					Shared.cash_in(4, 540, "向本地人数最多的{primary_profession}征收其现金的 4%（按户摊井钱）"),
+					Shared.manufacturing(10, 540),
+					Shared.build_cost(10, 540),
 				]),
 			Shared.option(
 				"post_a_schedule", "颁布轮灌水令，限期取水",
@@ -595,7 +597,7 @@ static func append(catalog) -> void:
 				"水务局张贴了分时取水章程，却未配备足够人手稽查。告示很快遭人撕毁，上游私截依旧，城区每日为争水爆发口角，工坊日常运作亦受波及。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 720),
-					Shared.manufacturing(-3, 540),
+					Shared.manufacturing(-10, 540),
 				]),
 		],
 	}))

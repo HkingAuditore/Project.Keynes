@@ -95,6 +95,7 @@ public:
     std::vector<int32_t> era_milestones;
     std::vector<std::string> technology_ids, good_ids, signal_ids;
     godot::Dictionary profession_names, unrest_profession_names, ai_fact_hints;
+    godot::Dictionary good_names, technology_names;
     std::vector<NarrativeDefinition> events;
     std::vector<NarrativeProbe> probes;
     std::array<std::array<NarrativeDefinition, 4>, 3> unrest;

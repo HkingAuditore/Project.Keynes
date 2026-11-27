@@ -108,17 +108,17 @@ static func append(catalog) -> void:
 				"厚往薄来",
 				"满载丝绸与漆器的回礼船队随使团离港，换来了稳固的跨海商路与制造订单。然而这笔体面的外交开支最终摊派给了地方民众。",
 				[
-					Shared.cash_in(1.5, 540, "向本地人数最多的{primary_profession}征收其现金的 1.5%（礼单摊派）"),
-					Shared.trade_capacity(5, 540),
-					Shared.manufacturing(3, 540),
+					Shared.cash_in(4, 540, "向本地人数最多的{primary_profession}征收其现金的 4%（礼单摊派）"),
+					Shared.trade_capacity(12, 540),
+					Shared.manufacturing(10, 540),
 				]),
 			Shared.option(
 				"take_salt_only", "收下海盐，折半回礼",
 				"礼节有亏",
 				"海盐悉数入仓以平抑本地食盐与主食开销，但缩水的回礼激怒了外邦使团。船队次日便愤然撤离，本地外贸与手工业随之下滑。",
 				[
-					Shared.manufacturing(-3, 540),
-					Shared.staple(-2, 360),
+					Shared.manufacturing(-10, 540),
+					Shared.staple(-8, 360),
 					Shared.bias(Ids.TAG_MARKET, 0.90, 540),
 				]),
 			Shared.option(
@@ -126,7 +126,7 @@ static func append(catalog) -> void:
 				"闭港拒使",
 				"强硬驱离外邦使团捍卫了朝廷威严，也减少了边防摩擦的风险。但失去这批海盐补给后，本地民生开销随之加重。",
 				[
-					Shared.staple(4, 360),
+					Shared.staple(12, 360),
 					Shared.bias(Ids.TAG_FRONTIER, 0.90, 540),
 				]),
 		],
@@ -174,9 +174,9 @@ static func append(catalog) -> void:
 				"通译入仕",
 				"通译获授正式官身与俸禄，凭借其人脉迅速敲定了有利的贸易协定。本地商运与作坊皆受其惠，唯独地方需承担其署衙开支。",
 				[
-					Shared.cash_in(1.0, 360, "向本地人数最多的{primary_profession}征收其现金的 1%（通译的俸与纸墨）"),
-					Shared.trade_capacity(4, 540),
-					Shared.manufacturing(2, 540),
+					Shared.cash_in(3, 360, "向本地人数最多的{primary_profession}征收其现金的 3%（通译的俸与纸墨）"),
+					Shared.trade_capacity(10, 540),
+					Shared.manufacturing(8, 540),
 				]),
 			Shared.option(
 				"let_him_run_both", "维持现状，不授名分",
@@ -184,14 +184,14 @@ static func append(catalog) -> void:
 				"未获正式任命的通译继续在两方之间穿梭牟利，虽极大活跃了边境贸易，但政务机密屡屡外泄，引发官民广泛不安。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
-					Shared.trade_capacity(6, 540),
+					Shared.trade_capacity(15, 540),
 				]),
 			Shared.option(
 				"use_our_own", "撤换通译，起用本国文吏",
 				"谈判受挫",
 				"新任文吏因语言生疏频频误解条款，谈判拖延数日无果。外邦商队最终转赴下游盟邦交易，本地制造业蒙受了订单损失。",
 				[
-					Shared.manufacturing(-3, 540),
+					Shared.manufacturing(-10, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 		],
@@ -211,6 +211,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 3,
 		"max_era_index": 7,
+		"required_technologies": ["tech.iron_smelting"],
 		"conditions": [
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "merchant", "float_value": 0.03},
 			{"op": Op.POPULATION_GTE, "int_value": 12},
@@ -239,8 +240,8 @@ static func append(catalog) -> void:
 				"限贸开市",
 				"边市如期开放，但严密的稽查将铁器悉数拦在关内。外邦商队虽颇感失望，仍以陶器与杂货达成了交易，边境秩序得以维持。",
 				[
-					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（设卡与守栅的工食）"),
-					Shared.trade_capacity(6, 540),
+					Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（设卡与守栅的工食）"),
+					Shared.trade_capacity(15, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 			Shared.option(
@@ -249,15 +250,15 @@ static func append(catalog) -> void:
 				"大量铁制农具与器皿涌向境外，本地贸易与冶铁作坊迎来繁荣。然而不久后哨探回报，外邦骑兵已开始将我方铁料改铸为兵刃。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
-					Shared.trade_capacity(8, 540),
-					Shared.manufacturing(3, 540),
+					Shared.trade_capacity(16, 540),
+					Shared.manufacturing(10, 540),
 				]),
 			Shared.option(
 				"keep_it_shut", "关闭边市，恪守旧禁",
 				"封关守禁",
 				"边市大门紧闭，战略铁料未曾外流分毫。但断绝边境互市导致紧缺物资无法补充，入冬前本地民生与主食开销明显攀升。",
 				[
-					Shared.staple(3, 360),
+					Shared.staple(10, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 		],
@@ -305,14 +306,14 @@ static func append(catalog) -> void:
 				Shared.branch(42598, "敌军退却",
 					"我军大旗刚抵河岸，对岸敌营便连夜后撤。外邦使团仓皇致歉并重申盟约，此番果断出兵不仅提振了军备效率，也稳固了边境商路。",
 					[
-						Shared.cash_in(2.0, 540, "向本地人数最多的{primary_profession}征收其现金的 2%（出兵的开拔钱）"),
+						Shared.cash_in(5, 540, "向本地人数最多的{primary_profession}征收其现金的 5%（出兵的开拔钱）"),
 						Shared.supply(10, 540),
-						Shared.trade_capacity(4, 540),
+						Shared.trade_capacity(10, 540),
 					]),
 				Shared.branch(22938, "河滩血战",
 					"两军在河滩爆发激烈冲突，双方各有伤亡后各自撤军。战事虽未演变为全面战争，但抚恤与补械的摊派令地方财政备受压力。",
 					[
-						Shared.cash_in(2.5, 540, "向本地人数最多的{primary_profession}征收其现金的 2.5%（抚恤与补械）"),
+						Shared.cash_in(6, 540, "向本地人数最多的{primary_profession}征收其现金的 6%（抚恤与补械）"),
 						Shared.supply(8, 360),
 						Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 					])),
@@ -321,7 +322,7 @@ static func append(catalog) -> void:
 				"吞声避战",
 				"盟约被束之高阁，朝廷避免了高昂的战争开支并保住了境内安宁。但外邦商队见我朝软弱随即改道，本地原料供应与制造业受挫。",
 				[
-					Shared.manufacturing(-4, 540),
+					Shared.manufacturing(-12, 540),
 					Shared.supply(8, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
@@ -331,7 +332,7 @@ static func append(catalog) -> void:
 				"大军在城外扎营示威却按兵不动，既未渡河收复失地，也未撤回营房。这种首鼠两端的姿态虽保住了农时，却令国内舆情汹涌。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
-					Shared.agriculture(2, 540),
+					Shared.agriculture(8, 540),
 					Shared.supply(8, 360),
 				]),
 		],
@@ -351,6 +352,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 900,
 		"min_era_index": 3,
 		"max_era_index": 7,
+		"required_technologies": ["tech.weaving"],
 		"conditions": [
 			{"op": Op.POPULATION_GTE, "int_value": 12},
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 2},
@@ -379,8 +381,8 @@ static func append(catalog) -> void:
 				"和亲通好",
 				"绵延数里的送亲车队渡河西去，两邦借由姻亲关系确立了长期通商协定。虽然陪嫁摊派加重了地方负担，但宫廷与边疆局势皆趋缓和。",
 				[
-					Shared.cash_in(2.0, 540, "向本地人数最多的{primary_profession}征收其现金的 2%（陪嫁摊派）"),
-					Shared.trade_capacity(6, 540),
+					Shared.cash_in(5, 540, "向本地人数最多的{primary_profession}征收其现金的 5%（陪嫁摊派）"),
+					Shared.trade_capacity(15, 540),
 					Shared.bias(Ids.TAG_COURT, 0.90, 540),
 				]),
 			Shared.option(
@@ -389,15 +391,15 @@ static func append(catalog) -> void:
 				"外邦使团将未署名的礼单原样退回，并盖上了措辞严厉的火漆印。工匠与人才得以留在国内充实文教与制造，但边境紧张气氛陡增。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
-					Shared.manufacturing(3, 540),
-					Shared.knowledge(2, 540),
+					Shared.manufacturing(10, 540),
+					Shared.knowledge(8, 540),
 				]),
 			Shared.option(
 				"wait_for_autumn", "拖延答复，以待时变",
 				"使团拂袖",
 				"朝廷迟迟未予明确答复，外邦使团在驿馆苦候两月后不辞而别。虽避免了直接冲突与赔嫁支出，但双边商贸与本地制造均陷入冷淡。",
 				[
-					Shared.manufacturing(-3, 540),
+					Shared.manufacturing(-10, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 		],
@@ -417,6 +419,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 3,
 		"max_era_index": 7,
+		"required_technologies": ["tech.iron_smelting"],
 		"conditions": [
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "merchant", "float_value": 0.02},
 			{"op": Op.POPULATION_GTE, "int_value": 10},
@@ -445,9 +448,9 @@ static func append(catalog) -> void:
 				"丝马互市",
 				"骏马悉数编入马政储备，朝廷筹集四车上等丝绸体面回赠。此举既充实了本地马匹存量，也进一步拓宽了双方的贸易渠道。",
 				[
-					Shared.cash_in(1.5, 540, "向本地人数最多的{primary_profession}征收其现金的 1.5%（回礼的丝绸摊派）"),
+					Shared.cash_in(4, 540, "向本地人数最多的{primary_profession}征收其现金的 4%（回礼的丝绸摊派）"),
 					Shared.stock("horses", 10),
-					Shared.trade_capacity(4, 540),
+					Shared.trade_capacity(10, 540),
 				]),
 			Shared.option(
 				"return_iron", "收下骏马，以铁器折抵回礼",
@@ -455,15 +458,15 @@ static func append(catalog) -> void:
 				"大批铁制农具与未开刃铁器被装车送往外邦，本地冶铁作坊与商贸一时兴旺。但外邦使臣意味深长的神情，却让朝中主战派倍感忧虑。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
-					Shared.manufacturing(4, 540),
-					Shared.trade_capacity(4, 540),
+					Shared.manufacturing(12, 540),
+					Shared.trade_capacity(10, 540),
 				]),
 			Shared.option(
 				"send_them_back", "婉言谢绝，原样退还骏马",
 				"却礼自守",
 				"马队沿着来路原样撤回，朝廷免去了沉重的回礼开销。但此番冷遇令外邦商旅望而却步，本地制造与市场活跃度随之降温。",
 				[
-					Shared.manufacturing(-3, 540),
+					Shared.manufacturing(-10, 540),
 					Shared.bias(Ids.TAG_MARKET, 0.90, 540),
 				]),
 		],
@@ -511,8 +514,8 @@ static func append(catalog) -> void:
 				"密约归档",
 				"密约签署后被严密封存，朝廷筹措了一笔隐秘定金以示诚意。此后边境军需与商路调度果然顺畅许多，只是这笔见不得光的交易随时可能反噬。",
 				[
-					Shared.cash_in(2.0, 540, "向本地人数最多的{primary_profession}征收其现金的 2%（密约的定金）"),
-					Shared.trade_capacity(6, 540),
+					Shared.cash_in(5, 540, "向本地人数最多的{primary_profession}征收其现金的 5%（密约的定金）"),
+					Shared.trade_capacity(15, 540),
 					Shared.supply(10, 540),
 				]),
 			Shared.option(
@@ -520,8 +523,8 @@ static func append(catalog) -> void:
 				"留档拒签",
 				"朝廷退回密约正本的抄件，仅将情报归档交由智囊研判。虽然双边商贸与本地制造因信任受挫而短暂遇冷，但情报体系借此摸清了对手底牌。",
 				[
-					Shared.manufacturing(-3, 540),
-					Shared.knowledge(4, 540),
+					Shared.manufacturing(-10, 540),
+					Shared.knowledge(12, 540),
 					Shared.bias(Ids.TAG_COURT, 0.90, 540),
 				]),
 			Shared.option(
@@ -530,8 +533,8 @@ static func append(catalog) -> void:
 				"朝廷刻意在关键条文处留白，借机换取了眼前的贸易与制造红利。半年后外邦就模糊地带发难，双方陷入了旷日持久的外交扯皮与猜忌。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
-					Shared.trade_capacity(3, 540),
-					Shared.manufacturing(2, 540),
+					Shared.trade_capacity(8, 540),
+					Shared.manufacturing(8, 540),
 				]),
 		],
 	}))

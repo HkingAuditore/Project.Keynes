@@ -23,7 +23,9 @@ int64_t share(int64_t total, int64_t basis_points) {
 
 int64_t limited_quantity(const NarrativeEffect &effect, int64_t available) {
     const int64_t maximum = std::max<int64_t>(0, available);
-    const int64_t requested = effect.value > 0 ? effect.value : share(maximum, effect.ratio);
+    int64_t requested = effect.value > 0 ? effect.value : share(maximum, effect.ratio);
+    if (requested == 0 && effect.value == 0 && effect.ratio > 0 && maximum > 0)
+        requested = 1;
     return std::clamp<int64_t>(requested, 0, maximum);
 }
 
@@ -188,9 +190,13 @@ Dictionary NativeSimulationHost::resolve_narrative_choice(int64_t day, const Dic
         case NarrativeEffect::MARKET_ADD_STOCK:
         case NarrativeEffect::MARKET_REMOVE_STOCK: {
             const auto it = std::find(catalog.good_ids.begin(), catalog.good_ids.end(), effect.key);
-            if (cell < 0 || it == catalog.good_ids.end()) break;
+            if (cell < 0 || local.market_id < 0 || it == catalog.good_ids.end()) break;
+            if ((effect.kind == NarrativeEffect::MARKET_ADD_STOCK ||
+                 effect.kind == NarrativeEffect::COUNTRY_GOOD_TO_MARKET) &&
+                !local.has_local_merchant)
+                break;
             EconomyApi::EffectCommand command;
-            command.i32_0 = cell;
+            command.i32_0 = local.market_id;
             command.i32_1 = static_cast<int32_t>(it - catalog.good_ids.begin());
             if (effect.kind == NarrativeEffect::MARKET_ADD_STOCK) {
                 command.opcode = EconomyApi::COMMAND_ADD_STOCK;

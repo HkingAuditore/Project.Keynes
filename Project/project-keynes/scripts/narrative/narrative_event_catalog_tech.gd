@@ -93,7 +93,7 @@ static func append(catalog) -> void:
 				"按亩定例",
 				"分水册按田亩多寡排定次序，上游连片良田灌溉充足，农产稳步增长。但下游小户浇灌屡屡误时，乡间积怨随之加剧。",
 				[
-					Shared.agriculture(3, 540),
+					Shared.agriculture(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
@@ -101,15 +101,15 @@ static func append(catalog) -> void:
 				"均户轮灌",
 				"官府拨款修筑分水闸并推行按户轮灌，小农口粮得以宽裕，乡野安宁。但频繁启闭耗费国库开支，上游大户颇有微词。",
 				[
-					Shared.staple(-3, 360),
-					Shared.cash_out(1.0, 360),
+					Shared.staple(-10, 360),
+					Shared.cash_out(3, 360),
 				]),
 			Shared.option(
 				"official_roster", "官定分水册，征收水税专管",
 				"官印征费",
 				"水利司加派巡渠官吏并按水册征收水税，国库添了一笔固定岁入。然而额外摊派惹怒了上下游农户，抗税与私掘时有发生。",
 				[
-					Shared.cash_in(1.0, 360),
+					Shared.cash_in(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 		],
@@ -151,24 +151,24 @@ static func append(catalog) -> void:
 				"查抄活字",
 				"官差起获私印活字并向书业行会征收护版规费，国库小有所得。但典籍供给重回垄断，寒门向学之路再度受阻。",
 				[
-					Shared.knowledge(-2, 360),
-					Shared.cash_in(1.0, 360),
+					Shared.knowledge(-8, 360),
+					Shared.cash_in(3, 360),
 				]),
 			Shared.option(
 				"let_it_spread", "放任活字翻印，任由典籍广传",
 				"文风广布",
 				"活字印坊迅速扩张，圣贤经典与实用算册遍及闾巷，地方学风大盛。但传统雕版书坊接连倒闭，手工业产值短期受挫。",
 				[
-					Shared.knowledge(3, 540),
-					Shared.manufacturing(-2, 360),
+					Shared.knowledge(10, 540),
+					Shared.manufacturing(-8, 360),
 				]),
 			Shared.option(
 				"official_print", "设立官印局，统购活字校刊",
 				"官刊定本",
 				"朝廷拨款组建官印局，由旧书坊负责校勘、新印坊承印官本。典籍流通与校勘质量皆得保障，唯财政需承担持续补贴。",
 				[
-					Shared.cash_out(1.5, 360),
-					Shared.knowledge(2, 540),
+					Shared.cash_out(4, 360),
+					Shared.knowledge(8, 540),
 				]),
 		],
 	}))
@@ -209,8 +209,8 @@ static func append(catalog) -> void:
 				"固守新垣",
 				"国库拨款征调石匠加厚城垣并增设炮台，朝堂守成派深感满意。但庞大的土木工程推高了营造耗费，短期财政承压。",
 				[
-					Shared.cash_out(2.0, 360),
-					Shared.build_cost(3, 540),
+					Shared.cash_out(5, 360),
+					Shared.build_cost(8, 540),
 					Shared.bias(Ids.TAG_COURT, 1.15, 540),
 				]),
 			Shared.option(
@@ -218,15 +218,15 @@ static func append(catalog) -> void:
 				"铸炮强军",
 				"军费悉数注入火器局开炉铸炮，冶铁与军工制造技艺突飞猛进。虽旧墙豁口暂未修补，城头火力已令周边邻邦忌惮。",
 				[
-					Shared.cash_out(2.5, 360),
-					Shared.manufacturing(4, 540),
+					Shared.cash_out(6, 360),
+					Shared.manufacturing(12, 540),
 				]),
 			Shared.option(
 				"do_neither", "缩减军费开支，暂以木栅修补",
 				"防务松弛",
 				"两项提案皆被搁置，城墙豁口仅以木栅草草遮蔽。火器局匠师寒心散去，城防空虚的消息令地方人心惶惶。",
 				[
-					Shared.knowledge(-2, 360),
+					Shared.knowledge(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 		],
@@ -268,23 +268,23 @@ static func append(catalog) -> void:
 				"烟囱林立",
 				"财政贴息助建大规模蒸汽工场，高耸烟囱成为城市新景，本地制造业产能大幅跃升。传统手工织坊随之成片退出舞台。",
 				[
-					Shared.cash_out(2.0, 360),
-					Shared.manufacturing(5, 540),
+					Shared.cash_out(5, 360),
+					Shared.manufacturing(15, 540),
 				]),
 			Shared.gamble(
 				"share_with_weavers", "撮合织造行会入股合营",
 				Shared.branch(39322, "合营分红", # 60%
 					"织户以手织机与资金入股蒸汽工场，新旧产能顺利整合。首年分红按契兑付，国库税收、制造产出与外销运力同步增长。",
 					[
-						Shared.cash_in(1.0, 360),
-						Shared.manufacturing(3, 540),
-						Shared.trade_capacity(3, 540),
+						Shared.cash_in(3, 360),
+						Shared.manufacturing(10, 540),
+						Shared.trade_capacity(8, 540),
 					]),
 				Shared.branch(26214, "退股风波", # 40%
 					"织造行会不满工场利润分配而集体撤股，被迫由官府出面垫资善后。工厂停摆减产，城内劳资与行会矛盾骤然激化。",
 					[
-						Shared.cash_out(1.5, 360),
-						Shared.manufacturing(-3, 360),
+						Shared.cash_out(4, 360),
+						Shared.manufacturing(-10, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 					])),
 			Shared.option(
@@ -292,7 +292,7 @@ static func append(catalog) -> void:
 				"机房封存",
 				"蒸汽设备被蒙布封存以安抚旧行会，错失了抢占市场的先机。技术革新停滞不前，商界与失意工匠的怨气仍在暗中滋长。",
 				[
-					Shared.knowledge(-2, 360),
+					Shared.knowledge(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 		],
@@ -334,15 +334,15 @@ static func append(catalog) -> void:
 				"铁道枢纽",
 				"大型货栈紧邻站台落成，原料与成品得以直接装车外运，本地制造业效率显著提升。传统车马行自此彻底退出干线运输。",
 				[
-					Shared.cash_out(2.0, 360),
-					Shared.manufacturing(4, 540),
+					Shared.cash_out(5, 360),
+					Shared.manufacturing(12, 540),
 				]),
 			Shared.option(
 				"retrain_the_carters", "收编车马行转任站台装卸",
 				"车夫转业",
 				"当局向车马行征收转业登记费并将其编入站台装卸队，国库小有进账。但收入落差令大批老车夫心怀怨怼，罢工风潮暗涌。",
 				[
-					Shared.cash_in(1.0, 360),
+					Shared.cash_in(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 			Shared.option(
@@ -350,7 +350,7 @@ static func append(catalog) -> void:
 				"露天积货",
 				"站台长期缺乏仓储设施，货物露天堆放损耗严重，列车频频过站不停。商界痛斥市政失职，物流革新停滞不前。",
 				[
-					Shared.knowledge(-2, 360),
+					Shared.knowledge(-8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 		],
@@ -392,16 +392,16 @@ static func append(catalog) -> void:
 				"丰产透支",
 				"国库全额补贴化肥下乡，当季粮食单产大幅跃升，有效缓解了城市供给。但次年耕地显露板结迹象，农政署不得不着手监测土质。",
 				[
-					Shared.cash_out(2.0, 360),
-					Shared.agriculture(5, 540),
+					Shared.cash_out(5, 360),
+					Shared.agriculture(15, 540),
 				]),
 			Shared.option(
 				"half_first", "有偿配售半数田亩，对比试种",
 				"分区对照",
 				"农政署有偿配售化肥并划定半数耕地对照试种，国库收回部分成本且总产小幅增长。但未获配额的农户怨言四起，基层摩擦加剧。",
 				[
-					Shared.cash_in(1.0, 360),
-					Shared.agriculture(2, 540),
+					Shared.cash_in(3, 360),
+					Shared.agriculture(8, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
@@ -409,8 +409,8 @@ static func append(catalog) -> void:
 				"休养地力",
 				"这批合成肥料被封存停用，土壤生态与长期农艺观察得以留存。但缺少增产手段令当季农业产出回落，口粮供应略显吃紧。",
 				[
-					Shared.agriculture(-3, 360),
-					Shared.knowledge(1, 360),
+					Shared.agriculture(-10, 360),
+					Shared.knowledge(5, 360),
 				]),
 		],
 	}))

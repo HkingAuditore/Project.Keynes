@@ -7,6 +7,19 @@ const GOODS_SCALE: float = 1000.0
 const NarrativeOutcomeScript = preload("res://scripts/narrative/narrative_outcome.gd")
 const NarrativeConditionScript = preload("res://scripts/narrative/narrative_condition.gd")
 const NarrativeEffectSpecScript = preload("res://scripts/narrative/narrative_effect_spec.gd")
+const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+
+static var _tech_name_cache: Dictionary = {}
+
+static func _friendly_tech_name(tech_key: String) -> String:
+	if _tech_name_cache.is_empty():
+		var compiled: Dictionary = TechnologyCatalogScript.compile_native_catalog()
+		var ids: PackedStringArray = compiled.get("technology_ids", PackedStringArray())
+		var names: PackedStringArray = compiled.get("technology_display_names", PackedStringArray())
+		for i in range(ids.size()):
+			var dn := String(names[i]).strip_edges() if i < names.size() else ""
+			_tech_name_cache[String(ids[i])] = dn if not dn.is_empty() else String(ids[i])
+	return String(_tech_name_cache.get(tech_key, tech_key))
 
 @export var option_id: StringName = &""
 @export var text: String = ""
@@ -76,7 +89,7 @@ func check_eligibility(ctx: Dictionary) -> Dictionary:
 		if not has_tech:
 			return {
 				"ok": false,
-				"reason": "缺少科技 %s" % String(require_technology),
+				"reason": "缺少科技「%s」" % _friendly_tech_name(String(require_technology)),
 			}
 	return {"ok": true, "reason": ""}
 

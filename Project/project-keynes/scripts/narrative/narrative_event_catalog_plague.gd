@@ -101,17 +101,17 @@ static func append(catalog) -> void:
 				"货通港城疫病登岸",
 				"紧俏盐铁顺利入库，港口贸易运力与工坊制造随之提振。然而热病当夜便在码头扩散，全城人丁因此蒙受折损。",
 				[
-					Shared.trade_capacity(5, 360),
-					Shared.manufacturing(4, 360),
-					Shared.birth(-4, 540),
+					Shared.trade_capacity(12, 360),
+					Shared.manufacturing(12, 360),
+					Shared.population_rate(-8),
 				]),
 			Shared.option(
 				"burn_it_off", "下令焚船，彻底驱离",
 				"烈焰断疫商路受挫",
 				"巡防队纵火焚毁疫船，口外浓烟彻夜不散。强硬手段虽挡住了热病，却重创港口制造与主食周转，商民惊恐怨恨交加。",
 				[
-					Shared.manufacturing(-4, 540),
-					Shared.staple(4, 540),
+					Shared.manufacturing(-12, 540),
+					Shared.staple(12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
@@ -119,9 +119,9 @@ static func append(catalog) -> void:
 				"严守锚地静待疫熄",
 				"地方官署按户摊派护港费，雇小艇每日向口外疫船运送水粮。直至船上再无声息，全城方得安宁，唯口粮供给略显吃紧。",
 				[
-					Shared.cash_in(1.2, 360,
-						"向本地人数最多的{primary_profession}征收其现金的 1.2%（护港摊派，按户收）"),
-					Shared.staple(3, 360),
+					Shared.cash_in(3, 360,
+						"向本地人数最多的{primary_profession}征收其现金的 3%（护港摊派，按户收）"),
+					Shared.staple(10, 360),
 				]),
 		],
 	}))
@@ -167,8 +167,8 @@ static func append(catalog) -> void:
 				"铁腕封控民怨沸腾",
 				"官署派兵加固封锁木板并严禁越界，疫势虽被压制，却令周边工坊停摆、主食供给吃紧，被困居民的怨怒一触即发。",
 				[
-					Shared.manufacturing(-4, 540),
-					Shared.staple(5, 540),
+					Shared.manufacturing(-12, 540),
+					Shared.staple(15, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.gamble(
@@ -176,13 +176,13 @@ static func append(catalog) -> void:
 				Shared.branch(39322, "精准控疫城池安然", # 六成
 					"国库拨款保障病家补给，病籍名册再未添新名。封锁如期撤除，全城农事与市面运转未受大碍。",
 					[
-						Shared.agriculture(3, 360),
-						Shared.cash_out(1.0, 360),
+						Shared.agriculture(10, 360),
+						Shared.cash_out(3, 360),
 					]),
 				Shared.branch(26214, "管控失守疫势复燃", # 四成
 					"封锁松动令热病迅速波及邻巷，官署被迫仓促加严封控。疫情扩散致使人丁受损，城中恐慌与动荡随之加剧。",
 					[
-						Shared.birth(-5, 540),
+						Shared.population_rate(-10),
 						Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 					])),
 			Shared.option(
@@ -190,10 +190,10 @@ static func append(catalog) -> void:
 				"城外设棚移治病患",
 				"官署向地方摊派筹款，在城外河滩搭棚集中收治并详录病程，积累了宝贵医知。唯棚区条件简陋，仍有不少病患不治。",
 				[
-					Shared.cash_in(1.5, 540,
-						"向本地人数最多的{primary_profession}征收其现金的 1.5%（雇人照看的工钱）"),
-					Shared.birth(-3, 540),
-					Shared.knowledge(3, 360),
+					Shared.cash_in(4, 540,
+						"向本地人数最多的{primary_profession}征收其现金的 4%（雇人照看的工钱）"),
+					Shared.population_rate(-5),
+					Shared.knowledge(10, 360),
 				]),
 		],
 	}))
@@ -238,25 +238,25 @@ static func append(catalog) -> void:
 				"洁手新规显著保命",
 				"官署严令各地接生一律备置铜盆滚水洁手，虽略增器具消耗，但产妇与新生儿存活率大幅提升，新医理亦得以确立。",
 				[
-					Shared.birth(6, 540),
-					Shared.tools(3, 540),
-					Shared.knowledge(2, 360),
+					Shared.birth(18, 540),
+					Shared.tools(10, 540),
+					Shared.knowledge(8, 360),
 				]),
 			Shared.option(
 				"keep_the_old_way", "顺应民间，沿用旧俗",
 				"墨守旧俗产厄频发",
 				"官署未予干预，产婆仍沿旧法接生。次年产褥热再度肆虐，城中人丁蒙受损失，医政革新亦因缺乏公信而受挫。",
 				[
-					Shared.birth(-5, 540),
-					Shared.knowledge(-2, 360),
+					Shared.population_rate(-6),
+					Shared.knowledge(-8, 360),
 				]),
 			Shared.option(
 				"wash_in_summer_only", "折中推行，夏洗冬省",
 				"半途妥协学理难立",
 				"官署仅令伏天烧水洁手、寒冬听任省柴。此举虽保住部分母婴性命，却令医政规程流于敷衍，正统医学认知反受削弱。",
 				[
-					Shared.birth(2, 540),
-					Shared.knowledge(-3, 540),
+					Shared.birth(8, 540),
+					Shared.knowledge(-10, 540),
 				]),
 		],
 	}))
@@ -305,25 +305,25 @@ static func append(catalog) -> void:
 				"救回人丁药圃尽毁",
 				"官圃苦蒿被连根挖尽煎汤施药，大批高热病患转危为安。然而山坡表土翻毁、药根断绝，本地农垦产出随之受损。",
 				[
-					Shared.birth(5, 540),
-					Shared.agriculture(-4, 540),
+					Shared.birth(15, 540),
+					Shared.agriculture(-12, 540),
 				]),
 			Shared.option(
 				"leaves_only", "限采药叶，保全根系",
 				"留根存种重患难救",
 				"官署严令只摘叶片不伤药根，并记录下苦蒿再生之法充实医籍。但药效大减令部分重症病患未能熬过寒冬，人丁略有折损。",
 				[
-					Shared.birth(-3, 540),
-					Shared.knowledge(3, 360),
+					Shared.population_rate(-5),
+					Shared.knowledge(10, 360),
 				]),
 			Shared.option(
 				"fence_and_buy", "封圃护种，摊派外购",
 				"摊派购药工坊受累",
 				"药草官圃被严密围封保护，地方官署按户摊派筹资从水路购药应急。然征费与转运调度抽紧了地方资源，工坊制造随之承压。",
 				[
-					Shared.cash_in(1.5, 540,
-						"向本地人数最多的{primary_profession}征收其现金的 1.5%（买药摊派）"),
-					Shared.manufacturing(-3, 540),
+					Shared.cash_in(4, 540,
+						"向本地人数最多的{primary_profession}征收其现金的 4%（买药摊派）"),
+					Shared.manufacturing(-10, 540),
 				]),
 		],
 	}))
@@ -341,6 +341,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 780,
 		"min_era_index": 5,
 		"max_era_index": 9,
+		"required_technologies": ["tech.public_health"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 4},
 			{"op": Op.POPULATION_GTE, "int_value": 18},
@@ -369,26 +370,26 @@ static func append(catalog) -> void:
 				"公帑续命医籍日丰",
 				"国库批复专款维系医馆运转，医官借此整理出详尽病案充实学识。唯资金仍显紧俏，抽调人手照护亦略微拖慢了周边工坊。",
 				[
-					Shared.cash_out(1.5, 540),
-					Shared.knowledge(4, 360),
-					Shared.manufacturing(-3, 540),
+					Shared.cash_out(4, 540),
+					Shared.knowledge(12, 360),
+					Shared.manufacturing(-10, 540),
 				]),
 			Shared.option(
 				"levy_the_households", "按户摊派，共担药资",
 				"摊派筹款病患得救",
 				"地方官署按户强征药费填平了医馆亏空，贫苦病患得以继续收治、人口略有回升，唯屡次摊派令市井百姓怨声颇重。",
 				[
-					Shared.cash_in(2.0, 540),
-					Shared.birth(2, 540),
+					Shared.cash_in(5, 540),
+					Shared.birth(8, 540),
 				]),
 			Shared.option(
 				"let_the_firms_endow", "引入商号认捐并配资",
 				"商号冠名医政旁落",
 				"国库辅以少量配资并准许大商号刻名认捐，商业势力借机扩大声望。然而医馆沦为名利场，医官精力耗于应酬，医学研习反受荒废。",
 				[
-					Shared.cash_out(1.0, 540),
+					Shared.cash_out(3, 540),
 					Shared.bias(Ids.TAG_MARKET, 1.15, 540),
-					Shared.knowledge(-2, 540),
+					Shared.knowledge(-8, 540),
 				]),
 		],
 	}))
@@ -406,6 +407,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 840,
 		"min_era_index": 6,
 		"max_era_index": 9,
+		"required_technologies": ["tech.public_health"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 3},
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "scholar", "float_value": 0.01},
@@ -433,14 +435,14 @@ static func append(catalog) -> void:
 				Shared.branch(42598, "试种告捷痘疫渐息", # 六成半
 					"受试孩童仅发轻热数日便告痊愈，国库随即拨款推广种痘方术。城中幼童存活率大增，本国医学认知亦迈出关键一步。",
 					[
-						Shared.birth(6, 540),
-						Shared.knowledge(5, 360),
-						Shared.cash_out(1.0, 540),
+						Shared.birth(18, 540),
+						Shared.knowledge(15, 360),
+						Shared.cash_out(3, 540),
 					]),
 				Shared.branch(22938, "试种夭折民情大哗", # 三成半
 					"受试孩童高烧不退最终夭折，残存痘痂被愤怒的民众付之一炬。此番惨剧重创人口信心，城中反抗医政的怨潮迅速蔓延。",
 					[
-						Shared.birth(-7, 540),
+						Shared.population_rate(-10),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					])),
 			Shared.option(
@@ -448,18 +450,18 @@ static func append(catalog) -> void:
 				"延宕一年幼童多殇",
 				"外域确信直到隆冬方才传回，证实种痘有效。然这一年延宕已令城中大批孩童死于痘疫，本地医学探索也落于人后。",
 				[
-					Shared.knowledge(-4, 540),
-					Shared.birth(-4, 540),
+					Shared.knowledge(-12, 540),
+					Shared.population_rate(-6),
 				]),
 			Shared.option(
 				"buy_a_volunteer", "筹资悬赏，招募试药者",
 				"重金募试犹有折损",
 				"官署按户摊派并由国库贴补，终以重金募得贫户幼童试种。虽免于强征抗拒，但仓促施术仍致人丁受损，舆论颇多非议。",
 				[
-					Shared.cash_in(2.0, 540,
-						"向本地人数最多的{primary_profession}征收其现金的 2%（凑给试药人家的钱）"),
-					Shared.birth(-2, 540),
-					Shared.cash_out(1.0, 540),
+					Shared.cash_in(5, 540,
+						"向本地人数最多的{primary_profession}征收其现金的 5%（凑给试药人家的钱）"),
+					Shared.population_rate(-3),
+					Shared.cash_out(3, 540),
 				]),
 		],
 	}))
@@ -504,7 +506,7 @@ static func append(catalog) -> void:
 				"铁腕取缔民怨暗生",
 				"巡防队当街捣毁假药摊并将术士逐出城外，正统医政权威得以维护。但买不起良药的底层病患愤懑不已，城中怨气随之滋长。",
 				[
-					Shared.knowledge(3, 360),
+					Shared.knowledge(10, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 			Shared.option(
@@ -512,16 +514,16 @@ static func append(catalog) -> void:
 				"征税背书延误病机",
 				"官署颁发执照并按月抽税，公库进项颇丰。然而官府准许反令百姓对假药深信不疑，无数病患因延误诊治而折损性命。",
 				[
-					Shared.cash_in(1.5, 540),
-					Shared.birth(-3, 540),
+					Shared.cash_in(4, 540),
+					Shared.population_rate(-6),
 				]),
 			Shared.option(
 				"test_it_in_the_street", "拨款当街验药，以正视听",
 				"公费辟谣反遭疑谤",
 				"医政署动用公款当街析出糖水沉渣，围观者却半信半疑，反谣传官医嫉贤妒能。此举徒耗经费，更令正统医政公信受损。",
 				[
-					Shared.knowledge(-3, 540),
-					Shared.cash_out(0.5, 540),
+					Shared.knowledge(-10, 540),
+					Shared.cash_out(3, 540),
 				]),
 		],
 	}))

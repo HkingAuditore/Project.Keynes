@@ -70,6 +70,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 3,
 		"max_era_index": 5,
+		"required_technologies": ["tech.scholarly_academies"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 3},
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "scholar", "float_value": 0.01},
@@ -99,25 +100,25 @@ static func append(catalog) -> void:
 				"敕额立学",
 				"书院缴纳册费后正式升格官学，生员课业与讲学体系全面规范，本地与全国学术产出皆有所进益。",
 				[
-					Shared.cash_in(1.5, 540, "向本地人数最多的{primary_profession}征收其现金的 1.5%（请凭状的使费）"),
-					Shared.knowledge(4, 540),
-					Shared.country_sector("knowledge", 2, 540),
+					Shared.cash_in(4, 540, "向本地人数最多的{primary_profession}征收其现金的 4%（请凭状的使费）"),
+					Shared.knowledge(12, 540),
+					Shared.country_sector("knowledge", 6, 540),
 				]),
 			Shared.option(
 				"refuse_the_charter", "驳回官学凭状，由国库酌情贴补",
 				"留存民学",
 				"书院保留民间讲学自由并由国库拨付少量贴补，却因缺乏官学晋升通道导致生源外流，本地学术产出短期下滑。",
 				[
-					Shared.knowledge(-4, 540),
-					Shared.cash_out(1.0, 360, "国库拨付本地人数最多的{primary_profession}，占国库现金 1%（贴补书院的廪米）"),
+					Shared.knowledge(-12, 540),
+					Shared.cash_out(3, 360, "国库拨付本地人数最多的{primary_profession}，占国库现金 3%（贴补书院的廪米）"),
 				]),
 			Shared.option(
 				"report_three_names", "准予半官半民，仅呈报核心名册",
 				"折中备案",
 				"书院仅向礼部呈报少数骨干生员名册，其余讲席照旧自由治学。学风得以温和延续，但双轨运作增加了文书与器用耗费。",
 				[
-					Shared.knowledge(2, 360),
-					Shared.tools(3, 540),
+					Shared.knowledge(8, 360),
+					Shared.tools(10, 540),
 				]),
 		],
 	}))
@@ -135,6 +136,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 6,
 		"max_era_index": 9,
+		"required_technologies": ["tech.learned_societies"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 3},
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "scholar", "float_value": 0.02},
@@ -163,16 +165,16 @@ static func append(catalog) -> void:
 				"立会兴学",
 				"学术公会依法缴纳登记会费并按年呈报名册，公开评议风气迅速成型，本地与全国的知识创新皆受其惠。",
 				[
-					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（学会登记，按户摊的会费）"),
-					Shared.knowledge(4, 540),
-					Shared.country_sector("knowledge", 3, 540),
+					Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（学会登记，按户摊的会费）"),
+					Shared.knowledge(12, 540),
+					Shared.country_sector("knowledge", 8, 540),
 				]),
 			Shared.option(
 				"lock_the_hall", "严禁民间结社，查封议事会馆",
 				"查封会馆",
 				"会馆被勒令关闭，城内清议之声一时沉寂，治安风险随之降低。但学者被迫转入地下私下切磋，正规学术产出明显萎缩。",
 				[
-					Shared.knowledge(-4, 540),
+					Shared.knowledge(-12, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 			Shared.option(
@@ -180,7 +182,7 @@ static func append(catalog) -> void:
 				"清议四起",
 				"公会未获官印却照常运转，尖锐的学术评议与时政议论迅速传遍邻省。思想激荡推动了知识进步，却也抬高了地方舆情波动。",
 				[
-					Shared.knowledge(3, 540),
+					Shared.knowledge(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 		],
@@ -199,6 +201,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 4,
 		"max_era_index": 5,
+		"required_technologies": ["tech.movable_type_printing"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 2},
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "scholar", "float_value": 0.01},
@@ -228,8 +231,8 @@ static func append(catalog) -> void:
 				"专印官籍",
 				"印刷所推拒一切私稿，专司官定典籍与公文印制，纸张供给与工坊周转顺畅。但民间著述出版受阻，思想传播趋于沉闷。",
 				[
-					Shared.knowledge(-3, 540),
-					Shared.manufacturing(3, 540),
+					Shared.knowledge(-10, 540),
+					Shared.manufacturing(10, 540),
 					Shared.stock("paper", 10),
 				]),
 			Shared.option(
@@ -237,8 +240,8 @@ static func append(catalog) -> void:
 				"精校成册",
 				"新印算册末尾须列明校勘者署名并对错漏担责，虽增加了制版与耗材开销，却极大提升了出版公信力并催生印务革新。",
 				[
-					Shared.knowledge(5, 540),
-					Shared.tools(4, 360),
+					Shared.knowledge(15, 540),
+					Shared.tools(12, 360),
 					Shared.research_signal("breakthrough.printing", "活字与印版"),
 				]),
 			Shared.option(
@@ -246,8 +249,8 @@ static func append(catalog) -> void:
 				"商印繁荣",
 				"印刷所按酬金次序满负荷运转，出版业产出与知识流通同步提速。但错漏百出的廉价手册流入坊间，引发多起商事纠纷。",
 				[
-					Shared.manufacturing(4, 540),
-					Shared.knowledge(2, 360),
+					Shared.manufacturing(12, 540),
+					Shared.knowledge(8, 360),
 					Shared.bias(Ids.TAG_MARKET, 1.20, 540, "市面类事件权重 ×1.2，540 日"),
 				]),
 		],
@@ -266,6 +269,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 6,
 		"max_era_index": 9,
+		"required_technologies": ["tech.textile_machinery"],
 		"conditions": [
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "merchant", "float_value": 0.02},
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 3},
@@ -294,25 +298,25 @@ static func append(catalog) -> void:
 				"产权确立",
 				"专利署收取登记规费并签发独占证书，发明者权益获得法律保障。技术授权逐步规范，科研热情与制造业升级双双受惠。",
 				[
-					Shared.cash_in(1.5, 540, "向本地人数最多的{primary_profession}征收其现金的 1.5%（专利证书的登记费）"),
-					Shared.knowledge(3, 540),
-					Shared.manufacturing(3, 540),
+					Shared.cash_in(4, 540, "向本地人数最多的{primary_profession}征收其现金的 4%（专利证书的登记费）"),
+					Shared.knowledge(10, 540),
+					Shared.manufacturing(10, 540),
 				]),
 			Shared.option(
 				"deny_the_patent", "驳回垄断申请，允许全城仿制",
 				"广为仿造",
 				"新式纺车迅速在各作坊普及，短期内纺织产能显著提升。但发明者血本无归，匠人纷纷藏匿诀窍，本地技术创新陷入低谷。",
 				[
-					Shared.knowledge(-3, 540),
-					Shared.manufacturing(4, 540),
+					Shared.knowledge(-10, 540),
+					Shared.manufacturing(12, 540),
 				]),
 			Shared.option(
 				"buy_it_public", "国库出资买断，向全境公开",
 				"公购开源",
 				"国家拨款买断图纸并张榜公开，工匠与工场皆可免费仿制。科研界大受鼓舞，劳工与坊间对新器具的推广议论纷纷。",
 				[
-					Shared.cash_out(2.0, 720, "国库拨付本地人数最多的{primary_profession}，占国库现金 2%（买断法子的钱）"),
-					Shared.knowledge(5, 540),
+					Shared.cash_out(5, 720, "国库拨付本地人数最多的{primary_profession}，占国库现金 5%（买断法子的钱）"),
+					Shared.knowledge(15, 540),
 					Shared.bias(Ids.TAG_LABOR, 1.15, 540),
 				]),
 		],
@@ -331,6 +335,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 3,
 		"max_era_index": 5,
+		"required_technologies": ["tech.scholarly_academies"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 3},
 			{"op": Op.POPULATION_GTE, "int_value": 15},
@@ -359,16 +364,16 @@ static func append(catalog) -> void:
 				"寒门入仕",
 				"考卷严格糊名誊录，半数以上名额为寒门子弟所得。虽摊派了誊录考费，本地与全国的学术人才选拔质量却显著提升。",
 				[
-					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（誊录与纸墨，按户摊）"),
-					Shared.knowledge(4, 540),
-					Shared.country_sector("knowledge", 2, 540),
+					Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（誊录与纸墨，按户摊）"),
+					Shared.knowledge(12, 540),
+					Shared.country_sector("knowledge", 6, 540),
 				]),
 			Shared.option(
 				"take_recommendations", "沿用乡绅保举，稳固地方秩序",
 				"门阀旧例",
 				"录取名额大多落入豪绅与大商子弟之手，地方既得利益集团深感满意，秩序波澜不惊。但寒门断了晋升之念，学风日趋萎靡。",
 				[
-					Shared.knowledge(-3, 540),
+					Shared.knowledge(-10, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 			Shared.option(
@@ -376,7 +381,7 @@ static func append(catalog) -> void:
 				"新题风波",
 				"书院力排众议将实用算学纳入主考，一批精于测算的新锐脱颖而出。大批专攻旧经的落榜举子聚众抗议，地方舆情骤然紧张。",
 				[
-					Shared.knowledge(3, 540),
+					Shared.knowledge(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 		],
@@ -395,6 +400,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 7,
 		"max_era_index": 9,
+		"required_technologies": ["tech.experimental_science"],
 		"conditions": [
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "scholar", "float_value": 0.01},
 			{"op": Op.POPULATION_GTE, "int_value": 12},
@@ -423,24 +429,24 @@ static func append(catalog) -> void:
 				"海归兴学",
 				"地方按户摊派部分川资以扩大公派规模，大批学子负笈海外并带回前沿译著与仪具，本地与全国学术水准稳步跃升。",
 				[
-					Shared.cash_in(1.5, 540, "向本地人数最多的{primary_profession}征收其现金的 1.5%（各家摊的川资）"),
-					Shared.knowledge(4, 720),
-					Shared.country_sector("knowledge", 2, 540),
+					Shared.cash_in(4, 540, "向本地人数最多的{primary_profession}征收其现金的 4%（各家摊的川资）"),
+					Shared.knowledge(12, 720),
+					Shared.country_sector("knowledge", 6, 540),
 				]),
 			Shared.option(
 				"self_funded_only", "仅发官方护照，鼓励自费出洋",
 				"人才外流",
 				"自费留学生多滞留海外谋职，数年间归国者寥寥。书院讲席日渐空虚，资本与口粮外耗更令地方生计略感吃紧。",
 				[
-					Shared.knowledge(-3, 720),
-					Shared.staple(3, 540),
+					Shared.knowledge(-10, 720),
+					Shared.staple(10, 540),
 				]),
 			Shared.option(
 				"bind_them_by_contract", "签署严苛效忠契，违约追责家族",
 				"契约风波",
 				"严苛的服务契约确保了部分新学人才回流任教，知识产出得以增长。但官府向滞留者家族追责引发多起冲突，民怨随之抬头。",
 				[
-					Shared.knowledge(3, 720),
+					Shared.knowledge(10, 720),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 		],
@@ -459,6 +465,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 7,
 		"max_era_index": 9,
+		"required_technologies": ["tech.experimental_science"],
 		"conditions": [
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "scholar", "float_value": 0.02},
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 3},
@@ -487,30 +494,30 @@ static func append(catalog) -> void:
 				"邮戳定案",
 				"学术公会收取核验驿费并正式确立挂号邮戳优先制，虽有落选者不平，清晰可循的裁定标准却令科研发表秩序大为稳固。",
 				[
-					Shared.knowledge(4, 540),
-					Shared.cash_in(1.0, 360, "向本地人数最多的{primary_profession}征收其现金的 1%（挂号信的驿费）"),
+					Shared.knowledge(12, 540),
+					Shared.cash_in(3, 360, "向本地人数最多的{primary_profession}征收其现金的 3%（挂号信的驿费）"),
 				]),
 			Shared.option(
 				"share_the_signature", "强制两家并列署名，平息争端",
 				"和稀泥署名",
 				"期刊强令双方并列署名，技术迅速流入工场带动了制造产出。但首创者深感不公，学术界对署名权威的信任随之滑坡。",
 				[
-					Shared.knowledge(-3, 540),
-					Shared.manufacturing(2, 360),
+					Shared.knowledge(-10, 540),
+					Shared.manufacturing(8, 360),
 				]),
 			Shared.gamble(
 				"seal_both_and_wait", "封存双稿，延请外埠权威仲裁",
 				Shared.branch(42598, "外埠仲裁服众", # 65%
 					"外埠资深学者与大匠仔细比对草稿改痕后厘清先后，双稿如实刊行并载明脉络。严谨的同行仲裁机制赢得全国学界推崇。",
 					[
-						Shared.knowledge(5, 540),
-						Shared.country_sector("knowledge", 3, 540),
+						Shared.knowledge(15, 540),
+						Shared.country_sector("knowledge", 8, 540),
 					]),
 				Shared.branch(22938, "仲裁无果错失先机", # 35%
 					"外埠仲裁久拖未决并将双稿退回，期间邻邦已抢先量产同类机械。本地学界与工场双双蒙损，指责当局推诿的舆论四起。",
 					[
-						Shared.knowledge(-4, 540),
-						Shared.manufacturing(-2, 360),
+						Shared.knowledge(-12, 540),
+						Shared.manufacturing(-8, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 					])),
 		],

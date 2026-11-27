@@ -71,6 +71,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 2,
 		"max_era_index": 7,
+		"required_technologies": ["tech.writing"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 3},
 			{"op": Op.POPULATION_GTE, "int_value": 12},
@@ -99,8 +100,8 @@ static func append(catalog) -> void:
 				"法不阿贵",
 				"统一法典颁行各乡，去除了地方豪强的世袭署名，明确了水利与农事权责。成文法威信大增，但特权被削的乡绅暗中制造了不少阻力。",
 				[
-					Shared.knowledge(4, 540),
-					Shared.agriculture(2, 360),
+					Shared.knowledge(12, 540),
+					Shared.agriculture(8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
@@ -108,8 +109,8 @@ static func append(catalog) -> void:
 				"兼容旧例",
 				"法典逐条附注了历代立例渊源与拾穗旧俗，虽然增印刊刻增加了地方摊派，但各阶层均感诉求受重视，社会秩序得以平稳过渡。",
 				[
-					Shared.knowledge(3, 540),
-					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（抄条与刻工的摊派）"),
+					Shared.knowledge(10, 540),
+					Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（抄条与刻工的摊派）"),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 			Shared.option(
@@ -117,8 +118,8 @@ static func append(catalog) -> void:
 				"唯留刑罚",
 				"复杂的分水细则被全数删去，法典仅保留简明的违约罚则。司法体系虽因此高效统一，但春耕时节的水源争端却令农事蒙受损失。",
 				[
-					Shared.knowledge(5, 540),
-					Shared.agriculture(-3, 540),
+					Shared.knowledge(15, 540),
+					Shared.agriculture(-10, 540),
 				]),
 		],
 	}))
@@ -165,17 +166,17 @@ static func append(catalog) -> void:
 				"原物归主",
 				"耕牛被判归原主，避免了农耕受损，商行的购置损失则由地方摊派补偿。此举维护了基层产权与司法公信，唯独加重了民众短期负担。",
 				[
-					Shared.agriculture(3, 540),
-					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（摊还商九的牛价）"),
-					Shared.knowledge(2, 360),
+					Shared.agriculture(10, 540),
+					Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（摊还商九的牛价）"),
+					Shared.knowledge(8, 360),
 				]),
 			Shared.option(
 				"award_to_the_buyer", "判归商行，维护善意市场交易",
 				"保护商易",
 				"判决确立了公开市场交易优先的原则，商行与作坊信心大增，市场秩序趋稳。但失牛农户孤立无援，周边农业生产积极性受到打击。",
 				[
-					Shared.agriculture(-3, 540),
-					Shared.manufacturing(2, 360),
+					Shared.agriculture(-10, 540),
+					Shared.manufacturing(8, 360),
 					Shared.bias(Ids.TAG_MARKET, 0.90, 540),
 				]),
 			Shared.gamble(
@@ -183,15 +184,15 @@ static func append(catalog) -> void:
 				Shared.branch(36045, "耕牛识途", # 55%
 					"耕牛出圈后径直返回农户家中，围观民众无不称奇，地方怨气随之消散。虽然缺乏法理依据令民生开销略有波动，但农事得以保全。",
 					[
-						Shared.agriculture(3, 540),
-						Shared.staple(3, 540),
+						Shared.agriculture(10, 540),
+						Shared.staple(10, 540),
 						Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 					]),
 				Shared.branch(29491, "牛随商去", # 45%
 					"耕牛在路口徘徊后跟随商行伙计离去，诉讼就此尘埃落定。这一带有赌博色彩的裁断虽留下了奇闻判例，却令基层生计压力雪上加霜。",
 					[
-						Shared.staple(6, 540),
-						Shared.knowledge(2, 360),
+						Shared.staple(18, 540),
+						Shared.knowledge(8, 360),
 					])),
 		],
 	}))
@@ -238,23 +239,23 @@ static func append(catalog) -> void:
 				"欠债者被关入债狱，严厉的履约信号保住了商业借贷信心与作坊资金链。但家属被迫变卖家产筹款，底层民众对严苛债法的怨愤迅速升级。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
-					Shared.manufacturing(2, 360),
+					Shared.manufacturing(8, 360),
 				]),
 			Shared.option(
 				"work_off_the_debt", "免于收监，发往官营工坊劳役",
 				"以工抵债",
 				"欠债者被编入窑场与工坊做工，工钱按比例划归债主。此举为制造业补充了廉价劳力，却因抽走青壮劳动力而导致本地农产下滑。",
 				[
-					Shared.manufacturing(3, 540),
-					Shared.agriculture(-3, 540),
+					Shared.manufacturing(10, 540),
+					Shared.agriculture(-10, 540),
 				]),
 			Shared.option(
 				"the_village_guarantees", "地方垫付，由其日后劳作分期偿还",
 				"公保展期",
 				"地方按户摊派资金先行清偿商债，再由债务人分期劳作归还公账。此举既安抚了底层情绪又稳住了生产，只是短期内加重了民众现金负担。",
 				[
-					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（先垫甘丙的债，再从工钱里扣）"),
-					Shared.manufacturing(2, 540),
+					Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（先垫甘丙的债，再从工钱里扣）"),
+					Shared.manufacturing(8, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 				]),
 		],
@@ -273,6 +274,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 2,
 		"max_era_index": 8,
+		"required_technologies": ["tech.writing"],
 		"conditions": [
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "agricultural_worker", "float_value": 0.30},
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 2},
@@ -301,18 +303,18 @@ static func append(catalog) -> void:
 				"依契重丈",
 				"官署派员重新丈量并核发清晰新契，确立了书面契约的最高效力。虽然丈量与登记费用由地方摊派，但农业生产与产权秩序双双受益。",
 				[
-					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（丈量与写新契的摊派）"),
-					Shared.agriculture(2, 360),
-					Shared.knowledge(2, 360),
+					Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（丈量与写新契的摊派）"),
+					Shared.agriculture(8, 360),
+					Shared.knowledge(8, 360),
 				]),
 			Shared.option(
 				"follow_the_stone", "采信旧标，争议土地收归公用",
 				"收归公地",
 				"争议地块被划为地方公用土地，暂时平息了私人间的土地争讼并丰富了判例档案。但缺乏明确经营主体的土地很快荒芜，拖累了农业产出。",
 				[
-					Shared.agriculture(-3, 540),
+					Shared.agriculture(-10, 540),
 					Shared.bias(Ids.TAG_LAND, 0.85, 540),
-					Shared.knowledge(2, 360),
+					Shared.knowledge(8, 360),
 				]),
 			Shared.option(
 				"wait_a_year", "暂行查封，延至来年重新勘定",
@@ -320,7 +322,7 @@ static func append(catalog) -> void:
 				"争议田亩被官署拉绳封存，严禁双方耕种。搁置裁决虽为文吏赢得了核查时间，但无端荒废的农田与漫长的等待激起了民众普遍不满。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
-					Shared.knowledge(2, 360),
+					Shared.knowledge(8, 360),
 					Shared.bias(Ids.TAG_LAND, 0.90, 540),
 				]),
 		],
@@ -367,23 +369,23 @@ static func append(catalog) -> void:
 				"官署顺势采信了改口证词，案卷迅速封存，避免了作坊与商号的停业牵连。但公然姑息伪证重创了司法公信，民间对官商勾结的质疑四起。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
-					Shared.manufacturing(2, 360),
+					Shared.manufacturing(8, 360),
 				]),
 			Shared.option(
 				"lock_the_witness", "以伪证罪收监，逼其交代实情",
 				"严惩伪证",
 				"改口证人被立即投入羁押，数日后便吐露了受胁迫的实情。严厉打击伪证维护了法制尊严与文书严谨，代价是地方分摊了额外的司法开销。",
 				[
-					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（牢饭与差役的摊派）"),
-					Shared.knowledge(3, 540),
+					Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（牢饭与差役的摊派）"),
+					Shared.knowledge(10, 540),
 				]),
 			Shared.option(
 				"copy_the_roll_again", "推翻旧卷，逐一重审全部证人",
 				"全面复审",
 				"官署重录证人名册并逐一严密复核，最终还原了案件真相，大幅提升了司法权威与社会安定。然而冗长的复审冻结了涉案货物，令制造业受损。",
 				[
-					Shared.manufacturing(-3, 540),
-					Shared.knowledge(5, 540),
+					Shared.manufacturing(-10, 540),
+					Shared.knowledge(15, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 				]),
 		],
@@ -431,24 +433,24 @@ static func append(catalog) -> void:
 				"所有在押人员悉数获释，为本地作坊补充了急需的劳力。但未加甄别的宽纵很快引发治安反弹，商民与受害者对治安恶化的怨愤迅速蔓延。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
-					Shared.manufacturing(2, 360),
+					Shared.manufacturing(8, 360),
 				]),
 			Shared.option(
 				"pardon_only_debtors", "区别对待，仅赦债囚严留重犯",
 				"分流特赦",
 				"欠债者获释返乡重拾农耕，暴力重犯则继续服刑以安抚受害者，社会情绪趋于缓和。但债主收回欠款无望，资金紧缩令本地制造业受挫。",
 				[
-					Shared.manufacturing(-3, 540),
+					Shared.manufacturing(-10, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
-					Shared.agriculture(2, 360),
+					Shared.agriculture(8, 360),
 				]),
 			Shared.option(
 				"commute_not_pardon", "不予释放，一律改为酌情减刑",
 				"减刑留押",
 				"官署顶住压力未放一人，仅按律缩减了部分刑期。严守法度提升了司法公信与行政素养，但维持满员羁押的日常开支仍需由地方承担。",
 				[
-					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（狱粮与修牢的摊派）"),
-					Shared.knowledge(3, 540),
+					Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（狱粮与修牢的摊派）"),
+					Shared.knowledge(10, 540),
 				]),
 		],
 	}))
@@ -466,6 +468,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 4,
 		"max_era_index": 9,
+		"required_technologies": ["tech.iron_smelting"],
 		"conditions": [
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "merchant", "float_value": 0.03},
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 2},
@@ -494,16 +497,16 @@ static func append(catalog) -> void:
 				"商保成交",
 				"专业保人正式签署担保契约，满载铁器的车队顺利启程，带动了本地贸易与制造活力。虽然佣金与契税摊派加重了短期成本，但风险得以隔离。",
 				[
-					Shared.trade_capacity(4, 360),
-					Shared.manufacturing(2, 360),
-					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（保钱与写契的摊派）"),
+					Shared.trade_capacity(10, 360),
+					Shared.manufacturing(8, 360),
+					Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（保钱与写契的摊派）"),
 				]),
 			Shared.option(
 				"ship_half", "放弃担保，削减半数发货规模",
 				"缩量慎行",
 				"商号放弃担保并削减了半数货量，余货积压在库房中。此举虽规避了违约风险并稳住了市场秩序，却让本地冶铁制造业蒙受了订单损失。",
 				[
-					Shared.manufacturing(-3, 540),
+					Shared.manufacturing(-10, 540),
 					Shared.bias(Ids.TAG_MARKET, 0.85, 540),
 				]),
 			Shared.option(
@@ -512,8 +515,8 @@ static func append(catalog) -> void:
 				"官署直接以公信力作保，促成了全额交易并大幅提振了商运与制造。然而入秋后外地客商违约潜逃，追偿纠纷瞬间涌向官署，引发剧烈风波。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
-					Shared.trade_capacity(6, 360),
-					Shared.manufacturing(2, 360),
+					Shared.trade_capacity(15, 360),
+					Shared.manufacturing(8, 360),
 				]),
 		],
 	}))

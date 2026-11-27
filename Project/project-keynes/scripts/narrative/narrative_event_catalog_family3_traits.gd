@@ -26,6 +26,7 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 		"cooldown_days": 900,
 		"min_era_index": 6,
 		"max_era_index": 8,
+		"required_technologies": ["tech.commercial_estates"],
 		"conditions": [
 			{"op": Op.HAS_FAMILY_TRAIT, "target_key": "i001_agrarian", "bool_value": true},
 			{"op": Op.FAMILY_PRESTIGE_GTE, "int_value": 2},
@@ -50,7 +51,7 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 				"官署动用武力完成圈地，重农大族被迫放弃祖传耕作传统。集约化经营显著提升了城郊农业总产出，但强拆与夺地引发的激烈对抗令全城动荡不安。",
 				[
 					TraitChanges.remove("i001_agrarian", "重农"),
-					Shared.agriculture(5, 540),
+					Shared.agriculture(15, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 540),
 				]),
 			Shared.option(
@@ -58,8 +59,8 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 				"易地拓荒双赢收场",
 				"国库拨款补偿并为该族在河对岸划拨水利更佳的新垦区。大族顺势转型为锐意进取的拓荒力量，新旧产业各得其所，本地农业产出稳步增长。",
 				[
-					Shared.cash_out(2.0, 360),
-					Shared.agriculture(2, 540),
+					Shared.cash_out(5, 360),
+					Shared.agriculture(8, 540),
 					TraitChanges.grant("i025_pioneer", "拓荒者"),
 				]),
 			Shared.option(
@@ -67,7 +68,7 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 				"农田得保工商受阻",
 				"地方官署撤销了圈地许可，传统农田安然无恙，城郊紧张气氛随之缓和。但牧场与下游毛纺原料供应计划被迫搁浅，本地制造业扩张步伐明显放缓。",
 				[
-					Shared.manufacturing(-3, 360),
+					Shared.manufacturing(-10, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
 		],
@@ -110,14 +111,14 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 					"特许状落地后，该族车队迅速垄断北方皮货贸易，跻身家大业大的豪商巨贾。全国贸易运力大幅提升，稳定的特许收益亦随之充实国库。",
 					[
 						TraitChanges.grant("i026_magnate", "家大业大"),
-						Shared.trade_capacity(6, 540),
-						Shared.cash_in(1.0, 360),
+						Shared.trade_capacity(15, 540),
+						Shared.cash_in(3, 360),
 					]),
 				Shared.branch(26214, "同行控告特许暂扣", # 40%
 					"其余商帮联名状告官商勾结，朝廷被迫介入暂扣特许状彻查。官府虽没收了部分保证金，但混乱的调查过程令本地制造与商贸双双受挫，怨声四起。",
 					[
-						Shared.cash_in(1.0, 360),
-						Shared.manufacturing(-3, 360),
+						Shared.cash_in(3, 360),
+						Shared.manufacturing(-10, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 					])),
 			Shared.option(
@@ -125,7 +126,7 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 				"公开竞标国库大赚",
 				"度支司主持了激烈竞标，商路由出价更高的外来商帮夺得，国库收获丰厚标金。失标的本地大族被迫改走水路，对官府的怨怼却已悄然结下。",
 				[
-					Shared.cash_in(2.0, 360),
+					Shared.cash_in(5, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
@@ -133,7 +134,7 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 				"商路冷清众商失望",
 				"地方官署退回了特许呈文，北方商路继续处于无序分散状态。缺乏大商帮统筹致使北来原料与货流缩减，本地手工业随之降温，商界颇多怨言。",
 				[
-					Shared.manufacturing(-3, 360),
+					Shared.manufacturing(-10, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 				]),
 		],
@@ -176,8 +177,8 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 				"地方官署批准大族工场脱离行会独立经营，该族迅速转型为高效扩张的制造世家。订单纷至沓来，本地制造业产出与工具供给双双迎来跃升。",
 				[
 					TraitChanges.grant("i003_manufacturing", "制造世家"),
-					Shared.manufacturing(4, 540),
-					Shared.tools(5, 540),
+					Shared.manufacturing(12, 540),
+					Shared.tools(15, 540),
 				]),
 			Shared.option(
 				"back_the_guild", "维护行会，削减名额",
@@ -185,7 +186,7 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 				"官署裁定严格执行行会名额限制，多余匠人被迫转行离去，大族从此失去工匠世家根基。传统行业秩序与街面稳定得以维持，但本地制造产能显著萎缩。",
 				[
 					TraitChanges.remove("j004_craft", "工匠世家"),
-					Shared.manufacturing(-4, 360),
+					Shared.manufacturing(-12, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
 			Shared.option(
@@ -193,7 +194,7 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 				"勉强调停暗流未息",
 				"国库拨款补贴了部分学徒安置费用，换取行会放宽名额、大族上调工价。表面上的僵局虽暂告化解，但新旧生产体制间的深层矛盾并未根除。",
 				[
-					Shared.cash_out(1.5, 360),
+					Shared.cash_out(4, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 				]),
 		],
@@ -212,6 +213,7 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 		"cooldown_days": 900,
 		"min_era_index": 3,
 		"max_era_index": 8,
+		"required_technologies": ["tech.writing"],
 		"conditions": [
 			{"op": Op.HAS_FAMILY_TRAIT, "target_key": "j009_letters", "bool_value": true},
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "scholar", "float_value": 0.01},
@@ -236,7 +238,7 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 				"朝廷下令撤回查抄人员，藏书楼得以完好保留。本地大族深受感召，倾力资助学术研究，全城知识产出大幅跃升，但宽松的舆论氛围也让激进思潮暗中滋长。",
 				[
 					TraitChanges.grant("i005_knowledge", "学术赞助"),
-					Shared.knowledge(5, 540),
+					Shared.knowledge(15, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 			Shared.option(
@@ -245,7 +247,7 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 				"违禁典籍被装匣封存带走，大族书香门第的荣耀随之凋零。城中异议声音迅速沉寂，社会秩序趋于安定，但本地学术研究与思想活力也蒙受重创。",
 				[
 					TraitChanges.remove("j009_letters", "书香门第"),
-					Shared.knowledge(-4, 360),
+					Shared.knowledge(-12, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
 			Shared.option(
@@ -253,8 +255,8 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 				"半数焚毁折中结案",
 				"官署拨付安抚款项并采取折中处置，仅当众销毁敏感卷帙，默许大族保留其余学术注疏。风波得以体面平息，但典籍残缺仍令本地知识积累略有倒退。",
 				[
-					Shared.knowledge(-2, 360),
-					Shared.cash_out(1.0, 360),
+					Shared.knowledge(-8, 360),
+					Shared.cash_out(3, 360),
 				]),
 		],
 	}))
@@ -295,7 +297,7 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 				"铁腕征税商界震动",
 				"度支司派员强行核查账簿并照章足额征税，国库进项极为丰厚。但数家老字号商铺随之关停，街市冷清，商民对高压税政的愤怒迅速蔓延。",
 				[
-					Shared.cash_in(2.5, 360),
+					Shared.cash_in(6, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 540),
 				]),
 			Shared.option(
@@ -303,8 +305,8 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 				"妥协减税商路更畅",
 				"官署与大族达成闭门协议，略微减让税率换取商帮全面复市。国库仍获得稳健税收，大族则借此进一步拓展商路人脉，带动了全国贸易运力。",
 				[
-					Shared.cash_in(1.0, 360),
-					Shared.trade_capacity(3, 540),
+					Shared.cash_in(3, 360),
+					Shared.trade_capacity(8, 540),
 					TraitChanges.grant("i019_trade", "商路人脉"),
 				]),
 			Shared.option(
@@ -312,7 +314,7 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 				"豁免新税权威受损",
 				"加税告示被悄然撤回，商铺全面复业并带动本地工商业小幅回暖。然而豪强以罢市逼退政令的先例迅速传开，各方势力皆在蠢蠢欲动。",
 				[
-					Shared.manufacturing(2, 360),
+					Shared.manufacturing(8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 		],
@@ -331,6 +333,7 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 6,
 		"max_era_index": 9,
+		"required_technologies": ["tech.steam_power"],
 		"conditions": [
 			{"op": Op.HAS_FAMILY_TRAIT, "target_key": "i029_coastal", "bool_value": true},
 			{"op": Op.ERA_GTE, "int_value": 6},
@@ -355,23 +358,23 @@ static func append(catalog, mul_115: int, mul_120: int) -> void:
 				"国库提供产业转型补贴，大族果断卖船建厂，蜕变为雄心勃勃的制造世家。老旧船坞虽归沉寂，但城外彻夜轰鸣的机器将本地工业产能推上新高。",
 				[
 					TraitChanges.grant("i003_manufacturing", "制造世家"),
-					Shared.manufacturing(5, 540),
-					Shared.cash_out(2.0, 360),
+					Shared.manufacturing(15, 540),
+					Shared.cash_out(5, 360),
 				]),
 			Shared.option(
 				"keep_the_fleet", "扶持航运，维持船队",
 				"坚守海运错失工业",
 				"官署顺应守旧派诉求，协助修缮扩充商船队，全国海运贸易容量得以稳固。但错失工业化转型的窗口，也令本地制造业发展略显滞后。",
 				[
-					Shared.trade_capacity(4, 540),
-					Shared.manufacturing(-2, 360),
+					Shared.trade_capacity(10, 540),
+					Shared.manufacturing(-8, 360),
 				]),
 			Shared.option(
 				"hedge_both", "两头兼顾，分资并进",
 				"分散投资难成气候",
 				"官府出资协调大族同时保留半数船队与小规模厂房。资本分散致使两边皆难成规模，既耗费了财政补贴，也让族内新旧两派的路线争执久拖不决。",
 				[
-					Shared.cash_out(2.0, 360),
+					Shared.cash_out(5, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 				]),
 		],

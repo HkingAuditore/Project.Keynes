@@ -81,6 +81,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 6,
 		"max_era_index": 8,
+		"required_technologies": ["tech.rail_logistics"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 3},
 			{"op": Op.POPULATION_GTE, "int_value": 15},
@@ -110,18 +111,18 @@ static func append(catalog) -> void:
 				"良田易轨",
 				"国库拨款按章程结清地款，路基迅速穿过水田。干线得以笔直铺设，但大片良田被占令本地农产下滑，口粮供给趋紧。",
 				[
-					Shared.agriculture(-6, 540),
-					Shared.cash_out(2.0, 360),
-					Shared.staple(4, 540),
+					Shared.agriculture(-18, 540),
+					Shared.cash_out(5, 360),
+					Shared.staple(12, 540),
 				]),
 			Shared.option(
 				"move_the_line", "修改勘测路线，绕坡避开农田",
 				"绕坡保田",
 				"铁路改由荒坡蜿蜒绕行，水田得以保全且农产微增。但额外路基工程大幅增加了工具与工料消耗，制造产能短期受挤压。",
 				[
-					Shared.tools(6, 540),
-					Shared.manufacturing(-3, 360),
-					Shared.agriculture(3, 540),
+					Shared.tools(18, 540),
+					Shared.manufacturing(-10, 360),
+					Shared.agriculture(10, 540),
 					Shared.bias(Ids.TAG_LAND, 1.15, 540),
 				]),
 			Shared.option(
@@ -130,8 +131,8 @@ static func append(catalog) -> void:
 				"征地款迟迟未发，农田与测桩陷入长期拉锯。铁路施工被迫停滞，工料积压拖累制造，乡野怨气与口粮压力随之攀升。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
-					Shared.staple(5, 540),
-					Shared.manufacturing(-2, 360),
+					Shared.staple(15, 540),
+					Shared.manufacturing(-8, 360),
 				]),
 		],
 	}))
@@ -149,6 +150,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 6,
 		"max_era_index": 8,
+		"required_technologies": ["tech.rail_logistics"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 3},
 			{"op": Op.POPULATION_GTE, "int_value": 15},
@@ -178,18 +180,18 @@ static func append(catalog) -> void:
 				"破旧立站",
 				"旧城商街被征拆过半，商户补缴的摊派充实了国库，站口直连商埠令贸易运力大增。但大批传统作坊被迫迁散，制造产能受损。",
 				[
-					Shared.cash_in(1.5, 360),
-					Shared.trade_capacity(4, 540),
-					Shared.manufacturing(-4, 540),
+					Shared.cash_in(4, 360),
+					Shared.trade_capacity(10, 540),
+					Shared.manufacturing(-12, 540),
 				]),
 			Shared.option(
 				"build_on_the_flats", "城外荒滩设站，预留工业腹地",
 				"城郊新站",
 				"车站立于城外空地并迅速吸引新式工场集聚，制造业产能显著跃升。然而配套修路推高了营造耗费，周边耕地亦被大片侵占。",
 				[
-					Shared.manufacturing(5, 540),
-					Shared.build_cost(4, 540),
-					Shared.agriculture(-4, 540),
+					Shared.manufacturing(15, 540),
+					Shared.build_cost(10, 540),
+					Shared.agriculture(-12, 540),
 				]),
 			Shared.option(
 				"make_a_road_first", "先筑城郊便道，暂设临时停靠",
@@ -197,9 +199,9 @@ static func append(catalog) -> void:
 				"财政拨款先修土路衔接城外岔道，避免了激烈拆迁并略微改善商路。但雨季泥泞严重拖慢货流周转，本地制造与市面皆受其累。",
 				[
 					Shared.bias(Ids.TAG_MARKET, 1.20, 540),
-					Shared.manufacturing(-3, 540),
-					Shared.trade_capacity(2, 540),
-					Shared.cash_out(1.0, 180),
+					Shared.manufacturing(-10, 540),
+					Shared.trade_capacity(6, 540),
+					Shared.cash_out(3, 180),
 				]),
 		],
 	}))
@@ -217,6 +219,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 6,
 		"max_era_index": 8,
+		"required_technologies": ["tech.rail_logistics"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 4},
 			{"op": Op.POPULATION_GTE, "int_value": 18},
@@ -246,18 +249,18 @@ static func append(catalog) -> void:
 				"统一校准",
 				"当局斥资购置精密校时器具统一全城钟表，虽增加了仪器耗材开支，却令全境工业协同与近代计量观念迈上新台阶。",
 				[
-					Shared.knowledge(4, 540),
-					Shared.tools(6, 540),
-					Shared.country_sector("manufacturing", 4, 540),
+					Shared.knowledge(12, 540),
+					Shared.tools(18, 540),
+					Shared.country_sector("manufacturing", 10, 540),
 				]),
 			Shared.option(
 				"follow_the_railway", "强制推行铁路时，全城依表运转",
 				"铁道标准时",
 				"列车严格按铁路局时刻表准点发车，跨城贸易运力与科学时间观念大增。但旧式作坊一时难以适应新节奏，本地制造短期受挫。",
 				[
-					Shared.trade_capacity(5, 540),
-					Shared.manufacturing(-4, 540),
-					Shared.knowledge(3, 540),
+					Shared.trade_capacity(12, 540),
+					Shared.manufacturing(-12, 540),
+					Shared.knowledge(10, 540),
 				]),
 			Shared.option(
 				"each_station_its_own", "维持各城旧钟，各站自行对表",
@@ -265,8 +268,8 @@ static func append(catalog) -> void:
 				"各站沿用地方旧时，单线区间屡现对开避让延误，商贸纠纷频发。虽乡村农时未受干扰，本地工商业效率却因此折损。",
 				[
 					Shared.bias(Ids.TAG_MARKET, 1.25, 540),
-					Shared.manufacturing(-3, 540),
-					Shared.agriculture(3, 540),
+					Shared.manufacturing(-10, 540),
+					Shared.agriculture(10, 540),
 				]),
 		],
 	}))
@@ -284,6 +287,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 6,
 		"max_era_index": 8,
+		"required_technologies": ["tech.rail_logistics"],
 		"conditions": [
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "merchant", "float_value": 0.02},
 			{"op": Op.POPULATION_GTE, "int_value": 18},
@@ -312,18 +316,18 @@ static func append(catalog) -> void:
 				"薄利广运",
 				"三等车厢载客量激增，城乡人口流动与商旅吞吐同步跃升。路局的客运缺口则通过向本地商号摊征附加费予以填补。",
 				[
-					Shared.cash_in(1.0, 360),
-					Shared.trade_capacity(4, 540),
-					Shared.birth(3, 540),
+					Shared.cash_in(3, 360),
+					Shared.trade_capacity(10, 540),
+					Shared.birth(10, 540),
 				]),
 			Shared.option(
 				"charge_by_distance", "推行阶梯里程制，优待短途",
 				"里程分档",
 				"短途通勤变得平易，城郊佣工与口粮周转随之改善，贸易运力小幅上升。但长途原料转运负担加重，拖累了本地制造产能。",
 				[
-					Shared.manufacturing(-4, 540),
-					Shared.trade_capacity(3, 540),
-					Shared.staple(-3, 540),
+					Shared.manufacturing(-12, 540),
+					Shared.trade_capacity(8, 540),
+					Shared.staple(-10, 540),
 				]),
 			Shared.option(
 				"add_a_slow_train", "维持现行资费，增开站站慢车",
@@ -331,8 +335,8 @@ static func append(catalog) -> void:
 				"低速慢车加挂于干线之后，货运与工业通勤得以维持运转。但漫长候车与资费门槛未解，底层乘客的不满情绪持续累积。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
-					Shared.manufacturing(3, 540),
-					Shared.trade_capacity(2, 540),
+					Shared.manufacturing(10, 540),
+					Shared.trade_capacity(6, 540),
 				]),
 		],
 	}))
@@ -350,6 +354,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 900,
 		"min_era_index": 6,
 		"max_era_index": 8,
+		"required_technologies": ["tech.rail_logistics"],
 		"conditions": [
 			{"op": Op.HAS_RIVER, "bool_value": true},
 			{"op": Op.POPULATION_GTE, "int_value": 15},
@@ -378,24 +383,24 @@ static func append(catalog) -> void:
 				Shared.branch(39322, "铁桥顺利合龙", # 60%
 					"钢梁在正午精准落位并锁紧铆钉，两岸干线如期贯通。尽管加急施工略微推高营造耗费，贸易运力与制造产出随即大振。",
 					[
-						Shared.manufacturing(4, 540),
-						Shared.trade_capacity(6, 540),
-						Shared.build_cost(3, 540),
+						Shared.manufacturing(12, 540),
+						Shared.trade_capacity(15, 540),
+						Shared.build_cost(8, 540),
 					]),
 				Shared.branch(26214, "梁体倾覆事故", # 40%
 					"强行合龙导致梁端撞毁桥墩，数名桥工随钢梁坠河遇难。重大工程惨剧重创本地制造业与人口元气，全城舆论哗然。",
 					[
-						Shared.manufacturing(-8, 540),
+						Shared.manufacturing(-24, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.35, 540),
-						Shared.birth(-4, 540),
+						Shared.population_rate(-5),
 					])),
 			Shared.option(
 				"wait_one_season", "遵从总工意见，待枯水期重筑",
 				"稳妥延期",
 				"工程暂停一季，当局通过附加征费维持待工开销，稳住了桥工安全与地方人心，滞留劳力亦顺势支援了沿岸农事。",
 				[
-					Shared.cash_in(1.5, 360),
-					Shared.agriculture(3, 540),
+					Shared.cash_in(4, 360),
+					Shared.agriculture(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 			Shared.option(
@@ -403,10 +408,10 @@ static func append(catalog) -> void:
 				"填堤毁田",
 				"征取两岸田土筑起的石堤虽勉强维系了少量通车，却在头场秋汛中被冲毁半截。沿岸农产大减、口粮趋紧且制造受拖累。",
 				[
-					Shared.agriculture(-5, 540),
-					Shared.staple(6, 540),
-					Shared.manufacturing(-3, 540),
-					Shared.trade_capacity(2, 540),
+					Shared.agriculture(-15, 540),
+					Shared.staple(18, 540),
+					Shared.manufacturing(-10, 540),
+					Shared.trade_capacity(6, 540),
 				]),
 		],
 	}))
@@ -424,6 +429,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 780,
 		"min_era_index": 6,
 		"max_era_index": 8,
+		"required_technologies": ["tech.rail_logistics"],
 		"conditions": [
 			{"op": Op.TERRAIN_IN, "int_list": [
 				TerrainTypeScript.TERRAIN.HILL, TerrainTypeScript.TERRAIN.MOUNTAIN]},
@@ -454,26 +460,26 @@ static func append(catalog) -> void:
 				"险中贯通",
 				"东西掌子面虽略有错位，经紧急扩凿后终获贯通，采掘与干线运力皆得提振。但仓促修整耗去大量工料，拖累本地制造产出。",
 				[
-					Shared.manufacturing(-5, 540),
-					Shared.extraction(4, 540),
-					Shared.trade_capacity(2, 540),
+					Shared.manufacturing(-15, 540),
+					Shared.extraction(12, 540),
+					Shared.trade_capacity(6, 540),
 				]),
 			Shared.option(
 				"sink_a_shaft", "西头停掘，自山脊开凿竖井",
 				"竖井校线",
 				"地方摊筹资金开凿通风竖井，精准校准了隧道轴线并积累了地质测绘经验。但竖井施工消耗大批工具，短期压低了采掘产出。",
 				[
-					Shared.cash_in(2.0, 360),
-					Shared.tools(5, 540),
-					Shared.extraction(-3, 540),
-					Shared.knowledge(3, 540),
+					Shared.cash_in(5, 360),
+					Shared.tools(15, 540),
+					Shared.extraction(-10, 540),
+					Shared.knowledge(10, 540),
 				]),
 			Shared.option(
 				"call_a_surveyor", "停工半月，延请外埠测绘专家",
 				"外聘复测",
 				"外埠测绘团队重新标定轴线并引入新式蒸汽机械理念。但全线停工延误了商货预期，依赖外援亦令本地工程学界颜面受挫。",
 				[
-					Shared.knowledge(-3, 540),
+					Shared.knowledge(-10, 540),
 					Shared.bias(Ids.TAG_MARKET, 1.15, 360),
 					Shared.research_signal("breakthrough.steam_power", "蒸汽动力"),
 				]),
@@ -493,6 +499,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 6,
 		"max_era_index": 8,
+		"required_technologies": ["tech.rail_logistics"],
 		"conditions": [
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 4},
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "merchant", "float_value": 0.02},
@@ -521,8 +528,8 @@ static func append(catalog) -> void:
 				"路局直营",
 				"铁路局接管装卸并统一征收站台作业费，车皮周转与制造供给大为提速。大批被裁汰的脚行苦力集结抗议，劳工矛盾随之升温。",
 				[
-					Shared.manufacturing(4, 540),
-					Shared.cash_in(1.0, 360),
+					Shared.manufacturing(12, 540),
+					Shared.cash_in(3, 360),
 					Shared.bias(Ids.TAG_LABOR, 1.20, 540),
 				]),
 			Shared.option(
@@ -530,8 +537,8 @@ static func append(catalog) -> void:
 				"脚行包干",
 				"脚行保住了按车包干的特权，劳工骚动随之平息。但低效装卸导致车皮严重压站，制造原料断档且本地生活物资周转趋紧。",
 				[
-					Shared.manufacturing(-4, 540),
-					Shared.staple(5, 540),
+					Shared.manufacturing(-12, 540),
+					Shared.staple(15, 540),
 					Shared.bias(Ids.TAG_LABOR, 0.85, 540),
 				]),
 			Shared.option(
@@ -539,9 +546,9 @@ static func append(catalog) -> void:
 				"双轨分管",
 				"货场中线筑墙分治，路局紧急调拨锻铁补充站务，整体贸易运力略有改善。但两套过磅与调度并行，大幅推高了工具损耗。",
 				[
-					Shared.tools(6, 540),
+					Shared.tools(18, 540),
 					Shared.stock("wrought_iron", 12),
-					Shared.trade_capacity(3, 540),
+					Shared.trade_capacity(8, 540),
 				]),
 		],
 	}))

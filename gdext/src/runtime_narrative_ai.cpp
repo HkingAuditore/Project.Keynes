@@ -117,12 +117,12 @@ String ai_effect_amount_label(const NarrativeEffect &effect, const String &good_
             good_name + " " + amount;
     }
     case NarrativeEffect::SET_FLAG:
-        return String::utf8("标记 ") + text(effect.key) + String::utf8("，") + days + String::utf8(" 日");
+        return String::utf8("留下地方记事，") + days + String::utf8(" 日");
     case NarrativeEffect::WEIGHT_BIAS:
-        return String::utf8("事件权重 ") + (effect.value >= 0 ? "+" : "") +
-            String::num_int64(effect.value) + String::utf8("，") + days + String::utf8(" 日");
+        return String::utf8(effect.value >= 0 ? "相关变故更易发生，" : "相关变故明显减少，") +
+            days + String::utf8(" 日");
     case NarrativeEffect::SCHEDULE:
-        return days + String::utf8(" 日后触发 ") + text(effect.key);
+        return days + String::utf8(" 日后引发后续变故");
     default:
         return {};
     }

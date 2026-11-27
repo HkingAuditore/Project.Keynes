@@ -75,6 +75,7 @@ static func append(catalog) -> void:
 		"one_shot": true,
 		"min_era_index": 4,
 		"max_era_index": 7,
+		"required_technologies": ["tech.bills_of_exchange"],
 		"blocked_story_flags": [String(Ids.FLAG_WARLORD)],
 		"conditions": [
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "merchant", "float_value": 0.03},
@@ -112,17 +113,17 @@ static func append(catalog) -> void:
 				Shared.branch(39322, "借券售罄", # 60%
 					"首批借券当日售罄并加印发行，水利工程得以顺利动工。然而渡口税权落入商帮之手，本地制造与营建成本均因债息负担而承压。",
 					[
-						Shared.cash_in(3.0, 540, "向本地人数最多的{primary_profession}征借其现金的 3%（借券，以渡口税作抵）"),
-						Shared.manufacturing(-3, 540),
-						Shared.build_cost(4, 540),
+						Shared.cash_in(8, 540, "向本地人数最多的{primary_profession}征借其现金的 8%（借券，以渡口税作抵）"),
+						Shared.manufacturing(-10, 540),
+						Shared.build_cost(10, 540),
 						Shared.bias(Ids.TAG_LABOR, 1.15, 360),
 						Shared.schedule(Ids.EVT_FISCAL_AUDIT, 180, "查账"),
 					]),
 				Shared.branch(26214, "认购遇冷", # 40%
 					"商帮对朝廷信用存疑，借券仅售出寥寥数张。国库被迫临时垫付部分工钱，工程半途停摆，军民怨言迅速发酵。",
 					[
-						Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征借其现金的 1%（借券只卖出六张）"),
-						Shared.cash_out(2.0, 360),
+						Shared.cash_in(3, 540, "向本地人数最多的{primary_profession}征借其现金的 3%（借券只卖出六张）"),
+						Shared.cash_out(5, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 						Shared.schedule(Ids.EVT_FISCAL_AUDIT, 240, "查账"),
 					])),
@@ -131,8 +132,8 @@ static func append(catalog) -> void:
 				"钱监开炉",
 				"钱监连夜点火开炉，并按官价收缴市面铜料铸造新钱支饷。军营哗变虽被暂时压下，但轻薄新钱流入市场已埋下货币贬值的祸根。",
 				[
-					Shared.manufacturing(4, 360),
-					Shared.cash_in(2.0, 540, "向本地人数最多的{primary_profession}征收其现金的 2%（官价收铜、新钱支饷）"),
+					Shared.manufacturing(12, 360),
+					Shared.cash_in(5, 540, "向本地人数最多的{primary_profession}征收其现金的 5%（官价收铜、新钱支饷）"),
 					Shared.schedule(Ids.EVT_FISCAL_DEBASED_COIN, 120, "小钱"),
 				]),
 			Shared.option(
@@ -140,8 +141,8 @@ static func append(catalog) -> void:
 				"工程搁置",
 				"地方强行摊派勉强凑齐半月军饷，河堤工程却半途而废。次年春汛低田积水难退，农产受损，工匠与民众的不满情绪持续累积。",
 				[
-					Shared.cash_in(1.0, 360, "向本地人数最多的{primary_profession}征收其现金的 1%（按亩摊派，先发一半饷）"),
-					Shared.agriculture(-4, 540),
+					Shared.cash_in(3, 360, "向本地人数最多的{primary_profession}征收其现金的 3%（按亩摊派，先发一半饷）"),
+					Shared.agriculture(-12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 720),
 					Shared.schedule(Ids.EVT_FISCAL_AUDIT, 300, "查账"),
 					Shared.schedule(Ids.EVT_LABOR_BROKEN_LOOM, 180, "砸机器"),
@@ -169,8 +170,8 @@ static func append(catalog) -> void:
 				"币制失信",
 				"钱监继续日夜赶工，铸息源源不断充入国库，冶铸作坊亦随之繁忙。但民间对官钱信心彻底崩塌，动荡暗流在市井间迅速涌动。",
 				[
-					Shared.manufacturing(4, 360),
-					Shared.cash_in(2.0, 540, "向本地人数最多的{primary_profession}征收其现金的 2%（官炉收铜、新钱支饷，铸息入库）"),
+					Shared.manufacturing(12, 360),
+					Shared.cash_in(5, 540, "向本地人数最多的{primary_profession}征收其现金的 5%（官炉收铜、新钱支饷，铸息入库）"),
 					Shared.bias(Ids.TAG_UNREST, 1.40, 720),
 					Shared.schedule(Ids.EVT_FISCAL_AUDIT, 240, "查账"),
 				]),
@@ -179,9 +180,9 @@ static func append(catalog) -> void:
 				"重铸足钱",
 				"新范被尽数销毁，钱监赔本回收轻钱并按旧制重铸。国库为此蒙受巨额亏损，作坊一时停滞，但市面主食与民生开销总算随之回稳。",
 				[
-					Shared.cash_out(3.0),
-					Shared.staple(-6, 540),
-					Shared.manufacturing(-4, 360),
+					Shared.cash_out(8),
+					Shared.staple(-18, 540),
+					Shared.manufacturing(-12, 360),
 					Shared.schedule(Ids.EVT_FISCAL_AUDIT, 300, "查账"),
 				]),
 			Shared.option(
@@ -217,8 +218,8 @@ static func append(catalog) -> void:
 				Shared.branch(45875, "清账追赃", # 70%
 					"被裁改的账页在兵册深处被起获，涉案人员遭到严厉追缴。此举令吏治为之一肃，国库追回可观亏空，但也令地方商贸与作坊一时紧缩。",
 					[
-						Shared.cash_in(3.0, 540, "向本地人数最多的{primary_profession}追缴其现金的 3%"),
-						Shared.manufacturing(-3, 360),
+						Shared.cash_in(8, 540, "向本地人数最多的{primary_profession}追缴其现金的 8%"),
+						Shared.manufacturing(-10, 360),
 						Shared.flag(Ids.FLAG_ACCOUNTS_CLEAN, 900, "标记「账清吏肃」"),
 						Shared.bias_event(Ids.EVT_FISCAL_TWO_LEDGERS, 1.40, 540, "两本账"),
 						Shared.schedule(Ids.EVT_FAMILY_FATHERS_DEBT, 90, "父债"),
@@ -226,7 +227,7 @@ static func append(catalog) -> void:
 				Shared.branch(19661, "军方掣肘", # 30%
 					"稽核刚触及高级将领，营中便派兵围堵度支房示威。朝廷被迫暂缓追查并拨款安抚军心，兵怨未平的隐患却已深深埋下。",
 					[
-						Shared.cash_out(2.0, 360),
+						Shared.cash_out(5, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.40, 720),
 						Shared.flag(Ids.FLAG_ARMY_GRIEVANCE, 720, "标记「兵怨未平」"),
 					])),
@@ -235,8 +236,8 @@ static func append(catalog) -> void:
 				"账面做平",
 				"亏空被悄然划入盐课名下抵扣，河工欠款与虚额兵册皆被重新誊清。账面虽恢复整洁，但盐场采掘元气大伤，地方流言亦难以平息。",
 				[
-					Shared.cash_out(3.0),
-					Shared.extraction(-3, 540),
+					Shared.cash_out(8),
+					Shared.extraction(-10, 540),
 					Shared.flag(Ids.FLAG_PATCHED_BOOKS, 900, "标记「账已做平」"),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
@@ -265,6 +266,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 3,
 		"max_era_index": 6,
+		"required_technologies": ["tech.salt_preservation"],
 		"blocked_story_flags": [String(Ids.FLAG_TWO_COURTS)],
 		"conditions": [
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "merchant", "float_value": 0.02},
@@ -296,9 +298,9 @@ static func append(catalog) -> void:
 				"盐权外包",
 				"商帮押金迅速充盈国库，官仓食盐亦得以投放市场。但商帮接管缉私后肆意压榨灶户与脚夫，盐场产能下滑，地方动荡风险骤升。",
 				[
-					Shared.cash_in(3.0, 540, "向本地人数最多的{primary_profession}征收其现金的 3%（盐引押金）"),
+					Shared.cash_in(8, 540, "向本地人数最多的{primary_profession}征收其现金的 8%（盐引押金）"),
 					Shared.stock("salt", 30),
-					Shared.extraction(-4, 540),
+					Shared.extraction(-12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 			Shared.option(
@@ -306,17 +308,17 @@ static func append(catalog) -> void:
 				"官营盐务",
 				"盐吏直接接管产销全链，统筹调运并按册核发工食。盐利稳定入库且采掘与商运效率大增，但官营溢利令百姓日常主食开销随之加重。",
 				[
-					Shared.extraction(5, 540),
-					Shared.cash_in(2.0, 540, "向本地人数最多的{primary_profession}征收其现金的 2%（盐利入库）"),
-					Shared.trade_capacity(8, 540),
-					Shared.staple(5, 540),
+					Shared.extraction(15, 540),
+					Shared.cash_in(5, 540, "向本地人数最多的{primary_profession}征收其现金的 5%（盐利入库）"),
+					Shared.trade_capacity(16, 540),
+					Shared.staple(15, 540),
 				]),
 			Shared.option(
 				"leave_it_alone", "搁置改制，维持散卖旧例",
 				"盐禁虚设",
 				"包卖方案被驳回，官仓监守自盗与私盐走私依旧畅行无阻。年底盘点时账实严重不符，盐业产出持续萎缩，财政缺口进一步扩大。",
 				[
-					Shared.extraction(-4, 540),
+					Shared.extraction(-12, 540),
 					Shared.flag(Ids.FLAG_SALT_OPEN, 720, "标记「盐禁虚设」"),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 720),
 				]),
@@ -377,8 +379,8 @@ static func append(catalog) -> void:
 				"彻查仓弊",
 				"暗账在清点当日被公之于众，涉案仓吏被严厉追责并追缴罚没款项。朝廷趁机推行严密的对账规程，推动了复式记账理念的萌芽。",
 				[
-					Shared.cash_in(2.0, 540, "向本地人数最多的{primary_profession}追缴其现金的 2%（补仓亏空）"),
-					Shared.knowledge(4, 540),
+					Shared.cash_in(5, 540, "向本地人数最多的{primary_profession}追缴其现金的 5%（补仓亏空）"),
+					Shared.knowledge(12, 540),
 					Shared.research_signal("breakthrough.industrial_organization", "复式记账"),
 				]),
 			Shared.option(
@@ -386,8 +388,8 @@ static func append(catalog) -> void:
 				"火耗加征",
 				"私密暗账被付之一炬，亏空被包装成官定收粮折耗转嫁给纳税户。账面虽得以弥合，却败坏了行政公信力，令民众主食负担沉重。",
 				[
-					Shared.staple(5, 540),
-					Shared.knowledge(-4, 540),
+					Shared.staple(15, 540),
+					Shared.knowledge(-12, 540),
 					Shared.flag(Ids.FLAG_COOKED_BOOKS, 900, "标记「火耗加征」"),
 				]),
 			Shared.option(
@@ -395,7 +397,7 @@ static func append(catalog) -> void:
 				"上下相蒙",
 				"巡查使团走马观花地翻过官账便草草结案，对巨额亏空视若无睹。官场默契保住了表面和气，却让制度腐败与民间怨气不断滋长。",
 				[
-					Shared.knowledge(-3, 540),
+					Shared.knowledge(-10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 900),
 				]),
 		],

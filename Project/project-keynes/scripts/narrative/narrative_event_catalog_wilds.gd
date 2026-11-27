@@ -74,6 +74,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 2,
 		"max_era_index": 8,
+		"required_technologies": ["tech.irrigation"],
 		"conditions": [
 			{"op": Op.POPULATION_GTE, "int_value": 10},
 			{"op": Op.MOISTURE_LTE, "float_value": 0.35},
@@ -102,8 +103,8 @@ static func append(catalog) -> void:
 				"饮水无虞农田减产",
 				"官署派人压石封死渠口，虽在初期引发农户冲突，但全城饮水得以保全，人丁平安无恙，地方秩序也随之趋于稳定。",
 				[
-					Shared.agriculture(-5, 540),
-					Shared.birth(3, 540),
+					Shared.agriculture(-15, 540),
+					Shared.birth(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 				]),
 			Shared.option(
@@ -111,8 +112,8 @@ static func append(catalog) -> void:
 				"保得秋收人丁受损",
 				"井水倾注麦田并顺势深凿取水，秋收得以保全，工匠亦摸索出深井暗渠之法。然饮水紧缺伤及妇孺，地方怨气随之高涨。",
 				[
-					Shared.agriculture(5, 540),
-					Shared.birth(-4, 540),
+					Shared.agriculture(15, 540),
+					Shared.population_rate(-5),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					Shared.research_signal("breakthrough.hydraulic_engineering", "深井暗渠"),
 				]),
@@ -121,9 +122,9 @@ static func append(catalog) -> void:
 				"水源枯竭争端四起",
 				"官署未加管制，作坊暂得周转，但无序抢水很快耗干井底。农事与主食供给长期承压，乡里为争水频发械斗。",
 				[
-					Shared.manufacturing(3, 540),
-					Shared.agriculture(-3, 900),
-					Shared.staple(4, 900),
+					Shared.manufacturing(10, 540),
+					Shared.agriculture(-10, 900),
+					Shared.staple(12, 900),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 900),
 				]),
 		],
@@ -171,8 +172,8 @@ static func append(catalog) -> void:
 				"焦土阻蝗保住腹地",
 				"官署下令焚毁外围田带，蝗群受阻北移，腹地主产区得以保全。然被焚边田的失收推高了主食负担，受灾农户颇多怨言。",
 				[
-					Shared.agriculture(4, 360),
-					Shared.staple(5, 360),
+					Shared.agriculture(12, 360),
+					Shared.staple(15, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 360),
 				]),
 			Shared.gamble(
@@ -180,25 +181,25 @@ static func append(catalog) -> void:
 				Shared.branch(36045, "渠水淹蝗灾情大减", # 55%
 					"国库拨款组织引水漫灌，蝗群落水难以起飞，被乡民悉数清扫。本地与全国农事均受益于此番治蝗方略。",
 					[
-						Shared.cash_out(1.5, 360),
-						Shared.agriculture(6, 540),
-						Shared.country_sector("agriculture", 3, 540),
+						Shared.cash_out(4, 360),
+						Shared.agriculture(18, 540),
+						Shared.country_sector("agriculture", 8, 540),
 					]),
 				Shared.branch(29491, "水涝虫害双重重创", # 45%
 					"渠水放量失控浸泡禾苗，蝗群又从侧翼绕入啃食殆尽。国库钱粮白白耗尽，本地农事重创，主食供给陷入严重困境。",
 					[
-						Shared.cash_out(1.5, 360),
-						Shared.agriculture(-6, 540),
-						Shared.staple(8, 540),
+						Shared.cash_out(4, 360),
+						Shared.agriculture(-18, 540),
+						Shared.staple(24, 540),
 					])),
 			Shared.option(
 				"wait_for_the_county", "按兵不动，任其过境",
 				"听任肆虐农事受挫",
 				"官署迟迟未予处置，蝗群饱食南去。部分失计农夫被迫转入采掘谋生，本地农田长期减产，主食吃紧且民心大失。",
 				[
-					Shared.extraction(2, 360),
-					Shared.agriculture(-4, 900),
-					Shared.staple(6, 900),
+					Shared.extraction(8, 360),
+					Shared.agriculture(-12, 900),
+					Shared.staple(18, 900),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 		],
@@ -245,9 +246,9 @@ static func append(catalog) -> void:
 				"联防击退狼群安境",
 				"国库拨资供应巡防粮柴，地方民壮分班值守终于逼退狼群。虽短期主食消耗略增，却保住了全境农牧根基，地方安宁如故。",
 				[
-					Shared.agriculture(4, 540),
-					Shared.cash_out(1.5, 360),
-					Shared.staple(3, 360),
+					Shared.agriculture(12, 540),
+					Shared.cash_out(4, 360),
+					Shared.staple(10, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
 			Shared.option(
@@ -255,8 +256,8 @@ static func append(catalog) -> void:
 				"损畜避患怨气难平",
 				"官署强征牲畜弃于坡外喂狼，狼群暂且退去。然畜群折损拖累了次年农牧，城中主食开销攀升，乡民对官署懦弱之举深感不满。",
 				[
-					Shared.staple(6, 540),
-					Shared.agriculture(-3, 540),
+					Shared.staple(18, 540),
+					Shared.agriculture(-10, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
@@ -265,8 +266,8 @@ static func append(catalog) -> void:
 				"因免去夜巡劳役，民间一时未起怨言。然大雪扑灭无人看管的火堆后，狼群屡次入村袭扰，致使人丁与畜群蒙受长期损失。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
-					Shared.birth(-4, 900),
-					Shared.agriculture(-3, 900),
+					Shared.population_rate(-6),
+					Shared.agriculture(-10, 900),
 				]),
 		],
 	}))
@@ -312,18 +313,18 @@ static func append(catalog) -> void:
 				"采盐获利耕地受损",
 				"商队雇工大举刮盐入市，采掘产出走高且本地食盐库存得以补充。但表层耕土遭到破坏，农田产出随之明显下滑。",
 				[
-					Shared.extraction(6, 540),
+					Shared.extraction(18, 540),
 					Shared.stock("salt", 20),
-					Shared.agriculture(-4, 540),
+					Shared.agriculture(-12, 540),
 				]),
 			Shared.option(
 				"wash_the_field", "拨款引水，洗地压碱",
 				"压碱保田农事回暖",
 				"国库拨资动员劳力挑水洗地整春，盐碱渐退、农田产出回升且主食负担减轻。唯工程艰苦繁重，乡里对劳役颇有微词。",
 				[
-					Shared.agriculture(5, 540),
-					Shared.cash_out(2.0, 360),
-					Shared.staple(-4, 540),
+					Shared.agriculture(15, 540),
+					Shared.cash_out(5, 360),
+					Shared.staple(-12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 360),
 				]),
 			Shared.option(
@@ -331,9 +332,9 @@ static func append(catalog) -> void:
 				"碱地薄收口粮承压",
 				"官署未予干预，工坊运转未受征调影响。然而盐碱地中出苗寥寥，农田长期歉收，城中主食补给日益吃紧。",
 				[
-					Shared.manufacturing(2, 360),
-					Shared.agriculture(-4, 900),
-					Shared.staple(5, 900),
+					Shared.manufacturing(8, 360),
+					Shared.agriculture(-12, 900),
+					Shared.staple(15, 900),
 				]),
 		],
 	}))
@@ -351,6 +352,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 2,
 		"max_era_index": 8,
+		"required_technologies": ["tech.iron_ore_identification"],
 		"conditions": [
 			{"op": Op.TERRAIN_IN, "int_list": [
 				TerrainTypeScript.TERRAIN.MOUNTAIN, TerrainTypeScript.TERRAIN.HILL]},
@@ -380,8 +382,8 @@ static func append(catalog) -> void:
 				"官道复通商工两旺",
 				"官署集中劳力日夜清障，滞留货车悉数过境，贸易运力与本地制造迅速回升。连日高强度抢修也让劳工事务成为地方议题。",
 				[
-					Shared.trade_capacity(5, 540),
-					Shared.manufacturing(4, 540),
+					Shared.trade_capacity(12, 540),
+					Shared.manufacturing(12, 540),
 					Shared.bias(Ids.TAG_LABOR, 1.10, 540),
 				]),
 			Shared.option(
@@ -389,18 +391,18 @@ static func append(catalog) -> void:
 				"新矿大兴转运受阻",
 				"矿业工队顺断面掘得大片富铁矿，采掘激增并留下珍贵矿脉记录。但官道梗阻导致粮车绕远倾覆，本地制造与主食开销俱受拖累。",
 				[
-					Shared.extraction(6, 540),
+					Shared.extraction(18, 540),
 					Shared.research_signal("resource.iron_ore", "铁帽石"),
-					Shared.manufacturing(-3, 540),
-					Shared.staple(5, 540),
+					Shared.manufacturing(-10, 540),
+					Shared.staple(15, 540),
 				]),
 			Shared.option(
 				"take_the_long_way", "暂绕河滩，搁置塌方",
 				"绕行维艰怨声载道",
 				"车队被迫改走泥泞河滩，入冬冻土后更是寸步难行。虽零星采掘未断，但运力锐减推升主食开销，商民对官署敷衍颇为不满。",
 				[
-					Shared.extraction(2, 360),
-					Shared.staple(4, 900),
+					Shared.extraction(8, 360),
+					Shared.staple(12, 900),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 900),
 				]),
 		],
@@ -446,9 +448,9 @@ static func append(catalog) -> void:
 				"双舟并渡运力大增",
 				"国库拨资打造新渡船并增雇渡夫，两岸积压商货迅速疏通，贸易运力大幅提升。唯修造工料与渡口调度略微推高了营造负担。",
 				[
-					Shared.trade_capacity(6, 540),
-					Shared.cash_out(1.5, 360),
-					Shared.build_cost(3, 540),
+					Shared.trade_capacity(15, 540),
+					Shared.cash_out(4, 360),
+					Shared.build_cost(8, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.05, 360),
 				]),
 			Shared.option(
@@ -456,9 +458,9 @@ static func append(catalog) -> void:
 				"包渡加费商民怨沸",
 				"官署收得包渡现款且周转略有起色，但承包者旋即倍增过河船资。小贩与挑夫不堪重负，本地主食开销上升，民间怨气骤增。",
 				[
-					Shared.cash_in(1.5, 540),
-					Shared.trade_capacity(3, 540),
-					Shared.staple(4, 540),
+					Shared.cash_in(4, 540),
+					Shared.trade_capacity(8, 540),
+					Shared.staple(12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 			Shared.option(
@@ -466,8 +468,8 @@ static func append(catalog) -> void:
 				"旧舟朽坏转运维艰",
 				"因未加征费役，一时未起纷争。然而旧船超负荷运转终致朽坏，两岸货流与主食转运长期受阻，本地制造亦受牵连。",
 				[
-					Shared.manufacturing(-3, 900),
-					Shared.staple(4, 900),
+					Shared.manufacturing(-10, 900),
+					Shared.staple(12, 900),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
 		],
@@ -516,18 +518,18 @@ static func append(catalog) -> void:
 				"火道阻焰农工俱保",
 				"地方民壮顶着浓烟抢割出宽阔隔离带，火势在场院外戛然而止。农田与编席作坊均得以保全，仅因紧急动员略增短期口粮开销。",
 				[
-					Shared.manufacturing(4, 540),
-					Shared.agriculture(3, 540),
-					Shared.staple(3, 360),
+					Shared.manufacturing(12, 540),
+					Shared.agriculture(10, 540),
+					Shared.staple(10, 360),
 				]),
 			Shared.option(
 				"let_it_burn", "任其焚尽，以灰肥田",
 				"灰肥稻田苇业尽毁",
 				"大火烧至河边自灭，厚重草木灰令来年稻田丰产。然手工业场院与渔猎苇荡付之一炬，制造重挫、民生吃紧，失计手工业者怨声四起。",
 				[
-					Shared.agriculture(5, 540),
-					Shared.manufacturing(-4, 540),
-					Shared.staple(4, 540),
+					Shared.agriculture(15, 540),
+					Shared.manufacturing(-12, 540),
+					Shared.staple(12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
@@ -535,8 +537,8 @@ static func append(catalog) -> void:
 				"夜风突变灾情失控",
 				"入夜后风向骤转，烈焰绕过沟渠直扑稻田并波及周边作坊。农事与制造双双蒙受重创，民众纷纷责难官署优柔寡断。",
 				[
-					Shared.agriculture(-5, 900),
-					Shared.manufacturing(-3, 900),
+					Shared.agriculture(-15, 900),
+					Shared.manufacturing(-10, 900),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 		],
@@ -583,9 +585,9 @@ static func append(catalog) -> void:
 				"烟幕护苗春耕得保",
 				"国库拨资组织农户燃湿柴熏烟抵御寒霜，绝大多数秧苗安然过关，乡民交口称赞。唯连夜耗柴与补给略微增加了短期主食开销。",
 				[
-					Shared.agriculture(5, 540),
-					Shared.cash_out(1.5, 360),
-					Shared.staple(3, 360),
+					Shared.agriculture(15, 540),
+					Shared.cash_out(4, 360),
+					Shared.staple(10, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
 			Shared.option(
@@ -593,16 +595,16 @@ static func append(catalog) -> void:
 				"补种晚收口粮趋紧",
 				"常平仓余留谷种悉数下地，秋收总算得以勉强维系。然而口粮储备见底令本地主食负担骤增，荒春困顿亦伤及人丁。",
 				[
-					Shared.staple(6, 360),
-					Shared.agriculture(3, 540),
-					Shared.birth(-3, 360),
+					Shared.staple(18, 360),
+					Shared.agriculture(10, 540),
+					Shared.population_rate(-5),
 				]),
 			Shared.option(
 				"wait_for_the_sun", "暂不干预，静候回暖",
 				"霜融苗烂民怨沸腾",
 				"晴日化霜反致秧畦积水冻烂，春苗十不存一。本地农事蒙受长期重创，乡民对官署见危不救之举怨声载道。",
 				[
-					Shared.agriculture(-5, 900),
+					Shared.agriculture(-15, 900),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 900),
 				]),
 		],

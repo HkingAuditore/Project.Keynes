@@ -98,8 +98,8 @@ static func append(catalog) -> void:
 				"聚落首筑石垣",
 				"各氏族摊派物资并轮番出工，一道齐胸高的石垣终于合拢。虽短暂延误了部分农活，但聚落首次拥有了可靠的屏障，人心安定，长远耕作反倒更有保障。",
 				[
-					Shared.cash_in(1.0, 360),
-					Shared.agriculture(3, 540),
+					Shared.cash_in(3, 360),
+					Shared.agriculture(10, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 			Shared.option(
@@ -107,17 +107,17 @@ static func append(catalog) -> void:
 				"深壕环绕聚落",
 				"部众改以深挖壕沟、堆土为埂的方式设防，虽占用了一定农时，却在掘土取石的过程中磨砺了工具与采掘技艺，为聚落积累了宝贵的营造经验。",
 				[
-					Shared.agriculture(-3, 360),
-					Shared.manufacturing(2, 360),
-					Shared.extraction(2, 360),
+					Shared.agriculture(-10, 360),
+					Shared.manufacturing(8, 360),
+					Shared.extraction(8, 360),
 				]),
 			Shared.option(
 				"wait", "暂缓筑城，以农为先",
 				"秋收丰盈外患犹存",
 				"长老议会搁置了筑墙之议，全力保障当年耕种与收获。秋粮虽得以充实，但无遮无拦的聚落仍屡遭外敌窥伺，牲畜失窃令部众口粮负担暗中加重。",
 				[
-					Shared.staple(3, 360),
-					Shared.agriculture(2, 360),
+					Shared.staple(10, 360),
+					Shared.agriculture(8, 360),
 				]),
 		],
 	}))
@@ -135,6 +135,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 1,
 		"max_era_index": 2,
+		"required_technologies": ["tech.agrarian_society"],
 		"conditions": [
 			{"op": Op.POPULATION_GTE, "int_value": 10},
 			{"op": Op.PROFESSION_SHARE_GTE, "target_key": "agricultural_worker", "float_value": 0.30},
@@ -163,32 +164,32 @@ static func append(catalog) -> void:
 				Shared.branch(39322, "均田落地农产大增", # 60%
 					"草绳丈量至日落，肥沃河湾按人口公平划入各户名下。新附氏族获得了立身之本，耕作热情空前高涨，当年便为聚落贡献了丰厚收成。",
 					[
-						Shared.cash_in(1.0, 360),
-						Shared.agriculture(5, 540),
+						Shared.cash_in(3, 360),
+						Shared.agriculture(15, 540),
 					]),
 				Shared.branch(26214, "争地酿乱贻误农时", # 40%
 					"老户与新民在丈量现场爆发激烈冲突，划界被迫中断。错过了最佳播种窗口，加之部众间裂痕加深，不仅耗费了公中积蓄，更令聚落人丁增长受挫。",
 					[
-						Shared.cash_in(2.0, 360),
-						Shared.birth(-5, 540),
+						Shared.cash_in(5, 360),
+						Shared.birth(-15, 540),
 					])),
 			Shared.option(
 				"by_household", "按户授田，老户优先",
 				"老户独占沃土",
 				"长老议会维护了先民老户的优先权，肥沃河岸尽归旧族，新民仅获贫瘠坡地。老户精耕细作提升了产出并总结出历法经验，但新附氏族的怨恨已悄然埋下。",
 				[
-					Shared.agriculture(4, 540),
+					Shared.agriculture(12, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
-					Shared.knowledge(2, 360),
+					Shared.knowledge(8, 360),
 				]),
 			Shared.option(
 				"common_plough", "暂不分田，延续共耕",
 				"共耕制效率下滑",
 				"土地继续维持氏族公有共耕，收成由长老统一分配。虽避免了分地动荡并促进了协作技艺的交流，但缺乏私产激励致使耕作懈怠，田间产出明显回落。",
 				[
-					Shared.agriculture(-4, 360),
-					Shared.knowledge(2, 360),
-					Shared.manufacturing(2, 360),
+					Shared.agriculture(-12, 360),
+					Shared.knowledge(8, 360),
+					Shared.manufacturing(8, 360),
 				]),
 		],
 	}))
@@ -234,9 +235,9 @@ static func append(catalog) -> void:
 				"公井重修归于众",
 				"全寨青壮暂放下农活合力重砌井壁，清冽井水重新惠及每一户人家。虽略微耽误了农时，但洁净水源保障了妇孺健康，也锤炼了部众的石作手艺。",
 				[
-					Shared.agriculture(-3, 360),
-					Shared.birth(3, 540),
-					Shared.manufacturing(2, 360),
+					Shared.agriculture(-10, 360),
+					Shared.birth(10, 540),
+					Shared.manufacturing(8, 360),
 				]),
 			Shared.option(
 				"one_household", "大族包修，取水纳粮",
@@ -244,16 +245,16 @@ static func append(catalog) -> void:
 				"大族迅速修好井壁并派人值守，取水须按量纳献，公中亦从中抽成。井水供应虽得以维持，但饮水受制于人的屈辱感在中小氏族间迅速滋长。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
-					Shared.cash_in(1.5, 360),
-					Shared.manufacturing(2, 360),
+					Shared.cash_in(4, 360),
+					Shared.manufacturing(8, 360),
 				]),
 			Shared.option(
 				"no_well", "弃井不修，远赴河滩",
 				"弃井挑水苦不堪言",
 				"长老议会未能达成共识，公井就此荒废。部众虽未耽误农时，却不得不每日长途往返河滩挑水，浑浊河水与繁重劳役很快拖累了聚落的人口繁衍。",
 				[
-					Shared.birth(-4, 540),
-					Shared.agriculture(2, 360),
+					Shared.birth(-12, 540),
+					Shared.agriculture(8, 360),
 				]),
 		],
 	}))
@@ -271,6 +272,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 1,
 		"max_era_index": 2,
+		"required_technologies": ["tech.hand_pottery", "tech.early_trade"],
 		"conditions": [
 			{"op": Op.POPULATION_GTE, "int_value": 12},
 			{"op": Op.BUILDING_COUNT_GTE, "int_value": 2},
@@ -300,26 +302,26 @@ static func append(catalog) -> void:
 				"河滩集市不设门槛，四方货殖蜂拥而至，商贸流通与手工交换随之兴旺。然而摊位挤占通道、纠纷频发，缺少仲裁的集市逐渐成为滋生摩擦的温床。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
-					Shared.trade_capacity(5, 540),
-					Shared.manufacturing(3, 540),
+					Shared.trade_capacity(12, 540),
+					Shared.manufacturing(10, 540),
 				]),
 			Shared.option(
 				"fee_and_scale", "立公衡，征收市税",
 				"公衡市税初具雏形",
 				"长老议会颁布标准量器并划定摊区，按日征收市税。尽管初期繁琐规制略微抑制了部分手工业者的热情，但公信力大增，远方商队更愿前来交易。",
 				[
-					Shared.manufacturing(-2, 360),
-					Shared.cash_in(1.5, 360),
-					Shared.trade_capacity(6, 540),
+					Shared.manufacturing(-8, 360),
+					Shared.cash_in(4, 360),
+					Shared.trade_capacity(15, 540),
 				]),
 			Shared.option(
 				"let_them_weigh", "各自为衡，官不介入",
 				"以物易物摩擦不断",
 				"部众继续沿用各自量器讨价还价，集市在喧嚣中勉强运转。往来交流虽带来些许外界见闻，但短斤少两的猜忌推高了交易损耗，日常口粮开销随之见涨。",
 				[
-					Shared.staple(3, 360),
-					Shared.trade_capacity(4, 540),
-					Shared.knowledge(2, 360),
+					Shared.staple(10, 360),
+					Shared.trade_capacity(10, 540),
+					Shared.knowledge(8, 360),
 				]),
 		],
 	}))
@@ -337,6 +339,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 900,
 		"min_era_index": 1,
 		"max_era_index": 2,
+		"required_technologies": ["tech.natural_copper_working"],
 		"conditions": [
 			{"op": Op.POPULATION_GTE, "int_value": 10},
 			{"op": Op.HAS_NATURAL_RESOURCE, "int_value": 1},
@@ -366,16 +369,16 @@ static func append(catalog) -> void:
 				"第一批金属悉数铸为犁头，深耕之效立竿见影，农田收成显著提升，工具损耗亦随之减少。唯防卫勇士因未得利器而颇感失落，聚落防务隐忧犹存。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.10, 360),
-					Shared.agriculture(5, 540),
-					Shared.tools(-3, 360),
+					Shared.agriculture(15, 540),
+					Shared.tools(-10, 360),
 				]),
 			Shared.option(
 				"blade_first", "优先锻造防身利刃",
 				"利刃出炉威慑四邻",
 				"炽热炉火锻出锋锐长刃，周边劫掠部族闻风退避，匠人亦借此摸清了铁矿冶炼的门道。然而抽调人力反复试锻占用了农时，当年耕作略有欠收。",
 				[
-					Shared.agriculture(-3, 360),
-					Shared.manufacturing(2, 360),
+					Shared.agriculture(-10, 360),
+					Shared.manufacturing(8, 360),
 					Shared.research_signal("resource.iron_ore", "黑石"),
 				]),
 			Shared.option(
@@ -383,9 +386,9 @@ static func append(catalog) -> void:
 				"营造工艺迈上新阶",
 				"金属被拉拔为坚固铁钉用于加固屋梁与车具，聚落制造能力大幅增强。公中亦借分配铁件收取了一笔贡赋，但稀缺金属的争夺暂时推高了营造开销。",
 				[
-					Shared.cash_in(1.2, 360),
-					Shared.manufacturing(4, 540),
-					Shared.build_cost(3, 540),
+					Shared.cash_in(3, 360),
+					Shared.manufacturing(12, 540),
+					Shared.build_cost(8, 540),
 				]),
 		],
 	}))
@@ -431,18 +434,18 @@ static func append(catalog) -> void:
 				"质子盟约维系和平",
 				"两族互换子弟寄养，沉重的血缘羁绊换来了切实的边境安宁。年轻一代在异族中习得农耕与追踪之术，促进了技艺交融，但骨肉分离也短暂压低了生育意愿。",
 				[
-					Shared.birth(-4, 540),
-					Shared.knowledge(3, 540),
-					Shared.agriculture(2, 360),
+					Shared.birth(-12, 540),
+					Shared.knowledge(10, 540),
+					Shared.agriculture(8, 360),
 				]),
 			Shared.option(
 				"beasts", "质押牲畜与来年良种",
 				"粮畜为质勉强停火",
 				"双方各出良种与牲畜交由祭司共管，林地争端暂告平息。农耕与手工业得以在和平中恢复，但抽调存粮作质令聚落当年的口粮调度略显吃紧。",
 				[
-					Shared.staple(3, 360),
-					Shared.agriculture(3, 540),
-					Shared.manufacturing(2, 360),
+					Shared.staple(10, 360),
+					Shared.agriculture(10, 540),
+					Shared.manufacturing(8, 360),
 				]),
 			Shared.option(
 				"cut_only", "仅刻盟文，不押人畜",
@@ -450,8 +453,8 @@ static func append(catalog) -> void:
 				"祭司仅在盟石上凿刻双方图腾记号便草草收场。未受实质约束的和平脆弱不堪，虽保住了当年农事与祭祀记录，但不过一载林地越界摩擦便再度抬头。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
-					Shared.knowledge(2, 360),
-					Shared.agriculture(2, 360),
+					Shared.knowledge(8, 360),
+					Shared.agriculture(8, 360),
 				]),
 		],
 	}))
@@ -469,6 +472,7 @@ static func append(catalog) -> void:
 		"cooldown_days": 720,
 		"min_era_index": 1,
 		"max_era_index": 2,
+		"required_technologies": ["tech.irrigation"],
 		"conditions": [
 			{"op": Op.POPULATION_GTE, "int_value": 12},
 			{"op": Op.MOISTURE_LTE, "float_value": 0.40},
@@ -498,25 +502,25 @@ static func append(catalog) -> void:
 				"长老议会下令彻底扒平上游石堰，河水奔涌而下挽救了下游濒枯的庄稼。然而上游氏族誓言报复，河谷两岸从此陷入更频繁的流血冲突。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
-					Shared.agriculture(4, 360),
+					Shared.agriculture(12, 360),
 				]),
 			Shared.option(
 				"pay_grain", "拨付公粮，调停分水",
 				"出资赎水达成和解",
 				"公中拨付粮物补偿上游氏族，换取对方降低堰顶高度并立下分水规约。河谷重归平静，农事稳步恢复，此次调停也沉淀出早期水利分配的制度雏形。",
 				[
-					Shared.cash_out(1.5, 360),
-					Shared.agriculture(2, 540),
-					Shared.knowledge(2, 540),
+					Shared.cash_out(4, 360),
+					Shared.agriculture(8, 540),
+					Shared.knowledge(8, 540),
 				]),
 			Shared.option(
 				"new_channel", "另凿支渠，绕开争端",
 				"改道引水代价高昂",
 				"下游部众耗费整月人力绕坡另凿新渠，虽被迫占用部分耕地导致当年减产，却彻底摆脱了上游掣肘，稳定的水源保障了聚落长远的人口繁衍与水利经验。",
 				[
-					Shared.agriculture(-4, 540),
-					Shared.knowledge(2, 540),
-					Shared.birth(2, 540),
+					Shared.agriculture(-12, 540),
+					Shared.knowledge(8, 540),
+					Shared.birth(8, 540),
 				]),
 		],
 	}))
