@@ -891,13 +891,9 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
             /*seq_threshold=*/8, encode_rows);
     mark("encode");
 
-    // 逐缓冲 FNV：只服务于人工对拍（换实现后确认逐字节等价）。
-    // **不要**把它挪进条件分支：`tests/ui/visual_tile_native_bake_test.gd` 用
-    // `first.hashes == second.hashes` 断言逐块确定性，一旦默认返回空 dict，
-    // 那条断言就退化成 `{} == {}` 恒真（2026-11-18 曾有人把它包进
-    // `emit_layer_hashes` 开关并默认关闭，会静默削弱该测试）。
+    // 确定性测试显式请求哈希，并核对常规烘焙与诊断烘焙的输出字节。
     Dictionary hashes;
-    {
+    if (bool(knobs.get("include_hashes", false))) {
         auto hash_bytes = [](const PackedByteArray &data) -> int64_t {
             uint64_t h = 1469598103934665603ULL;
             const uint8_t *p = data.ptr();
@@ -918,10 +914,10 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
             hashes["edge_distance"] = hash_bytes(edge_distance_data);
             if (BW_W != nullptr) hashes["boundary_warp"] = hash_bytes(boundary_warp_data);
         }
+        mark("hash");
     }
 
     const auto t1 = std::chrono::high_resolution_clock::now();
-    mark("hash");
     out["profile"] = prof;
     out["fallback"] = false;
     out["reason"] = String();

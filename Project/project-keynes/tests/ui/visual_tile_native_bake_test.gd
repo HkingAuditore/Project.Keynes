@@ -12,13 +12,21 @@ func _init() -> void:
 		quit(1)
 		return
 	var knobs := _make_knobs()
-	var first: Dictionary = ext.run_bake_visual_tile_layer_pass(knobs)
-	var second: Dictionary = ext.run_bake_visual_tile_layer_pass(knobs)
-	if bool(first.get("fallback", true)) or bool(second.get("fallback", true)):
-		push_error("visual_tile_native_bake_test: native fallback: %s / %s" % [
-			first.get("reason", "?"), second.get("reason", "?")])
+	var no_hashes: Dictionary = ext.run_bake_visual_tile_layer_pass(knobs)
+	var diagnostic_knobs := knobs.duplicate()
+	diagnostic_knobs["include_hashes"] = true
+	var first: Dictionary = ext.run_bake_visual_tile_layer_pass(diagnostic_knobs)
+	var second: Dictionary = ext.run_bake_visual_tile_layer_pass(diagnostic_knobs)
+	for result in [no_hashes, first, second]:
+		if bool(result.get("fallback", true)):
+			push_error("visual_tile_native_bake_test: native fallback: %s" % result.get("reason", "?"))
+			quit(1)
+			return
+	if not no_hashes.get("hashes", {}).is_empty() or no_hashes.get("profile", {}).has("hash"):
+		push_error("visual_tile_native_bake_test: default bake ran the hash pass")
 		quit(1)
 		return
+	var hashes: Dictionary = first.get("hashes", {})
 	var expected := {
 		"height": 20 * 20 * 4,
 		"terrain_normal": 20 * 20 * 4,
@@ -29,6 +37,8 @@ func _init() -> void:
 		"edge_neighbor": 20 * 20 * 2,
 		"edge_distance": 20 * 20 * 4,
 	}
+	if first.has("boundary_warp"):
+		expected["boundary_warp"] = 20 * 20 * 2
 	for field in expected:
 		var data: PackedByteArray = first.get(field, PackedByteArray())
 		if data.size() != int(expected[field]):
@@ -36,11 +46,15 @@ func _init() -> void:
 				field, data.size(), int(expected[field])])
 			quit(1)
 			return
+		if not hashes.has(field) or data != no_hashes.get(field):
+			push_error("visual_tile_native_bake_test: incorrect hash or default payload for %s" % field)
+			quit(1)
+			return
 	if first.has("flow") and PackedByteArray(first.get("flow")).size() > 0:
 		push_error("visual_tile_native_bake_test: separate flow payload still present; expected packed into height.B")
 		quit(1)
 		return
-	if first.get("hashes", {}) != second.get("hashes", {}):
+	if hashes != second.get("hashes", {}):
 		push_error("visual_tile_native_bake_test: deterministic hashes differ")
 		quit(1)
 		return
@@ -80,7 +94,7 @@ func _init() -> void:
 			return
 	else:
 		print("visual_tile_native_bake_test: horizon resample SKIP (stale DLL)")
-	print("visual_tile_native_bake_test: PASS %s" % JSON.stringify(first.get("hashes", {})))
+	print("visual_tile_native_bake_test: PASS %s" % JSON.stringify(hashes))
 	quit(0)
 
 
