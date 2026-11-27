@@ -25,8 +25,11 @@ const ACTION_OPS := {
 }
 
 @onready var _garrison: Control = %GarrisonStrip
+@onready var _troops_tag: Label = %TroopsTag
 @onready var _troops: Control = %TroopList
+@onready var _training_tag: Label = %TrainingTag
 @onready var _training: Control = %TrainingList
+@onready var _buildings_tag: Label = %BuildingsTag
 @onready var _create_army: Button = %CreateArmy
 @onready var _army_feedback: Label = %ArmyFeedback
 @onready var _rows_box: VBoxContainer = %Rows
@@ -58,7 +61,8 @@ func _ready() -> void:
 	IconButton.apply_with_text(_create_army, &"military.banner", "编成部队",
 		IconButton.SMALL, "把本格驻军编成一支野战部队")
 	_create_army.focus_mode = Control.FOCUS_ALL
-	_create_army.custom_minimum_size = Vector2(_create_army.custom_minimum_size.x, 44.0)
+	_create_army.custom_minimum_size = Vector2(_create_army.custom_minimum_size.x, 38.0)
+	_apply_create_army_style(_create_army)
 	UIAnimation.bind_tactile_button(_create_army)
 	_troops.army_selected.connect(func(handle: int) -> void:
 		army_selected.emit(handle))
@@ -100,14 +104,24 @@ func _apply_model() -> void:
 		_garrison.set_data(_model.get("garrison", {}))
 	var army_create: Dictionary = _model.get("army_create", {})
 	if _create_army != null:
-		_create_army.disabled = not bool(army_create.get("enabled", false))
-		_create_army.text = "编成部队 · %s 人" % UITokens.format_compact_number_cn(
-			float(army_create.get("heads", 0)), 1)
+		var enabled := bool(army_create.get("enabled", false))
+		var heads := int(army_create.get("heads", 0))
+		_create_army.disabled = not enabled
+		_create_army.text = ("编成部队 · %s 人" % UITokens.format_compact_number_cn(
+			float(heads), 1)) if heads > 0 else "暂无可编成驻军"
 	if _troops != null:
-		_troops.set_rows(_model.get("troops", []))
+		var troops: Array = _model.get("troops", [])
+		_troops.set_rows(troops)
+		if _troops_tag != null:
+			_troops_tag.visible = not troops.is_empty()
 	if _training != null:
-		_training.set_rows(_model.get("training", []))
+		var training: Array = _model.get("training", [])
+		_training.set_rows(training)
+		if _training_tag != null:
+			_training_tag.visible = not training.is_empty()
 	var buildings: Array = _model.get("buildings", [])
+	if _buildings_tag != null:
+		_buildings_tag.visible = not buildings.is_empty()
 	for index in range(_rows.size()):
 		var entry: Dictionary = {}
 		if index < buildings.size() and buildings[index] is Dictionary:
@@ -253,3 +267,35 @@ func _on_create_army_pressed() -> void:
 		"cell": _cell,
 		"units": army_create.get("units", {}),
 	})
+
+
+func _apply_create_army_style(button: Button) -> void:
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(0.955, 0.915, 0.825, 0.94)
+	normal.border_color = Color(UITokens.DOSSIER_BRASS, 0.8)
+	normal.set_border_width_all(1)
+	normal.border_width_bottom = 2
+	normal.set_corner_radius_all(4)
+	normal.content_margin_left = 10
+	normal.content_margin_right = 10
+	normal.content_margin_top = 6
+	normal.content_margin_bottom = 6
+	var hover := normal.duplicate() as StyleBoxFlat
+	hover.bg_color = Color(0.98, 0.945, 0.865, 1.0)
+	hover.border_color = UITokens.DOSSIER_BRASS
+	var pressed := normal.duplicate() as StyleBoxFlat
+	pressed.bg_color = Color(0.89, 0.81, 0.67, 1.0)
+	pressed.border_color = UITokens.DOSSIER_OXBLOOD
+	var disabled := normal.duplicate() as StyleBoxFlat
+	disabled.bg_color = Color(0.92, 0.89, 0.82, 0.55)
+	disabled.border_color = Color(UITokens.DOSSIER_RULE, 0.38)
+	disabled.border_width_bottom = 1
+	button.add_theme_stylebox_override("normal", normal)
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("pressed", pressed)
+	button.add_theme_stylebox_override("focus", hover)
+	button.add_theme_stylebox_override("disabled", disabled)
+	button.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
+	button.add_theme_color_override("font_hover_color", UITokens.DOSSIER_OXBLOOD)
+	button.add_theme_color_override("font_pressed_color", UITokens.DOSSIER_OXBLOOD)
+	button.add_theme_color_override("font_disabled_color", Color(UITokens.DOSSIER_INK_MUTED, 0.65))

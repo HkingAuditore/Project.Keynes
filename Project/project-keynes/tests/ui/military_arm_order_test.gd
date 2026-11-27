@@ -104,6 +104,16 @@ func _run() -> void:
 	expect("area command uses previewed radius and cells", controller.commands[-1].id == \
 		ControllerScript.COMMAND_MILITARY_AREA_CONTROL and controller.commands[-1].args.radius == 4 \
 		and controller.commands[-1].args.cells == PackedInt32Array([3, 7]))
+	expect("explore enters targeting with configurable radius",
+		controller.begin_military_arm_order(9, "explore", 2).ok)
+	controller.military_arm_order_click(5)
+	controller.set_military_arm_order_radius(5)
+	expect("explore radius updates draft and cells", controller.military_arm_order().radius == 5 \
+		and controller.military_arm_order().cell_count == 2)
+	controller.confirm_military_arm_order()
+	expect("explore command submits chosen radius and cells", controller.commands[-1].id == \
+		&"military.army.explore" and controller.commands[-1].args.radius == 5 \
+		and controller.commands[-1].args.cells == PackedInt32Array([5, 10]))
 	controller.facade.owner = 2
 	expect("foreign army cannot target", not controller.begin_military_arm_order(9, "move").ok)
 	controller.facade.owner = 1
@@ -124,6 +134,16 @@ func _run() -> void:
 	dossier.set_model(vm.army_dossier(9))
 	expect("daily patch preserves targeting and nodes", dossier.get_node("%OrderDraft").visible \
 		and dossier.find_children("*", "", true, false).size() == count)
+	var radius_events: Array = []
+	dossier.action_requested.connect(func(action: StringName, payload: Dictionary) -> void:
+		if action == &"radius":
+			radius_events.append(int(payload.get("radius", 0))))
+	dossier.set_order_state({"army": 9, "mode": "explore", "ready": true, "radius": 2,
+		"target": 5, "cell_count": 19})
+	dossier.get_node("%Radius5").pressed.emit()
+	expect("radius button emits chosen exploration radius", radius_events == [5] \
+		and dossier.get_node("%Radius5").button_pressed \
+		and int(dossier.get_node("%Radius").value) == 5)
 	for width in [424, 520, 604]:
 		dossier.size = Vector2(width, 560)
 		await process_frame

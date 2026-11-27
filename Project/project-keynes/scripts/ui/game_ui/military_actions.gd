@@ -65,7 +65,8 @@ static func _on_military_dossier_action_requested(host, action: StringName, payl
 	var result: Dictionary = {}
 	match action:
 		&"move", &"area", &"explore":
-			result = host._player_controller.begin_military_arm_order(handle, String(action), 1)
+			var default_radius := int(payload.get("radius", 2 if action == &"explore" else 1))
+			result = host._player_controller.begin_military_arm_order(handle, String(action), default_radius)
 		&"cancel_order":
 			host._player_controller.cancel_military_arm_order()
 			return

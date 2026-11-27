@@ -206,14 +206,8 @@ static func detail_open(panel) -> bool:
 
 
 static func set_compact_detail_mode(panel, compact: bool) -> void:
-	if panel._compact_detail == compact:
-		panel._sync_split_layout()
-		return
 	panel._compact_detail = compact
-	if panel._has_list_wing and panel._list_wing_enabled and not panel._model.is_empty():
-		panel._render_content(false)
-	else:
-		panel._sync_split_layout()
+	panel._sync_split_layout()
 
 
 static func set_list_wing_enabled(panel, enabled: bool) -> void:
@@ -221,7 +215,7 @@ static func set_list_wing_enabled(panel, enabled: bool) -> void:
 		panel._sync_split_layout()
 		return
 	panel._list_wing_enabled = enabled
-	if panel._has_list_wing and not panel._compact_detail and not panel._model.is_empty():
+	if panel._has_list_wing and not panel._model.is_empty():
 		panel._render_content(false)
 	else:
 		panel._sync_split_layout()
@@ -331,7 +325,7 @@ static func _sync_split_layout(panel) -> void:
 	var inspecting: bool = panel._detail_shell.visible
 	panel._detail_shell.clip_contents = not panel._family_chrome_active
 	var wing_visible: bool = panel._list_shell != null and panel._has_list_wing \
-		and panel._list_wing_enabled and not inspecting and not panel._compact_detail \
+		and panel._list_wing_enabled and not inspecting \
 		and panel._directory_available
 	if panel._list_shell != null:
 		panel._list_shell.visible = wing_visible

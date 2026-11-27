@@ -38,7 +38,10 @@ static func bind_card(workspace: Control, key: String, card: Dictionary) -> void
 	if sub != null:
 		sub.visible = true
 		sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	if panel.get_node_or_null("TouchTaxCardHit") != null:
+	var existing_hit := panel.get_node_or_null("TouchTaxCardHit") as Control
+	if existing_hit != null:
+		existing_hit._workspace_ref = weakref(workspace)
+		existing_hit._card_key = key
 		return
 	var script := load("res://scripts/ui/components/touch_tax_card_binder.gd") as GDScript
 	var hit := script.new() as Control
@@ -103,7 +106,8 @@ static func bind_group(controller: RefCounted, group_key: String, entry: Diction
 
 
 func _exit_tree() -> void:
-	_workspace_ref = null
+	_pressing = false
+	_press_touch_index = -1
 
 
 static func sync_card(_workspace: Control, card: Dictionary) -> void:
@@ -164,6 +168,7 @@ func _gui_input(event: InputEvent) -> void:
 			_pressing = true
 			_press_touch_index = -1
 			_press_pos = global_pos
+			accept_event()
 			return
 		if not _pressing or _press_touch_index >= 0:
 			return
@@ -179,6 +184,7 @@ func _gui_input(event: InputEvent) -> void:
 		_pressing = true
 		_press_touch_index = touch.index
 		_press_pos = touch.position
+		accept_event()
 		return
 	if not _pressing or _press_touch_index != touch.index:
 		return

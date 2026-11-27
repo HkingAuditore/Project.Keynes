@@ -10,7 +10,7 @@ static func _build_category_content(panel, data: Dictionary) -> void:
 	var split := InspectorListWing.split_category(panel._current_tab, data)
 	panel._has_list_wing = bool(split.get("has_left", false))
 	var use_wing: bool = panel._has_list_wing and panel._list_wing_enabled \
-		and not panel._compact_detail and panel._list_content != null
+		and panel._list_content != null
 	var right_source: Dictionary = split.get("right", data) if use_wing else data
 	var root_data := right_source.duplicate(false)
 	root_data.erase("sections")

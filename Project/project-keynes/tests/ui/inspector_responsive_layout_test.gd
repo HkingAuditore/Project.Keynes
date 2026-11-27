@@ -322,7 +322,7 @@ func _check_list_wing_layout(failures: PackedStringArray, viewport_width: float,
 		expected_width: float, expected_wing: float) -> void:
 	var layout := GameUIManager.inspector_layout_for_width(
 		viewport_width, false, false, true)
-	if bool(layout.get("compact", true)) \
+	if not bool(layout.get("wing_allowed", false)) \
 			or not is_equal_approx(float(layout.get("panel_width", 0.0)), expected_width) \
 			or not is_equal_approx(float(layout.get("list_wing_width", 0.0)), expected_wing) \
 			or float(layout.get("map_width", 0.0)) < 320.0:
@@ -332,7 +332,7 @@ func _check_list_wing_layout(failures: PackedStringArray, viewport_width: float,
 func _check_list_wing_compact(failures: PackedStringArray, viewport_width: float) -> void:
 	var layout := GameUIManager.inspector_layout_for_width(
 		viewport_width, false, false, true)
-	if not bool(layout.get("compact", false)) \
+	if bool(layout.get("wing_allowed", true)) \
 			or not is_equal_approx(float(layout.get("panel_width", 0.0)), 460.0) \
 			or not is_zero_approx(float(layout.get("list_wing_width", -1.0))):
 		failures.append("%.0fpx narrow viewport should keep 460px single column: %s" % [
@@ -416,14 +416,14 @@ func _check_list_wing_scene(failures: PackedStringArray) -> void:
 			or panel._content_box.get_child_count() < 2:
 		failures.append("buildings tab did not keep construction_entry in right column while moving rows left")
 	# 窄屏退化为单栏，切回宽屏恢复双栏。
-	panel.set_compact_detail_mode(true)
+	panel.set_list_wing_enabled(false)
 	await process_frame
 	if panel.list_wing_open() or panel._list_content.get_child_count() != 0:
-		failures.append("compact mode did not collapse ListShell back into ContentBox")
-	panel.set_compact_detail_mode(false)
+		failures.append("disabling list wing did not collapse ListShell back into ContentBox")
+	panel.set_list_wing_enabled(true)
 	await process_frame
 	if not panel.list_wing_open() or panel._list_content.get_child_count() == 0:
-		failures.append("leaving compact mode did not restore ListShell")
+		failures.append("enabling list wing did not restore ListShell")
 	# 军事页无左翼内容，保持 460 单栏。
 	panel.select_tab("military")
 	await process_frame

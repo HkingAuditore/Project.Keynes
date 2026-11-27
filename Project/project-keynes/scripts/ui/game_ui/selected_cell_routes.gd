@@ -291,6 +291,10 @@ static func _revision_selection_context(host, revision: Dictionary) -> String:
 static func open_military_dossier(host, kind: String, id: int, cell: int = -1) -> bool:
 	if host._right_panel == null or host._player_controller == null or kind.is_empty() or id == 0:
 		return false
+	# 从国家事务全屏卷宗点开部队或战线档案时，必须先收起全屏卷宗，
+	# 否则右栏军务档案会被遮在后面，地图也无法交互。
+	if host._country_panel != null and host._country_panel.is_panel_open():
+		host.close_country_panel()
 	if kind == "army" and cell < 0 and host._player_controller.has_method("military_army_cell"):
 		cell = int(host._player_controller.call("military_army_cell", id))
 	var payload = host._military_dossier_payload(kind, id, cell)

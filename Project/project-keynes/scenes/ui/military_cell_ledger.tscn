@@ -13,7 +13,7 @@ script = ExtResource("1_ledger")
 
 [node name="Body" type="VBoxContainer" parent="."]
 layout_mode = 2
-theme_override_constants/separation = 6
+theme_override_constants/separation = 8
 
 [node name="GarrisonStrip" type="Control" parent="Body"]
 unique_name_in_owner = true
@@ -21,28 +21,47 @@ layout_mode = 2
 size_flags_horizontal = 3
 script = ExtResource("2_garrison")
 
-[node name="ArmyActions" type="HBoxContainer" parent="Body"]
+[node name="ArmyActions" type="VBoxContainer" parent="Body"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 4
 
 [node name="CreateArmy" type="Button" parent="Body/ArmyActions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 44)
+custom_minimum_size = Vector2(0, 38)
 layout_mode = 2
+size_flags_horizontal = 3
 text = "编成部队"
+theme_type_variation = &"PKMilitaryCommandButton"
 
 [node name="ArmyFeedback" type="Label" parent="Body/ArmyActions"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+autowrap_mode = 2
 text = ""
 visible = false
+
+[node name="TroopsTag" type="Label" parent="Body"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 0
+text = "当地部队"
+theme_type_variation = &"PKPaperTag"
 
 [node name="TroopList" type="Control" parent="Body"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 script = ExtResource("3_roster")
+
+[node name="TrainingTag" type="Label" parent="Body"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 0
+text = "训练队列"
+theme_type_variation = &"PKPaperTag"
 
 [node name="TrainingList" type="Control" parent="Body"]
 layout_mode = 2
@@ -54,10 +73,17 @@ script = ExtResource("4_training")
 layout_mode = 2
 script = ExtResource("5_rule")
 
+[node name="BuildingsTag" type="Label" parent="Body"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+text = "军事设施"
+theme_type_variation = &"PKPaperTag"
+
 [node name="Rows" type="VBoxContainer" parent="Body"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 2
+theme_override_constants/separation = 4
 
 [node name="HoverLayer" type="CanvasLayer" parent="."]
 layer = 4

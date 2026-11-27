@@ -154,6 +154,8 @@ func begin_military_arm_order(host, army: int, mode: String, radius: int = 1) ->
 		return host._result(false, "invalid_args", "未知的部队指令。")
 	if (mode == "area" or mode == "explore") and (radius < 1 or radius > 6):
 		return host._result(false, "invalid_args", "选定半径必须在 1–6 格之间。")
+	if not _is_own_army(host, facade, army):
+		return host._result(false, "command_not_owner", "只能指挥本国部队。")
 	host.cancel_military_arm_order()
 	host._military_order_army = army
 	host._military_order_mode = mode
@@ -172,6 +174,25 @@ func begin_military_arm_order(host, army: int, mode: String, radius: int = 1) ->
 	armed["mode"] = mode
 	armed["radius"] = radius
 	return armed
+
+
+func _is_own_army(host, facade, army: int) -> bool:
+	if facade == null or not facade.has_method("army"):
+		return true
+	var detail = facade.call("army", army)
+	if not (detail is Dictionary) or not bool((detail as Dictionary).get("ok", false)):
+		return false
+	var owner_slot := int((detail as Dictionary).get("owner_slot", -1))
+	var player_slot := -1
+	if facade.has_method("country_snapshot"):
+		var snap = facade.call("country_snapshot", host._player_country_handle)
+		if snap is Dictionary and snap.has("country_slot"):
+			player_slot = int((snap as Dictionary).get("country_slot", -1))
+	if player_slot < 0 and host._player_country_handle > 0:
+		player_slot = int(host._player_country_handle & 0xFFFFFFFF)
+	if player_slot >= 0 and owner_slot >= 0:
+		return owner_slot == player_slot
+	return true
 
 
 
@@ -223,13 +244,34 @@ func set_military_arm_order_radius(host, radius: int) -> void:
 func confirm_military_arm_order(host) -> Dictionary:
 	if host._military_order_target < 0:
 		return host._result(false, "target_required", "先在地图上选择目标。")
+	var target_cell: int = host._military_order_target
+	var mode: String = host._military_order_mode
+	var facade = host._military_facade()
+	if (mode == "move" or mode == "area") and facade != null and facade.has_method("preview_path"):
+		var recheck: Dictionary = facade.preview_path(host._military_order_army, target_cell)
+		if not bool(recheck.get("ok", false)):
+			host._military_order_target = -1
+			host._military_order_preview.clear()
+			host._military_component._clear_military_path_preview(host)
+			if mode == "area":
+				host.clear_cell_highlights()
+			host._military_component._preview_failed(host, recheck, target_cell)
+			return host._result(false, String(recheck.get("reason", "military_path_unreachable")),
+				host._military_order_message)
+		host._military_order_preview["days"] = int(recheck.get("days", 0))
+		host._military_order_preview["cells"] = recheck.get("cells", PackedInt32Array())
 	var id := &"military.army.move"
-	var args := {"army": host._military_order_army, "cell": host._military_order_target}
-	match host._military_order_mode:
+	var args := {"army": host._military_order_army, "cell": target_cell}
+	match mode:
 		"area": id = &"military.army.area_control"
 		"explore": id = &"military.army.explore"
 	if id != &"military.army.move":
 		args["radius"] = host._military_order_radius
+		var preview_area = host._military_order_preview.get("area", PackedInt32Array())
+		if preview_area is PackedInt32Array and not (preview_area as PackedInt32Array).is_empty():
+			args["cells"] = preview_area
+		else:
+			args["cells"] = host._military_area_cells(target_cell, host._military_order_radius)
 	var sent = host.request_command(id, args)
 	if bool(sent.get("ok", false)):
 		host.cancel_military_arm_order()
@@ -254,14 +296,15 @@ func military_arm_order_click(host, cell: int) -> bool:
 		host._military_order_target = cell
 		host._military_order_preview = {"area": explore_cells, "days": 0,
 			"cells": PackedInt32Array()}
-		host.highlight_cells(explore_cells)
-		host._military_order_message = "探查范围已标出，确认后部队将自动探路并返回出发点。"
+		host.highlight_cells(explore_cells, false)
+		host._military_order_message = "探查范围已标出（半径 %d 格，共 %d 格），确认后部队将自动探路并返回出发点。" % [
+			host._military_order_radius, explore_cells.size()]
 		host._military_component._notify_military_arm_order(host)
 		return true
 	var facade = host._military_facade()
 	var preview: Dictionary = facade.preview_path(host._military_order_army, cell) \
 		if facade != null and facade.has_method("preview_path") else {}
-	host._military_order_target = cell
+	host._military_order_target = -1
 	host._military_order_preview.clear()
 	host._military_component._clear_military_path_preview(host)
 	if host._military_order_mode == "area":
@@ -278,10 +321,12 @@ func military_arm_order_click(host, cell: int) -> bool:
 	if host._military_order_mode == "area":
 		var cells = host._military_area_cells(cell, host._military_order_radius)
 		host._military_order_preview["area"] = cells
-		host.highlight_cells(cells)
-		host._military_order_message = "控制范围已标出，确认后部队将执行区域控制。"
+		host.highlight_cells(cells, false)
+		host._military_order_message = "控制范围已标出（半径 %d 格，共 %d 格），确认后部队将执行区域控制。" % [
+			host._military_order_radius, cells.size()]
 	else:
-		host._military_order_message = "路线已标出；可改选目标，或确认行军。"
+		host._military_order_message = "路线已标出（预计 %d 日）；可改选目标，或确认行军。" % [
+			int(preview.get("days", 0))]
 	host._military_component._notify_military_arm_order(host)
 	return true
 

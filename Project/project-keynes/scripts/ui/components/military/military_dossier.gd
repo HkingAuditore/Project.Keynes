@@ -62,6 +62,10 @@ const FRONT_ARMY_COLUMNS := [
 @onready var _stance: OptionButton = %Stance
 @onready var _radius: SpinBox = %Radius
 @onready var _radius_label: Label = %Label
+@onready var _radius_cells_hint: Label = %RadiusCellsHint
+@onready var _radius_buttons: Array = [%Radius1, %Radius2, %Radius3, %Radius4, %Radius5, %Radius6]
+@onready var _command_card: PanelContainer = %CommandCard
+@onready var _order_draft: PanelContainer = %OrderDraft
 @onready var _same_cell_block: Control = %SameCellBlock
 @onready var _same_cell_table: DossierLedgerTable = %SameCellTable
 @onready var _front_footnote: Label = %FrontFootnote
@@ -83,6 +87,7 @@ var _own := false
 
 func _ready() -> void:
 	_guard_scene()
+	_apply_deck_styles()
 	for card in _kpi_cards:
 		if card is Control:
 			(card as Control).custom_minimum_size = Vector2(72.0, DossierKpiCard.HEIGHT)
@@ -110,9 +115,13 @@ func _ready() -> void:
 			_explore_button, _stop_button,
 			%ConfirmOrder, %CancelOrder, _front_locate_button]:
 		button.focus_mode = Control.FOCUS_ALL
+		if button != _close_button:
+			_apply_command_button_style(button, button == %ConfirmOrder)
+		var min_h := 38.0 if button in [_locate_button, _stop_button] else 44.0
 		button.custom_minimum_size = Vector2(button.custom_minimum_size.x,
-			maxf(button.custom_minimum_size.y, 44.0))
+			maxf(button.custom_minimum_size.y, min_h))
 		UIAnimation.bind_tactile_button(button)
+	_apply_command_button_style(_stance, false)
 	_close_button.pressed.connect(func() -> void: closed.emit())
 	_locate_button.pressed.connect(func() -> void: _emit_action(&"locate", {}))
 	_move_button.pressed.connect(func() -> void: _emit_action(&"move", {}))
@@ -126,8 +135,23 @@ func _ready() -> void:
 	_stance.item_selected.connect(func(index: int) -> void:
 		_emit_action(&"stance", {"stance": index}))
 	_radius.value_changed.connect(func(value: float) -> void:
+		_sync_radius_buttons(int(value))
 		_emit_action(&"radius", {"radius": int(value)}))
 	_radius.get_line_edit().focus_mode = Control.FOCUS_NONE
+	for index in range(_radius_buttons.size()):
+		var radius_value := index + 1
+		var radius_button := _radius_buttons[index] as Button
+		if radius_button == null:
+			continue
+		radius_button.focus_mode = Control.FOCUS_ALL
+		radius_button.tooltip_text = "半径 %d 格（约 %d 格）" % [
+			radius_value, _hex_area_count(radius_value)]
+		_apply_radius_chip_style(radius_button)
+		UIAnimation.bind_tactile_button(radius_button)
+		radius_button.pressed.connect(func() -> void:
+			_radius.set_value_no_signal(radius_value)
+			_sync_radius_buttons(radius_value)
+			_emit_action(&"radius", {"radius": radius_value}))
 	%ConfirmOrder.pressed.connect(func() -> void: _emit_action(&"confirm_order", {}))
 	%CancelOrder.pressed.connect(func() -> void: _emit_action(&"cancel_order", {}))
 	_move_button.toggle_mode = true
@@ -333,8 +357,9 @@ func _apply_actions(actions: Array, selected: int) -> void:
 		_explore_button.tooltip_text = "选择探查范围，部队自动探索后返回出发点（E）"
 	_stop_button.visible = _own and by_id.has("stop")
 	_stop_button.disabled = not bool(by_id.get("stop", false))
-	%ArmyActions.visible = _locate_button.visible or _move_button.visible \
-		or _area_button.visible or _explore_button.visible
+	%ArmyActions.visible = _move_button.visible or _area_button.visible \
+		or _explore_button.visible
+	%UtilityRow.visible = _locate_button.visible or _stop_button.visible or %StanceRow.visible
 
 
 ## 选点草稿是会话输入状态，和每日军事快照分开写；刷新不会清掉路线或焦点。
@@ -349,19 +374,26 @@ func set_order_state(state: Dictionary) -> void:
 	_area_button.set_pressed_no_signal(active and mode == "area")
 	_explore_button.set_pressed_no_signal(active and mode == "explore")
 	%RadiusRow.visible = active and (mode == "area" or mode == "explore")
+	var radius_value := clampi(int(state.get("radius", 1)), 1, 6)
 	_radius_label.text = "探查半径（格）" if mode == "explore" else "控制半径（格）"
-	_radius.set_value_no_signal(int(state.get("radius", 1)))
+	_radius.set_value_no_signal(radius_value)
+	_sync_radius_buttons(radius_value)
+	if _radius_cells_hint != null:
+		var actual_cells := int(state.get("cell_count", 0))
+		_radius_cells_hint.text = "共 %d 格" % actual_cells if actual_cells > 0 \
+			else "约 %d 格" % _hex_area_count(radius_value)
 	%ConfirmOrder.disabled = not active or not bool(state.get("ready", false))
 	%ConfirmOrder.text = "确认探查范围" if mode == "explore" else (
 		"确认控制区域" if mode == "area" else "确认行军")
-	%OrderSummary.text = "先选择地图目标"
+	%OrderSummary.text = "请在地图上点选探查中心（可随时切换下方半径）" if mode == "explore" else (
+		"请在地图上点选控制中心（可随时切换下方半径）" if mode == "area" else "请在地图上点选目的地预览路线")
 	if active and bool(state.get("ready", false)):
 		if mode == "explore":
-			%OrderSummary.text = "范围 %d 格 · 完成后返回出发点\n不会主动进入他国控制格" % [
-				int(state.get("cell_count", 0))]
+			%OrderSummary.text = "半径 %d 格 · 共 %d 格 · 探查后自动返回出发点\n不会主动进入他国控制格" % [
+				radius_value, int(state.get("cell_count", 0))]
 		elif mode == "area":
-			%OrderSummary.text = "控制 %d 格 · 抵达中心约 %d 日" % [
-				int(state.get("cell_count", 0)), int(state.get("days", 0))]
+			%OrderSummary.text = "半径 %d 格 · 控制 %d 格 · 抵达中心约 %d 日" % [
+				radius_value, int(state.get("cell_count", 0)), int(state.get("days", 0))]
 		else:
 			%OrderSummary.text = "预计行军 %d 日" % int(state.get("days", 0))
 	%CommandHint.theme_type_variation = &"PKDossierCaption"
@@ -404,6 +436,23 @@ func handle_order_key(event: InputEvent) -> bool:
 		if key.keycode in [KEY_ENTER, KEY_KP_ENTER] and not %ConfirmOrder.disabled:
 			_emit_action(&"confirm_order", {})
 			return true
+		var mode := String(_order_state.get("mode", ""))
+		if mode == "area" or mode == "explore":
+			var current_radius := clampi(int(_order_state.get("radius", 1)), 1, 6)
+			if key.keycode in [KEY_BRACKETLEFT, KEY_MINUS]:
+				var next_radius := maxi(1, current_radius - 1)
+				if next_radius != current_radius:
+					_radius.set_value_no_signal(next_radius)
+					_sync_radius_buttons(next_radius)
+					_emit_action(&"radius", {"radius": next_radius})
+				return true
+			if key.keycode in [KEY_BRACKETRIGHT, KEY_EQUAL]:
+				var next_radius := mini(6, current_radius + 1)
+				if next_radius != current_radius:
+					_radius.set_value_no_signal(next_radius)
+					_sync_radius_buttons(next_radius)
+					_emit_action(&"radius", {"radius": next_radius})
+				return true
 	if not _own:
 		return false
 	var shortcuts := {KEY_M: _move_button, KEY_C: _area_button,
@@ -498,3 +547,108 @@ func _visible_blocks() -> Array:
 		if block is Control and (block as Control).visible:
 			visible.append(block)
 	return visible
+
+
+static func _hex_area_count(radius: int) -> int:
+	var r := clampi(radius, 0, 6)
+	return 1 + 3 * r * (r + 1)
+
+
+func _sync_radius_buttons(radius: int) -> void:
+	var clamped := clampi(radius, 1, 6)
+	for index in range(_radius_buttons.size()):
+		var button := _radius_buttons[index] as Button
+		if button != null:
+			button.set_pressed_no_signal(index + 1 == clamped)
+
+
+func _apply_deck_styles() -> void:
+	if _command_card != null:
+		var card_style := StyleBoxFlat.new()
+		card_style.bg_color = Color(0.955, 0.915, 0.825, 0.72)
+		card_style.border_color = Color(UITokens.DOSSIER_RULE, 0.55)
+		card_style.set_border_width_all(1)
+		card_style.set_corner_radius_all(5)
+		card_style.content_margin_left = 8
+		card_style.content_margin_right = 8
+		card_style.content_margin_top = 7
+		card_style.content_margin_bottom = 7
+		_command_card.add_theme_stylebox_override("panel", card_style)
+	if _order_draft != null:
+		var draft_style := StyleBoxFlat.new()
+		draft_style.bg_color = Color(0.975, 0.935, 0.835, 0.94)
+		draft_style.border_color = Color(UITokens.DOSSIER_BRASS, 0.85)
+		draft_style.set_border_width_all(1)
+		draft_style.border_width_left = 3
+		draft_style.set_corner_radius_all(5)
+		draft_style.content_margin_left = 10
+		draft_style.content_margin_right = 9
+		draft_style.content_margin_top = 8
+		draft_style.content_margin_bottom = 8
+		_order_draft.add_theme_stylebox_override("panel", draft_style)
+
+
+func _apply_command_button_style(button: BaseButton, primary: bool) -> void:
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(0.91, 0.83, 0.67, 0.95) if primary else Color(0.965, 0.93, 0.855, 0.92)
+	normal.border_color = Color(UITokens.DOSSIER_BRASS, 0.9) if primary else Color(UITokens.DOSSIER_RULE, 0.65)
+	normal.set_border_width_all(1)
+	normal.border_width_bottom = 2
+	normal.set_corner_radius_all(4)
+	normal.content_margin_left = 9
+	normal.content_margin_right = 9
+	normal.content_margin_top = 5
+	normal.content_margin_bottom = 5
+	var hover := normal.duplicate() as StyleBoxFlat
+	hover.bg_color = Color(0.94, 0.86, 0.70, 1.0) if primary else Color(0.985, 0.955, 0.885, 1.0)
+	hover.border_color = UITokens.DOSSIER_BRASS
+	var pressed := normal.duplicate() as StyleBoxFlat
+	pressed.bg_color = Color(0.89, 0.78, 0.64, 1.0)
+	pressed.border_color = UITokens.DOSSIER_OXBLOOD
+	pressed.border_width_bottom = 2
+	var focus := hover.duplicate() as StyleBoxFlat
+	focus.border_color = UITokens.DOSSIER_BRASS
+	focus.set_border_width_all(2)
+	var disabled := normal.duplicate() as StyleBoxFlat
+	disabled.bg_color = Color(0.91, 0.88, 0.81, 0.55)
+	disabled.border_color = Color(UITokens.DOSSIER_RULE, 0.35)
+	disabled.border_width_bottom = 1
+	button.add_theme_stylebox_override("normal", normal)
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("pressed", pressed)
+	button.add_theme_stylebox_override("focus", focus)
+	button.add_theme_stylebox_override("disabled", disabled)
+	button.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
+	button.add_theme_color_override("font_focus_color", UITokens.DOSSIER_INK)
+	button.add_theme_color_override("font_hover_color", UITokens.DOSSIER_OXBLOOD)
+	button.add_theme_color_override("font_pressed_color", UITokens.DOSSIER_OXBLOOD)
+	button.add_theme_color_override("font_hover_pressed_color", UITokens.DOSSIER_OXBLOOD)
+	button.add_theme_color_override("font_disabled_color", Color(UITokens.DOSSIER_INK_MUTED, 0.58))
+
+
+func _apply_radius_chip_style(button: Button) -> void:
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(0.96, 0.925, 0.85, 0.92)
+	normal.border_color = Color(UITokens.DOSSIER_RULE, 0.65)
+	normal.set_border_width_all(1)
+	normal.set_corner_radius_all(4)
+	normal.content_margin_left = 4
+	normal.content_margin_right = 4
+	normal.content_margin_top = 3
+	normal.content_margin_bottom = 3
+	var hover := normal.duplicate() as StyleBoxFlat
+	hover.bg_color = Color(0.985, 0.955, 0.885, 1.0)
+	hover.border_color = UITokens.DOSSIER_BRASS
+	var pressed := normal.duplicate() as StyleBoxFlat
+	pressed.bg_color = UITokens.DOSSIER_OXBLOOD
+	pressed.border_color = UITokens.DOSSIER_OXBLOOD
+	button.add_theme_stylebox_override("normal", normal)
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("pressed", pressed)
+	button.add_theme_stylebox_override("focus", hover)
+	button.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
+	button.add_theme_font_size_override("font_size", 13)
+	button.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
+	button.add_theme_color_override("font_hover_color", UITokens.DOSSIER_OXBLOOD)
+	button.add_theme_color_override("font_pressed_color", UITokens.DOSSIER_PAPER)
+	button.add_theme_color_override("font_hover_pressed_color", UITokens.DOSSIER_PAPER)

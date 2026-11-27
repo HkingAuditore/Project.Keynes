@@ -67,6 +67,7 @@ func open_for_card(title_text: String, lanes: Array, initial_index: int = 0) -> 
 	_active_index = clampi(initial_index, 0, _lanes.size() - 1)
 	_load_active_lane()
 	visible = true
+	move_to_front()
 	if is_inside_tree():
 		grab_focus()
 

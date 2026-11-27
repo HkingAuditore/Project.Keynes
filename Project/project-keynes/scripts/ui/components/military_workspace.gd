@@ -92,6 +92,7 @@ var _summoned := false
 @onready var _deployment_bar: DossierStackedBar = %DeploymentBar
 @onready var _spend_bar: DossierStackedBar = %SpendBar
 @onready var _overview_insights: InsightList = %OverviewInsights
+@onready var _overview_war_banner: PanelContainer = %WarBannerCard
 @onready var _overview_war_kicker: Label = %WarKicker
 @onready var _overview_war_link: Button = %WarLink
 
@@ -170,8 +171,9 @@ func _ready() -> void:
 	for button in [_overview_war_link, _mode_headcount, _mode_budget, _quality_best,
 			_quality_cheap, _toggle_auto_retrain, _toggle_levy, _toggle_auto_discharge]:
 		button.focus_mode = Control.FOCUS_ALL
+		var target_h := 36.0 if button in [_toggle_auto_retrain, _toggle_levy, _toggle_auto_discharge] else 34.0
 		button.custom_minimum_size = Vector2(button.custom_minimum_size.x,
-			maxf(button.custom_minimum_size.y, 44.0))
+			maxf(button.custom_minimum_size.y, target_h))
 		UIAnimation.bind_tactile_button(button)
 	_mode_headcount.focus_neighbor_right = _mode_headcount.get_path_to(_mode_budget)
 	_mode_budget.focus_neighbor_left = _mode_budget.get_path_to(_mode_headcount)
@@ -185,7 +187,7 @@ func _ready() -> void:
 		card.gui_input.connect(_on_war_card_input.bind(card))
 		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	for button in [_mode_headcount, _mode_budget, _quality_best, _quality_cheap]:
-		(button as Button).custom_minimum_size = SMALL_BUTTON
+		(button as Button).custom_minimum_size = Vector2(0, 34.0)
 	_bind_forces()
 	_bind_armies()
 	_bind_war()
@@ -285,8 +287,8 @@ func _bind_war() -> void:
 		{"id": "actions", "label": "", "kind": "actions", "width": 64.0, "sortable": false},
 	], "name", false)
 	_front_list.row_height = 24.0
-	_front_list.label_width = 150.0
-	_front_list.value_width = 60.0
+	_front_list.label_width = 136.0
+	_front_list.value_width = 108.0
 	_front_list.selectable = true
 	# 点战线 = 打开战线档案，镜头同时落到该扇区。
 	_front_list.row_selected.connect(_on_front_selected)
@@ -570,9 +572,11 @@ func _refresh_overview() -> void:
 		_overview_insights.set_items(data.insights)
 	# 战争只在「战争」章节展开；总览留一行指路，不再重复两张战争卡。
 	var wars: Array = data.get("wars", [])
+	if _overview_war_banner != null:
+		_overview_war_banner.visible = not wars.is_empty()
 	_overview_war_kicker.visible = not wars.is_empty()
 	if not wars.is_empty():
-		_overview_war_kicker.text = "进行中的战争 %d 场" % wars.size()
+		_overview_war_kicker.text = "进行中的战争 · %d 场" % wars.size()
 	_overview_war_link.visible = not wars.is_empty()
 
 

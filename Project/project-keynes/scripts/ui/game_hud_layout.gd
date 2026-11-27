@@ -297,8 +297,9 @@ func _layout_right_panel() -> void:
 		layout["panel_width"] = minf(520.0, viewport_width - UITokens.ARCHIVE_EDGE_INSET * 2.0)
 		layout["compact"] = true
 	var compact := bool(layout.get("compact", false))
+	var wing_allowed := bool(layout.get("wing_allowed", false))
 	_right_panel.set_compact_detail_mode(compact)
-	_right_panel.set_list_wing_enabled(not compact and not army_open)
+	_right_panel.set_list_wing_enabled(wing_allowed and not army_open)
 	var panel_width := float(layout.get("panel_width", RIGHT_PANEL_WIDTH))
 	# [panel-fit 2026-11-02] 触摸档把页签抬到 44dp 之后，面板内容的最小宽度会超过
 	# RIGHT_PANEL_WIDTH（真机 2670x1200@520dpi 实测：右侧详情面板的页签行被挤出屏幕，
@@ -391,6 +392,7 @@ static func inspector_layout_for_width(viewport_width: float,
 			"map_width": maxf(available_width - panel_width, 0.0),
 		}
 	var compact := viewport_width < DETAIL_LAYOUT_BREAKPOINT or TouchUI.is_short_viewport()
+	var wing_allowed := viewport_width >= DETAIL_LAYOUT_BREAKPOINT
 	var panel_width := RIGHT_PANEL_WIDTH
 	var list_wing_width := 0.0
 	if detail_open:
@@ -402,7 +404,7 @@ static func inspector_layout_for_width(viewport_width: float,
 			panel_width = minf(panel_width,
 				maxf(RIGHT_PANEL_WIDTH,
 					available_width - MAP_REMAINING_MIN_WIDTH))
-	elif list_wing_open and not compact:
+	elif list_wing_open and wing_allowed:
 		panel_width = minf(LIST_WING_PANEL_MAX_WIDTH,
 			maxf(LIST_WING_PANEL_MIN_WIDTH, viewport_width * 0.46))
 		panel_width = minf(panel_width,
@@ -411,6 +413,7 @@ static func inspector_layout_for_width(viewport_width: float,
 		list_wing_width = maxf(panel_width - RIGHT_PANEL_WIDTH, 0.0)
 	return {
 		"compact": compact,
+		"wing_allowed": wing_allowed,
 		"panel_width": panel_width,
 		"detail_width": maxf(panel_width - RIGHT_PANEL_WIDTH, 0.0) \
 			if detail_open and not compact else panel_width if detail_open else 0.0,

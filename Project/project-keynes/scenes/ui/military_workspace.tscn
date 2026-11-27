@@ -161,20 +161,27 @@ text = "军队总览"
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="WarHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage"]
+[node name="WarBannerCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("7_frame")
+
+[node name="WarHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/WarBannerCard"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="WarKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/WarHeader"]
+[node name="WarKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/WarBannerCard/WarHeader"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_vertical = 4
 theme_type_variation = &"PKDossierKicker"
 text = "进行中的战争"
 
-[node name="WarLink" type="Button" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/WarHeader"]
+[node name="WarLink" type="Button" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/WarBannerCard/WarHeader"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_vertical = 4
 theme_type_variation = &"PKDossierLink"
 text = "战争详情 ›"
 

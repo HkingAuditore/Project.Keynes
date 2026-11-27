@@ -24,12 +24,44 @@ func _ready() -> void:
 	_parts.row_height = 22.0
 	_parts.label_width = 64.0
 	_parts.value_width = 40.0
+	_style_action_button()
 	_action.pressed.connect(func() -> void: action_requested.emit(war_id))
 
 
 func set_action(text: String) -> void:
-	_action.text = text
+	if not text.is_empty():
+		IconButton.apply_with_text(_action, &"military.war.peace", text, IconButton.SMALL,
+			"打开议和窗口")
+	else:
+		_action.text = ""
 	_action.get_parent().visible = not text.is_empty()
+
+
+func _style_action_button() -> void:
+	_action.custom_minimum_size = Vector2(96.0, 34.0)
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(0.955, 0.915, 0.825, 0.95)
+	normal.border_color = Color(UITokens.DOSSIER_OXBLOOD, 0.65)
+	normal.set_border_width_all(1)
+	normal.border_width_bottom = 2
+	normal.set_corner_radius_all(4)
+	normal.content_margin_left = 10
+	normal.content_margin_right = 10
+	normal.content_margin_top = 4
+	normal.content_margin_bottom = 4
+	var hover := normal.duplicate() as StyleBoxFlat
+	hover.bg_color = Color(0.985, 0.95, 0.875, 1.0)
+	hover.border_color = UITokens.DOSSIER_OXBLOOD
+	var pressed := normal.duplicate() as StyleBoxFlat
+	pressed.bg_color = Color(0.90, 0.82, 0.69, 1.0)
+	_action.add_theme_stylebox_override("normal", normal)
+	_action.add_theme_stylebox_override("hover", hover)
+	_action.add_theme_stylebox_override("pressed", pressed)
+	_action.add_theme_stylebox_override("focus", hover)
+	_action.add_theme_color_override("font_color", UITokens.DOSSIER_OXBLOOD)
+	_action.add_theme_color_override("font_hover_color", UITokens.DOSSIER_OXBLOOD)
+	_action.add_theme_color_override("font_pressed_color", UITokens.DOSSIER_INK)
+	UIAnimation.bind_tactile_button(_action)
 
 
 ## Board type scale: the score reads at the same size as a dossier value, never

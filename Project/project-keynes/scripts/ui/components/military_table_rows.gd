@@ -57,14 +57,20 @@ static func _apply_training(_training_table, rows: Array) -> void:
 static func _apply_army_rows(_army_table, rows: Array) -> void:
 	var table_rows: Array = []
 	for row in rows:
+		var warning := String(row.warning)
+		var mission := String(row.mission)
+		var cell_text := String(row.cell_text)
+		var subtitle := warning if not warning.is_empty() else (
+			"%s · %s" % [mission, cell_text] if not mission.is_empty() and not cell_text.is_empty()
+			else (mission if not mission.is_empty() else cell_text))
 		table_rows.append({
 			"id": int(row.handle),
-			"tooltip": "%s · %s\n%s%s\n点击打开军务档案" % [String(row.name),
-				String(row.cell_text), String(row.mission),
-				("\n" + String(row.warning)) if not String(row.warning).is_empty() else ""],
+			"tooltip": "%s · %s\n%s%s\n点击打开军务档案并切换至地图指挥" % [String(row.name),
+				cell_text, mission,
+				("\n" + warning) if not warning.is_empty() else ""],
 			"cells": {
 				"name": {"text": String(row.name), "icon": "military.banner",
-					"sub": String(row.warning) if not String(row.warning).is_empty() else String(row.cell_text),
+					"sub": subtitle,
 					"color": UITokens.DOSSIER_OXBLOOD if bool(row.critical) else UITokens.DOSSIER_INK},
 				"heads": {"text": _count(row.headcount), "sort": float(row.headcount)},
 				"power": {"text": "%.1f / %.1f" % [float(row.attack), float(row.defense)]},
