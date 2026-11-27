@@ -1,6 +1,7 @@
 extends RefCounted
 class_name DCSurfaceBaker
 const SurfaceTileInputs = preload("res://scripts/rendering/bakers/surface_tile_inputs.gd")
+const SurfaceHorizonLayers = preload("res://scripts/rendering/bakers/surface_horizon_layers.gd")
 
 const VisualTileLayoutScript = preload("res://scripts/rendering/visual_tile_layout.gd")
 const VisualTileSetScript = preload("res://scripts/rendering/visual_tile_set.gd")
@@ -304,12 +305,23 @@ static func _bake_legacy_static_surface(baker: MapBaker, map: MapData, world: Wo
 	var warp_img: Image = warp_layer[0]
 	var warp_is_real: bool = bool(warp_layer[1])
 	var warp_ms := Time.get_ticks_msec() - warp_t0
+	var horizon_layers: Array = _make_surface_horizon_layers(world, size, MapBaker.TERRAIN_HORIZON_MAX_ANGLE)
+	var gi_sky_img: Image = horizon_layers[0]
+	var horizon_dir0_img: Image = horizon_layers[1]
+	var horizon_dir1_img: Image = horizon_layers[2]
+	var horizon_layers_real: bool = bool(horizon_layers[3])
 	world.terrain_surface_tex = baker._create_surface_array(
-		[normal_img, relief_img, detail_img, occluder_img, edge_layers[0], edge_layers[1], warp_img],
+		[
+			normal_img, relief_img, detail_img, occluder_img,
+			edge_layers[0], edge_layers[1], warp_img,
+			gi_sky_img, horizon_dir0_img, horizon_dir1_img,
+		],
 		baker.SURFACE_ARRAY_LAYERS)
 	# array 没建起来时 layer6 也不存在（terrain_surface_tex == null，pusher 不会绑），
 	# 所以只有"真实载荷 + array 成功"两个条件同时成立才置 true。
 	world.terrain_warp_layer_bound = warp_is_real and world.terrain_surface_tex != null
+	world.terrain_gi_sky_layer_bound = horizon_layers_real and world.terrain_surface_tex != null
+	world.terrain_horizon_dir_layers_bound = horizon_layers_real and world.terrain_surface_tex != null
 	var layers_ms := Time.get_ticks_msec() - layers_t0
 	print(("[terrain-baked-surface] %s single-tile %dx%d relief_supersample=1 surface_array=%s "
 		+ "layers=%d detail_layer=%d occluder_layer=%d water_depth=%s edge_layers=%s "
@@ -523,6 +535,10 @@ static func _make_surface_occluder_layer(baker: MapBaker, world: WorldData, size
 	return src
 
 
+static func _make_surface_horizon_layers(world: WorldData, size: Vector2i, max_angle: float) -> Array:
+	return SurfaceHorizonLayers._make_surface_horizon_layers(world, size, max_angle)
+
+
 ## [terrain-web-baked-surface-B 2026-11-01] 全通道同值的中性 RGBA8 Image（detail=0x80 /
 ## occluder=0xFF 兜底层）。**不要**用 Image.create_empty+fill(Color)：Color 是 float，
 ## 0xFFFF 这类 byte 精确值走 float 往返有舍入风险，这里直接填字节。
@@ -606,6 +622,9 @@ static func _upload_legacy_surface_fallback(baker: MapBaker, rg8_data: PackedByt
 		baker._make_neutral_surface_edge_image(size),      # layer4 距离 1.0 / 无 crease
 		baker._make_neutral_surface_neighbor_image(size),  # layer5 次生 id 0xFFFF
 		_make_neutral_surface_warp_image(size),            # layer6 边界扭曲 0x80（零偏移）
+		SurfaceHorizonLayers._make_neutral_gi_sky_image(size),                  # layer7 预烘天空可见度 + bent normal
+		SurfaceHorizonLayers._make_neutral_horizon_dir_image(size),             # layer8 预烘遮蔽角 E/NE/N/NW
+		SurfaceHorizonLayers._make_neutral_horizon_dir_image(size),             # layer9 预烘遮蔽角 W/SW/S/SE
 	], baker.SURFACE_ARRAY_LAYERS)
 	return out
 

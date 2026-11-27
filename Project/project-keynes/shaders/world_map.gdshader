@@ -85,7 +85,8 @@ uniform sampler2D land_base_normal : filter_nearest, repeat_disable;
 //   程序最终 8 槽 = height/map_index/enum/dyn/material/terrain_surface_tex/
 //   terrain_horizon_tex/noise_tex。touch 触发重编。
 // [p0-insolation-dead 2026-11-01] climate_season.season_offset_unified 无条件 return 0.0（on-map dyn_valid==1 ⇒ current_temp==dyn_temp，积分是死代码；padding 被 Fog 盖住，与 web 变体原行为一致）；touch 触发重编。
-// [surface-array-edge 2026-11-02] 同一个 array 扩到 **6 层**：layer4 = edge_distance
+// [terrain-horizon-dir-blur 2026-11-27] 移动 HIGH 恢复材质贴图阵列；全平台移除近景 fbm 噪点；
+//   8 方向静态遮蔽角解包为 2 层 LINEAR RGBA8 并与 gi_sky 同批做烘焙期 3×3 高斯模糊；touch。
 //   （R 格界距离 / G 沟谷 crease / BA 8 邻域水·湖占比）、layer5 = edge_neighbor RG
 //   （次生 cell id 16-bit；B = water_depth R，A 预留）。数据本来就在 native tile bundle 里
 //   ⇒ 扩层零新增烘焙；陆地与两个水面程序共用同一 sampler ⇒ 恢复次生生态过渡 / crease /
@@ -200,6 +201,9 @@ uniform sampler2D land_base_normal : filter_nearest, repeat_disable;
 // 恢复次生生态过渡 / crease / 海岸占比 / 次生水格时**一个材质槽都不新增**。
 #if !defined(MAP_VISUAL_TILED)
 #define VT_USE_TERRAIN_SURFACE_ARRAY
+#if defined(PK_WEB_HORIZON) || defined(PK_WEB_WATER_ONLY)
+#define PK_WEB_SURFACE_HORIZON
+#endif
 #endif
 #if defined(PK_WEB_TEXTURE_BUDGET)
 #ifndef PK_WEB_WATER_ONLY
@@ -226,7 +230,7 @@ uniform sampler2D land_base_normal : filter_nearest, repeat_disable;
 #endif
 // [B] HIGH 水面独立程序（WATER_ONLY，非 tiled）需要烘焙水深；land-only 程序不拿。
 // [surface-array-edge 2026-11-02] 水面也吃同一个 surface array（7→8 槽）：layer4/5 恢复
-// edge_mix / shore_frac / 次生水格，水色方块与浅滩因此变连续。不声明 normal/relief/horizon。
+// edge_mix / shore_frac / 次生水格。山影共用数组第 8/9 层，无独立 horizon sampler。
 #if defined(PK_WEB_WATER_ONLY)
 #define VT_USE_WATER_DEPTH
 #if !defined(MAP_VISUAL_TILED)
@@ -313,10 +317,9 @@ uniform sampler2D land_base_normal : filter_nearest, repeat_disable;
 #ifndef PK_WEB_WORLD_MIN
 #include "res://shaders/include/shore_common.gdshaderinc"
 #endif
-// [baked-surface 2026-11-01] horizon 所有变体统一 include：Web 全档位生成期烘焙，
-// PK_WEB_HORIZON 覆盖 MOBILE_QUALITY_LOW 的早退；没有 horizon 采样槽的程序
-// （Web 水面）由 include 内部的中性叶子兜底。terrain_horizon_neutral 不再使用。
+// Web 水陆共用地表数组中的方向角层；原生端还保留 packed horizon 回退。
 #include "res://shaders/include/terrain_horizon.gdshaderinc"
+#include "res://shaders/include/world_lighting_field.gdshaderinc"
 #include "res://shaders/include/brdf.gdshaderinc"
 #include "res://shaders/include/cloud_shadow.gdshaderinc"
 // [land-water-split 2026-11-02] 水面 program 不 include 陆地管线（与陆地 program
@@ -650,7 +653,7 @@ void fragment() {
 #else
 	float _Hf = visual_static_texture_size().y;
 #endif
-	float lat_norm = clamp((uv.y * _Hf - 0.5) / max(_Hf - 1.0, 1.0), 0.0, 1.0);
+	float lat_norm = earth_daylight_latitude_norm(uv.y, _Hf);
 	float dyn_temp = dyns.r;
 	float dyn_wet = dyns.g;
 	float dyn_snow = dyns.b;
@@ -748,7 +751,7 @@ void fragment() {
 		visual_land_veg = (field_gate_water == 1) ? veg : field_gate.y;
 		visual_land_cover = (field_gate_water == 1) ? cover : field_gate.z;
 	}
-#if !defined(PK_QUALITY_LOW)
+#if !defined(PK_QUALITY_LOW) && !defined(PK_QUALITY_MID)
 	// [cell-field 2026-11-18] 次生水格 = 权重第二的那一格（pk_cell_field_rank(f, 1)），
 	// 混合权重就是它的 w_raw。今天的 water_edge_w 是距离场导出的连续量，这里换成同一
 	// 语义的连续量；候选仍必须是水格（与今天 candidate_biome 的守卫同义）。
@@ -783,7 +786,7 @@ void fragment() {
 			fog_edge = fog_edge && dither < edge_weight;
 		}
 		bool water_edge = false;
-#if !defined(PK_QUALITY_LOW)
+#if !defined(PK_QUALITY_LOW) && !defined(PK_QUALITY_MID)
 		water_edge = is_water && edge_weight > 0.0001;
 #endif
 		if (land_material_edge || fog_edge || water_edge) {

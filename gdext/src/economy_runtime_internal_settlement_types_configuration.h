@@ -97,6 +97,9 @@
     std::vector<int32_t> _food_equivalent_goods;
     std::vector<uint8_t> _survival_clothing_good_mask;
     int32_t _survival_clothing_need_stable_id = -1;
+    int32_t _survival_home_energy_need_stable_id = -1;
+    static constexpr int64_t SEVERE_COLD_TEMPERATURE_Q16 = 19661; // 0.30
+    static constexpr int64_t SEVERE_COLD_SNOW_THRESHOLD_Q16 = Q16_ONE / 4; // 0.25
     int32_t _starvation_satisfaction_threshold_q16 = Q16_ONE / 2;
     int32_t _survival_production_target_q16 = Q16_ONE;
     int64_t _starvation_death_rate_q32 = Q32_ONE / 200;

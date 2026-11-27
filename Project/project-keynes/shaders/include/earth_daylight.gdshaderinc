@@ -206,6 +206,19 @@ EarthDaylight eval_earth_daylight(vec2 uv, float lat_signed, bool enable_day_nig
 	return eval_earth_daylight_from_sun(sdir, enable_day_night);
 }
 
+float earth_daylight_latitude_norm(float uv_y, float height_px) {
+	return clamp((uv_y * height_px - 0.5) / max(height_px - 1.0, 1.0), 0.0, 1.0);
+}
+
+// Choose the same key light for BRDF and terrain shadows. Day and moon directions
+// are nearly opposite, so switch between them instead of interpolating.
+vec3 earth_daylight_key_dir(EarthDaylight ed, vec3 global_sun, bool use_local_sun, float sun_max_up) {
+	vec3 sun = normalize(vec3(ed.sun_dir.xy, min(ed.sun_dir.z, sun_max_up)));
+	vec3 moon = normalize(vec3(ed.moon_dir.xy, min(ed.moon_dir.z, 0.72)));
+	vec3 day_key = use_local_sun ? sun : normalize(global_sun);
+	return mix(moon, day_key, step(ed.moon_strength, ed.local_day));
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // [sky-sh-ambient] L1 球谐天光（次级方向化补光）— 地形/水面/植被统一真源。
 //   动机（Why）：原 amb_col 是「平铺」环境光（不随法线变化）→ 太阳低垂/夜侧时方向光衰减，

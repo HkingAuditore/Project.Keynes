@@ -94,6 +94,10 @@ uniform float gi_bent_strength = 0.35;
 uniform float gi_normal_floor = 0.85;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/cloud_shadow.gdshaderinc"
+#ifndef PK_WEB_BUILDING_MIN
+#define PK_WORLD_LIGHTING_FIELD
+#endif
+#include "res://shaders/include/world_lighting_field.gdshaderinc"
 vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 #include "res://shaders/include/terrain_horizon.gdshaderinc"
 #include "res://shaders/include/building_form.gdshaderinc"
@@ -213,14 +217,25 @@ vec2 pixel_map_uv(vec2 s) {
 
 // 只有高画质付 horizon 的 4 次采样；其余情况返回精确中性值，不碰纹理。
 // covered=false 是 quad 的留白区（比足印大一圈，含倾斜量），那里不会写任何颜色。
-TerrainHorizonSample building_horizon(vec2 map_uv, bool covered) {
+TerrainHorizonSample building_horizon(vec2 map_uv, bool covered, out vec3 wl_bounce) {
+	wl_bounce = vec3(0.0);
 	TerrainHorizonSample neutral;
 	neutral.direct_visibility = 1.0;
 	neutral.sky_visibility = 1.0;
 	neutral.bent_normal = vec3(0.0, 0.0, 1.0);
 	neutral.nearest_packed = vec4(0.0);
 	neutral.has_data = false;
-	if (!covered || visual_quality < 2 || terrain_horizon_strength <= 0.0) {
+	if (!covered || visual_quality < 2) {
+		return neutral;
+	}
+	if (world_lighting_active()) {
+		vec4 wl = sample_world_lighting(map_uv);
+		TerrainHorizonSample hs = terrain_horizon_sample_gi_sky_only(map_uv);
+		hs.direct_visibility = wl.a;
+		wl_bounce = wl.rgb * world_lighting_radiance_scale * 0.18;
+		return hs;
+	}
+	if (terrain_horizon_strength <= 0.0) {
 		return neutral;
 	}
 	return terrain_horizon_evaluate(map_uv, v_sun_dir);
@@ -228,7 +243,7 @@ TerrainHorizonSample building_horizon(vec2 map_uv, bool covered) {
 
 // 一个 fragment 里最多会叠 3 层（屋面 + 墙面 + 窗/内院），但地面位置相同，所以 horizon
 // 采样在 fragment 顶部做一次、按值传进来——每多一次调用就多 4 次 tap。
-vec3 light_at(vec3 n, TerrainHorizonSample hs) {
+vec3 light_at(vec3 n, TerrainHorizonSample hs, vec3 wl_bounce) {
 	float ndl = max(dot(n, v_sun_dir), 0.0) * v_day.x * hs.direct_visibility
 		* v_cloud_sun_visibility;
 	float mdl = max(dot(n, -v_sun_dir), 0.0) * v_day.z;
@@ -244,7 +259,8 @@ vec3 light_at(vec3 n, TerrainHorizonSample hs) {
 	// The reduced ambient gain balances roofs against direct sun; at night the
 	// sky is the only light the terrain gets, so roofs must match it.
 	float amb_gain = mix(1.0, BUILDING_AMBIENT_GAIN, v_day.x);
-	return (amb * amb_gain * sky + v_sun_col * ndl * BUILDING_SUN_GAIN
+	return (amb * amb_gain * sky + wl_bounce
+		+ v_sun_col * ndl * BUILDING_SUN_GAIN
 		+ EARTH_MOONLIGHT * mdl * BUILDING_MOON_GAIN) * tod_exposure;
 }
 
@@ -412,7 +428,8 @@ void fragment() {
 	// 没有足印覆盖率也必须算。
 	bool covered = roof_cov > 0.0 || wall_cov > 0.0
 		|| form == BF_COURTYARD || form == BF_WINDMILL;
-	TerrainHorizonSample hs = building_horizon(map_uv, covered);
+	vec3 wl_bounce = vec3(0.0);
+	TerrainHorizonSample hs = building_horizon(map_uv, covered, wl_bounce);
 
 	if (roof_cov > 0.0) {
 		float e = max(0.025, px * 0.5);
@@ -463,7 +480,7 @@ void fragment() {
 		albedo *= 1.0 - wet * 0.18;
 		spec_amt = spec_amt * (1.0 - snow_amt) + wet * 0.30;
 
-		vec3 c = albedo * light_at(n, hs);
+		vec3 c = albedo * light_at(n, hs, wl_bounce);
 		vec3 h = normalize(v_sun_dir + vec3(0.0, 0.0, 1.0));
 		c += v_sun_col * pow(max(dot(n, h), 0.0), 28.0) * spec_amt * v_day.x * 0.6 * tod_exposure;
 
@@ -510,7 +527,7 @@ void fragment() {
 		// Contact darkening near the ground and a darker gable band above the eave.
 		albedo *= mix(0.62, 1.0, smoothstep(0.0, 0.45, wall_t));
 		albedo *= wall_t > he + 0.02 ? 0.88 : 1.0;
-		vec3 c = albedo * light_at(n, hs);
+		vec3 c = albedo * light_at(n, hs, wl_bounce);
 
 		// [early-hearth 2026-11-20] Warm firelight wash on windowless walls,
 		// strongest at the base where the hearth sits.
@@ -534,7 +551,7 @@ void fragment() {
 				* step(0.25, wall_t) * win_detail;
 			if (mat == BM_GLASS) in_win = 0.6;
 			float lit = step(0.35, bf_hash12(vec2(floor(face / spacing), floor(wall_t / floor_h)) + seed * 17.0));
-			c = mix(c, vec3(0.10, 0.11, 0.13) * light_at(n, hs) * 1.6, in_win * 0.8);
+			c = mix(c, vec3(0.10, 0.11, 0.13) * light_at(n, hs, wl_bounce) * 1.6, in_win * 0.8);
 			if (live) {
 				// Once individual windows are below pixel size their average
 				// glow keeps lit facades readable at night. The first glazed eras
@@ -571,7 +588,7 @@ void fragment() {
 				bf_detail(3.0, px) * (era < 3.5 ? 1.0 : 0.3));
 			ground = mix(ground, vec3(0.88, 0.91, 0.95), snow * 0.9);
 			float court_ao = mix(0.55, 1.0, smoothstep(0.0, 0.7, -d_inner));
-			vec3 c = ground * light_at(tilt_to_ground(vec3(0.0, 0.0, 1.0)), hs) * court_ao;
+			vec3 c = ground * light_at(tilt_to_ground(vec3(0.0, 0.0, 1.0)), hs, wl_bounce) * court_ao;
 			float a = yard * (1.0 - alpha);
 			col += c * a;
 			alpha += a;
@@ -584,7 +601,7 @@ void fragment() {
 		float angle = seed * 6.2831853 + TIME * (turbine ? 1.1 : 0.35);
 		float sail = bf_sails(hub, mat, v_half.y, angle, px);
 		vec3 sail_col = turbine ? vec3(0.86, 0.87, 0.88) : vec3(0.74, 0.69, 0.58);
-		vec3 lit_sail = sail_col * light_at(vec3(0.0, 0.0, 1.0), hs);
+		vec3 lit_sail = sail_col * light_at(vec3(0.0, 0.0, 1.0), hs, wl_bounce);
 		col = col * (1.0 - sail) + lit_sail * sail;
 		alpha = alpha + sail * (1.0 - alpha);
 	}

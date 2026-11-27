@@ -93,6 +93,7 @@ static func apply_tod(host, profile: TODProfile) -> void:
 		if layer.has_method("set_tod_sun_dir"):
 			layer.set_tod_sun_dir(host._tod_sun_dir)
 	)
+	host._sync_world_lighting_daylight()
 	host._sync_detail_and_activity_materials()
 
 
@@ -131,6 +132,7 @@ static func set_day_night_enabled(host, v: bool) -> void:
 	host._for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_day_night_enabled(host.day_night_enabled)
 	)
+	host._sync_world_lighting_daylight()
 	host._sync_detail_and_activity_materials()
 	if host._cloud_shadow_field != null:
 		host._cloud_shadow_field.set_night_factor(

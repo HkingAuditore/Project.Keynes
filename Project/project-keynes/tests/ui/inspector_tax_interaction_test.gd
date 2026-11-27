@@ -1,10 +1,6 @@
 extends SceneTree
 
 const TaxMergeTest := preload("res://tests/ui/inspector_tax_merge_test.gd")
-const EconomyCatalogScript := preload("res://scripts/economy/economy_catalog.gd")
-const EconomyFacadeDisplayScript := preload(
-	"res://scripts/economy/economy_facade_display.gd")
-const TaxGroupMapScript := preload("res://scripts/country/tax_group_map.gd")
 
 class FakePlayerController extends Node:
 	var succeed := false
@@ -14,47 +10,6 @@ class FakePlayerController extends Node:
 		calls.append({"id": id, "args": args.duplicate(true)})
 		return {"ok": succeed, "reason": "rejected for test",
 			"effective_day": 11}
-
-
-## 整组断言的三个假件：真目录列 + 一份税快照 + 记录命令。
-class FakeTaxGroupEconomy extends RefCounted:
-	var columns: Dictionary = {}
-
-	func construction_type_columns() -> Dictionary:
-		return columns
-
-
-class FakeTaxGroupCountry extends RefCounted:
-	var building_ids := PackedStringArray()
-	var good_ids := PackedStringArray()
-	var profession_ids := PackedStringArray()
-
-	func cell_summary(_cell: int) -> Dictionary:
-		return {"ok": true, "owned": true, "country_handle": 7}
-
-	## 形状照原生 country_runtime_queries.cpp:674-676：三份 id 都在顶层，
-	## income/business/consumption 里只有 rates/has_override 那些列。
-	func tax_policy_snapshot(_handle: int) -> Dictionary:
-		return {"ok": true, "country_handle": 7,
-			"profession_ids": profession_ids,
-			"good_ids": good_ids,
-			"building_type_ids": building_ids}
-
-
-class FakeTaxGroupController extends Node:
-	var calls: Array[Dictionary] = []
-	var economy = null
-	var country = null
-
-	func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
-		calls.append({"id": id, "args": args.duplicate(true)})
-		return {"ok": true, "effective_day": 12, "sequence": calls.size()}
-
-	func get_economy_facade():
-		return economy
-
-	func get_country_facade():
-		return country
 
 
 func _initialize() -> void:
@@ -103,6 +58,7 @@ func _run() -> void:
 	})
 	if inspector._object_detail_dialog.tax_editors().size() != 1:
 		failures.append("cohort detail showed two income tax layers")
+	_assert_no_tax_group_ui(failures, inspector, "cohort")
 	if (inspector.get("_page_tax_editors") as Array).size() != 1:
 		failures.append("population page did not expose the cell income default")
 	var cohort_page_tax := inspector.get("_page_tax_section") as Control
@@ -438,8 +394,6 @@ func _run() -> void:
 		if controller.calls.size() != before:
 			failures.append("stale reset confirmation changed a different category")
 
-	await _run_tax_group_assertions(failures)
-
 	if failures.is_empty():
 		print("[inspector-tax-interaction] PASS")
 		quit(0)
@@ -588,6 +542,7 @@ func _assert_object_tax_layer(
 	if editors.size() != expected_count:
 		failures.append("%s detail showed %d tax layers instead of %d" % [
 			object_kind, editors.size(), expected_count])
+	_assert_no_tax_group_ui(failures, inspector, object_kind)
 	for editor_value in editors:
 		var data := (editor_value as TaxLaneEditor).lane_data()
 		if String(data.get("scope", "")) == "default":
@@ -612,414 +567,17 @@ func _assert_object_tax_layer(
 		failures.append("closing %s detail did not restore the page default tax" % object_kind)
 
 
-# ===========================================================================
-# 对象详情「整组设为」的行为断言：只加断言，不动被测代码。
-# 四条：①整组下发的 id 逐个等于 build_axis 的组；②「全部」449 切 256+193；
-# ③只 1 项时按钮禁用、切轴后旧选择被清掉；④不为了让测试变绿而放宽任何一条。
-# ===========================================================================
-
-func _run_tax_group_assertions(failures: PackedStringArray) -> void:
-	var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
-	if not bool(compiled.get("ok", false)):
-		failures.append("tax group assertions need the real catalog: %s" % String(
-			compiled.get("reason", "")))
-		return
-	var columns: Dictionary = EconomyFacadeDisplayScript.construction_type_columns(
-		compiled, _good_display_names())
-	var building_ids: PackedStringArray = columns.get(
-		"building_type_ids", PackedStringArray())
-	if building_ids.size() != 449:
-		failures.append("real catalog carries %d buildings, expected 449" % building_ids.size())
-		return
-	# 挑一座「产物组只有 1 项」的建筑：第 3 条与「切轴旧选择被清掉」都靠它。
-	var single := _single_member_building(columns)
-	if single.is_empty():
-		failures.append("no building sits in a single-member output group; "
-			+ "assertions 3 cannot run")
-		return
-
-	var controller := FakeTaxGroupController.new()
-	controller.economy = FakeTaxGroupEconomy.new()
-	controller.country = FakeTaxGroupCountry.new()
-	controller.economy.columns = columns
-	controller.country.building_ids = building_ids
-	controller.country.good_ids = columns.get("good_ids", PackedStringArray())
-	controller.country.profession_ids = columns.get(
-		"profession_ids", PackedStringArray())
-
-	get_root().size = Vector2i(1280, 720)
-	var root := Control.new()
-	root.theme = load("res://assets/themes/player_ui_theme.tres") as Theme
-	get_root().add_child(root)
-	root.add_child(controller)
-	var panel := (load("res://scenes/ui/inspector_panel.tscn") as PackedScene) \
-		.instantiate() as InspectorPanel
-	root.add_child(panel)
-	panel.show()
-	panel.set_player_controller(controller)
-	panel.set_model_for_selection(_group_building_model(5, single))
-	panel.select_tab("buildings")
-	await process_frame
-	if int(panel.get("_tax_page_cell")) != 5:
-		failures.append("group assertions need the detail cell to be 5, got %d" % int(
-			panel.get("_tax_page_cell")))
-
-	panel.show_object_detail({
-		"kind": "building", "name": "整组测试建筑",
-		"row": {"tax_lanes": [_group_lane(single)]},
-		"tax_context": {
-			"available": true, "editable": true, "cell": 5,
-			"current_day": 10, "policy_version": 7,
-		},
-	})
-	await process_frame
-	var dialog := panel._object_detail_dialog
-	var box := dialog.find_child("TaxGroupBox", true, false) as Control
-	if box == null:
-		# 先把事实说清楚：控件没建出来。数据层断言照跑，不让整条测试变成一片红。
-		failures.append("object detail built no TaxGroupBox: 整组设为 never reaches the player")
-	else:
-		await _assert_group_box(failures, panel, box, columns, single)
-	await _assert_group_data_path(failures, panel, columns, building_ids, single)
-	await _assert_all_dossiers(failures, panel, columns)
-
-
-## 三个档案都要把入口渲出来，并逐轴报「这一轴下该对象那一组有几项」。
-## 这条是 Chief 明确要的：入口出来了没有 + 每轴可有几组。
-func _assert_all_dossiers(failures: PackedStringArray, panel: InspectorPanel,
-		columns: Dictionary) -> void:
-	var specs := [
-		{"kind": "building", "subject": "building", "lane_kind": "business",
-			"lane_label": "营业税", "title": "建筑", "tax_kind": 2},
-		{"kind": "good", "subject": "good", "lane_kind": "consumption",
-			"lane_label": "交易税", "title": "物资", "tax_kind": 1},
-		{"kind": "cohort", "subject": "profession", "lane_kind": "income",
-			"lane_label": "所得税", "title": "阶层", "tax_kind": 0},
-	]
-	for spec_value in specs:
-		var spec: Dictionary = spec_value
-		var subject := String(spec["subject"])
-		var title := String(spec["title"])
-		var ids: PackedStringArray = columns.get(_subject_id_column(subject),
-			PackedStringArray())
-		if ids.is_empty():
-			failures.append("%s dossier has no ids to group" % title)
-			continue
-		var sample := String(ids[0])
-		panel.show_object_detail({
-			"kind": String(spec["kind"]), "name": "整组测试",
-			"row": {"tax_lanes": [{
-				"scope": "item", "kind": String(spec["lane_kind"]),
-				"kind_label": String(spec["lane_label"]), "item_id": sample,
-				"base": 1000, "effective": 1000, "default_rate": 500,
-				"has_override": true, "editable": true}]},
-			"tax_context": {"available": true, "editable": true, "cell": 5,
-				"current_day": 10, "policy_version": 7},
-		})
-		await process_frame
-		var box := panel._object_detail_dialog.find_child(
-			"TaxGroupBox", true, false) as Control
-		if box == null:
-			failures.append("%s dossier built no TaxGroupBox" % title)
-			continue
-		var axis_picker := box.get_node("Axis") as OptionButton
-		var axes: Array = panel.tax_group_axes(subject)
-		if axis_picker == null or axis_picker.item_count != axes.size():
-			failures.append("%s dossier shows %d axes, host offers %d" % [
-				title, axis_picker.item_count if axis_picker != null else -1, axes.size()])
-			continue
-		var parts := PackedStringArray()
-		for axis_value in axes:
-			var axis: Dictionary = axis_value
-			var axis_id := String(axis.get("id", ""))
-			var info: Dictionary = panel.tax_group_ids_for(axis_id, sample, subject)
-			if not bool(info.get("ok", false)):
-				failures.append("%s dossier axis %s returned no group" % [title, axis_id])
-				continue
-			parts.append("%s=%d" % [String(axis.get("label", axis_id)),
-				int(info.get("count", 0))])
-		print("    [tax-group] %s 轴 %d 条 · %s" % [title, axes.size(), ", ".join(parts)])
-		# 再真按一次「全部」：三个档案都得走到命令层，批次与项数要对得上。
-		var apply_button := box.get_node("Apply") as Button
-		var controller = panel.get("_player_controller")
-		var all_index := _axis_index(axes, "all_items")
-		if apply_button == null or controller == null or all_index < 0:
-			failures.append("%s dossier has no Apply button or no 全部 axis" % title)
-			continue
-		axis_picker.select(all_index)
-		axis_picker.item_selected.emit(all_index)
-		await process_frame
-		var before: int = controller.calls.size()
-		apply_button.pressed.emit()
-		var issued: int = controller.calls.size() - before
-		var expected_batches: int = int(ceil(float(ids.size()) / 256.0))
-		var total := 0
-		for call_index in range(before, controller.calls.size()):
-			var args: Dictionary = controller.calls[call_index]["args"]
-			var sent: PackedStringArray = args.get("item_ids", PackedStringArray())
-			total += sent.size()
-			if int(args.get("kind", -1)) != int(spec["tax_kind"]):
-				failures.append("%s dossier sent tax kind %d instead of %d" % [
-					title, int(args.get("kind", -1)), int(spec["tax_kind"])])
-		if issued != expected_batches or total != ids.size():
-			failures.append("%s dossier 全部 apply issued %d batches / %d items, "
-				% [title, issued, total] + "expected %d / %d" % [expected_batches, ids.size()])
-		print("    [tax-group] %s 按下「整组设为」: %d 批 / %d 项" % [title, issued, total])
-
-
-## 控件层的三条（第 1、2、3 条）。只有 TaxGroupBox 真的建出来才跑。
-func _assert_group_box(failures: PackedStringArray, panel: InspectorPanel,
-		box: Control, columns: Dictionary, single: String) -> void:
-	var axis_picker := box.get_node("Axis") as OptionButton
-	var note := box.get_node("Note") as Label
-	var rate := box.get_node("Rate") as SpinBox
-	var apply_button := box.get_node("Apply") as Button
-	if axis_picker == null or apply_button == null or rate == null or note == null:
-		failures.append("TaxGroupBox is missing one of Axis/Note/Rate/Apply")
-		return
-	var axes: Array = panel.tax_group_axes("building")
-	var era_index := _axis_index(axes, "era")
-	var all_index := _axis_index(axes, "all_items")
-	var output_index := _axis_index(axes, "output_good")
-	if era_index < 0 or all_index < 0 or output_index < 0:
-		failures.append("building detail axes lost era/all_items/output_good: %s" % str(axes))
-		return
-	var controller := panel.get("_player_controller") as FakeTaxGroupController
-
-	# ---- 第 1 条：按「时代」轴整组设值，下发的 id 逐个等于 build_axis 的组 ----
-	axis_picker.select(era_index)
-	axis_picker.item_selected.emit(era_index)
-	await process_frame
-	if apply_button.disabled:
-		failures.append("era group left 整组设为 disabled for a multi-member group")
-	var expected := _axis_group_ids(columns, "era", "building", single)
-	if expected.size() < 2:
-		failures.append("era group holds %d item(s); the id-by-id check needs at least 2" % expected.size())
-	rate.set_value_no_signal(5.0)
-	var before := controller.calls.size()
-	apply_button.pressed.emit()
-	var issued := controller.calls.size() - before
-	if issued != 1:
-		failures.append("era group issued %d commands instead of 1" % issued)
-	else:
-		var call: Dictionary = controller.calls[before]
-		if StringName(call["id"]) != &"country.tax.set_override_group":
-			failures.append("era group used %s instead of country.tax.set_override_group" % String(
-				call["id"]))
-		var args: Dictionary = call["args"]
-		if int(args.get("kind", -1)) != 2:
-			failures.append("building detail sent tax kind %d instead of 2" % int(
-				args.get("kind", -1)))
-		if int(args.get("rate_basis_points", -1)) != 500:
-			failures.append("era group sent rate %d instead of 500" % int(
-				args.get("rate_basis_points", -1)))
-		var sent: PackedStringArray = args.get("item_ids", PackedStringArray())
-		if sent.size() != expected.size():
-			failures.append("era group sent %d ids, build_axis says %d" % [
-				sent.size(), expected.size()])
-		else:
-			for index in range(sent.size()):
-				if String(sent[index]) != String(expected[index]):
-					failures.append("era group id #%d is %s, build_axis says %s" % [
-						index, String(sent[index]), String(expected[index])])
-					break
-
-	# ---- 第 2 条：「全部项目」449 切成 256 + 193 ----
-	axis_picker.select(all_index)
-	axis_picker.item_selected.emit(all_index)
-	await process_frame
-	before = controller.calls.size()
-	apply_button.pressed.emit()
-	issued = controller.calls.size() - before
-	if issued != 2:
-		failures.append("all-items group issued %d batches instead of 2" % issued)
-	else:
-		var first: PackedStringArray = controller.calls[before]["args"].get(
-			"item_ids", PackedStringArray())
-		var second: PackedStringArray = controller.calls[before + 1]["args"].get(
-			"item_ids", PackedStringArray())
-		if first.size() != 256 or second.size() != 193:
-			failures.append("all-items chunks are %d + %d instead of 256 + 193" % [
-				first.size(), second.size()])
-		var overlap := 0
-		for stable in first:
-			if second.has(stable):
-				overlap += 1
-		if overlap != 0:
-			failures.append("all-items chunks overlap on %d ids" % overlap)
-		if first.size() + second.size() != 449:
-			failures.append("all-items chunks cover %d ids instead of 449" % (
-				first.size() + second.size()))
-
-	# ---- 第 3 条：只 1 项的组禁用；切轴后旧选择被清掉 ----
-	axis_picker.select(output_index)
-	axis_picker.item_selected.emit(output_index)
-	await process_frame
-	if not apply_button.disabled:
-		failures.append("single-member output group left 整组设为 enabled")
-	if not note.text.contains("仅 1 项"):
-		failures.append("single-member group note was \"%s\"" % note.text)
-	# 切轴后 state 里不能再留着「全部」那一批：直接 emit 绕过 disabled，看它到底发什么。
-	before = controller.calls.size()
-	apply_button.pressed.emit()
-	if controller.calls.size() != before:
-		var kept: PackedStringArray = controller.calls[before]["args"].get(
-			"item_ids", PackedStringArray())
-		if kept.size() != 1 or String(kept[0]) != single:
-			failures.append("axis switch kept a stale group: it sent %d ids" % kept.size())
-
-
-## 数据层的三条同款断言：不依赖控件，验的是宿主 API 本身。
-func _assert_group_data_path(failures: PackedStringArray, panel: InspectorPanel,
-		columns: Dictionary, building_ids: PackedStringArray, single: String) -> void:
-	var era_info: Dictionary = panel.tax_group_ids_for("era", single, "building")
-	if not bool(era_info.get("ok", false)):
-		failures.append("host tax_group_ids_for(era) returned nothing")
-	else:
-		var expected := _axis_group_ids(columns, "era", "building", single)
-		var actual: PackedStringArray = era_info.get("item_ids", PackedStringArray())
-		if actual.size() != expected.size():
-			failures.append("host era group has %d ids, build_axis %d" % [
-				actual.size(), expected.size()])
-		else:
-			for index in range(actual.size()):
-				if String(actual[index]) != String(expected[index]):
-					failures.append("host era id #%d is %s, build_axis says %s" % [
-						index, String(actual[index]), String(expected[index])])
-					break
-	var all_info: Dictionary = panel.tax_group_ids_for("all_items", single, "building")
-	var all_ids: PackedStringArray = all_info.get("item_ids", PackedStringArray())
-	if all_ids.size() != building_ids.size():
-		failures.append("host all-items group holds %d ids, snapshot has %d" % [
-			all_ids.size(), building_ids.size()])
-	var controller := panel.get("_player_controller") as FakeTaxGroupController
-	var before := controller.calls.size()
-	var result: Dictionary = panel.request_tax_group_override(2, all_ids, 500)
-	var issued := controller.calls.size() - before
-	if issued != 2:
-		failures.append("host all-items override issued %d batches instead of 2" % issued)
-	else:
-		var first: PackedStringArray = controller.calls[before]["args"].get(
-			"item_ids", PackedStringArray())
-		var second: PackedStringArray = controller.calls[before + 1]["args"].get(
-			"item_ids", PackedStringArray())
-		if first.size() != 256 or second.size() != 193:
-			failures.append("host chunks are %d + %d instead of 256 + 193" % [
-				first.size(), second.size()])
-		if int(result.get("chunks", -1)) != 2 or int(result.get("submitted", -1)) != 449:
-			failures.append("host reported %s chunks / %s submitted, expected 2 / 449" % [
-				str(result.get("chunks", -1)), str(result.get("submitted", -1))])
-
-
-## 产物组只有 1 项的那座建筑（449 座里确实存在；找不到就直接报失败）。
-func _single_member_building(columns: Dictionary) -> String:
-	var built: Dictionary = TaxGroupMapScript.build_axis(
-		columns, TaxGroupMapScript.AXIS_OUTPUT_GOOD, TaxGroupMapScript.SUBJECT_BUILDING)
-	if not bool(built.get("ok", false)):
-		return ""
-	var ids: PackedStringArray = columns.get("building_type_ids", PackedStringArray())
-	var counts: PackedInt32Array = built.get("group_counts", PackedInt32Array())
-	var indices: PackedInt32Array = built.get("member_group_indices", PackedInt32Array())
-	for member in range(indices.size()):
-		if member < ids.size() and int(counts[int(indices[member])]) == 1:
-			return String(ids[member])
-	return ""
-
-
-## build_axis 算出的某一组，按 catalog 顺序给出 id——第 1、3 条的期望值。
-func _axis_group_ids(columns: Dictionary, axis: String, subject: String,
-		item_id: String) -> PackedStringArray:
-	var out := PackedStringArray()
-	var built: Dictionary = TaxGroupMapScript.build_axis(columns, axis, subject)
-	if not bool(built.get("ok", false)):
-		return out
-	var member_ids: PackedStringArray = columns.get(_subject_id_column(subject),
-		PackedStringArray())
-	var member := member_ids.find(item_id)
-	var indices: PackedInt32Array = built.get("member_group_indices", PackedInt32Array())
-	if member < 0 or member >= indices.size():
-		return out
-	var group := int(indices[member])
-	if group < 0 or group >= int(built.get("group_count", 0)):
-		return out
-	for index in TaxGroupMapScript.members_in_group(indices, group):
-		if index >= 0 and index < member_ids.size():
-			out.append(String(member_ids[index]))
-	return out
-
-
-func _subject_id_column(subject: String) -> String:
-	match subject:
-		TaxGroupMapScript.SUBJECT_GOOD:
-			return "good_ids"
-		TaxGroupMapScript.SUBJECT_PROFESSION:
-			return "profession_ids"
-	return "building_type_ids"
-
-
-func _axis_index(axes: Array, axis_id: String) -> int:
-	for index in range(axes.size()):
-		if String((axes[index] as Dictionary).get("id", "")) == axis_id:
-			return index
-	return -1
-
-
-func _good_display_names() -> Dictionary:
-	var out := {}
-	var dir := "res://data/goods"
-	for file_name in ResourceLoader.list_directory(dir):
-		if file_name.get_extension().to_lower() != "tres":
-			continue
-		var profile = ResourceLoader.load("%s/%s" % [dir, file_name], "Resource")
-		if profile == null:
-			continue
-		var stable_id := String(profile.get("id"))
-		var display_name := String(profile.get("display_name"))
-		out[stable_id] = display_name if display_name != "" else stable_id
-	return out
-
-
-func _group_lane(item_id: String) -> Dictionary:
-	return {
-		"scope": "item", "kind": "business", "kind_label": "营业税",
-		"item_id": item_id, "base": 1200, "effective": 1200,
-		"default_rate": 400, "has_override": true, "editable": true,
-	}
-
-
-func _group_building_model(cell_idx: int, item_id: String) -> Dictionary:
-	var lane := _group_lane(item_id)
-	var default_lane := lane.duplicate(true)
-	default_lane["scope"] = "default"
-	default_lane["item_id"] = ""
-	default_lane["kind_label"] = "此地营业税"
-	default_lane["has_override"] = false
-	default_lane["base"] = 400
-	default_lane["effective"] = 400
-	return {
-		"cell_index": cell_idx,
-		"header": {"title": "测试地块", "subtitle": "区域 1, 1"},
-		"score": {},
-		"summary_cards": [],
-		"tabs": [
-			{"id": "geography", "label": "地理", "icon": "geo"},
-			{"id": "buildings", "label": "建筑", "icon": "building"},
-		],
-		"categories": {
-			"geography": {},
-			"buildings": {
-				"tax_context": {
-					"available": true, "editable": true, "cell": cell_idx,
-					"current_day": 10, "policy_version": 7,
-					"default_lanes": [default_lane],
-					"reset_targets": [{"scope": "item", "kind": lane.kind,
-						"item_id": lane.item_id}],
-				},
-				"building_rows": [{
-					"id": "building_group_1", "building_type_id": item_id,
-					"name": "整组测试建筑", "tax_lanes": [lane],
-				}],
-			},
-		},
-	}
+func _assert_no_tax_group_ui(
+		failures: PackedStringArray,
+		inspector: InspectorPanel,
+		object_kind: String
+) -> void:
+	var dialog := inspector._object_detail_dialog
+	if dialog.find_child("TaxGroupBox", true, false) != null:
+		failures.append("%s detail unexpectedly rendered TaxGroupBox" % object_kind)
+	for node in dialog.find_children("*", "Button", true, false):
+		var button := node as Button
+		if button != null and button.text.contains("整组"):
+			failures.append("%s detail unexpectedly rendered group tax button \"%s\"" % [
+				object_kind, button.text])
 

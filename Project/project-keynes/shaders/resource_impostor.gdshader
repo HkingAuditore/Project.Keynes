@@ -115,6 +115,10 @@ uniform vec2 wind_dir = vec2(1.0, 0.18);
 uniform float weather_wind_boost = 0.0;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/cloud_shadow.gdshaderinc"
+#ifndef PK_WEB_RESOURCE_MIN
+#define PK_WORLD_LIGHTING_FIELD
+#endif
+#include "res://shaders/include/world_lighting_field.gdshaderinc"
 #include "res://shaders/include/fog_memory.gdshaderinc"
 vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 // [web-resource-min] Web/GLES3 精简变体：地形地平线 GI 在 web 上恒为中性值
@@ -134,7 +138,7 @@ varying flat vec4 v_data;
 varying flat vec4 v_art;
 // Keep per-instance values in one flat slot to fit the 16-varying GLES3 budget.
 varying flat vec4 v_instance_detail; // x = sub-style, y = instance kind, z = dryness, w = fog knowledge
-varying flat vec3 v_light;
+varying flat vec3 v_bounce;
 varying flat vec3 v_direct;
 varying flat vec3 v_sun;
 varying flat vec2 v_axis;
@@ -205,7 +209,6 @@ float rv_ellipse(vec2 p, vec2 extent) {
 }
 
 struct RvDaylightState {
-	vec3 ambient;
 	vec3 direct;
 	vec3 sun;
 	vec3 day;
@@ -214,6 +217,7 @@ struct RvDaylightState {
 struct RvHorizonState {
 	float direct_visibility;
 	vec4 sky;
+	vec3 bounce;
 };
 
 // Procedural props and lens badges use the anchor sample. Ground decals, submerged
@@ -225,16 +229,13 @@ RvDaylightState rv_sample_daylight(vec2 map_uv) {
 		float d_day = smoothstep(-0.08, 0.22, state.sun.z);
 		float d_dusk = smoothstep(-0.06, 0.14, state.sun.z) * (1.0 - smoothstep(0.14, 0.42, state.sun.z));
 		vec3 sun_c = mix(EARTH_DAYLIGHT_NOON, EARTH_DAYLIGHT_DUSK, d_dusk);
-		vec3 amb_c = mix(EARTH_NIGHT_AMBIENT, EARTH_DAY_AMBIENT, d_day);
 		float moon = (1.0 - d_day) * 0.72;
-		state.ambient = amb_c * tod_exposure;
 		state.direct = sun_c * tod_exposure;
 		state.day = vec3(d_day, smoothstep(0.0, 0.65, state.sun.z), moon);
 	} else {
 		EarthDaylight daylight = eval_earth_daylight(
 			map_uv, clamp(map_uv.y, 0.0, 1.0) * 2.0 - 1.0, day_night_enabled);
 		state.sun = daylight.sun_dir;
-		state.ambient = daylight.amb_col * tod_exposure;
 		state.direct = daylight.sun_col * tod_exposure;
 		state.day = vec3(daylight.local_day, daylight.sun_high, daylight.moon_strength);
 	}
@@ -243,14 +244,23 @@ RvDaylightState rv_sample_daylight(vec2 map_uv) {
 
 RvHorizonState rv_sample_horizon(vec2 map_uv, vec3 sun) {
 	RvHorizonState state;
+	state.bounce = vec3(0.0);
 #ifdef PK_WEB_RESOURCE_MIN
 	// Compatibility/web-min has no baked horizon input by design.
 	state.direct_visibility = 1.0;
 	state.sky = vec4(0.0, 0.0, 1.0, 1.0);
 #else
-	TerrainHorizonSample horizon = terrain_horizon_evaluate(map_uv, sun);
-	state.direct_visibility = horizon.direct_visibility;
-	state.sky = vec4(horizon.bent_normal, horizon.sky_visibility);
+	if (world_lighting_active()) {
+		vec4 wl = sample_world_lighting(map_uv);
+		TerrainHorizonSample horizon = terrain_horizon_sample_gi_sky_only(map_uv);
+		state.direct_visibility = wl.a;
+		state.sky = vec4(horizon.bent_normal, horizon.sky_visibility);
+		state.bounce = wl.rgb * world_lighting_radiance_scale * 0.18;
+	} else {
+		TerrainHorizonSample horizon = terrain_horizon_evaluate(map_uv, sun);
+		state.direct_visibility = horizon.direct_visibility;
+		state.sky = vec4(horizon.bent_normal, horizon.sky_visibility);
+	}
 #endif
 	return state;
 }
@@ -273,8 +283,10 @@ vec3 rv_ambient_from(vec3 normal, vec3 ambient_color, vec3 direct_color, vec3 su
 		+ EARTH_MOONLIGHT * day.z * max(dot(normal, -sun_dir), 0.0) * 0.35 * tod_exposure;
 }
 
-vec3 rv_ambient(vec3 normal) {
-	return rv_ambient_from(normal, v_light, v_direct, v_sun, v_day, v_sky);
+vec3 rv_ambient_palette(float local_day) {
+	float gain = (!day_night_enabled && !tod_debug_sun_position_enabled)
+		? EARTH_ETERNAL_AMBIENT_GAIN : 1.0;
+	return mix(EARTH_NIGHT_AMBIENT, EARTH_DAY_AMBIENT, local_day) * gain * tod_exposure;
 }
 
 void vertex() {
@@ -327,12 +339,12 @@ void vertex() {
 	vec2 map_uv = visual_static_wrap_uv((center - world_origin) / max(world_size, vec2(0.0001)));
 	RvDaylightState anchor_daylight = rv_sample_daylight(map_uv);
 	v_sun = anchor_daylight.sun;
-	v_light = anchor_daylight.ambient;
 	v_direct = anchor_daylight.direct;
 	v_day = anchor_daylight.day;
 	RvHorizonState anchor_horizon = rv_sample_horizon(map_uv, v_sun);
 	v_misc.x = anchor_horizon.direct_visibility;
 	v_sky = anchor_horizon.sky;
+	v_bounce = anchor_horizon.bounce;
 	v_terrain = rv_terrain_normal_at(map_uv);
 	v_axis = normalize(MODEL_MATRIX[0].xy);
 	float kind_raw = COLOR.a + 0.01;
@@ -565,11 +577,11 @@ void fragment() {
 	bool pixel_surface_lighting = lens < 0.001 && visual_quality >= 2
 		&& (kind == 2 || kind == 3 || (kind == 1 && material_art));
 	vec3 light_dir = normalize(v_sun);
-	vec3 ambient_color = v_light;
 	vec3 direct_color = v_direct;
 	vec3 day_state = v_day;
 	vec4 sky_state = v_sky;
 	float horizon_visibility = v_misc.x;
+	vec3 bounce_light = v_bounce;
 	vec3 terrain_normal = v_terrain;
 	// [decal-ground-fit 2026-11-18] 逐像素地图 uv 提到分支外：贴花的坡度面积变形、
 	// 地表色继承、云影与光照重采全部按像素位置求，不能沿用实例锚点
@@ -579,21 +591,22 @@ void fragment() {
 	if (pixel_surface_lighting) {
 		RvDaylightState surface_daylight = rv_sample_daylight(surface_uv);
 		light_dir = surface_daylight.sun;
-		ambient_color = surface_daylight.ambient;
 		direct_color = surface_daylight.direct;
 		day_state = surface_daylight.day;
 		RvHorizonState surface_horizon = rv_sample_horizon(surface_uv, light_dir);
 		horizon_visibility = surface_horizon.direct_visibility;
 		sky_state = surface_horizon.sky;
+		bounce_light = surface_horizon.bounce;
 		terrain_normal = rv_terrain_normal_at(surface_uv);
 	}
 	vec2 cloud_map_uv = surface_uv;
 	float cloud_visibility = cloud_shadow_direct_visibility(cloud_map_uv, day_state.x);
 	vec3 direct_light = direct_color * day_state.x * horizon_visibility * cloud_visibility;
+	vec3 ambient_color = rv_ambient_palette(day_state.x);
 	// Flat-ground lighting shared by decals and submerged cues.
 	float flat_diffuse = max(dot(terrain_normal, light_dir), 0.0);
 	vec3 flat_light = rv_ambient_from(terrain_normal, ambient_color, direct_color,
-		light_dir, day_state, sky_state) + direct_light * flat_diffuse * 0.78;
+		light_dir, day_state, sky_state) + bounce_light + direct_light * flat_diffuse * 0.78;
 
 	// Subject = the full procedural drawing. In the world it is only drawn for small
 	// props; while the lens is on it is also the picture inside every badge.
@@ -711,7 +724,7 @@ void fragment() {
 		float rim_factor = pow(1.0 - max(dot(normal, view_dir), 0.0), 2.0) * s.rim;
 		vec3 unlit = base;
 		vec3 diff_light = rv_ambient_from(normal, ambient_color, direct_color,
-			light_dir, day_state, sky_state) + direct_light * (diffuse * 0.78 + rim_factor * 0.10);
+			light_dir, day_state, sky_state) + bounce_light + direct_light * (diffuse * 0.78 + rim_factor * 0.10);
 		base = (base * diff_light + direct_light * spec_color * spec_factor * 0.35) * s.ao;
 		base *= 0.92 + 0.22 * clamp(s.h * 2.0, 0.0, 1.0);
 
@@ -855,7 +868,7 @@ void fragment() {
 			vec3 decal_amb = rv_ambient_from(normal, ambient_color, direct_color,
 				light_dir, day_state, sky_state);
 			vec3 decal_light = mix(flat_light,
-				decal_amb + direct_light * diffuse * 0.78, 0.55);
+				decal_amb + bounce_light + direct_light * diffuse * 0.78, 0.55);
 			// 接触边阴影：原系数 0.08 在 contact_shadow=0.68 下只压暗 ~5%，
 			// 等于没有接地。0.40 才能让贴花边缘"咬"进土里。
 			col *= 1.0 - (1.0 - material_edge) * contact_shadow * 0.40;

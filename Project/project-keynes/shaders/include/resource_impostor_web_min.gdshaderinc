@@ -46,7 +46,7 @@
 #define PK_VF_NOISE_ONLY
 
 // terrain_horizon.gdshaderinc 的 terrain_horizon_apply_normal()，逐字照抄。
-// rv_ambient() 用它把天光可见度折到几何法线上：本变体传入的
+// rv_ambient_from() 用它把天光可见度折到几何法线上：本变体传入的
 // (sky_visibility, bent_normal) 恒为 (1.0, (0,0,1))，与桌面实现同样的入参、同样的公式。
 float terrain_horizon_apply_normal(float sky_visibility, vec3 geometric_normal, vec3 bent_normal) {
 	if (gi_normal_floor >= 1.0) {

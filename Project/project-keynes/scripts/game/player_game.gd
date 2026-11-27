@@ -638,7 +638,7 @@ func _process(delta: float) -> void:
 	# 主线程在跑、日期在涨、经济日结却停住 → 这是"经济不动"的唯一可判定信号。
 	# 连续 3 天不推进就打一行，日志里一眼能看到卡在哪一侧。
 	var day := int(_current_day())
-	if day > 3 and int(eco["eco_day"]) >= 0 and day - int(eco["eco_day"]) > 3:
+	if day > 3 and not bool(eco.get("stale", false)) and int(eco["eco_day"]) >= 0 and day - int(eco["eco_day"]) > 3:
 		# 新增的 6 项全部来自同一次 report()（每 5 秒一次，绝不进每帧）。
 		# 值域出处：gdext/src/economy_runtime_diagnostics.cpp:1498-1519（epoch_active/
 		# sample_day/last_committed_day/stage）、:2371（newest_state_day）、
@@ -664,7 +664,7 @@ func _economy_probe() -> Dictionary:
 	var out := {"eco_day": -1, "graph": false, "fatal": false,
 		"fatal_reason": "", "stage": "?", "epoch_active": false,
 		"sample_day": -1, "last_committed_day": -1,
-		"market_runtime_mode": "?"}
+		"market_runtime_mode": "?", "stale": false}
 	if _runtime_host == null or not _runtime_host.has_method("get_generator"):
 		return out
 	var generator = _runtime_host.get_generator()
@@ -676,17 +676,25 @@ func _economy_probe() -> Dictionary:
 		var facade = generator.get_economy_facade()
 		if facade != null and facade.has_method("report"):
 			var report: Dictionary = facade.report()
-			out["eco_day"] = int(report.get("newest_state_day", -1))
+			var pending := bool(report.get("report_boundary_pending", false))
+			var audit_day := int(report.get("committed_audit_day", -1))
+			var eco_day := maxi(int(report.get("newest_state_day", -1)), audit_day)
+			# 读边界锁被后台模拟线程占住时，report() 返回的是旧缓存。
+			# 若带回了无锁原子 committed_audit_day，仍可用于推进日历闸门与真实滞后判定；
+			# 否则该样本陈旧，绝不能喂给日历闸门或触发 economy-stall 误报。
+			var sample_fresh := (not pending) or (audit_day >= 0)
+			out["eco_day"] = eco_day
+			out["stale"] = not sample_fresh
 			# 方案 A：把经济已结算日喂给日历闸门（world_clock.gd set_economy_settled_day）。
 			# 这里就是 5 秒心跳，不进每帧。
-			if _world_clock != null:
-				_world_clock.set_economy_settled_day(int(out["eco_day"]))
+			if _world_clock != null and sample_fresh:
+				_world_clock.set_economy_settled_day(eco_day)
 			out["fatal"] = bool(report.get("fatal", false))
 			out["fatal_reason"] = str(report.get("fatal_reason", ""))
 			out["stage"] = str(report.get("stage", "?"))
 			out["epoch_active"] = bool(report.get("epoch_active", false))
 			out["sample_day"] = int(report.get("sample_day", -1))
-			out["last_committed_day"] = int(report.get("last_committed_day", -1))
+			out["last_committed_day"] = maxi(int(report.get("last_committed_day", -1)), audit_day)
 			out["market_runtime_mode"] = str(report.get("market_runtime_mode", "?"))
 	return out
 

@@ -67,6 +67,11 @@ static func _push_terrain_horizon_uniforms(host) -> void:
 		host._trade_visual_layer.refresh_terrain_lighting(host._shader_mat)
 	if is_instance_valid(host._military_visual_layer):
 		host._military_visual_layer.set_terrain_lighting(host._world, host._shader_mat)
+	if host._world_lighting_field != null:
+		host._world_lighting_field.set_horizon_params(
+			host.terrain_horizon_strength,
+			host.terrain_horizon_softness)
+		host._push_world_lighting_field_inputs()
 
 
 # [terrain-gi 2026-07-31] 4-bit 量化角的解码查表。shader 里 h_n = n/15·max_angle 只有 16 个
@@ -343,6 +348,8 @@ static func _publish_visual_tile_horizon(host, world: WorldData, report: Diction
 	world.visual_tiles.horizon_ready = true
 	# 弹射独立于 AO 降级：occluder 缺失只关闭档 2，档 0/1 仍由 horizon 驱动。
 	world.visual_tiles.gi_occluder_ready = bool(report.get("gi_occluder_ok", false))
+	world.visual_tiles.gi_sky_ready = bool(report.get("gi_sky_ok", false))
+	world.visual_tiles.horizon_dir_ready = bool(report.get("horizon_dir_ok", false))
 	world.visual_tiles.bake_report["horizon_path"] = report.get("path", "unknown")
 	world.visual_tiles.bake_report["horizon"] = report
 	if host._world == world:
@@ -357,6 +364,8 @@ static func _record_visual_tile_horizon_failure(host, world: WorldData, reason: 
 	if world != null and world.visual_tiles != null:
 		world.visual_tiles.horizon_ready = false
 		world.visual_tiles.gi_occluder_ready = false
+		world.visual_tiles.gi_sky_ready = false
+		world.visual_tiles.horizon_dir_ready = false
 		world.visual_tiles.bake_report["horizon_path"] = "neutral_failed"
 		world.visual_tiles.bake_report["horizon"] = {
 			"ok": false,
@@ -457,7 +466,9 @@ static func _on_terrain_horizon_frame_drawn(host) -> void:
 		host._push_world_uniform("terrain_horizon_tex_bound", true)
 		applied = true
 	if host._world == host._horizon_bake_world:
-		host._push_terrain_horizon_uniforms()   # 同步植被层的 horizon 输入
+		host._push_terrain_horizon_uniforms()
+		host._configure_world_lighting_field()
+		host._push_world_lighting_field_inputs()
 	print("[terrain_horizon] GPU bake applied to main shader=%s (strength=%.2f)" % [str(applied), host.terrain_horizon_strength])
 	_dispose_horizon_bake_vp(host)
 
@@ -480,12 +491,6 @@ static func set_terrain_horizon_strength(host, v: float) -> void:
 static func set_terrain_horizon_softness(host, v: float) -> void:
 
 	host.terrain_horizon_softness = v
-
-
-
-static func set_terrain_horizon_max_angle(host, v: float) -> void:
-
-	host.terrain_horizon_max_angle = v
 
 
 

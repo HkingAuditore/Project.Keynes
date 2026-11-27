@@ -23,7 +23,7 @@ const DENSITY_DEGRADE_FACTOR := 0.90
 # [height-flow-pack 2026-08-06] height 2→4、去掉独立 flow 1：22→23。
 # [terrain-gi 2026-07-31] gi_occluder 使这一项由 18 升到 22；漏改会让 resolver 低估
 # 显存占用，把本该降级的大地图放行到超预算。
-const BYTES_PER_PHYSICAL_TEXEL := 37
+const BYTES_PER_PHYSICAL_TEXEL := 49
 # terrain_relief 按 relief_scale 倍分辨率存（RGBA8），超出基础 4 字节的部分另计。
 const RELIEF_BYTES_PER_TEXEL := 4
 # Local RenderingDevice keeps a duplicate RG8 input, a float max pyramid and

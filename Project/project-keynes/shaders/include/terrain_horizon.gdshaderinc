@@ -28,9 +28,10 @@
 // 视觉与接入 GI 之前完全一致，因此旧材质/未更新的 renderer 不会变黑。
 //
 // [baked-surface 2026-11-01] 本 include 现在被 world_map 的**所有**变体引用（含 Web LOW）。
-// 没有 horizon 采样槽的变体（Web HIGH 水面独立程序 PK_WEB_WATER_ONLY 只开 height/map_index/
-// flow，8 个材质槽不再包含 horizon）走下面的中性叶子，调用点无需额外条件编译。
+// Web HIGH 水面通过同一个 surface array 的方向角层取直射可见度，AO 保持中性。
 // ─────────────────────────────────────────────────────────────────────────
+#include "res://shaders/include/terrain_horizon_shadow.gdshaderinc"
+
 #ifndef VT_USE_HORIZON
 struct TerrainHorizonSample {
 	float direct_visibility;
@@ -41,6 +42,20 @@ struct TerrainHorizonSample {
 };
 
 TerrainHorizonSample terrain_horizon_evaluate(vec2 uv, vec3 light_dir) {
+	TerrainHorizonSample neutral;
+#ifdef PK_WEB_SURFACE_HORIZON
+	neutral.direct_visibility = terrain_horizon_web_visibility(uv, light_dir);
+#else
+	neutral.direct_visibility = 1.0;
+#endif
+	neutral.sky_visibility = 1.0;
+	neutral.bent_normal = vec3(0.0, 0.0, 1.0);
+	neutral.nearest_packed = vec4(0.0);
+	neutral.has_data = false;
+	return neutral;
+}
+
+TerrainHorizonSample terrain_horizon_sample_gi_sky_only(vec2 uv) {
 	TerrainHorizonSample neutral;
 	neutral.direct_visibility = 1.0;
 	neutral.sky_visibility = 1.0;
@@ -60,8 +75,6 @@ float terrain_horizon_apply_normal(float sky_visibility, vec3 geometric_normal,
 }
 #else // VT_USE_HORIZON
 
-const float TERRAIN_HORIZON_TAU = 6.2831853;
-const float TERRAIN_HORIZON_OCTANT = 0.78539816;
 const float GI_INV_SQRT2 = 0.70710678;
 
 // 方位顺序必须与 visual_tile_horizon_trace.glsl 的 DIRECTIONS 以及 C++
@@ -146,7 +159,21 @@ float horizon_sky_visibility_from_packed(vec4 packed) {
 	return v;
 }
 
-// ─── 统一 4-tap 采样 ─────────────────────────────────────────────────────
+void terrain_horizon_apply_gi_sky_tex(vec2 uv, inout TerrainHorizonSample result) {
+#ifdef PK_HAS_GI_SKY_TEX
+	vec4 gi_sky_px = visual_sample_gi_sky(uv);
+	float v_scaled = mix(1.0, gi_sky_px.r, gi_ao_strength);
+	result.sky_visibility = clamp(mix(gi_ao_floor, 1.0, v_scaled), 0.0, 1.0);
+	if (gi_bent_strength > 0.0) {
+		vec3 bent = vec3(gi_sky_px.g * 2.0 - 1.0, gi_sky_px.b * 2.0 - 1.0, gi_sky_px.a);
+		if (dot(bent, bent) > 1e-6) {
+			result.bent_normal = normalize(bent);
+		}
+	}
+#endif
+}
+
+// ─── 统一 4-tap 采样（当 2 层 LINEAR 方向遮蔽图已就绪时走快路径）──────────
 // Packed nibbles cannot be hardware-linearly filtered: filtering bytes before unpacking
 // creates invalid high/low nibble blends and visible contour/moire artifacts. Use NEAREST
 // sampler and manually bilinear-filter decoded quantities instead.
@@ -162,10 +189,31 @@ TerrainHorizonSample sample_terrain_horizon(vec2 uv, vec3 light_dir) {
 	result.bent_normal = vec3(0.0, 0.0, 1.0);
 	result.nearest_packed = vec4(0.0);
 	result.has_data = false;
+#ifdef PK_WEB_SURFACE_HORIZON
+	result.direct_visibility = terrain_horizon_web_visibility(uv, light_dir);
+#endif
 
 	if (!terrain_horizon_tex_bound) {
 		return result;
 	}
+
+#if defined(PK_HAS_GI_SKY_TEX) && defined(PK_HAS_HORIZON_DIR_TEX)
+	if (gi_sky_tex_bound && horizon_dir_tex_bound) {
+		result.has_data = true;
+#ifndef PK_WEB_SURFACE_HORIZON
+		result.direct_visibility = terrain_horizon_direct_from_dir_tex(uv, light_dir);
+#endif
+		if (gi_lut_bound && gi_ao_strength > 0.0) {
+			terrain_horizon_apply_gi_sky_tex(uv, result);
+		}
+#if defined(VT_USE_GI_OCCLUDER) || defined(PK_TERRAIN_PACKED_BOUNCE)
+		if (gi_lut_bound && gi_bounce_strength > 0.0) {
+			result.nearest_packed = visual_sample_horizon(uv);
+		}
+#endif
+		return result;
+	}
+#endif
 
 	vec4 p00;
 	vec4 p10;
@@ -221,6 +269,7 @@ TerrainHorizonSample sample_terrain_horizon(vec2 uv, vec3 light_dir) {
 	result.nearest_packed = mix(mix(p00, p10, sx), mix(p01, p11, sx), sy);
 
 	// ── 直射可见度（沿用原公式，逐字不变）────────────────────────────────
+#ifndef PK_WEB_SURFACE_HORIZON
 	vec2 sun_xy = light_dir.xy;
 	float sun_h_len = length(sun_xy);
 	if (sun_h_len > 1e-4) {
@@ -235,18 +284,36 @@ TerrainHorizonSample sample_terrain_horizon(vec2 uv, vec3 light_dir) {
 		float h01 = horizon_angle_from_packed(p01, sector);
 		float h11 = horizon_angle_from_packed(p11, sector);
 		float horizon_angle = mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
-		float sun_elev = atan(max(light_dir.z, 0.0) / max(sun_h_len, 1e-4));
-		float shadow = smoothstep(sun_elev - terrain_horizon_softness,
-				sun_elev + terrain_horizon_softness, horizon_angle);
-		// Do not hard-skip below the horizon: the day/night terminator is soft, so horizon
-		// shadow must fade with sun height too. A hard z<=0 return creates a visible seam.
-		float horizon_day_w = smoothstep(-0.14, 0.18, light_dir.z);
-		result.direct_visibility =
-			clamp(1.0 - shadow * terrain_horizon_strength * horizon_day_w, 0.0, 1.0);
+		result.direct_visibility = terrain_horizon_visibility_at_angle(light_dir, sun_h_len, horizon_angle);
 	}
+#endif
 
 	// ── 天空可见度与 bent normal ───────────────────────────────────────────
 	if (gi_lut_bound && gi_ao_strength > 0.0) {
+#ifdef PK_HAS_GI_SKY_TEX
+		if (gi_sky_tex_bound) {
+			terrain_horizon_apply_gi_sky_tex(uv, result);
+		} else {
+			float v00; vec3 b00; horizon_gi_from_packed(p00, v00, b00);
+			float v10; vec3 b10; horizon_gi_from_packed(p10, v10, b10);
+			float v01; vec3 b01; horizon_gi_from_packed(p01, v01, b01);
+			float v11; vec3 b11; horizon_gi_from_packed(p11, v11, b11);
+			vec2 fw = mix(f, vec2(0.5), gi_ao_smoothing);
+			float w00 = (1.0 - fw.x) * (1.0 - fw.y);
+			float w10 = fw.x * (1.0 - fw.y);
+			float w01 = (1.0 - fw.x) * fw.y;
+			float w11 = fw.x * fw.y;
+			float v = v00 * w00 + v10 * w10 + v01 * w01 + v11 * w11;
+			float v_scaled = mix(1.0, v, gi_ao_strength);
+			result.sky_visibility = clamp(mix(gi_ao_floor, 1.0, v_scaled), 0.0, 1.0);
+			if (gi_bent_strength > 0.0) {
+				vec3 bent = b00 * w00 + b10 * w10 + b01 * w01 + b11 * w11;
+				if (dot(bent, bent) > 1e-6) {
+					result.bent_normal = normalize(bent);
+				}
+			}
+		}
+#else
 		float v00; vec3 b00; horizon_gi_from_packed(p00, v00, b00);
 		float v10; vec3 b10; horizon_gi_from_packed(p10, v10, b10);
 		float v01; vec3 b01; horizon_gi_from_packed(p01, v01, b01);
@@ -280,30 +347,92 @@ TerrainHorizonSample sample_terrain_horizon(vec2 uv, vec3 light_dir) {
 				result.bent_normal = normalize(bent);
 			}
 		}
+#endif
 	}
 	return result;
+}
+
+// 1-tap NEAREST 八合一（4-bit×8 打包 horizon）直射阴影：
+// 用于 Web Mid、移动 Mid、桌面 Low，省去 4-tap 手动双线性或 2 张 LINEAR 图采样。
+float terrain_horizon_direct_from_packed_nearest(vec2 uv, vec3 light_dir) {
+	if (!terrain_horizon_tex_bound || terrain_horizon_strength <= 0.0) {
+		return 1.0;
+	}
+	vec2 sun_xy = light_dir.xy;
+	float sun_h_len = length(sun_xy);
+	if (sun_h_len <= 1e-4) {
+		return 1.0;
+	}
+	sun_xy /= sun_h_len;
+	float angle = atan(sun_xy.y, sun_xy.x);
+	if (angle < 0.0) {
+		angle += TERRAIN_HORIZON_TAU;
+	}
+	float sector = angle / TERRAIN_HORIZON_OCTANT;
+	vec4 packed = visual_sample_horizon(uv);
+	float horizon_angle = horizon_angle_from_packed(packed, sector);
+	return terrain_horizon_visibility_at_angle(light_dir, sun_h_len, horizon_angle);
+}
+
+TerrainHorizonSample terrain_horizon_sample_nearest_packed(vec2 uv, vec3 light_dir) {
+	TerrainHorizonSample s;
+#ifdef PK_WEB_SURFACE_HORIZON
+	s.direct_visibility = terrain_horizon_web_visibility(uv, light_dir);
+#else
+	s.direct_visibility = terrain_horizon_direct_from_packed_nearest(uv, light_dir);
+#endif
+	s.sky_visibility = 1.0;
+	s.bent_normal = vec3(0.0, 0.0, 1.0);
+	s.nearest_packed = vec4(0.0);
+	s.has_data = false;
+#ifdef PK_HAS_GI_SKY_TEX
+	if (gi_sky_tex_bound && gi_ao_strength > 0.0) {
+		terrain_horizon_apply_gi_sky_tex(uv, s);
+	}
+#endif
+	return s;
 }
 
 // ─── 兼容入口 ───────────────────────────────────────────────────────────
 // 只需要直射遮蔽的 caller（water debug view 等）继续用这个；主 BRDF 路径应改用
 // sample_terrain_horizon 一次拿全三个量，避免同一 uv 采两遍 horizon。
 float terrain_horizon_direct_visibility(vec2 uv, vec3 light_dir) {
-#if (defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID)) && !defined(PK_WEB_HORIZON)
+#if defined(PK_WEB_SURFACE_HORIZON)
+	return terrain_horizon_web_visibility(uv, light_dir);
+#elif defined(MOBILE_QUALITY_LOW) && !defined(PK_WEB_HORIZON)
 	return 1.0;
+#elif defined(MOBILE_QUALITY_MID) && !defined(PK_WEB_HORIZON)
+	return terrain_horizon_direct_from_packed_nearest(uv, light_dir);
 #else
-	if (!terrain_horizon_tex_bound || visual_quality < 1 || terrain_horizon_strength <= 0.0) {
+	#if defined(PK_WEB_HORIZON)
+	if (!terrain_horizon_tex_bound || visual_quality <= 0 || terrain_horizon_strength <= 0.0) {
 		return 1.0;
 	}
+	if (visual_quality == 1) {
+		return terrain_horizon_direct_from_packed_nearest(uv, light_dir);
+	}
+	#else
+	if (!terrain_horizon_tex_bound || terrain_horizon_strength <= 0.0) {
+		return 1.0;
+	}
+	if (visual_quality <= 0) {
+		return terrain_horizon_direct_from_packed_nearest(uv, light_dir);
+	}
+	#endif
+	#ifdef PK_HAS_HORIZON_DIR_TEX
+	if (horizon_dir_tex_bound) {
+		return terrain_horizon_direct_from_dir_tex(uv, light_dir);
+	}
+	#endif
 	return sample_terrain_horizon(uv, light_dir).direct_visibility;
 #endif
 }
 
-// 档位门控后的完整入口。直射遮蔽在移动端 LOW/MID 与 visual_quality<1 时关闭（与旧行为一致），
-// 但 AO 比直射遮蔽便宜——它不需要按太阳方位插值，也不参与 cast shadow 叠层——所以移动端 MID
-// 仍然保留 AO 与 bent normal，只有 LOW 档整体退化为中性。
-// [baked-surface 2026-11-01] PK_WEB_HORIZON 覆盖上述档位早退：Web 全部档位都在生成期把
-// horizon 烘焙进 terrain_horizon_tex（LOW 也付一次 CPU 烘焙成本），运行期必须真正解码，
-// 否则 Web LOW 的地形既没有烘焙法线的遮影也没有 AO，与桌面观感差一档。
+// 档位门控后的完整入口：
+//   - 移动 LOW：无直射阴影、无 GI
+//   - Web LOW：无直射阴影，保留 gi_sky AO/bent normal
+//   - Web MID/HIGH：与水面共用 surface array 的方向角层；缺层时两侧直射可见度为 1
+//   - 原生逐片元回退：移动 MID / 桌面 LOW 用 packed 最近邻，高档优先用 LINEAR 方向遮蔽图
 TerrainHorizonSample terrain_horizon_evaluate(vec2 uv, vec3 light_dir) {
 #if defined(MOBILE_QUALITY_LOW) && !defined(PK_WEB_HORIZON)
 	TerrainHorizonSample neutral;
@@ -313,24 +442,63 @@ TerrainHorizonSample terrain_horizon_evaluate(vec2 uv, vec3 light_dir) {
 	neutral.nearest_packed = vec4(0.0);
 	neutral.has_data = false;
 	return neutral;
+#elif defined(MOBILE_QUALITY_MID) && !defined(PK_WEB_HORIZON)
+	return terrain_horizon_sample_nearest_packed(uv, light_dir);
 #else
-	TerrainHorizonSample s = sample_terrain_horizon(uv, light_dir);
-	#if defined(MOBILE_QUALITY_MID) && !defined(PK_WEB_HORIZON)
-	s.direct_visibility = 1.0;
-	#else
 	#if defined(PK_WEB_HORIZON)
-	// [web-horizon-free 2026-11-25] Web 全部档位在生成期已烘焙 horizon 并付了 4 次采样
-	// （:317），运行期不再按 visual_quality 把 direct_visibility 丢回 1.0。新增采样 0 次。
+	if (visual_quality <= 0) {
+		TerrainHorizonSample web_low;
+		web_low.direct_visibility = 1.0;
+		web_low.sky_visibility = 1.0;
+		web_low.bent_normal = vec3(0.0, 0.0, 1.0);
+		web_low.nearest_packed = vec4(0.0);
+		web_low.has_data = false;
+#ifdef PK_HAS_GI_SKY_TEX
+		if (gi_sky_tex_bound && gi_ao_strength > 0.0) {
+			terrain_horizon_apply_gi_sky_tex(uv, web_low);
+		}
+#endif
+		return web_low;
+	}
+	if (visual_quality == 1) {
+		return terrain_horizon_sample_nearest_packed(uv, light_dir);
+	}
+	TerrainHorizonSample s = sample_terrain_horizon(uv, light_dir);
 	if (terrain_horizon_strength <= 0.0) {
 		s.direct_visibility = 1.0;
 	}
 	#else
-	if (visual_quality < 1 || terrain_horizon_strength <= 0.0) {
+	if (visual_quality <= 0) {
+		return terrain_horizon_sample_nearest_packed(uv, light_dir);
+	}
+	TerrainHorizonSample s = sample_terrain_horizon(uv, light_dir);
+	if (terrain_horizon_strength <= 0.0) {
 		s.direct_visibility = 1.0;
 	}
 	#endif
-	#endif
 	return s;
+#endif
+}
+
+// 仅做 1 次 gi_sky LINEAR 采样拿 sky_visibility 与 bent_normal（配合共享 world_lighting_tex
+// 快路径使用）；direct_visibility 置 1.0，移动端 LOW 非 Web 仍返回中性。
+TerrainHorizonSample terrain_horizon_sample_gi_sky_only(vec2 uv) {
+	TerrainHorizonSample result;
+	result.direct_visibility = 1.0;
+	result.sky_visibility = 1.0;
+	result.bent_normal = vec3(0.0, 0.0, 1.0);
+	result.nearest_packed = vec4(0.0);
+	result.has_data = false;
+#if defined(MOBILE_QUALITY_LOW) && !defined(PK_WEB_HORIZON)
+	return result;
+#else
+	result.has_data = true;
+#ifdef PK_HAS_GI_SKY_TEX
+	if (gi_sky_tex_bound && gi_ao_strength > 0.0) {
+		terrain_horizon_apply_gi_sky_tex(uv, result);
+	}
+#endif
+	return result;
 #endif
 }
 

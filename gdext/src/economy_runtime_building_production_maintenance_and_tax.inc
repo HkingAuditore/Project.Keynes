@@ -149,11 +149,20 @@
             const int32_t owner_slot = find_cohort_slot(
                 cell, group.owner_signature_id);
             if (owner_slot < 0) continue;
-            const int64_t eligible_cost = saturating_add(
+            int64_t eligible_cost = saturating_add(
                 saturating_add(group.last_input_cost,
                                group.last_base_wages_paid,
                                _saturation_count),
                 group.last_maintenance_cost, _saturation_count);
+            if (group.operating_state == 0 && group.filled_owner > 0) {
+                const int64_t owner_livelihood_floor = saturating_mul(
+                    saturating_mul(
+                        living_cost_for_signature(
+                            cell, group.owner_signature_id, -1, _saturation_count),
+                        group.filled_owner, _saturation_count),
+                    std::max<int64_t>(1, _epoch_days.get()), _saturation_count);
+                eligible_cost = std::max(eligible_cost, owner_livelihood_floor);
+            }
             const int64_t transfer = apply_fiscal_tax(
                 cell, CountryApi::TAX_BUSINESS, eligible_cost,
                 rate, mode, _saturation_count);

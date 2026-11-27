@@ -53,6 +53,13 @@
         } else if (stable_need == _survival_clothing_need_stable_id) {
             cohort_clothing_filled[local] = saturating_add(
                 cohort_clothing_filled[local], state.filled_units, sat);
+        } else if (_survival_home_energy_need_stable_id >= 0 &&
+                   stable_need == _survival_home_energy_need_stable_id) {
+            cohort_heating_filled[local] = saturating_add(
+                cohort_heating_filled[local], state.filled_units, sat);
+            cohort_heating_required[local] = saturating_add(
+                cohort_heating_required[local],
+                std::max<int64_t>(0, state.desired_units), sat);
         }
         const int64_t satisfaction = state.desired_units <= 0
             ? 0
@@ -214,10 +221,14 @@
             ? _environment_temperature_q16[cell] : Q16_ONE / 2;
         const int64_t snow_q16 = cell >= 0 && cell < _cell_count.get()
             ? _environment_snow_q16[cell] : 0;
-        const int64_t temperature_exposure_q16 = std::clamp<int64_t>(
-            (Q16_ONE / 2 - temperature_q16) * 2, 0, Q16_ONE);
-        const int64_t cold_exposure_q16 = std::max<int64_t>(
-            temperature_exposure_q16, std::clamp<int64_t>(snow_q16, 0, Q16_ONE));
+        const int64_t raw_cold_exposure_q16 = severe_cold_exposure_q16(
+            temperature_q16, snow_q16, sat);
+        const int64_t heating_q16 = cohort_heating_required[local] <= 0 ? 0
+            : std::clamp<int64_t>(mul_div_sat(
+                cohort_heating_filled[local], Q16_ONE,
+                cohort_heating_required[local], sat), 0, Q16_ONE);
+        const int64_t cold_exposure_q16 = apply_heating_mitigation_q16(
+            raw_cold_exposure_q16, heating_q16, sat);
         const int64_t clothing_deficit_q16 = Q16_ONE - clothing_q16;
         const int64_t cold_clothing_ceiling_q16 = Q16_ONE - mul_div_sat(
             cold_exposure_q16, clothing_deficit_q16, Q16_ONE, sat);

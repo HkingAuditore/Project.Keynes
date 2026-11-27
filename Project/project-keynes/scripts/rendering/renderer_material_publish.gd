@@ -194,6 +194,9 @@ static func _apply_uniforms(host) -> void:
 		sm.set_shader_parameter("visual_terrain_normal_tiles", visual_tiles.terrain_normal)
 		sm.set_shader_parameter("visual_terrain_relief_tiles", visual_tiles.terrain_relief)
 		sm.set_shader_parameter("visual_horizon_tiles", visual_tiles.horizon)
+		sm.set_shader_parameter("visual_gi_sky_tiles", visual_tiles.gi_sky)
+		sm.set_shader_parameter("visual_horizon_dir0_tiles", visual_tiles.horizon_dir0)
+		sm.set_shader_parameter("visual_horizon_dir1_tiles", visual_tiles.horizon_dir1)
 		sm.set_shader_parameter("visual_map_index_tiles", visual_tiles.map_index)
 		sm.set_shader_parameter("visual_water_depth_tiles", visual_tiles.water_depth)
 		sm.set_shader_parameter("visual_terrain_detail_tiles", visual_tiles.terrain_detail)
@@ -268,6 +271,12 @@ static func _apply_uniforms(host) -> void:
 		sm.set_shader_parameter("terrain_horizon_tex", host._world.terrain_horizon_tex)
 	sm.set_shader_parameter("terrain_horizon_tex_bound",
 		bool(visual_tiles.horizon_ready) if tiled else host._world.terrain_horizon_tex != null)
+	sm.set_shader_parameter("gi_sky_tex_bound",
+		bool(visual_tiles.gi_sky_ready) if tiled \
+		else host._world.terrain_gi_sky_layer_bound and surface_layers >= 8)
+	sm.set_shader_parameter("horizon_dir_tex_bound",
+		bool(visual_tiles.horizon_dir_ready) if tiled \
+		else host._world.terrain_horizon_dir_layers_bound and surface_layers >= 10)
 	host._push_gi_uniforms(sm, tiled, visual_tiles)
 	if not tiled:
 		sm.set_shader_parameter("map_index_atlas", host._world.enum_atlas_tex)
@@ -560,6 +569,8 @@ static func _apply_uniforms(host) -> void:
 	# "材质重建后把全部输入对齐"的唯一收口，画质换档与 set_map 都会经过它。
 	host._sync_water_quad()
 	host._push_world_lighting_profile()
+	host._configure_world_lighting_field()
+	host._push_world_lighting_field_inputs()
 	host._configure_cloud_shadow_field()
 	host._push_cloud_shadow_material_inputs()
 

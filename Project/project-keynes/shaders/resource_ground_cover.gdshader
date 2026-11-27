@@ -132,6 +132,8 @@ uniform float tod_exposure = 1.0;
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/cloud_shadow.gdshaderinc"
+#define PK_WORLD_LIGHTING_FIELD
+#include "res://shaders/include/world_lighting_field.gdshaderinc"
 vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 #include "res://shaders/include/terrain_horizon.gdshaderinc"
 #ifndef PK_MOBILE_ANY
@@ -612,7 +614,16 @@ void fragment() {
 			self_shadow = cast * (1.0 - raw_plant_a) * shadow_strength * day * abundance * edge;
 		}
 #endif
-		TerrainHorizonSample horizon = terrain_horizon_evaluate(map_uv, sun);
+		TerrainHorizonSample horizon;
+		vec3 wl_bounce = vec3(0.0);
+		if (world_lighting_active()) {
+			vec4 wl = sample_world_lighting(map_uv);
+			horizon = terrain_horizon_sample_gi_sky_only(map_uv);
+			horizon.direct_visibility = wl.a;
+			wl_bounce = wl.rgb * world_lighting_radiance_scale * 0.18;
+		} else {
+			horizon = terrain_horizon_evaluate(map_uv, sun);
+		}
 		// Fake GI: deep foliage sees less sky (height AO), terrain sky visibility and bent
 		// normal from the shared horizon bake, exactly like the vegetation impostors.
 		// Mean-preserving: tops brighten as much as the deep foliage darkens.
@@ -637,6 +648,7 @@ void fragment() {
 		// 原先直射只占 0.78 而天光是全额，于是整片地被几乎无方向感、山体阴影里也不变暗。
 		// 现在受光面亮度基本不变（总增益下调补回），被遮处只剩天光 → 谷地/山影明显压暗。
 		vec3 light = (sky * GROUND_COVER_SKY_GAIN
+			+ wl_bounce
 			+ sun_c * direct * max(dot(n, sun), 0.0) * GROUND_COVER_SUN_GAIN
 			+ sun_c * transmit * horizon.direct_visibility * cloud_visibility
 			+ EARTH_MOONLIGHT * moon * max(n.z, 0.0) * 0.30) * tod_exposure * light_gain;

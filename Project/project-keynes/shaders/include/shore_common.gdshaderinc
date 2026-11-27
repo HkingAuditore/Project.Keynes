@@ -140,6 +140,9 @@ ShoreSamples sample_shore_neighborhood(vec2 uv, vec2 shore_frac) {
 		return s;
 	}
 #endif
+#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
+	return s;
+#else
 	vec2 texel = 1.0 / derived_resolution;
 	for (int sy = -1; sy <= 1; sy++) {
 		for (int sx = -1; sx <= 1; sx++) {
@@ -164,6 +167,7 @@ ShoreSamples sample_shore_neighborhood(vec2 uv, vec2 shore_frac) {
 	}
 	s.inv_total = 1.0 / max(s.total_cnt, 1.0);
 	return s;
+#endif
 #endif // PK_CELL_FIELD
 }
 

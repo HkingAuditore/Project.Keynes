@@ -16,7 +16,8 @@ C++ 路径相对于 `gdext/src/`。
 | `main.gd` | `diagnostics/daily_simulation_breakdown.gd`：每日报告格式；`main/{debug_tools,setup_controls,diagnostics,overlay,mobile_overlay}.gd`：调试开关、设置/速度控件、性能报告、覆盖层和移动调试层 | 保留生命周期、每日编排、只读入口和状态所有权；协作者每次接收 main，不保存 generator，不增加推进入口 |
 | `rendering/building_visual_layer.gd` | `building_visual_assets.gd`：网格、材质与宏观索引字节 | 无场景/仿真状态；原生建筑缓存、上传顺序和可见性仍归原层 |
 | `rendering/hex_renderer.gd` | `detail_profile_selection.gd`、`renderer_weather_inputs.gd`、`renderer_lighting_bindings.gd`、`renderer_map_assets.gd`、`renderer_sea_ice_diagnostics.gd` | 分别负责档位选层、天气数组、光照绑定、共享资源和诊断；只接收对应数据、节点或绑定到 renderer 的回调 |
-| `rendering/map_baker.gd` | `map_material_assets.gd`：共享地形材质和噪声资源 | 无世界继续态；烘焙、运行期缓冲、纹理上传时点不变 |
+| `rendering/map_baker.gd` | `map_material_assets.gd`：共享地形材质和噪声资源；`initial_terrain_bake.gd`：单图烘焙失败后的粗法线、地表数组和水深兜底 | 共享资源无世界继续态；兜底沿用同一个加载帧 gate、上传顺序和世界字段 |
+| `rendering/bakers/surface_baker.gd` | `rendering/bakers/surface_horizon_layers.gd`：单图天空可见度、弯曲法线和方向地平线编码 | 沿用输入纹理、模糊和重采样；地表数组的层顺序和上传仍归地表烘焙器 |
 | `rendering/military_army_token_layer.gd` | `military_token_lod.gd`：缩放切档与名称 | 纯函数；切档状态、动画和节点仍归 token layer |
 | `rendering/resource_visual_layer.gd` | `resource_shader_variants.gd`、`resource_instance_plan.gd` | 分别负责运行/预热着色器来源、资源形态与稳定实例筛选；情报记忆和几何缓存仍归原层 |
 | `rendering/shrub_layer.gd` | `vegetation_shader_variants.gd`：植被着色器变体与预热来源；`vegetation_node_lifecycle.gd`：附属/临时移出节点的释放 | 原始源码与前缀保持一致；编译缓存仍只有原层持有 |

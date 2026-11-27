@@ -35,6 +35,8 @@
     thread_local std::vector<int64_t> cohort_best_food_q16;
     thread_local std::vector<int64_t> cohort_clothing_required;
     thread_local std::vector<int64_t> cohort_clothing_filled;
+    thread_local std::vector<int64_t> cohort_heating_required;
+    thread_local std::vector<int64_t> cohort_heating_filled;
     thread_local std::vector<int64_t> cohort_working_capital_reserve;
     thread_local std::vector<int64_t> cohort_wealth_ratio_q16;
     thread_local std::vector<int64_t> cohort_savings_months_q16;
@@ -151,6 +153,8 @@
     cohort_best_food_q16.assign(cohort_count, 0);
     cohort_clothing_required.assign(cohort_count, 0);
     cohort_clothing_filled.assign(cohort_count, 0);
+    cohort_heating_required.assign(cohort_count, 0);
+    cohort_heating_filled.assign(cohort_count, 0);
     cohort_tier_weighted_q16.assign(
         static_cast<size_t>(cohort_count) * SAT_TIER_COUNT, 0);
     cohort_tier_weight_q16.assign(

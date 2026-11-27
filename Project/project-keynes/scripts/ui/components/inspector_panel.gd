@@ -21,7 +21,6 @@ const FamilyListScene := preload("res://scenes/ui/family_list.tscn")
 const MarketListScene := preload("res://scenes/ui/market_list.tscn")
 const CohortListScene := preload("res://scenes/ui/cohort_list.tscn")
 const BuildingListScene := preload("res://scenes/ui/building_list.tscn")
-const InspectorTaxGroups := preload("res://scripts/ui/components/inspector_tax_groups.gd")
 const ConstructionEntryScene := preload("res://scenes/ui/construction_entry.tscn")
 const BadgeRowScene := preload("res://scenes/ui/badge_row.tscn")
 const FactGridScene := preload("res://scenes/ui/inspector_fact_grid.tscn")
@@ -36,12 +35,6 @@ const MilitaryCellLedgerScene := preload("res://scenes/ui/military_cell_ledger.t
 
 const TAX_KIND_IDS := {"income": 0, "consumption": 1, "business": 2,
 	"import": 3, "export": 4}
-## 「全部」分组轴：取国家税快照自己那份 item 列表（命令层校验的也是这份）。
-const TAX_GROUP_ALL_MODE := "all_items"
-## 整组调税一次能提交多少条：内核 host 队列单批上限 256
-## （gdext/src/runtime_pod_protocol.h:1350；检查在
-## gdext/src/world_ext_country_commands.cpp:76-87），超出整批被拒。
-const TAX_GROUP_BATCH_LIMIT := 256
 const SPLIT_DETAIL_MIN_WIDTH := 800.0
 ## 档案列低于此高度时 KPI 条改为单行，给正文多留约 34px。
 const DENSE_KPI_MAX_HEIGHT := 500.0
@@ -168,9 +161,6 @@ func _ready() -> void:
 		colonization_requested.emit(_model.get("colonization_action", {})))
 	_clear_tax_confirmation.confirmed.connect(_on_category_tax_reset_confirmed)
 	_object_detail_dialog.set_embedded(true)
-	# 「整组设为」的能力宿主是本面板：tax_group_axes / tax_group_ids_for /
-	# request_tax_group_override 都在这里。dialog 里那个 host 只负责挂载父节点。
-	_object_detail_dialog.set_tax_group_host(self)
 	_object_detail_dialog.closed.connect(_on_detail_closed)
 	_object_detail_dialog.colonization_requested.connect(
 		func(family_handle: int, source_cell: int) -> void:
@@ -457,20 +447,6 @@ func _register_tax_editors(editors: Array) -> void:
 
 func _register_tax_editor(editor: TaxLaneEditor) -> void:
 	TaxPanel._register_tax_editor(self, editor)
-
-
-func tax_group_axes(subject: String = "building") -> Array:
-	return TaxPanel.tax_group_axes(self, subject)
-
-
-func tax_group_ids_for(mode: String, item_id: String,
-		subject: String = "building") -> Dictionary:
-	return TaxPanel.tax_group_ids_for(self, mode, item_id, subject)
-
-
-func request_tax_group_override(kind: int, item_ids: PackedStringArray,
-		rate_basis_points: int, assessment_mode: int = 0) -> Dictionary:
-	return TaxPanel.request_tax_group_override(self, kind, item_ids, rate_basis_points, assessment_mode)
 
 
 func _on_tax_override_requested(

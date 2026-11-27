@@ -2,6 +2,8 @@ extends RefCounted
 
 ## Sizes per-cell lookup textures and publishes their terrain bounce values.
 
+const PttGiBaker = preload("res://scripts/rendering/bakers/ptt_gi_baker.gd")
+
 
 static func _ensure_cell_lut_dims(baker: MapBaker, map: MapData, world: WorldData) -> void:
 	if world == null:
@@ -58,8 +60,7 @@ static func _publish_bounce_lut(baker: MapBaker, enum_data: PackedByteArray, dyn
 			if not bool(out.get("bounce_lut_changed", false)):
 				return false
 			baker._cell_bounce_lut_bytes_cache = out["bounce_lut"]
-			world.bounce_lut_tex = baker._lut_tex_from_data(
-				baker._cell_bounce_lut_bytes_cache, lw, lh, Image.FORMAT_RGBA8, world.bounce_lut_tex)
+			_upload_bounce_lut(baker, world, lw, lh)
 			return true
 		if not str(out.get("reason", "")).is_empty():
 			push_warning("[cell-lut] native bounce fallback: %s" % str(out["reason"]))
@@ -118,6 +119,14 @@ static func _publish_bounce_lut_gd(baker: MapBaker, enum_data: PackedByteArray, 
 			baker._cell_bounce_lut_bytes_cache[base + 3] = a
 	if not changed:
 		return false
-	world.bounce_lut_tex = baker._lut_tex_from_data(
-		baker._cell_bounce_lut_bytes_cache, lw, lh, Image.FORMAT_RGBA8, world.bounce_lut_tex)
+	_upload_bounce_lut(baker, world, lw, lh)
 	return true
+
+
+static func _upload_bounce_lut(baker: MapBaker, world: WorldData, lw: int, lh: int) -> void:
+	var bytes := baker._cell_bounce_lut_bytes_cache
+	world.bounce_lut_tex = baker._lut_tex_from_data(
+		bytes, lw, lh, Image.FORMAT_RGBA8, world.bounce_lut_tex)
+	world.bounce_lut_bytes = bytes
+	if world.ptt_gi_ready and not world.ptt_albedo_refresh_suspended:
+		PttGiBaker.refresh_albedo(world, bytes)

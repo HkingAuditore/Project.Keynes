@@ -7,10 +7,16 @@ const ResourceProfileRegistry = preload(
 const BUILDING_DIR := "res://data/economy/buildings"
 const CLOTHING_CURVE_PATH := \
 	"res://data/economy/environment_curves/cold_clothing_quantity.tres"
+const SURVIVAL_PLAN_PATH := \
+	"res://data/economy/consumption_plans/survival_household.tres"
 const PRODUCTION_CLIMATE_DIR := "res://data/economy/production_climates"
 const STARTER_POPULATION := 40
 const GOODS_SCALE := 1000
 const Q16_ONE := 65536
+const SEVERE_COLD_TEMPERATURE := 0.30
+const SEVERE_COLD_SNOW_THRESHOLD := 0.25
+const SEASONAL_TEMP_DROP_EQUATOR := 0.05
+const SEASONAL_TEMP_DROP_POLE := 0.17
 const RESOURCE_RUNWAY_DAYS := 365
 const RENEWABLE_SAFE_HARVEST_Q16 := 0
 const RENEWABLE_MIN_RESERVE_Q16 := 22938
@@ -21,6 +27,7 @@ static var _building_profiles: Array = []
 static var _resource_profiles: Dictionary = {}
 static var _climate_profiles: Dictionary = {}
 static var _active_reserve_overlay: Dictionary = {}
+static var _clothing_base_qty_per_person: int = -1
 
 
 static func _starter_output_quantity(raw_quantity: int, climate_q16: int,
@@ -55,18 +62,54 @@ static func _starter_buffered_goods(starter_route: Dictionary) -> Dictionary:
 		goods[construction_good] = true
 	return goods
 
+static func _cold_season_temperature(map: MapData, cell_idx: int) -> float:
+	var annual_temp := clampf(_array_value(map.temp_arr, cell_idx, 0.5), 0.0, 1.0)
+	var abs_lat := 0.5
+	if map != null and map.width > 0 and map.height > 1 and cell_idx >= 0:
+		var row := cell_idx / map.width
+		abs_lat = clampf(absf((float(row) + 0.5) / float(map.height) * 2.0 - 1.0), 0.0, 1.0)
+	var seasonal_drop := lerpf(
+		SEASONAL_TEMP_DROP_EQUATOR, SEASONAL_TEMP_DROP_POLE, abs_lat)
+	return maxf(0.0, annual_temp - seasonal_drop)
+
+static func _severe_cold_exposure_q16(map: MapData, cell_idx: int) -> int:
+	var cold_temp := _cold_season_temperature(map, cell_idx)
+	var temp_exposure := 0.0
+	if cold_temp < SEVERE_COLD_TEMPERATURE:
+		temp_exposure = clampf(
+			(SEVERE_COLD_TEMPERATURE - cold_temp) / SEVERE_COLD_TEMPERATURE, 0.0, 1.0)
+	var snow := clampf(_array_value(map.snow_cover_arr, cell_idx, 0.0), 0.0, 1.0)
+	var snow_exposure := 0.0
+	if snow > SEVERE_COLD_SNOW_THRESHOLD:
+		snow_exposure = clampf(
+			(snow - SEVERE_COLD_SNOW_THRESHOLD) / (1.0 - SEVERE_COLD_SNOW_THRESHOLD),
+			0.0, 1.0)
+	return clampi(roundi(maxf(temp_exposure, snow_exposure) * Q16_ONE), 0, Q16_ONE)
+
+static func _clothing_need_base_qty_per_person() -> int:
+	if _clothing_base_qty_per_person > 0:
+		return _clothing_base_qty_per_person
+	var plan = load(SURVIVAL_PLAN_PATH)
+	if plan != null:
+		var idx: int = (plan.need_ids as PackedStringArray).find("clothing")
+		if idx >= 0 and idx < plan.base_qty_per_person.size():
+			_clothing_base_qty_per_person = maxi(1, int(plan.base_qty_per_person[idx]))
+			return _clothing_base_qty_per_person
+	_clothing_base_qty_per_person = 7
+	return _clothing_base_qty_per_person
+
 static func _clothing_demand(map: MapData, cell_idx: int) -> int:
 	var curve = load(CLOTHING_CURVE_PATH)
 	var factor_q16 := Q16_ONE
 	if curve != null and curve.values_q16.size() == 17:
-		var temperature := clampf(_array_value(map.temp_arr, cell_idx, 0.5), 0.0, 1.0)
+		var temperature := _cold_season_temperature(map, cell_idx)
 		var scaled := temperature * 16.0
 		var lower := mini(16, floori(scaled))
 		var upper := mini(16, lower + 1)
 		var fraction := scaled - lower
 		factor_q16 = roundi(lerpf(float(curve.values_q16[lower]),
 			float(curve.values_q16[upper]), fraction))
-	return maxi(1, STARTER_POPULATION * 2 * factor_q16 / Q16_ONE)
+	return maxi(1, STARTER_POPULATION * _clothing_need_base_qty_per_person() * factor_q16 / Q16_ONE)
 
 static func _technology_available(profile, completed: Dictionary) -> bool:
 	var direct_present := false
@@ -116,20 +159,32 @@ static func _useful_count_limit(profile, starter_route: Dictionary, map: MapData
 	if maximum <= 1:
 		return maximum
 	var output_per_building := 0
+	var fur_per_building := 0
 	var food_goods: PackedStringArray = starter_route.get(
 		"starter_food_good_ids", PackedStringArray())
+	var climate_q16 := _production_climate_q16(profile, map, cell_idx)
 	for index in range(mini(profile.output_good_ids.size(),
 			profile.output_quantities_per_day.size())):
-		if food_goods.has(String(profile.output_good_ids[index])):
-			output_per_building += _starter_output_quantity(
-				int(profile.output_quantities_per_day[index]),
-				_production_climate_q16(profile, map, cell_idx), output_efficiency_q16)
+		var good_id := String(profile.output_good_ids[index])
+		var qty := _starter_output_quantity(
+			int(profile.output_quantities_per_day[index]),
+			climate_q16, output_efficiency_q16)
+		if food_goods.has(good_id):
+			output_per_building += qty
+		if good_id == "fur":
+			fur_per_building += qty
+	var fur_limit := 0
+	if fur_per_building > 0 and _severe_cold_exposure_q16(map, cell_idx) > 0:
+		var fur_demand := _clothing_demand(map, cell_idx)
+		fur_limit = (fur_demand + fur_per_building - 1) / fur_per_building + 1
 	if output_per_building > 0:
 		# Leave two buildings above the nominal survival target available to the
 		# integer solver; the objective penalizes unused surplus deterministically.
 		var largest_food_demand := STARTER_POPULATION * 440
-		return mini(maximum, maxi(1 if selected else 0,
-			(largest_food_demand * 2 + output_per_building - 1) / output_per_building + 2))
+		var food_limit := (largest_food_demand * 2 + output_per_building - 1) / output_per_building + 2
+		return mini(maximum, maxi(1 if selected else 0, maxi(food_limit, fur_limit)))
+	if fur_limit > 0:
+		return mini(maximum, maxi(1 if selected else 0, fur_limit))
 	if _profile_outputs(profile, "clothing"):
 		return mini(maximum, 6)
 	for good_id in profile.output_good_ids:
@@ -192,11 +247,15 @@ static func _production_climate_q16(profile, map: MapData, cell_idx: int) -> int
 		return Q16_ONE
 	var climate = _climate_profiles[climate_id]
 	var temperature := _array_value(map.temp_arr, cell_idx, 0.5)
+	var cold_temperature := _cold_season_temperature(map, cell_idx)
 	var water := _array_value(map.plant_available_water_arr, cell_idx,
 		_array_value(map.moisture_arr, cell_idx, 0.5))
-	var temperature_fit := clampf(1.0 - absf(temperature -
-		float(climate.temperature_opt)) / maxf(float(climate.temperature_tolerance),
-		0.000001), 0.0, 1.0)
+	var tolerance := maxf(float(climate.temperature_tolerance), 0.000001)
+	var annual_temp_fit := clampf(
+		1.0 - absf(temperature - float(climate.temperature_opt)) / tolerance, 0.0, 1.0)
+	var cold_temp_fit := clampf(
+		1.0 - absf(cold_temperature - float(climate.temperature_opt)) / tolerance, 0.0, 1.0)
+	var temperature_fit := minf(annual_temp_fit, cold_temp_fit)
 	var water_fit := clampf(1.0 - absf(water - float(climate.water_opt)) /
 		maxf(float(climate.water_tolerance), 0.000001), 0.0, 1.0)
 	var bounded := maxf(float(climate.floor_q16) / Q16_ONE,

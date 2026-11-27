@@ -502,6 +502,17 @@ Dictionary DCWorldExt::get_economy_report() const {    if (_economy_runtime == n
             Dictionary cached = _economy_read_report_cache.duplicate(true);
             cached["report_boundary_pending"] = true;
             cached["report_available"] = !_economy_read_report_cache.is_empty();
+            const Dictionary audit = runtime_from(_economy_runtime)->committed_audit_report();
+            if (bool(audit.get("available", false))) {
+                const int64_t audit_day = int64_t(audit.get("day", -1));
+                if (audit_day >= 0) {
+                    cached["committed_audit_day"] = audit_day;
+                    if (audit_day > int64_t(cached.get("newest_state_day", -1)))
+                        cached["newest_state_day"] = audit_day;
+                    if (audit_day > int64_t(cached.get("last_committed_day", -1)))
+                        cached["last_committed_day"] = audit_day;
+                }
+            }
             // Same reason as the cold path: the cached report may be empty while
             // the worker holds the boundary, and the build id never depends on it.
             cached["build_id"] = String::utf8(pk::pk_build_id());

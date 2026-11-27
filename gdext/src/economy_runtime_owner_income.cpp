@@ -216,7 +216,7 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
     const int64_t eligible_business_cost = saturating_add(
         saturating_add(input_cost, wage_cost, sat), maintenance_cost, sat);
     const int64_t business_base = business_rate < 0
-        ? eligible_business_cost
+        ? std::max(eligible_business_cost, owner_living_cost)
         : std::max<int64_t>(0, quoted_revenue);
     const int64_t absolute_building_days = saturating_mul(
         group.count, std::max<int64_t>(1, days), sat);

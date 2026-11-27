@@ -508,6 +508,16 @@ static func _apply_water_uniforms(host) -> void:
 		host._visual_tiles_active,
 		host._wrap_period_x,
 		host._graphics_details.water_flowmap_enabled())
+	# world_map water already copies these inputs in the full uniform push above.
+	if host._water_mat != null and not host._water_uses_world_map and host._shader_mat != null:
+		for key in [&"terrain_horizon_strength", &"terrain_horizon_softness", &"terrain_horizon_max_angle",
+				&"tod_latitude_sun_enabled", &"tod_sun_relief_max_up"]:
+			if host._water_uniform_names.has(key):
+				var value = host._shader_mat.get_shader_parameter(key)
+				if value != null:
+					host._water_mat.set_shader_parameter(key, value)
+	if ShaderVariants._world_lighting_field_active(host):
+		host._push_world_lighting_field_inputs()
 
 
 static func _push_water_lighting_uniforms(host) -> void:
@@ -593,6 +603,8 @@ static func set_mobile_quality_tier(host, tier_define: String) -> void:
 		# bug fix（log_next.txt 2026-06-15 14:13 shader.dyn_atlas_smooth=<null> 即症状）。
 		if host._map != null and host._world != null and host._shader_mat != null:
 			host._apply_uniforms()
+	host._configure_world_lighting_field()
+	host._push_world_lighting_field_inputs()
 	_configure_cloud_shadow_field(host)
 	_push_cloud_shadow_material_inputs(host)
 

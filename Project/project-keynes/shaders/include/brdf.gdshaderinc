@@ -63,7 +63,7 @@ struct LightingContext {
 	// [terrain-gi 2026-07-31] 与 direct_shadow 同一次 horizon 采样派生的全局光照量：
 	//   sky_visibility ：cosine-weighted 天空可见度，只作用于 ambient，不碰 direct
 	//   bent_normal    ：平均可见方向（纯几何量，未与表面法线混合）
-	//   bounce         ：单次弹射辐照度，已含 (1-V_sky) 与 gi_bounce_strength
+	//   bounce         ：已着色的单次弹射辐照度，含 gi_bounce_strength
 	float sky_visibility;
 	vec3 bent_normal;
 	vec3 bounce;
@@ -239,25 +239,8 @@ vec3 gi_evaluate_bounce(vec2 uv, vec4 nearest_packed, float sky_visibility) {
 LightingContext make_lighting_context_from_daylight(float ambient_floor, vec2 uv, EarthDaylight ed) {
 	LightingContext lc;
 
-	// [tod-latitude-sun 2026-06-25] 主光方向：默认使用逐像素物理太阳方向（近似点光源）。
-	// ed.sun_dir 的水平/垂直分量比 = cos(h)/sin(h)，因此纬度与时角不同 → 阴影方向与长度不同。
-	// 为保留正午高悬太阳下的地形立体起伏（避免太阳完全竖直把坡面打平、抹掉地形层次），
-	// 给一个温和的"最高仰角"下限 tod_sun_relief_max_up：把 up 分量截顶后重新归一化，
-	// 让水平分量保持足量，保证坡面仍有方向性明暗（默认 0.88，比旧 0.92 更偏水平、方向感更强）。
-	// day_night 关闭（永昼）→ eval_earth_daylight 返回全局平行光；开启时可按 tod_latitude_sun_enabled
-	// 选择逐像素物理太阳或旧全局 tod_sun_dir。
-	vec3 phys_sun = ed.sun_dir;
-	phys_sun.z = min(phys_sun.z, tod_sun_relief_max_up);
-	phys_sun = normalize(phys_sun);
-	vec3 phys_moon = ed.moon_dir;
-	// 月光保持较低入射角，让午夜仍能读出山脊和沟谷的法线差。
-	phys_moon.z = min(phys_moon.z, 0.72);
-	phys_moon = normalize(phys_moon);
-	float lat_sun_w = (tod_latitude_sun_enabled || !day_night_enabled) ? 1.0 : 0.0;
-	vec3 day_light_dir = normalize(mix(normalize(tod_sun_dir), phys_sun, lat_sun_w));
-	// 日月方向近乎相反，不做向量线性混合，避免晨昏中点归一化零向量。
-	float use_day_key = step(ed.moon_strength, ed.local_day);
-	lc.L = mix(phys_moon, day_light_dir, use_day_key);
+	lc.L = earth_daylight_key_dir(ed, tod_sun_dir,
+		tod_latitude_sun_enabled || !day_night_enabled, tod_sun_relief_max_up);
 	lc.V = VIEW_DIR_TOP_DOWN;
 
 	if (USE_LINEAR_LIGHTING) {
@@ -279,17 +262,26 @@ LightingContext make_lighting_context_from_daylight(float ambient_floor, vec2 uv
 	lc.sun_palette = mix(ed.moon_col, ed.sun_col, ed.local_day);
 	lc.sun_dir_px = lc.L;
 	lc.local_day = max(ed.local_day, ed.moon_strength * 0.45);
-	// [terrain-gi 2026-07-31] 一次 horizon 采样同时拿直射遮蔽、天空可见度与 bent normal。
-	// 旧的 terrain_horizon_direct_visibility 会自己再采 4 次；这里必须走统一入口，
-	// 否则同一 uv 会付两遍 horizon 采样成本。
-	TerrainHorizonSample hs = terrain_horizon_evaluate(uv, lc.L);
-	lc.direct_shadow = hs.direct_visibility;
 	lc.cloud_ambient = 1.0;
-	lc.sky_visibility = hs.sky_visibility;
-	lc.bent_normal = hs.bent_normal;
-	lc.bounce = hs.has_data
-		? gi_evaluate_bounce(uv, hs.nearest_packed, hs.sky_visibility)
-		: vec3(0.0);
+	if (world_lighting_active()) {
+		vec4 wl = sample_world_lighting(uv);
+		TerrainHorizonSample hs = terrain_horizon_sample_gi_sky_only(uv);
+		lc.direct_shadow = wl.a;
+		lc.sky_visibility = hs.sky_visibility;
+		lc.bent_normal = hs.bent_normal;
+		lc.bounce = wl.rgb * world_lighting_radiance_scale * gi_bounce_strength;
+	} else {
+		// [terrain-gi 2026-07-31] 一次 horizon 采样同时拿直射遮蔽、天空可见度与 bent normal。
+		// 旧的 terrain_horizon_direct_visibility 会自己再采 4 次；这里必须走统一入口，
+		// 否则同一 uv 会付两遍 horizon 采样成本。
+		TerrainHorizonSample hs = terrain_horizon_evaluate(uv, lc.L);
+		lc.direct_shadow = hs.direct_visibility;
+		lc.sky_visibility = hs.sky_visibility;
+		lc.bent_normal = hs.bent_normal;
+		lc.bounce = hs.has_data
+			? gi_evaluate_bounce(uv, hs.nearest_packed, hs.sky_visibility) * lc.sun_color_linear
+			: vec3(0.0);
+	}
 	return lc;
 }
 
@@ -419,7 +411,7 @@ vec3 evaluate_brdf_pbr(SurfaceParams s, LightingContext lc) {
 	vec3 ambient = max(sky_ambient * ambient_occ, vec3(lc.ambient_floor)) * albedo;
 
 	// ── 单次弹射：被遮挡方向带来的邻域反照率溢出，同样只作用于间接光 ──────
-	ambient += lc.bounce * albedo * lc.sun_color_linear * lc.cloud_ambient;
+	ambient += lc.bounce * albedo * lc.cloud_ambient;
 
 	// ── Night atten + exposure ────────────────────────────────────────
 	vec3 indirect_specular = vec3(0.0);
@@ -461,7 +453,7 @@ vec3 evaluate_brdf_blinn_phong_legacy(
 	vec3 amb_dir = sky_sh_ambient_brdf(lc, gi_ambient_normal(lc, N));
 	float geo_ao = gi_ambient_occlusion(lc, N);
 	vec3 diffuse = col * (amb_dir * s.ao * geo_ao * ambient_factor * lc.cloud_ambient
-						+ lc.bounce * lc.sun_color_linear * lc.cloud_ambient
+						+ lc.bounce * lc.cloud_ambient
 						+ lc.sun_color_linear * NdotL * (lc.hillshade + diffuse_factor) * lc.direct_shadow);
 	vec3 specular = lc.sun_color_linear * pow(NdotH, shininess) * spec_amp * lc.direct_shadow;
 	vec3 lit = diffuse + specular + s.emission;

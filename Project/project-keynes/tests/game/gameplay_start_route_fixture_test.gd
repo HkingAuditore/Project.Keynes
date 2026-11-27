@@ -176,6 +176,9 @@ func _init() -> void:
 			assert(buildings.has(String(building_id)), "%s missing %s" % [
 				expected_route, building_id])
 		assert(String(route.get("starter_clothing_good_id", "")) == "fur")
+		if int(route.get("cold_exposure_q16", 0)) > 0:
+			assert(int(route.get("clothing_coverage_q16", 0)) >= 65536,
+				"%s cold exposure start must close fur/clothing supply" % expected_route)
 		assert(String(route.get("starter_knowledge_good_id", "")) ==
 			"technology_points")
 		assert((route.get("missing_resource_ids", PackedStringArray()) as

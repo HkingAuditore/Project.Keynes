@@ -349,7 +349,8 @@
             saturating_add(input_cost, employee_wages, _saturation_count),
             maintenance_cost, _saturation_count);
         const int64_t expected_business_base = expected_business_rate < 0
-            ? expected_business_eligible_cost : std::max<int64_t>(0, revenue);
+            ? std::max(expected_business_eligible_cost, owner_living_cost)
+            : std::max<int64_t>(0, revenue);
         const int64_t expected_business_transfer =
             expected_resolved_fiscal_transfer(
                 group.cell, CountryApi::TAX_BUSINESS, group.type_id,
@@ -415,7 +416,19 @@
                 group.type_id);
             // Fiscal bases follow realized cash, while lifecycle viability still
             // includes wage obligations through owner_business_cost.
-            const int64_t realized_business_eligible_cost = realized_taxable_cost;
+            const int64_t realized_owner_livelihood_floor =
+                (group.operating_state == 0 && group.filled_owner > 0)
+                    ? saturating_mul(
+                        saturating_mul(
+                            living_cost_for_signature(
+                                group.cell, group.owner_signature_id, -1,
+                                _saturation_count),
+                            group.filled_owner, _saturation_count),
+                        std::max<int64_t>(1, _epoch_days.get()),
+                        _saturation_count)
+                    : 0;
+            const int64_t realized_business_eligible_cost = std::max(
+                realized_taxable_cost, realized_owner_livelihood_floor);
             const int64_t absolute_building_days = saturating_mul(
                 group.count, std::max<int64_t>(1, _epoch_days.get()),
                 _saturation_count);

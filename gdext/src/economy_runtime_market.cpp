@@ -590,6 +590,36 @@ int64_t NativeEconomyRuntime::survival_required_units(
     return std::max<int64_t>(0, required);
 }
 
+int64_t NativeEconomyRuntime::severe_cold_exposure_q16(
+        int64_t temperature_q16, int64_t snow_q16, int64_t &saturation_count) {
+    int64_t temperature_exposure_q16 = 0;
+    if (temperature_q16 < SEVERE_COLD_TEMPERATURE_Q16) {
+        temperature_exposure_q16 = std::clamp<int64_t>(
+            mul_div_sat(SEVERE_COLD_TEMPERATURE_Q16 - temperature_q16, Q16_ONE,
+                        SEVERE_COLD_TEMPERATURE_Q16, saturation_count),
+            0, Q16_ONE);
+    }
+    int64_t snow_exposure_q16 = 0;
+    if (snow_q16 > SEVERE_COLD_SNOW_THRESHOLD_Q16) {
+        snow_exposure_q16 = std::clamp<int64_t>(
+            mul_div_sat(snow_q16 - SEVERE_COLD_SNOW_THRESHOLD_Q16, Q16_ONE,
+                        Q16_ONE - SEVERE_COLD_SNOW_THRESHOLD_Q16,
+                        saturation_count),
+            0, Q16_ONE);
+    }
+    return std::max(temperature_exposure_q16, snow_exposure_q16);
+}
+
+int64_t NativeEconomyRuntime::apply_heating_mitigation_q16(
+        int64_t cold_exposure_q16, int64_t heating_q16,
+        int64_t &saturation_count) {
+    if (cold_exposure_q16 <= 0) return 0;
+    const int64_t clamped_heating = std::clamp<int64_t>(heating_q16, 0, Q16_ONE);
+    const int64_t mitigated = mul_div_sat(
+        cold_exposure_q16, clamped_heating, Q16_ONE * 2, saturation_count);
+    return std::max<int64_t>(0, cold_exposure_q16 - mitigated);
+}
+
 bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &result,
 #include "economy_runtime_market_section_demand_inputs.inc"
 #include "economy_runtime_market_section_bundle_quotes.inc"

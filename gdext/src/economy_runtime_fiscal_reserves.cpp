@@ -92,6 +92,18 @@ int64_t NativeEconomyRuntime::prospective_business_subsidy_request(
         if (maintenance != std::numeric_limits<int64_t>::max())
             daily_eligible_cost = saturating_add(
                 daily_eligible_cost, maintenance, _saturation_count);
+        if (type.owner_slots_per_building > 0 && type.owner_profession_id >= 0) {
+            const int32_t owner_signal = labor_signal_index(
+                cell, type.owner_profession_id);
+            const int64_t owner_unit_living = owner_signal >= 0
+                ? std::max(_labor_signals.base_living_cost[owner_signal],
+                    _labor_signals.role_living_cost[owner_signal]) : 0;
+            const int64_t owner_living_floor = saturating_mul(
+                type.owner_slots_per_building, owner_unit_living,
+                _saturation_count);
+            daily_eligible_cost = std::max(
+                daily_eligible_cost, owner_living_floor);
+        }
         if (daily_eligible_cost <= 0) continue;
         best = std::max(best, mul_div_sat(
             saturating_mul(daily_eligible_cost, days, _saturation_count),

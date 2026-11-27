@@ -137,7 +137,7 @@ func _run() -> void:
 	var uniforms: Array = material.shader.get_shader_uniform_list()
 	# Seven material samplers fit the Web texture budget. The ocean-current
 	# texture and its controls are part of the compact water program's contract.
-	_expect(uniforms.size() == 67,
+	_expect(uniforms.size() == 73,
 		"legacy variant stays a compact uniform set (got %d)" % uniforms.size())
 	var sampler_names := PackedStringArray()
 	var legacy_samplers := 0
@@ -191,9 +191,9 @@ func _run() -> void:
 		"#define MAP_VISUAL_TILED\n"),
 		"tiled variant prepends MAP_VISUAL_TILED")
 	var tiled_uniforms: Array = tiled_material.shader.get_shader_uniform_list()
-	_expect(tiled_uniforms.size() > uniforms.size(),
-		"tiled variant adds the tile-array uniforms (got %d vs %d)"
-			% [tiled_uniforms.size(), uniforms.size()])
+	_expect(tiled_uniforms.size() == 72,
+		"tiled variant declares its layout and omits the four legacy horizon inputs (got %d)"
+			% tiled_uniforms.size())
 	var tiled_names := {}
 	for entry in tiled_uniforms:
 		tiled_names[String(entry.get("name", ""))] = true
@@ -202,6 +202,13 @@ func _run() -> void:
 		"tiled variant swaps legacy samplers for the tile arrays")
 	_expect(tiled_names.has("visual_gutter_px"),
 		"tiled variant receives the shared visual-tile layout uniforms")
+	var legacy_names := {}
+	for entry in uniforms:
+		legacy_names[String(entry.get("name", ""))] = true
+	for input in ["horizon_dir_tex_bound", "terrain_horizon_max_angle",
+			"terrain_horizon_strength", "terrain_horizon_softness"]:
+		_expect(legacy_names.has(input) and not tiled_names.has(input),
+			"compact non-tiled water exposes " + input + " through the shared surface array")
 
 	# ④ 拆节点：材质与节点一起清空，且拆分总闸关闭时下一次 _sync 保持为空。
 	renderer._drop_water_quad()
@@ -256,7 +263,7 @@ func _check_cell_field_variant() -> void:
 		return
 	# ② 精简程序的 uniform 集合仍然很小（world_map 是 186+）。数值是**实测值**：宏开比
 	#    宏关多 5 个（见下面的 set 断言），比世界地图小一个量级。
-	_expect(field_uniforms.size() == 72,
+	_expect(field_uniforms.size() == 78,
 		"field variant stays a compact uniform set (got %d)" % field_uniforms.size())
 
 	# ③ 采样槽普查（方案 §3.3 第 2/3 条：等值断言，不是阈值）。

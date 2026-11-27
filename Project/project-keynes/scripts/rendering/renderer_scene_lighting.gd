@@ -19,6 +19,7 @@ static func set_season_phase(host, phase: float) -> void:
 	host._for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_season_phase(host._season_phase)
 	)
+	host._sync_world_lighting_daylight()
 	host._sync_detail_and_activity_materials()
 
 
@@ -59,6 +60,7 @@ static func set_day_phase(host, v: float) -> void:
 	host._for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_day_phase(host._day_phase)
 	)
+	host._sync_world_lighting_daylight()
 	host._sync_detail_and_activity_materials()
 
 
@@ -81,6 +83,7 @@ static func set_tod_debug_sun_position(host, enabled: bool, uv: Vector2) -> void
 		if layer.has_method("set_tod_debug_sun_position"):
 			layer.set_tod_debug_sun_position(host._tod_debug_sun_position_enabled, host._tod_debug_sun_uv)
 	)
+	host._sync_world_lighting_daylight()
 	host._sync_detail_and_activity_materials()
 
 
@@ -101,4 +104,5 @@ static func set_tod_debug_sun_height_scale(host, v: float) -> void:
 		if layer.has_method("set_tod_debug_sun_height_scale"):
 			layer.set_tod_debug_sun_height_scale(host._tod_debug_sun_height_scale)
 	)
+	host._sync_world_lighting_daylight()
 	host._sync_detail_and_activity_materials()

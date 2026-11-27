@@ -244,12 +244,9 @@
         const int64_t population = std::max<int64_t>(0, population_store().population[owner_slot]);
         const bool produces_survival_food =
             retention_produces_survival_food[owner] != 0;
-        const int64_t temperature_exposure_q16 = std::clamp<int64_t>(
-            (Q16_ONE / 2 - retention_environment.temperature_q16) * 2,
-            0, Q16_ONE);
-        const int64_t cold_exposure_q16 = std::max<int64_t>(
-            temperature_exposure_q16,
-            std::clamp<int64_t>(retention_environment.snow_q16, 0, Q16_ONE));
+        const int64_t cold_exposure_q16 = severe_cold_exposure_q16(
+            retention_environment.temperature_q16,
+            retention_environment.snow_q16, _saturation_count);
         int64_t clothing_retention_q16 = 0;
         if (cold_exposure_q16 > Q16_ONE - _survival_production_target_q16) {
             clothing_retention_q16 = Q16_ONE - mul_div_sat(

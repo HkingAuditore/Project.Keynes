@@ -123,6 +123,10 @@ static func _ready(host) -> void:
 	host._building_visual_layer.set_tod(
 		host._tod_sun_color, host._tod_ambient_color, host._tod_night_factor, host._tod_exposure)
 	host._spawn_detail_layers()
+	host._world_lighting_field = host.WorldLightingFieldScript.new()
+	host._world_lighting_field.name = "WorldLightingField"
+	host.add_child(host._world_lighting_field)
+	host._world_lighting_field.process_priority = 1000
 	host._cloud_shadow_field = host.CloudShadowFieldScript.new()
 	host._cloud_shadow_field.name = "CloudShadowField"
 	host.add_child(host._cloud_shadow_field)
@@ -720,6 +724,8 @@ static func set_visual_quality(host, q: int) -> void:
 	# 画质切换沿用运行期分层下发，避免设置变化再次制造全层同步尖峰。
 	host._mark_detail_budget_total_dirty()
 	host._apply_detail_global_budget()
+	host._configure_world_lighting_field()
+	host._push_world_lighting_field_inputs()
 	host._configure_cloud_shadow_field()
 	host._push_cloud_shadow_material_inputs()
 

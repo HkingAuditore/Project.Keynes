@@ -19,6 +19,7 @@ func _init() -> void:
 	# needle 断言都会随"文件是否被重新 checkout"而飘（本文件曾因此假失败）。
 	source = source.replace("\r\n", "\n")
 	_expect(not source.is_empty(), "world shader source loads")
+	_check_native_shared_lighting_variants()
 	# [cell-field 2026-11-18] 两份**展开后**的源码，后面两组断言共用（只算一次）：
 	#   cf_off_expanded = 关（只带 PK_LAND_ONLY，即桌面 / 移动的陆地 program，今日行为）
 	#   cf_land_expanded = 开（+ PK_CELL_FIELD）
@@ -55,8 +56,8 @@ func _init() -> void:
 	_expect(source.contains("water_static_edge_mix = edge_weight")
 		and source.contains("water_edge = is_water && edge_weight > 0.0001;"),
 		"MID/HIGH ocean forwards a continuous distance-field weight")
-	_expect(source.contains("#if !defined(PK_QUALITY_LOW)\n\t\twater_edge ="),
-		"LOW compiles out secondary water-cell lookup")
+	_expect(source.contains("#if !defined(PK_QUALITY_LOW) && !defined(PK_QUALITY_MID)\n\t\twater_edge ="),
+		"LOW/MID compile out secondary water-cell lookup")
 	_expect(source.contains("secondary_water = terrain_static_biome_is_water(secondary_biome)")
 		and source.contains("if (water_edge && secondary_water)"),
 		"continuous ocean blending cannot cross the land/water domain")
@@ -1328,6 +1329,7 @@ func _count_samplers(code: String) -> int:
 ## 这一种可复现配置 —— 断言的是「关的时候字节不变」，不是"重现所有配置"。
 class FakeShaderHost extends RefCounted:
 	var _world = null
+	var _world_lighting_field: RefCounted
 	var visual_quality: int = 0
 	var _mobile_quality_tier_define: String = ""
 	var split_land_water_passes: bool = true
@@ -1345,6 +1347,22 @@ class FakeShaderHost extends RefCounted:
 		SPLIT_LAND_ONLY_DEFINE = water_impl.SPLIT_LAND_ONLY_DEFINE
 		SPLIT_WATER_ONLY_DEFINE = water_impl.SPLIT_WATER_ONLY_DEFINE
 		CloudShadowFieldScript = preload("res://scripts/rendering/cloud_shadow_field.gd")
+
+
+func _check_native_shared_lighting_variants() -> void:
+	if OS.has_feature("web") or DCFeatureFlags.is_compatibility_renderer():
+		return
+	var host := FakeShaderHost.new()
+	host._world_lighting_field = RefCounted.new()
+	var land := RendererShaderWaterScript._apply_shader_variant_prefix(
+		host, load(SHADER_PATH) as Shader, SHADER_PATH)
+	var water := Shader.new()
+	water.code = RendererShaderWaterScript._water_program_prefix(host, "split") \
+		+ FileAccess.get_file_as_string(SHADER_PATH)
+	for shader in [land, water]:
+		var uniforms: Array = shader.get_shader_uniform_list()
+		_expect(uniforms.any(func(item: Dictionary) -> bool: return item.name == "world_lighting_tex"),
+			"native split program compiles with the shared lighting texture")
 
 
 ## 跑一遍陆地变体前缀拼装并返回**前缀部分**（把探针源码切掉）。

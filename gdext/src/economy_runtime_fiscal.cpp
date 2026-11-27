@@ -632,7 +632,7 @@ NativeEconomyRuntime::expected_building_tax_quote(
     const int32_t business_rate = frozen_tax_rate(
         cell, CountryApi::TAX_BUSINESS, type_id);
     const int64_t business_base = business_rate < 0
-        ? std::max<int64_t>(0, business_eligible_cost)
+        ? std::max<int64_t>(0, std::max(business_eligible_cost, owner_living_cost))
         : std::max<int64_t>(0, merchant_cash);
     result.business_transfer = expected_resolved_fiscal_transfer(
         cell, CountryApi::TAX_BUSINESS, type_id, business_base,

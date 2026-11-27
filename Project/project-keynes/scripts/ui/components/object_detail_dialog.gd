@@ -10,7 +10,6 @@ const CohortDetails = preload("res://scripts/ui/components/object_cohort_details
 const GoodDetails = preload("res://scripts/ui/components/object_good_details.gd")
 
 const LedgerFacts = preload("res://scripts/ui/components/dossier_ledger_facts.gd")
-const ObjectDetailTaxGroup = preload("res://scripts/ui/components/object_detail_tax_group.gd")
 
 const FactGridScene := preload("res://scenes/ui/object_fact_grid.tscn")
 const FactCellScene := preload("res://scenes/ui/object_fact_cell.tscn")
@@ -20,21 +19,6 @@ const StateCardScene := preload("res://scenes/ui/object_state_card.tscn")
 const NoteScene := preload("res://scenes/ui/object_note.tscn")
 const ActionButtonScene := preload("res://scenes/ui/object_action_button.tscn")
 const TaxSectionScene := preload("res://scenes/ui/object_tax_section.tscn")
-## NativeCountryRuntime::TaxKind：income 0 / transaction 1 / business 2 / import 3 / export 4。
-## 整组设值时按「当前这一节是什么」推税种，不再写死营业税（原来写死 2，
-## 阶层和物资的整组入口根本出不来）。
-const TAX_KIND_BY_SECTION := {"cohort": 0, "good": 1, "building": 2}
-## 被查看的对象决定整组轴的主体：建筑给时代/产物/产品线/产业/生产档位，
-## 物资给三层/时代/产品线/产业，阶层给阶层/产业（tax_group_map.gd 的 SUBJECT_AXES）。
-const TAX_GROUP_SUBJECT_BY_KIND := {
-	"cohort": "profession", "good": "good", "building": "building",
-}
-## 「全部」分组轴的 id，与 inspector_panel.TAX_GROUP_ALL_MODE 对齐。
-const TAX_GROUP_ALL_MODE := "all_items"
-const TAX_MODE_PERCENT_BP := 0
-## 整组税率输入框：走场景实例化，不在脚本里造控件
-## （ui_scene_structure_test.gd 的静态场景规矩；world_setup.gd:6 同款做法）。
-const RateFieldScene := preload("res://scenes/ui/setup_spin.tscn")
 const TaxLaneScene := preload("res://scenes/ui/object_tax_lane.tscn")
 const GoodDossierScene := preload("res://scenes/ui/object_good_dossier.tscn")
 const CohortDossierScene := preload("res://scenes/ui/object_cohort_dossier.tscn")
@@ -82,12 +66,6 @@ var _cohort_refs: Dictionary = {}
 var _building_refs: Dictionary = {}
 var _trade_orders_model: Dictionary = {}
 var _trade_orders_signature := ""
-## 「整组设为」的能力宿主（inspector 面板）。与 `_build_tax_section` 的 `host`
-## 分开：那个只决定税节挂到哪一页，这个提供 tax_group_axes / tax_group_ids_for /
-## request_tax_group_override。基线把两件事塞进同一个变量，而三次调用传的都是
-## %OperationsPage 这个 VBoxContainer，守卫里的 has_method 恒假，三个档案的整组
-## 入口从那时起就没渲染过。允许为 null（dialog 复用/重建时宿主可能没就绪）。
-var _tax_group_host: Control = null
 
 
 func _ready() -> void:
@@ -480,42 +458,7 @@ func _build_tax_section(kind: String, context_value: Variant, row: Dictionary,
 			tax_editing_finished.emit())
 		editor.set_data(lane)
 		_tax_editors[editor.editor_key(int(context.get("cell", -1)))] = editor
-	# 整组调税：把一条税率一次写到全国同一组项目。
-	# 组从宿主的 tax_group_axes / tax_group_ids_for 取；宿主按国家税快照给 id，
-	# 不会发出「目录里有、税表里没有」那种会被整批拒的 id。
-	# 与上面的单条编辑作用域不同——单条只改本格，整组改全国一大片。
-	var section_tax_kind := int(TAX_KIND_BY_SECTION.get(kind, -1))
-	# 能力宿主是 inspector 面板（set_tax_group_host），不是这块内容容器。
-	# `editable` 必须留着：格子被锁的时候不给整组入口。
-	# is_instance_valid：dialog 复用/重建时宿主可能已被释放，别在 has_method 上崩。
-	var group_host := _tax_group_host
-	if section_tax_kind >= 0 and editable \
-			and is_instance_valid(group_host) and group_host != null \
-			and group_host.has_method("tax_group_axes") \
-			and group_host.has_method("tax_group_ids_for") \
-			and group_host.has_method("request_tax_group_override"):
-		var target_item_id := ""
-		var prefill_rate := 0
-		for raw_lane in item_lanes:
-			var probe: Dictionary = raw_lane
-			if String(probe.get("scope", "item")) != "item":
-				continue
-			target_item_id = String(probe.get("item_id", ""))
-			if int(probe.get("mode", TAX_MODE_PERCENT_BP)) == TAX_MODE_PERCENT_BP:
-				prefill_rate = int(probe.get("base", 0))
-			break
-		if not target_item_id.is_empty():
-			_add_tax_group_controls(lanes, kind, section_tax_kind,
-				target_item_id, prefill_rate, group_host)
 	lanes.visible = not item_lanes.is_empty()
-
-
-func _add_tax_group_controls(parent: VBoxContainer, kind: String,
-		section_tax_kind: int, target_item_id: String, prefill_rate: int,
-		host: Control) -> void:
-	ObjectDetailTaxGroup.add_controls(parent,
-		String(TAX_GROUP_SUBJECT_BY_KIND.get(kind, "building")),
-		section_tax_kind, target_item_id, prefill_rate, host)
 
 
 func _item_tax_lanes(row: Dictionary) -> Array:
@@ -540,12 +483,6 @@ func set_embedded(embedded: bool = true) -> void:
 	_embedded = embedded
 	_apply_embedded_chrome(embedded)
 	update_minimum_size()
-
-
-## 谁来提供「整组设为」的能力（inspector 面板）。传 null 是合法状态：
-## dialog 复用或宿主重建时可能先清空，守卫里还有 is_instance_valid 与 has_method。
-func set_tax_group_host(host: Control) -> void:
-	_tax_group_host = host
 
 
 func _get_minimum_size() -> Vector2:

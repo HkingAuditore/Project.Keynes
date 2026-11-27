@@ -109,6 +109,7 @@ func run() -> void:
 	var grass_slope := await _capture("grass_slope")
 	_expect("grass also follows pixel terrain normals", _alpha(grass_flat) > 50.0 and _difference(grass_flat, grass_slope) > 0.0005)
 	await _check_ground_tod()
+	await _check_canopy_bounce()
 	await _check_bitmap_forms()
 	print("vegetation pixel normals: %d checks, %d failures; %s" % [checks, failures, output])
 	viewport.queue_free()
@@ -170,6 +171,19 @@ func _configure(variant: String) -> void:
 		lut.set_pixel(5, 0, Color(0, 0, 1, 1))
 		style_image = lut
 		Shrubs.Family_materials.bind_body_style(mat, ImageTexture.create_from_image(style_image))
+
+func _check_canopy_bounce() -> void:
+	_configure("source")
+	_set_form(Profile.FORM_BROADLEAF)
+	mat.set_shader_parameter("veg_shade_quality", 2)
+	mat.set_shader_parameter("world_lighting_tex_bound", true)
+	mat.set_shader_parameter("world_lighting_tex", _texture(Color(0, 0, 0, 1)))
+	var neutral := await _capture("canopy_bounce_neutral")
+	mat.set_shader_parameter("world_lighting_tex", _texture(Color(0.6, 0.0, 0.0, 1)))
+	var bounce := await _capture("canopy_bounce_red")
+	_expect("canopy responds to anchor RGB while shadow and coverage stay fixed",
+		_alpha(neutral) > 50.0 and is_equal_approx(_alpha(neutral), _alpha(bounce))
+		and _difference(neutral, bounce) > 0.002)
 
 func _check_bitmap_forms() -> void:
 	for variant in ["source", "bitmap_far", "web_low_family"]:

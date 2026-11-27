@@ -109,6 +109,7 @@ static func _compile_search_context(candidates: Array[Dictionary], map: MapData,
 		"clothing_good_id": String(starter_route.get(
 			"starter_clothing_good_id", "fur")),
 		"clothing_demand": StarterInputs._clothing_demand(map, cell_idx),
+		"cold_exposure_q16": StarterInputs._severe_cold_exposure_q16(map, cell_idx),
 		"buffered_goods": StarterInputs._starter_buffered_goods(starter_route),
 		"resource_limits": resource_limits,
 		"resource_caps": resource_caps,
@@ -172,11 +173,20 @@ static func _evaluate_counts(candidates: Array[Dictionary], counts: PackedInt32A
 		return {}
 	weakest_supply_q16 = mini(weakest_supply_q16, int(food.coverage_q16))
 	var clothing_demand := int(context.clothing_demand)
-	var clothing_supply := int(supply.get(String(context.clothing_good_id), 0))
-	# Cold starts prebuild scraping capacity; the 15-day clothing bridge covers opening.
+	var cold_exposure_q16 := int(context.get("cold_exposure_q16", 0))
+	var clothing_good_id := String(context.clothing_good_id)
+	var clothing_supply := int(supply.get(clothing_good_id, 0))
+	if clothing_good_id != "clothing":
+		clothing_supply += int(supply.get("clothing", 0))
 	var clothing_coverage_q16 := Q16_ONE
 	if clothing_supply > 0:
 		clothing_coverage_q16 = clothing_supply * Q16_ONE / maxi(1, clothing_demand)
+	elif cold_exposure_q16 > 0:
+		clothing_coverage_q16 = 0
+	if cold_exposure_q16 > 0 and clothing_coverage_q16 < Q16_ONE:
+		return {}
+	if cold_exposure_q16 > 0:
+		weakest_supply_q16 = mini(weakest_supply_q16, clothing_coverage_q16)
 	var overproduction := upstream_excess + int(food.excess)
 	if clothing_supply > 0 and clothing_coverage_q16 > TARGET_FOOD_MAX_Q16:
 		overproduction += clothing_supply - clothing_demand * TARGET_FOOD_MAX_Q16 / Q16_ONE
@@ -230,6 +240,7 @@ static func _evaluate_counts(candidates: Array[Dictionary], counts: PackedInt32A
 		"food_coverage_q16": int(food.coverage_q16),
 		"clothing_demand_per_day": clothing_demand,
 		"clothing_coverage_q16": clothing_coverage_q16,
+		"cold_exposure_q16": cold_exposure_q16,
 		"weakest_supply_coverage_q16": weakest_supply_q16,
 		"overproduction_quantity": overproduction,
 		"starter_building_total": total_buildings,

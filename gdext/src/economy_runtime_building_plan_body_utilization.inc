@@ -169,7 +169,8 @@
             const int32_t business_rate = frozen_tax_rate(
                 group.cell, CountryApi::TAX_BUSINESS, group.type_id);
             const int64_t business_base = business_rate < 0
-                ? expected_business_eligible_cost : std::max<int64_t>(0, revenue);
+                ? std::max(expected_business_eligible_cost, owner_living_cost)
+                : std::max<int64_t>(0, revenue);
             const int64_t business_transfer = expected_resolved_fiscal_transfer(
                 group.cell, CountryApi::TAX_BUSINESS, group.type_id,
                 business_base, 1, _saturation_count);

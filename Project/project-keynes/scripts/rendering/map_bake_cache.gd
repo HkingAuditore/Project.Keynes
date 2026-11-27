@@ -44,8 +44,7 @@ static func _hm_max_dim() -> int:
 const HM_MAX_DIM := HM_MAX_DIM_DESKTOP
 
 # [terrain-horizon 2026-07-03] 8 方向 horizon 生成期烘焙参数。桌面用一张 RGBA8
-# nibble-packed 纹理，运行期 1 次采样近似地形投影阴影；Web 全部档位也 CPU 烘一张
-# （见 TERRAIN_HORIZON_STEPS_WEB），mobile 仍为 null（shader 走无阴影回退）。
+# nibble-packed 纹理。原生瓦片 compute 和单图后端共用同一套参数，Web 用 CPU 烘焙。
 const TERRAIN_HORIZON_STEPS := 1024
 const TERRAIN_HORIZON_STEP_PX := 2.0
 const TERRAIN_HORIZON_STEP_GROWTH := 0.35  # 近密远疏；0 退回固定步长

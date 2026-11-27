@@ -195,9 +195,8 @@ const AXIS_LAYER := "layer"
 const AXIS_GOOD_CATEGORY := "good_category"
 const AXIS_PROFESSION_CLASS := "profession_class"
 
-## 面板轴的展示清单：总面板（economy_workspace.gd 的 _tax_group_axes_for_page）
-## 与地方面板/对象详情（inspector_tax_groups.gd 的 tax_group_axes）都从这里取，
-## 轴、顺序、文案只有这一份——两处各写一份正是这次要消灭的毛病。
+## 面板轴的展示清单：国家税收总面板（economy_tax_grouping.gd）从这里取，
+## 轴、顺序、文案统一维护在这一份。
 const SUBJECT_AXES := {
 	SUBJECT_BUILDING: [
 		{"id": AXIS_ERA, "label": "按时代",

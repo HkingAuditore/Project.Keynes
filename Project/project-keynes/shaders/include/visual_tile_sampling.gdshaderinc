@@ -77,6 +77,9 @@ uniform sampler2DArray terrain_surface_tex : filter_linear, repeat_disable;
 // LINEAR）。格界形状的唯一来源：与 CPU 高程 / 海滩坡烘焙逐位同源（同一个 buffer），
 // 所以山影海岸、海滩坡与颜色边界不会错开。方案 §3.5。
 #define TS_LAYER_BOUNDARY_WARP 6.0
+#define TS_LAYER_GI_SKY 7.0
+#define TS_LAYER_HORIZON_DIR0 8.0
+#define TS_LAYER_HORIZON_DIR1 9.0
 // 运行期实际层数（2 = 旧的两层图；3 = +detail；4 = +occluder；6 = +edge 两层；
 // 7 = +boundary_warp）。
 uniform int terrain_surface_layer_count = 2;
@@ -154,9 +157,30 @@ uniform bool terrain_static_baked = false;
 uniform bool terrain_static_baked = false;
 #endif
 
+#if defined(VT_USE_HORIZON) && (defined(MAP_VISUAL_TILED) || defined(VT_USE_TERRAIN_SURFACE_ARRAY))
+#define PK_HAS_GI_SKY_TEX
+uniform bool gi_sky_tex_bound = false;
+#endif
+#if defined(PK_HAS_GI_SKY_TEX) || defined(PK_WEB_SURFACE_HORIZON)
+#define PK_HAS_HORIZON_DIR_TEX
+uniform bool horizon_dir_tex_bound = false;
+#endif
+
 #ifdef VT_USE_HORIZON
 #ifdef MAP_VISUAL_TILED
 uniform sampler2DArray visual_horizon_tiles : filter_nearest, repeat_disable;
+uniform sampler2DArray visual_gi_sky_tiles : filter_linear, repeat_disable;
+uniform sampler2DArray visual_horizon_dir0_tiles : filter_linear, repeat_disable;
+uniform sampler2DArray visual_horizon_dir1_tiles : filter_linear, repeat_disable;
+vec4 visual_sample_gi_sky(vec2 uv) {
+	return texture(visual_gi_sky_tiles, visual_tile_address(uv));
+}
+vec4 visual_sample_horizon_dir0(vec2 uv) {
+	return texture(visual_horizon_dir0_tiles, visual_tile_address(uv));
+}
+vec4 visual_sample_horizon_dir1(vec2 uv) {
+	return texture(visual_horizon_dir1_tiles, visual_tile_address(uv));
+}
 #if CURRENT_RENDERER != RENDERER_COMPATIBILITY
 // Vulkan 后端：horizon 的 4 字节按 RG16 存（VisualTileSet._field_texture_format），
 // 两次 textureGather 拿到 2×2 全部 texel。GLES3 没有 gather，保留 RGBA8 + 4 次采样。
@@ -196,7 +220,30 @@ uniform sampler2D terrain_horizon_tex : filter_nearest, repeat_disable;
 // 着色器编译失败。函数本身只做一次 texture()，定义出来不会额外采样；省开销交给
 // 调用点的 PK_WEB_RESOURCE_MIN guard。
 vec4 visual_sample_horizon(vec2 uv) { return texture(terrain_horizon_tex, visual_static_wrap_uv(uv)); }
+#ifdef VT_USE_TERRAIN_SURFACE_ARRAY
+vec4 visual_sample_gi_sky(vec2 uv) {
+	if (!gi_sky_tex_bound || terrain_surface_layer_count < 8) {
+		return vec4(1.0, 0.5, 0.5, 1.0);
+	}
+	return texture(terrain_surface_tex, vec3(visual_static_wrap_uv(uv), TS_LAYER_GI_SKY));
+}
 #endif
+#endif
+#endif
+
+#if defined(PK_HAS_HORIZON_DIR_TEX) && !defined(MAP_VISUAL_TILED)
+vec4 visual_sample_horizon_dir0(vec2 uv) {
+	if (!horizon_dir_tex_bound || terrain_surface_layer_count < 10) {
+		return vec4(0.0);
+	}
+	return texture(terrain_surface_tex, vec3(visual_static_wrap_uv(uv), TS_LAYER_HORIZON_DIR0));
+}
+vec4 visual_sample_horizon_dir1(vec2 uv) {
+	if (!horizon_dir_tex_bound || terrain_surface_layer_count < 10) {
+		return vec4(0.0);
+	}
+	return texture(terrain_surface_tex, vec3(visual_static_wrap_uv(uv), TS_LAYER_HORIZON_DIR1));
+}
 #endif
 
 // [terrain-gi 2026-07-31] 遮挡源 cell id：RG=主导遮挡源低/高字节，BA=次遮挡源低/高字节，

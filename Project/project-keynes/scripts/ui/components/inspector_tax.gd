@@ -179,30 +179,6 @@ static func _register_tax_editor(panel, editor: TaxLaneEditor) -> void:
 			"rate", editor.lane_data().get("base", 0))))
 
 
-## 对象详情 / 地方面板的整组轴：与总面板同源（tax_group_map.gd 的 SUBJECT_AXES），
-## 末尾再挂一条「全部」——它直接取国家税快照的整份 id，不经过目录。
-## subject 由调用方按被查看的对象给：建筑 / 物资 / 职业各一组轴。
-static func tax_group_axes(panel, subject: String = "building") -> Array:
-	var axes: Array = panel.InspectorTaxGroups.tax_group_axes(subject)
-	axes.append({"id": panel.TAX_GROUP_ALL_MODE, "label": "全部",
-		"hint": "该国这个税种下的全部项目"})
-	return axes
-
-
-
-static func tax_group_ids_for(panel, mode: String, item_id: String,
-		subject: String = "building") -> Dictionary:
-	return panel.InspectorTaxGroups.resolve_group_ids_for(
-		panel._player_controller, panel._tax_page_cell, mode, item_id, subject)
-
-
-
-static func request_tax_group_override(panel, kind: int, item_ids: PackedStringArray,
-		rate_basis_points: int, assessment_mode: int = 0) -> Dictionary:
-	return panel.InspectorTaxGroups.submit_group_override(
-		panel._player_controller, kind, item_ids, rate_basis_points, assessment_mode)
-
-
 
 static func _on_tax_override_requested(panel,
 		scope: String,

@@ -29,7 +29,7 @@ static func publish_runtime_date(owner: Variant, committed: int) -> void:
 	if owner.is_economy_gate_blocked():
 		return
 	owner._last_day = committed + 1
-	owner.current_day = float(owner._last_day) + owner._runtime_calendar_fraction
+	owner.current_day = clampf(owner.current_day, float(owner._last_day), float(owner._last_day) + 0.9999)
 	owner._runtime_calendar_through = maxi(owner._runtime_calendar_through, committed)
 	owner._publishing_runtime_date = true
 	owner.day_changed.emit(owner._last_day)
@@ -51,7 +51,8 @@ static func _process_runtime_calendar(owner: Variant, delta: float) -> void:
 	if elapsed_days > 0:
 		owner._runtime_calendar_through = int(owner._runtime_calendar_admit.call(
 			owner._runtime_calendar_through + elapsed_days + 1))
-	owner.current_day = float(owner._last_day) + owner._runtime_calendar_fraction
+	var next_day: float = maxf(owner.current_day, float(owner._last_day)) + delta * owner.speed_multiplier
+	owner.current_day = minf(next_day, float(owner._last_day) + 0.9999)
 	var dp: float = owner.day_phase()
 	if owner._should_emit_day_phase(dp):
 		owner._last_emit_day_phase = dp

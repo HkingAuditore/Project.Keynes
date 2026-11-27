@@ -52,13 +52,22 @@ func _init() -> void:
 	_expect("a repeated publication does not emit again", dates == [594])
 	clock.publish_runtime_date(592)
 	_expect("an older publication cannot rewind the display", clock.day_index() == 594)
+	clock.speed_multiplier = 10.0
+	clock._process_runtime_calendar(0.04)
+	clock._process_runtime_calendar(0.04)
+	var pre_wrap_day: float = clock.current_day
+	var pre_wrap_phase: float = clock.visual_day_phase
+	clock._process_runtime_calendar(0.04)
+	_expect("wrapping runtime admission fraction never rewinds current_day or visual_day_phase",
+		clock.current_day >= pre_wrap_day and clock.day_index() == 594
+		and clock.visual_day_phase >= pre_wrap_phase)
 	clock.bind_runtime_calendar(Callable())
 	clock.publish_runtime_date(596)
 	_expect("an unbound session cannot publish to the clock", dates == [594])
 	_expect("unbinding preserves the displayed date", clock.day_index() == 594)
 	clock.free()
 	print("ideology day continuation: %d checks, %d failures" % [_checks, _failures])
-	quit(1 if _failures > 0 or _checks != 11 else 0)
+	quit(1 if _failures > 0 or _checks != 12 else 0)
 
 func _expect(label: String, condition: bool) -> void:
 	_checks += 1

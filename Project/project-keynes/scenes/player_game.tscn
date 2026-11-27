@@ -94,7 +94,6 @@ shader_days_per_game_year = 0.5
 eternal_min_elevation_deg = 15.0
 eternal_max_hour_angle_deg = 89.0
 terrain_horizon_softness = 0.85
-terrain_horizon_max_angle = 1.5708
 gi_ao_strength = 1.0
 gi_ao_floor = 0.09
 water_flow_wave_density = 1.91

@@ -28,6 +28,12 @@
     }
     _survival_clothing_need_stable_id =
         static_cast<int32_t>(clothing - _need_ids.begin());
+    const auto home_energy = std::lower_bound(
+        _need_ids.begin(), _need_ids.end(), "home_energy");
+    _survival_home_energy_need_stable_id =
+        (home_energy != _need_ids.end() && *home_energy == "home_energy")
+            ? static_cast<int32_t>(home_energy - _need_ids.begin())
+            : -1;
     _environment_curves.resize(curve_ids.size());
     for (size_t c = 0; c < curve_ids.size(); ++c) {
         if (curve_signals[c] < 0 || curve_signals[c] > 3) {

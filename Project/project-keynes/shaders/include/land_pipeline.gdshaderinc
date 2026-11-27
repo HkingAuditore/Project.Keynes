@@ -652,7 +652,7 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 	}
 #endif
 	if (gi_debug_view == 4) {
-		return lc.bounce * lc.sun_color_linear;
+		return lc.bounce;
 	}
 	// 7 = 最终法线晕渲（含材质贴图法线）；8 = 只看地形几何法线（高度场 + 分地形细节）。
 	//   固定西北光源、无 GI / 阴影 / 底色，专门用来检查细节法线的形态与强度。

@@ -408,10 +408,8 @@ var terrain_materials_enabled: bool = true
 	set(value):
 		terrain_horizon_softness = clampf(value, 0.01, 1.0)
 		RendererTerrainHorizon._push_terrain_horizon_uniforms(self)
-@export_range(0.30, 1.5708, 0.01) var terrain_horizon_max_angle: float = 1.309:
-	set(value):
-		terrain_horizon_max_angle = clampf(value, 0.30, 1.5708)
-		RendererTerrainHorizon._push_terrain_horizon_uniforms(self)
+# The texels store an angle normalized by the bake range.
+const terrain_horizon_max_angle: float = MapBaker.TERRAIN_HORIZON_MAX_ANGLE
 @export_range(0.35, 1.0, 0.01) var terrain_horizon_cast_floor: float = 0.82:
 	set(value):
 		terrain_horizon_cast_floor = clampf(value, 0.35, 1.0)

@@ -32,17 +32,22 @@ const FIELD_FORMATS := {
 	"boundary_warp": Image.FORMAT_RG8,
 	"horizon": Image.FORMAT_RGBA8,
 	"gi_occluder": Image.FORMAT_RGBA8,
+	"gi_sky": Image.FORMAT_RGBA8,
+	"horizon_dir0": Image.FORMAT_RGBA8,
+	"horizon_dir1": Image.FORMAT_RGBA8,
 }
 
 # 由异步 compute 而非静态 bundle 填充的字段。upload_layer_bundle 必须跳过它们，
 # 否则未就绪的中性层会被静态 bundle 覆盖成垃圾。
-const COMPUTE_FIELDS := ["horizon", "gi_occluder"]
+const COMPUTE_FIELDS := ["horizon", "gi_occluder", "gi_sky", "horizon_dir0", "horizon_dir1"]
 
 var layout
 var ready: bool = false
 var static_ready: bool = false
 var horizon_ready: bool = false
 var gi_occluder_ready: bool = false
+var gi_sky_ready: bool = false
+var horizon_dir_ready: bool = false
 var fallback_reason: String = ""
 var bake_report: Dictionary = {}
 
@@ -61,6 +66,9 @@ var edge_distance: Texture2DArray
 var boundary_warp: Texture2DArray
 var horizon: Texture2DArray
 var gi_occluder: Texture2DArray
+var gi_sky: Texture2DArray
+var horizon_dir0: Texture2DArray
+var horizon_dir1: Texture2DArray
 
 
 func initialize_empty(resolved_layout) -> bool:
@@ -164,6 +172,18 @@ func upload_gi_occluder_layer(layer_id: int, data: PackedByteArray) -> bool:
 	return _upload_compute_layer("gi_occluder", layer_id, data)
 
 
+func upload_gi_sky_layer(layer_id: int, data: PackedByteArray) -> bool:
+	return _upload_compute_layer("gi_sky", layer_id, data)
+
+
+func upload_horizon_dir0_layer(layer_id: int, data: PackedByteArray) -> bool:
+	return _upload_compute_layer("horizon_dir0", layer_id, data)
+
+
+func upload_horizon_dir1_layer(layer_id: int, data: PackedByteArray) -> bool:
+	return _upload_compute_layer("horizon_dir1", layer_id, data)
+
+
 func _upload_compute_layer(field_name: String, layer_id: int, data: PackedByteArray) -> bool:
 	var texture: Texture2DArray = get(field_name)
 	if layout == null or texture == null or layer_id < 0 or layer_id >= layout.layer_count:
@@ -183,6 +203,8 @@ func clear() -> void:
 	static_ready = false
 	horizon_ready = false
 	gi_occluder_ready = false
+	gi_sky_ready = false
+	horizon_dir_ready = false
 	for field_name in FIELD_FORMATS:
 		set(field_name, null)
 

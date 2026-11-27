@@ -28,6 +28,7 @@ const PhysicalCirculationBakerScript = preload("res://scripts/rendering/bakers/p
 const SurfaceBakerScript = preload("res://scripts/rendering/bakers/surface_baker.gd")
 const CellLutBakerScript = preload("res://scripts/rendering/bakers/cell_lut_baker.gd")
 const PhysicalSolveBakerScript = preload("res://scripts/rendering/bakers/physical_solve_baker.gd")
+const PttGiBakerScript = preload("res://scripts/rendering/bakers/ptt_gi_baker.gd")
 # Physical Wind & Ocean Circulation：hex 域物理化求解器。当
 # ClimateProfile.physical_circulation_enabled = true 时，bake_world / 切片烘焙
 # 路径用它替换 ny-only 风场 + Ekman 洋流的旧实现，输出从 hex 字段（cell.wind_vector
@@ -198,33 +199,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 		var legacy_surface_ok: bool = await _bake_legacy_static_surface(
 			map, world, hex_size, seed_val, visual_generation_id)
 		if not legacy_surface_ok:
-			# 兜底：旧的 RG8 粗法线包（无 BA/relief 通道）。
-			var normal_data: Dictionary = await NativeLoadingTasks.compute(_world_ext,"normal",{
-				"buffer":world.height_buffer,"width":world.hm_size.x,"height":world.hm_size.y,
-				"coarse_radius":4,"slope_gain":8.0,"wrap_x":true,"world_size_x":world.world_bounds.size.x,
-				"world_size_y":world.world_bounds.size.y,"hex_size":hex_size,
-				"sample_radius_hex":TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,"height_scale_hex":TERRAIN_NORMAL_HEIGHT_SCALE_HEX}, _loading_frames)
-			var rg8_bytes := PackedByteArray()
-			var gd_normal_tex: ImageTexture = null
-			if not bool(normal_data.get("fallback",true)):
-				rg8_bytes = normal_data.get("data", PackedByteArray())
-			else:
-				gd_normal_tex = DCAtlasEncoders.encode_terrain_normal_tex(world.height_buffer,world.hm_size,4,8.0,true,_world_ext,world.world_bounds.size,hex_size,TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,TERRAIN_NORMAL_HEIGHT_SCALE_HEX)
-				if gd_normal_tex != null and gd_normal_tex.get_image() != null \
-						and gd_normal_tex.get_image().get_format() == Image.FORMAT_RG8:
-					rg8_bytes = gd_normal_tex.get_image().get_data()
-			var fallback := _upload_legacy_surface_fallback(
-				rg8_bytes, world.hm_size, world.terrain_normal_tex)
-			world.terrain_normal_tex = fallback.get("normal_tex", null)
-			if world.terrain_normal_tex == null:
-				# 无 DLL 环境（GDScript 编码器）拿不到 RG8 字节时，至少保留 2D 法线给其它层。
-				world.terrain_normal_tex = gd_normal_tex
-			world.terrain_surface_tex = fallback.get("surface_tex", null)
-			# [C 2026-11-01] 水深兜底也升级 RGBA8：R=旧 buffer 水深、GBA=0（无软权重）→
-			# compact water 的 max(二元权重, 软权重) 自动退化为旧二元行为。
-			world.water_depth_tex = _upload_legacy_water_depth_fallback(world)
-			print("[terrain-baked-surface] fallback water_depth=RGBA8 tex=%s derived=%s" % [
-				world.water_depth_tex != null, str(world.derived_size)])
+			await InitialTerrainBake.bake_legacy_surface_fallback(self, world, hex_size)
 	stage_progress.emit("encode", 0.96)
 	await _yield_generation_frame()
 	if _loading_frames != null and _loading_frames.canceled:
@@ -282,6 +257,13 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	else:
 		_initial_cell_luts_deferred = false
 		bake_cell_luts(map, world)
+	# 原生移动端由渲染器在首次启用中/高档时烘 PTT。低档进图不分配传输纹理。
+	world.ptt_bake_deferred = not OS.has_feature("web") and DCFeatureFlags.uses_shader_quality_tier()
+	if not world.ptt_bake_deferred:
+		var ptt_bake: Dictionary = PttGiBakerScript.bake_world(
+			map, world, hex_size, world.bounce_lut_bytes)
+		if not bool(ptt_bake.get("ok", false)):
+			push_warning("MapBaker: PTT-GI bake failed - %s" % String(ptt_bake.get("reason", "")))
 	print("  encode: %dms" % (Time.get_ticks_msec() - t))
 
 	print("MapBaker v6: total %dms" % (Time.get_ticks_msec() - t_total))
@@ -347,7 +329,7 @@ func _bake_legacy_static_surface(map: MapData, world: WorldData, hex_size: float
 # 编码，BA 预留）。层序契约见 surface_baker.gd 的 SURFACE_ARRAY 注释块与
 # docs/plans/terrain-cell-field-contract.md §4.2；shader 侧按 get_layers() 推
 # terrain_surface_layer_count，warp 层是否可用由 terrain_warp_layer_bound 单独门控。
-const SURFACE_ARRAY_LAYERS := 7
+const SURFACE_ARRAY_LAYERS := 10
 func _make_surface_edge_layers(bundle: Dictionary, size: Vector2i,
 		water_data: PackedByteArray, water_expected: int) -> Array:
 	return await SurfaceBakerScript._make_surface_edge_layers(self, bundle, size, water_data, water_expected)

@@ -322,6 +322,46 @@ func _test_survival_labor_and_mortality(compiled: Dictionary) -> void:
 		int(exposed_report.get("deaths", 0)) > 0 and
 		int(exposed_report.get("population_error", 1)) == 0)
 
+	var cool := _new_ext(1, 0.35)
+	var cool_profile := _native_profile(false, 1)
+	cool_profile.starvation_death_rate_q32 = 429496730
+	_expect("cool climate test country bootstraps",
+		CountryTestHelper.configure_all_technologies(cool, catalog, 1, 144))
+	_expect("cool climate runtime configures",
+		bool(cool.configure_economy(catalog, cool_profile, 1, 144).get("ok", false)))
+	cool.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0]),
+		"signature_ids": PackedInt32Array([worker_sig]),
+		"population": PackedInt64Array([100]),
+		"funds": PackedInt64Array([100000000]),
+	}, {})
+	cool.submit_economy_commands(_stock_commands(0, goods, staple_stock, 0))
+	var cool_report := _run_day(cool, 0)
+	_expect("mild cool weather without fur does not trigger lethal cold mortality",
+		int(cool_report.get("deaths", -1)) == 0 and
+		int(cool_report.get("population_error", 1)) == 0)
+
+	var heated := _new_ext(1, 0.0)
+	var heated_profile := _native_profile(false, 1)
+	heated_profile.starvation_death_rate_q32 = 429496730
+	_expect("heated cold test country bootstraps",
+		CountryTestHelper.configure_all_technologies(heated, catalog, 1, 145))
+	_expect("heated cold runtime configures",
+		bool(heated.configure_economy(catalog, heated_profile, 1, 145).get("ok", false)))
+	heated.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0]),
+		"signature_ids": PackedInt32Array([worker_sig]),
+		"population": PackedInt64Array([100]),
+		"funds": PackedInt64Array([100000000]),
+	}, {})
+	var heated_stock := staple_stock.duplicate()
+	heated_stock["logs"] = 1000000
+	heated.submit_economy_commands(_stock_commands(0, goods, heated_stock, 0))
+	var heated_report := _run_day(heated, 0)
+	_expect("home energy logs mitigate severe cold mortality when fur is missing",
+		int(heated_report.get("deaths", 999)) < int(exposed_report.get("deaths", 0)) and
+		int(heated_report.get("population_error", 1)) == 0)
+
 func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var ext: Object = _new_ext(1, 0.1)
 	var catalog := compiled.duplicate(true)

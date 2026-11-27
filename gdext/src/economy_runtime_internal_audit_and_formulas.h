@@ -111,6 +111,12 @@
                                                             float snow_cover,
                                                             float weather_intensity,
                                                             bool ready);
+    static int64_t severe_cold_exposure_q16(int64_t temperature_q16,
+                                            int64_t snow_q16,
+                                            int64_t &saturation_count);
+    static int64_t apply_heating_mitigation_q16(int64_t cold_exposure_q16,
+                                                int64_t heating_q16,
+                                                int64_t &saturation_count);
     int64_t variant_unit_price(int32_t market, int32_t variant_id,
                                int64_t &saturation_count) const;
     void build_demand_basis(int32_t market, const EnvironmentSample &sample,

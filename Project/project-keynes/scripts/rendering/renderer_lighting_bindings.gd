@@ -54,6 +54,12 @@ static func _apply_water_uniforms(
 			sm.set_shader_parameter("visual_edge_distance_tiles", visual_tiles.edge_distance)
 			if visual_tiles.horizon != null:
 				sm.set_shader_parameter("visual_horizon_tiles", visual_tiles.horizon)
+			if visual_tiles.gi_sky != null:
+				sm.set_shader_parameter("visual_gi_sky_tiles", visual_tiles.gi_sky)
+			if visual_tiles.horizon_dir0 != null:
+				sm.set_shader_parameter("visual_horizon_dir0_tiles", visual_tiles.horizon_dir0)
+			if visual_tiles.horizon_dir1 != null:
+				sm.set_shader_parameter("visual_horizon_dir1_tiles", visual_tiles.horizon_dir1)
 			if visual_tiles.gi_occluder != null:
 				sm.set_shader_parameter("visual_gi_occluder_tiles", visual_tiles.gi_occluder)
 			# [cell-field 2026-11-18] 格界扭曲场 tile（方案 §3.7 / 契约 §4.2）：水面 program
@@ -68,9 +74,14 @@ static func _apply_water_uniforms(
 			# 不编 PK_CELL_FIELD（方案 §3.10 / 契约 §4.3），独立材质里没有它们。
 			sm.set_shader_parameter("terrain_warp_layer_bound",
 				visual_tiles.boundary_warp != null)
+			sm.set_shader_parameter("gi_sky_tex_bound",
+				bool(visual_tiles.gi_sky_ready))
+			sm.set_shader_parameter("horizon_dir_tex_bound",
+				bool(visual_tiles.horizon_dir_ready))
 		_push_visual_tile_layout_uniforms.call(sm, visual_tiles.layout)
 	else:
 		sm.set_shader_parameter("height_tex", _world.height_tex)
+		sm.set_shader_parameter("derived_resolution", Vector2(_world.derived_size))
 		sm.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
 		# [terrain-web-baked-surface-B 2026-11-01] 水面 depth 纹理：Web 两个水面程序
 		# （HIGH water 走 PC water_pipeline 的 ctx.water_depth_px；compact water 走
@@ -101,6 +112,10 @@ static func _apply_water_uniforms(
 		# layer4/5 静态通道可用（water_pipeline / shore_common 只据此二选一）。
 		sm.set_shader_parameter("terrain_warp_layer_bound",
 			_world.terrain_warp_layer_bound and water_surface_layers >= 7)
+		sm.set_shader_parameter("gi_sky_tex_bound",
+			_world.terrain_gi_sky_layer_bound and water_surface_layers >= 8)
+		sm.set_shader_parameter("horizon_dir_tex_bound",
+			_world.terrain_horizon_dir_layers_bound and water_surface_layers >= 10)
 		# [surface-array-edge 2026-11-02] compact 水面自行声明的 ecotone 宽度（与
 		# uniforms.gdshaderinc 同一个 @export 值）；世界地图水面程序会从主材质整表拷贝。
 		sm.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
@@ -274,3 +289,99 @@ static func push_cloud_shadow_material_inputs(
 			and _detail_family_layer.has_method("set_cloud_shadow_field"):
 		_detail_family_layer.set_cloud_shadow_field(field_texture, direct_enabled,
 			wrap_origin_uv, wrap_period_uv)
+
+
+static func configure_world_lighting_field(host) -> void:
+	if host._world_lighting_field == null:
+		return
+	if host._world == null:
+		host._world_lighting_field.clear_inputs()
+		return
+	host._world_lighting_field.configure(
+		host._world,
+		host._world.world_bounds,
+		host._wrap_period_x(),
+		host.visual_quality,
+		host._mobile_quality_tier_define,
+		host.hex_size)
+	sync_world_lighting_daylight(host)
+	host._world_lighting_field.set_horizon_params(
+		host.terrain_horizon_strength,
+		host.terrain_horizon_softness)
+
+
+static func sync_world_lighting_daylight(host) -> void:
+	if host._world_lighting_field == null:
+		return
+	var material: ShaderMaterial = host._shader_mat
+	var latitude_sun = material.get_shader_parameter("tod_latitude_sun_enabled") if material != null else null
+	var sun_max_up = material.get_shader_parameter("tod_sun_relief_max_up") if material != null else null
+	host._world_lighting_field.set_daylight_params(
+		host._day_phase,
+		host._season_phase,
+		deg_to_rad(host.axial_tilt_deg),
+		host.day_night_enabled,
+		host._tod_sun_dir,
+		host._tod_debug_sun_position_enabled,
+		host._tod_debug_sun_uv,
+		host._tod_debug_sun_height_scale,
+		deg_to_rad(host.eternal_min_elevation_deg),
+		deg_to_rad(host.eternal_max_hour_angle_deg),
+		true if latitude_sun == null else bool(latitude_sun),
+		0.88 if sun_max_up == null else float(sun_max_up))
+
+
+static func _push_world_lighting_to_material(material: ShaderMaterial,
+		tex: Texture2D, bound: bool, radiance_scale: float) -> void:
+	if material == null or material.shader == null:
+		return
+	if tex != null:
+		material.set_shader_parameter("world_lighting_tex", tex)
+	material.set_shader_parameter("world_lighting_tex_bound", bound)
+	material.set_shader_parameter("world_lighting_radiance_scale", radiance_scale)
+
+
+static func push_world_lighting_material_inputs(host) -> void:
+	if host._world_lighting_field == null:
+		return
+	var tex: Texture2D = host._world_lighting_field.get_lighting_texture()
+	var bound: bool = bool(host._world_lighting_field.is_lighting_ready()) and tex != null
+	var radiance_scale: float = float(host._world_lighting_field.get_radiance_scale())
+	for material in [host._shader_mat, host._water_mat]:
+		if material == null or material.shader == null:
+			continue
+		if material.shader.code.contains("#define PK_WORLD_LIGHTING_FIELD"):
+			_push_world_lighting_to_material(material, tex, bound, radiance_scale)
+	if host._building_visual_layer != null:
+		for mat_prop in ["_body_material", "_decal_material", "_macro_material"]:
+			var bmat = host._building_visual_layer.get(mat_prop) as ShaderMaterial
+			_push_world_lighting_to_material(bmat, tex, bound, radiance_scale)
+	if host._resource_visual_layer != null:
+		if host._resource_visual_layer.has_method("_materials"):
+			for rmat in host._resource_visual_layer._materials():
+				_push_world_lighting_to_material(rmat as ShaderMaterial, tex, bound, radiance_scale)
+		else:
+			_push_world_lighting_to_material(
+				host._resource_visual_layer.get("_material") as ShaderMaterial,
+				tex, bound, radiance_scale)
+	host._for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		_push_world_lighting_to_material(layer.get("_material") as ShaderMaterial, tex, bound, radiance_scale)
+		var fam_mats = layer.get("_family_materials")
+		if fam_mats is Array:
+			for fmat in fam_mats:
+				_push_world_lighting_to_material(fmat as ShaderMaterial, tex, bound, radiance_scale)
+	)
+	if host._detail_family_layer != null and is_instance_valid(host._detail_family_layer):
+		var df_mats = host._detail_family_layer.get("_materials")
+		if df_mats is Dictionary:
+			for fmat in df_mats.values():
+				_push_world_lighting_to_material(fmat as ShaderMaterial, tex, bound, radiance_scale)
+	if is_instance_valid(host._trade_visual_layer):
+		_push_world_lighting_to_material(
+			host._trade_visual_layer.get("_material") as ShaderMaterial, tex, bound, radiance_scale)
+	if is_instance_valid(host._military_visual_layer):
+		if host._military_visual_layer.has_method("_set_formation_parameter"):
+			if tex != null:
+				host._military_visual_layer._set_formation_parameter("world_lighting_tex", tex)
+			host._military_visual_layer._set_formation_parameter("world_lighting_tex_bound", bound)
+			host._military_visual_layer._set_formation_parameter("world_lighting_radiance_scale", radiance_scale)

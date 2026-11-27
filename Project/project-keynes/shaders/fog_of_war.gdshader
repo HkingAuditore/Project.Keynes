@@ -931,22 +931,40 @@ void fragment() {
 			vec3 col;
 			float alpha;
 
+			vec2 map_uv = clamp((wp - world_origin) / world_size, vec2(0.0), vec2(1.0));
+			float lat_signed = clamp(map_uv.y * 2.0 - 1.0, -1.0, 1.0);
+			EarthDaylight ed = eval_earth_daylight(map_uv, lat_signed, day_night_enabled);
+
 			if (q <= 0) {
-				// ── q0 超低：无导数、无光照。只要一层柔和起伏把纯色打散。
+				// ── q0 超低：无导数、无自阴影。保留一层柔和起伏 + 轻量 TOD 昼夜着色。
 				vec2 q0_drift = vec2(t * 0.17, -t * 0.13);
 				float n = fog_grad_noise_tiled_evolve(
 					p + q0_drift, period_n, t, 9
 				);
 				float shade = mix(0.86, 1.14, n);
 				col = mix(explored_color, unexplored_color, thick) * shade;
+				if (day_night_enabled) {
+					float sun_elev = ed.sun_dir.z;
+					float cloud_day = smoothstep(-0.46, 0.34, sun_elev);
+					float twilight = smoothstep(-0.50, -0.02, sun_elev)
+						* (1.0 - smoothstep(0.14, 0.56, sun_elev));
+					vec3 night_amb = mix(
+						EARTH_NIGHT_AMBIENT,
+						vec3(dot(EARTH_NIGHT_AMBIENT, vec3(0.2126, 0.7152, 0.0722))),
+						0.35
+					) * 1.28;
+					vec3 tod_tint = mix(night_amb, vec3(1.0), cloud_day);
+					vec3 dusk_tint = mix(
+						vec3(1.22, 0.72, 0.42),
+						vec3(1.16, 0.92, 0.58),
+						smoothstep(-0.16, 0.12, sun_elev)
+					);
+					tod_tint = mix(tod_tint, tod_tint * dusk_tint, twilight * 0.45);
+					col *= tod_tint;
+				}
 				float thin_a = explored_alpha * presence * mix(0.76, 1.10, n);
 				alpha = mix(clamp(thin_a, 0.0, 1.0), 1.0, thick);
 			} else {
-				// q1 与 q2+ 都要 TOD，先算一次。
-				vec2 map_uv = clamp((wp - world_origin) / world_size, vec2(0.0), vec2(1.0));
-				float lat_signed = clamp(map_uv.y * 2.0 - 1.0, -1.0, 1.0);
-				EarthDaylight ed = eval_earth_daylight(map_uv, lat_signed, day_night_enabled);
-
 				// ── 主光：太阳与月亮分别着色后平滑相加 ─────────────────
 				// 旧版直接 step(日/月) 会在晨昏线上瞬间翻转法线受光与阴影方向。
 				// 高空云在太阳落到地平线以下后仍能被照亮，所以太阳可见带也应比地表

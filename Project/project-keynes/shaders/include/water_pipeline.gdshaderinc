@@ -918,6 +918,7 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, WaterWeights ww,
 	if (waves_on) {
 		float relief = clamp(wave_h * wave_amp_scale * water_flow_wave_amplitude, -1.0, 1.0);
 		col *= 1.0 + relief * 0.22;
+#if !defined(PK_QUALITY_MID)
 		// 浪头在湖 / 海带 / 礁石上让步（礁石仍留一点碎沫）。
 		float crest_w = clamp(1.0 - ww.w_lake * 0.60 - ww.w_kelp * 0.80 - ww.w_reef * 0.30,
 				0.0, 1.0);
@@ -928,7 +929,7 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, WaterWeights ww,
 		float crest = smoothstep(0.30, 0.72, wave_h + crest_jitter) * wave_amp_scale * crest_w;
 		vec3 crest_col = mix(col, vec3(0.72, 0.84, 0.88), 0.80);
 		col = mix(col, crest_col, crest * water_flow_crest_strength);
-
+#endif
 	}
 #endif // PK_WEB_WORLD_MIN
 #endif // PK_WATER_FLAT_LOW
@@ -1360,9 +1361,7 @@ vec3 shade_water_surface(SurfaceParams surface, int biome, int secondary_biome, 
 	vec2 cloud_visibility = cloud_shadow_water_visibility(uv, lc.local_day);
 	lc.direct_shadow *= cloud_visibility.x;
 	lc.cloud_ambient = cloud_visibility.y;
-	// 当前 terrain_horizon_tex 以底部 height_buffer 烘焙。开放水面保留这种“海底投影”美术效果；
-	// 海冰应表现为海平面/冰面接收光，不显示海底起伏阴影。颜色已经按连续 ice fraction
-	// 混合；光照若只在 terrain==SEA_ICE 的 0.68 门槛上硬切，冰缘会在发白和海底阴影之间闪。
+	// 海冰沿连续冰量减弱山影，避免冰缘在亮色与阴影之间硬切。
 	float ice_cover = max(
 		water_static_type_mix(biome, secondary_biome, edge_mix, B_SEA_ICE),
 		clamp(w_ice, 0.0, 1.0));

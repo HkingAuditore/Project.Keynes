@@ -136,6 +136,10 @@ vec4 detail_style_param(float style_id, float slot) {
 
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/cloud_shadow.gdshaderinc"
+#if !defined(PK_WEB_RESOURCE_MIN) && (!defined(PK_WEB_VEGETATION) || defined(PK_WEB_PC_HIGH))
+#define PK_WORLD_LIGHTING_FIELD
+#endif
+#include "res://shaders/include/world_lighting_field.gdshaderinc"
 #include "res://shaders/include/vegetation_climate.gdshaderinc"
 #include "res://shaders/include/vegetation_forms.gdshaderinc"
 
@@ -164,7 +168,7 @@ varying flat vec4 v_j;  // bent normal, sky visibility
 varying vec2 v_ground_uv; // 不在顶点 wrap，避免跨地图接缝时插值穿过整张图。
 // [veg-fog-knowledge 2026-11-18] 知识度刻意**不用 flat**：格与格之间靠顶点插值过渡，
 // 免得同一丛植被在格界上出现一条硬边（树冠的 quad 常常跨 2~3 格）。
-varying float v_knowledge;
+varying flat vec4 v_ground_light; // RGB = anchor bounce, A = exploration knowledge
 
 float shrub_decode_height(vec2 uv) {
 	vec2 rg = visual_sample_height(uv).rg;
@@ -402,10 +406,8 @@ void vertex() {
 	vec4 eco = sample_eco_state(uv);
 	// [veg-fog-knowledge 2026-11-18] 与 sample_dyn_state 同一条 cell 寻址，
 	// 只多一次 A 通道采样（每顶点，不是每像素）。表没绑时 a=1，等价于全可见。
-	{
-		int k_cid = decode_cell_index(uv);
-		v_knowledge = (k_cid >= 0) ? texture(enum_lut, cell_lut_uv(k_cid)).a : 1.0;
-	}
+	int k_cid = decode_cell_index(uv);
+	float knowledge = (k_cid >= 0) ? texture(enum_lut, cell_lut_uv(k_cid)).a : 1.0;
 	VegCellState cs = veg_cell_state(dyn, eco, aquatic);
 	float presence = veg_presence(cs, dyn, phen_resp);
 	float vit_n = veg_vitality_norm(cs.vitality);
@@ -473,11 +475,21 @@ void vertex() {
 	// High-quality ground samples these at its actual surface below; do not pay
 	// for both an anchor horizon lookup and the per-pixel lookup.
 	float horizon_vis = 1.0;
+	vec3 anchor_bounce = vec3(0.0);
 	ShrubSkySample sky;
 	sky.bent_normal = vec3(0.0, 0.0, 1.0);
 	sky.visibility = 1.0;
 	if (!pixel_ground) {
-		horizon_vis = shrub_horizon_direct_visibility(uv, ed.sun_dir);
+#if defined(PK_WORLD_LIGHTING_FIELD) && !defined(PK_SKIP_HORIZON_SHADOWS)
+		if (world_lighting_active()) {
+			vec4 wl = sample_world_lighting(uv);
+			horizon_vis = wl.a;
+			anchor_bounce = wl.rgb * world_lighting_radiance_scale * 0.18;
+		} else
+#endif
+		{
+			horizon_vis = shrub_horizon_direct_visibility(uv, ed.sun_dir);
+		}
 		sky = shrub_sample_sky(uv);
 	}
 
@@ -521,6 +533,7 @@ void vertex() {
 	v_cloud_visibility = cloud_shadow_direct_visibility(shrub_wrap_map_uv(v_ground_uv), ed.local_day);
 	v_i = vec4(ed.local_day, ed.sun_high, ed.moon_strength, horizon_vis);
 	v_j = vec4(sky.bent_normal, sky.visibility);
+	v_ground_light = vec4(anchor_bounce, knowledge);
 }
 
 void fragment() {
@@ -556,13 +569,20 @@ void fragment() {
 	vec3 L = v_h.xyz;
 	vec4 daylight = v_i;
 	vec4 sky = v_j;
+	vec3 wl_bounce = v_ground_light.rgb;
 #ifdef VEG_TERRAIN_SHADING
 	if (veg_shade_quality >= 2 && veg_form_follows_ground(form)) {
 		vec2 ground_uv = shrub_wrap_map_uv(v_ground_uv);
 		EarthDaylight ed = eval_earth_daylight(ground_uv, ground_uv.y * 2.0 - 1.0, day_night_enabled);
 		L = ed.sun_dir;
-		daylight = vec4(ed.local_day, ed.sun_high, ed.moon_strength,
-			shrub_horizon_direct_visibility(ground_uv, L));
+		if (world_lighting_active()) {
+			vec4 wl = sample_world_lighting(ground_uv);
+			daylight = vec4(ed.local_day, ed.sun_high, ed.moon_strength, wl.a);
+			wl_bounce = wl.rgb * world_lighting_radiance_scale * 0.18;
+		} else {
+			daylight = vec4(ed.local_day, ed.sun_high, ed.moon_strength,
+				shrub_horizon_direct_visibility(ground_uv, L));
+		}
 		ShrubSkySample ground_sky = shrub_sample_sky(ground_uv);
 		sky = vec4(ground_sky.bent_normal, ground_sky.visibility);
 	}
@@ -647,6 +667,7 @@ void fragment() {
 		vec3 amb = sky_ambient_srgb(local_day, amb_n, amb_col, sun_col, L) * gi_ao;
 		float moon = max(dot(N, -L), 0.0) * daylight.z;
 		vec3 light = max(amb * mix(1.0, 0.70, local_day), vec3(ambient_floor * 0.5))
+			+ wl_bounce
 			+ sun_col * direct * sun_shade_strength * 1.40
 			+ EARTH_MOONLIGHT * moon * 0.35;
 		rgb = albedo * light * mix(1.0, s.ao, clamp(contact_ao_strength * 2.0, 0.0, 1.0));
@@ -660,7 +681,7 @@ void fragment() {
 		rgb = max(rgb, albedo * v_b.w * 0.45 * mix(0.75, 1.0, local_day));
 		rgb = max(rgb, vec3(0.013, 0.016, 0.023) * (1.0 - local_day));
 	} else {
-		vec3 light = max(amb_col * sky.w, vec3(ambient_floor))
+		vec3 light = max(amb_col * sky.w, vec3(ambient_floor)) + wl_bounce
 			+ sun_col * (local_day * 0.35 * daylight.w * cloud_visibility);
 		rgb = albedo * light;
 	}
@@ -691,7 +712,7 @@ void fragment() {
 	// [veg-fog-knowledge 2026-11-18] 与地形**同一份**灰化（fog_memory.gdshaderinc）：
 	// 同一片未发现区里，植株和地表必须是同一个纸白，否则地形已经褪色、植株还是全彩，
 	// 看起来像浮在雾上。alpha 仍按知识度收一点，让植株沉进雾里而不是一块实心灰像。
-	float vk = clamp(v_knowledge, 0.0, 1.0);
+	float vk = clamp(v_ground_light.a, 0.0, 1.0);
 	rgb = pk_fog_memory_wash(rgb, vk, 0.94);
 	float veg_alpha_mul = mix(0.55, 1.0, smoothstep(0.86, 1.0, vk));
 	float a = body_a + floor_a;

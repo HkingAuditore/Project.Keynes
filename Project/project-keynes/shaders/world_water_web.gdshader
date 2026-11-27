@@ -290,8 +290,7 @@ vec3 web_ripple(vec2 wp, float cell, vec2 drift, float seed, float shear) {
 	return vec3(dq.x / cw, (dq.y + shear * dq.x) / cell, h - 0.5);
 }
 
-vec3 shade_water_web(vec3 albedo_srgb, vec2 uv, float ice) {
-	EarthDaylight ed = eval_earth_daylight(uv, uv.y * 2.0 - 1.0, day_night_enabled);
+vec3 shade_water_web(vec3 albedo_srgb, vec2 uv, float ice, EarthDaylight ed, vec3 L, float terrain_visibility) {
 	float longitude = earth_daylight_longitude_u(uv) * EARTH_DAYLIGHT_TAU;
 	vec2 flow = vec2(0.0);
 	if (ocean_current_enabled && ocean_current_flow_tex_bound) {
@@ -374,7 +373,6 @@ vec3 shade_water_web(vec3 albedo_srgb, vec2 uv, float ice) {
 	float crest = smoothstep(0.30, 0.72, height_a) * wave;
 	albedo_srgb = mix(albedo_srgb, vec3(0.72, 0.84, 0.88), crest * water_flow_crest_strength * 1.6);
 	vec3 V = vec3(0.0, 0.0, 1.0);
-	vec3 L = ed.local_day >= ed.moon_strength ? ed.sun_dir : ed.moon_dir;
 	vec3 H = normalize(L + V);
 	float nl = max(dot(N, L), NDOTL_BIAS);
 	float nv = max(N.z, NDOTL_BIAS);
@@ -388,7 +386,7 @@ vec3 shade_water_web(vec3 albedo_srgb, vec2 uv, float ice) {
 	vec3 diffuse = (vec3(1.0) - F) * albedo * INV_PI;
 	vec3 ambient = sky_ambient_linear(ed.local_day, N, ed.amb_col, ed.sun_col, L);
 	vec3 reflected_sky = mix(vec3(0.20, 0.37, 0.52), ed.amb_col, clamp(N.z, 0.0, 1.0));
-	vec3 lit = (diffuse + spec) * nl * sun + albedo * ambient
+	vec3 lit = (diffuse + spec) * nl * sun * terrain_visibility + albedo * ambient
 		+ srgb_to_linear(reflected_sky) * F * (1.0 - ice) * 1.8;
 	lit *= mix(1.0, NIGHT_BRIGHTNESS_FLOOR, ed.pixel_night) * tod_exposure;
 	return linear_to_srgb(apply_tonemap(lit));
@@ -403,6 +401,9 @@ vec3 shade_water_web(vec3 albedo_srgb, vec2 uv, float ice) {
 // [surface-array-edge 2026-11-02] 与陆地程序共用同一个 surface array；本 pass
 // 不声明 normal/relief/horizon，只按需读其中的层。
 #define VT_USE_TERRAIN_SURFACE_ARRAY
+#ifndef MAP_VISUAL_TILED
+#define PK_WEB_SURFACE_HORIZON
+#endif
 #ifdef PK_WATER_FIELD_MATCHES_LAND
 // [cell-field-web 2026-11-18 / W3] 场函数路径的采样集合（方案 §3.7）：
 //   VT_USE_CELL_TABLE    —— per-cell class/state/aux 三层表。这 1 个 sampler 顶掉
@@ -424,6 +425,15 @@ vec3 shade_water_web(vec3 albedo_srgb, vec2 uv, float ice) {
 #define VT_USE_EDGE_NEIGHBOR
 #endif
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
+
+uniform bool tod_latitude_sun_enabled = true;
+uniform float tod_sun_relief_max_up = 0.88;
+#ifdef PK_WEB_SURFACE_HORIZON
+uniform float terrain_horizon_strength = 1.20;
+uniform float terrain_horizon_softness = 0.30;
+uniform float terrain_horizon_max_angle = 1.309;
+#include "res://shaders/include/terrain_horizon_shadow.gdshaderinc"
+#endif
 
 // cell_lut_uv()（唯一对外成员）+ decode_cell_index()/dyn_lut_nearest()（本文件不用，
 // 编译器整段删掉）。依赖上面已声明的 dyn_lut / lut_dims / visual_sample_map_index。
@@ -922,7 +932,16 @@ void fragment() {
 					(secondary_cover == CV_SEA_ICE) ? 1.0 : 0.0));
 			float ice_full = clamp(max(clamp(dyn_ice_frac, 0.0, 1.0),
 					static_ice * 0.85), 0.0, 1.0);
-			col = shade_water_web(col, uv, ice_full);
+			float lat_norm = earth_daylight_latitude_norm(uv.y, visual_static_texture_size().y);
+			EarthDaylight ed = eval_earth_daylight(uv, lat_norm * 2.0 - 1.0, day_night_enabled);
+			vec3 light_dir = earth_daylight_key_dir(ed, tod_sun_dir,
+				tod_latitude_sun_enabled || !day_night_enabled, tod_sun_relief_max_up);
+			float terrain_visibility = 1.0;
+#ifdef PK_WEB_SURFACE_HORIZON
+			terrain_visibility = terrain_horizon_web_visibility(uv, light_dir);
+#endif
+			terrain_visibility = mix(terrain_visibility, 1.0, smoothstep(0.22, 0.72, ice_full));
+			col = shade_water_web(col, uv, ice_full, ed, light_dir, terrain_visibility);
 		}
 
 		// 已探索但当前不可见 → "褪色的记忆"（提亮+去饱和，向纸色靠）。

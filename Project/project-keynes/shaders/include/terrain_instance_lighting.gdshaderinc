@@ -40,6 +40,8 @@ uniform float gi_bent_strength = 0.35;
 uniform float gi_normal_floor = 0.85;
 
 #include "res://shaders/include/earth_daylight.gdshaderinc"
+#define PK_WORLD_LIGHTING_FIELD
+#include "res://shaders/include/world_lighting_field.gdshaderinc"
 
 vec2 wrap_map_uv(vec2 uv) {
 	return visual_static_wrap_uv(uv);
@@ -83,6 +85,7 @@ TerrainInstanceLight eval_terrain_instance_lighting(vec2 world_center) {
 	hs.bent_normal = n;
 	hs.nearest_packed = vec4(0.0);
 	hs.has_data = false;
+	vec3 wl_bounce = vec3(0.0);
 	if (visual_quality >= 2) {
 		if (terrain_normal_tex_bound) {
 			n = normalize(vec3(
@@ -91,7 +94,12 @@ TerrainInstanceLight eval_terrain_instance_lighting(vec2 world_center) {
 				1.0
 			));
 		}
-		if (terrain_horizon_tex_bound && terrain_horizon_strength > 0.0) {
+		if (world_lighting_active()) {
+			vec4 wl = sample_world_lighting(map_uv);
+			hs = terrain_horizon_sample_gi_sky_only(map_uv);
+			hs.direct_visibility = wl.a;
+			wl_bounce = wl.rgb * world_lighting_radiance_scale * 0.18;
+		} else if (terrain_horizon_tex_bound && terrain_horizon_strength > 0.0) {
 			hs = terrain_horizon_evaluate(map_uv, ed.sun_dir);
 		}
 	}
@@ -108,6 +116,7 @@ TerrainInstanceLight eval_terrain_instance_lighting(vec2 world_center) {
 	float mdl = max(dot(n, -ed.sun_dir), 0.0) * ed.moon_strength;
 	result.color = (
 		amb * mix(1.0, 0.62, ed.local_day) * sky
+		+ wl_bounce
 		+ ed.sun_col * ndl * 0.78
 		+ EARTH_MOONLIGHT * mdl * 0.40
 	) * tod_exposure;

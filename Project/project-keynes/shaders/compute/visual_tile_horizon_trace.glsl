@@ -22,6 +22,15 @@ layout(rgba8, set = 0, binding = 3) readonly uniform image2DArray source_map_ind
 layout(set = 0, binding = 4, std430) writeonly restrict buffer PackedOccluder {
 	uint values[];
 } occluder;
+layout(set = 0, binding = 5, std430) writeonly restrict buffer PackedGiSky {
+	uint values[];
+} gi_sky;
+layout(set = 0, binding = 6, std430) writeonly restrict buffer PackedHorizonDir0 {
+	uint values[];
+} horizon_dir0;
+layout(set = 0, binding = 7, std430) writeonly restrict buffer PackedHorizonDir1 {
+	uint values[];
+} horizon_dir1;
 
 layout(push_constant, std430) uniform Params {
 	ivec2 logical_size;
@@ -138,6 +147,11 @@ uint quantize_angle(float slope) {
 	return uint(clamp(floor(angle / params.max_angle * 15.0 + 0.5), 0.0, 15.0));
 }
 
+uint quantize_angle8(float slope) {
+	float angle = atan(max(slope, 0.0));
+	return uint(clamp(floor(angle / params.max_angle * 255.0 + 0.5), 0.0, 255.0));
+}
+
 // logical texel → 它所属 Tile 的 physical 坐标 + layer。与 decode shader 的
 // physical → logical 互为逆运算，共用同一 interior/gutter 契约。
 ivec3 logical_to_physical(ivec2 lp) {
@@ -176,6 +190,7 @@ void main() {
 	vec2 origin = vec2(global_p);
 	float base_height = height_at_logical(global_p, 0);
 	uint q[8];
+	uint q8[8];
 	// 每方向的最强遮挡命中点，压成 logical y*W+x 省一半寄存器；-1 = 无精确命中。
 	int hit_index[8];
 
@@ -273,6 +288,7 @@ void main() {
 			}
 		}
 		q[direction_id] = quantize_angle(best_slope);
+		q8[direction_id] = quantize_angle8(best_slope);
 		hit_index[direction_id] = best_hit;
 	}
 
@@ -283,6 +299,27 @@ void main() {
 	uint physical_index = uint(gid.z * params.layer_size.x * params.layer_size.y +
 		gid.y * params.layer_size.x + gid.x);
 	horizon.values[physical_index] = packed;
+	horizon_dir0.values[physical_index] = q8[0] | (q8[1] << 8) | (q8[2] << 16) | (q8[3] << 24);
+	horizon_dir1.values[physical_index] = q8[4] | (q8[5] << 8) | (q8[6] << 16) | (q8[7] << 24);
+
+	float sky_sum = 0.0;
+	vec3 bent_sum = vec3(0.0);
+	const float HALF_PI = 1.57079632679;
+	for (int d = 0; d < 8; ++d) {
+		float h_ang = (float(q[d]) / 15.0) * params.max_angle;
+		float c = cos(h_ang);
+		float c2 = c * c;
+		float m_ang = 0.5 * (h_ang + HALF_PI);
+		sky_sum += c2;
+		bent_sum += c2 * vec3(DIRECTIONS[d] * cos(m_ang), sin(m_ang));
+	}
+	float v_sky = clamp(sky_sum * 0.125, 0.0, 1.0);
+	vec3 bent_n = (dot(bent_sum, bent_sum) > 1e-6) ? normalize(bent_sum) : vec3(0.0, 0.0, 1.0);
+	uint gi_r = uint(clamp(floor(v_sky * 255.0 + 0.5), 0.0, 255.0));
+	uint gi_g = uint(clamp(floor((bent_n.x * 0.5 + 0.5) * 255.0 + 0.5), 0.0, 255.0));
+	uint gi_b = uint(clamp(floor((bent_n.y * 0.5 + 0.5) * 255.0 + 0.5), 0.0, 255.0));
+	uint gi_a = uint(clamp(floor(clamp(bent_n.z, 0.0, 1.0) * 255.0 + 0.5), 0.0, 255.0));
+	gi_sky.values[physical_index] = gi_r | (gi_g << 8) | (gi_b << 16) | (gi_a << 24);
 
 	// ── [terrain-gi 2026-07-31] top-2 遮挡方向的落点 cell ───────────────────
 	// argmax 必须对【量化后的 q】而非 best_slope 求，且用严格大于（先到先得、最小 index

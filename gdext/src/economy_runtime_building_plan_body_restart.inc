@@ -204,7 +204,7 @@
                         _saturation_count),
                     maintenance_cost, _saturation_count);
                 const int64_t recovery_business_base = expected_business_rate < 0
-                    ? recovery_business_eligible
+                    ? std::max(recovery_business_eligible, owner_living_cost)
                     : std::max<int64_t>(0, recovery_revenue);
                 const int64_t recovery_business_transfer =
                     expected_resolved_fiscal_transfer(
@@ -264,11 +264,11 @@
             }
             if (group_index < static_cast<int32_t>(
                     _building_recovery_liquidation_eligible.size())) {
-                const bool owner_shortfall = group.count > 0 &&
-                    group.filled_owner < group.count &&
+                const bool labor_unavailable = group.count > 0 &&
+                    !owner_available &&
                     group.severe_loss_cycles >= _building_severe_loss_cycles.get();
                 _building_recovery_liquidation_eligible[group_index] =
-                    owner_shortfall || (executable &&
+                    labor_unavailable || (executable &&
                         recovery_profit_margin < _building_restart_margin_q16.get());
             }
             // Recovery must be able to bootstrap an empty owner roster. The
@@ -277,10 +277,7 @@
             // All buildings use the same current-price cash + owner-retained
             // income test; survival goods receive no special profitability
             // exemption.
-            const bool vacancy_expired = group.count > 0 &&
-                group.filled_owner < group.count &&
-                group.severe_loss_cycles >= _building_severe_loss_cycles.get();
-            const bool viable = !vacancy_expired && executable &&
+            const bool viable = executable &&
                 recovery_profit_margin >= _building_restart_margin_q16.get();
             if (viable) {
                 group.pending_operating_state = 0;

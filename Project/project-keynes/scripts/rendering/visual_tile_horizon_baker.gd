@@ -6,6 +6,7 @@ signal completed(success: bool, report: Dictionary)
 const DECODE_SHADER := "res://shaders/compute/visual_tile_horizon_decode.glsl"
 const PYRAMID_SHADER := "res://shaders/compute/visual_tile_horizon_pyramid.glsl"
 const TRACE_SHADER := "res://shaders/compute/visual_tile_horizon_trace.glsl"
+const BLUR_SHADER := "res://shaders/compute/visual_tile_horizon_blur.glsl"
 const WORKGROUP_SIZE := 8
 const MAX_MIP_LEVELS := 16
 
@@ -161,10 +162,20 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 	var physical_pixels: int = layout.layer_size.x * layout.layer_size.y * layout.layer_count
 	var horizon_buffer := _rd.storage_buffer_create(physical_pixels * 4)
 	var occluder_buffer := _rd.storage_buffer_create(physical_pixels * 4)
+	var gi_sky_raw_buffer := _rd.storage_buffer_create(physical_pixels * 4)
+	var dir0_raw_buffer := _rd.storage_buffer_create(physical_pixels * 4)
+	var dir1_raw_buffer := _rd.storage_buffer_create(physical_pixels * 4)
+	var gi_sky_buffer := _rd.storage_buffer_create(physical_pixels * 4)
+	var dir0_buffer := _rd.storage_buffer_create(physical_pixels * 4)
+	var dir1_buffer := _rd.storage_buffer_create(physical_pixels * 4)
 	var metrics_zero := PackedByteArray()
 	metrics_zero.resize(16)
 	var metrics_buffer := _rd.storage_buffer_create(16, metrics_zero)
-	for rid in [pyramid_buffer, horizon_buffer, occluder_buffer, metrics_buffer]:
+	for rid in [
+		pyramid_buffer, horizon_buffer, occluder_buffer,
+		gi_sky_raw_buffer, dir0_raw_buffer, dir1_raw_buffer,
+		gi_sky_buffer, dir0_buffer, dir1_buffer, metrics_buffer,
+	]:
 		if not rid.is_valid():
 			_cleanup()
 			return _failure("storage_buffer_create_failed", t0)
@@ -183,8 +194,19 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 		_make_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 2, metrics_buffer),
 		_make_uniform(RenderingDevice.UNIFORM_TYPE_IMAGE, 3, map_index_texture),
 		_make_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 4, occluder_buffer),
+		_make_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 5, gi_sky_raw_buffer),
+		_make_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 6, dir0_raw_buffer),
+		_make_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 7, dir1_raw_buffer),
 	])
-	for rid in [decode_set, pyramid_set, trace_set]:
+	var blur_set := _make_uniform_set(shader_bundle.blur_shader, [
+		_make_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 0, gi_sky_raw_buffer),
+		_make_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 1, dir0_raw_buffer),
+		_make_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 2, dir1_raw_buffer),
+		_make_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 3, gi_sky_buffer),
+		_make_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 4, dir0_buffer),
+		_make_uniform(RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, 5, dir1_buffer),
+	])
+	for rid in [decode_set, pyramid_set, trace_set, blur_set]:
 		if not rid.is_valid():
 			_cleanup()
 			return _failure("uniform_set_create_failed", t0)
@@ -245,6 +267,21 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 	_rd.compute_list_set_push_constant(compute_list, trace_push, trace_push.size())
 	_rd.compute_list_dispatch(compute_list,
 		_groups(layout.layer_size.x), _groups(layout.layer_size.y), layout.layer_count)
+	_rd.compute_list_add_barrier(compute_list)
+
+	var blur_push := PackedByteArray()
+	blur_push.resize(48)
+	_encode_vec2i(blur_push, 0, layout.logical_size)
+	_encode_vec2i(blur_push, 8, layout.grid_size)
+	_encode_vec2i(blur_push, 16, layout.interior_size)
+	_encode_vec2i(blur_push, 24, layout.layer_size)
+	blur_push.encode_s32(32, layout.gutter_px)
+	blur_push.encode_s32(36, 1 if layout.wrap_x else 0)
+	_rd.compute_list_bind_compute_pipeline(compute_list, shader_bundle.blur_pipeline)
+	_rd.compute_list_bind_uniform_set(compute_list, blur_set, 0)
+	_rd.compute_list_set_push_constant(compute_list, blur_push, blur_push.size())
+	_rd.compute_list_dispatch(compute_list,
+		_groups(layout.layer_size.x), _groups(layout.layer_size.y), layout.layer_count)
 	_rd.compute_list_end()
 	var command_record_ms := float(Time.get_ticks_usec() - command_t0) / 1000.0
 	var submit_t0 := Time.get_ticks_usec()
@@ -264,15 +301,22 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 	_submitted = false
 	var sync_ms := float(Time.get_ticks_usec() - sync_t0) / 1000.0
 	# Release large compute inputs before allocating the CPU readback buffer.
+	_free_owned_rid(blur_set)
 	_free_owned_rid(trace_set)
 	_free_owned_rid(pyramid_set)
 	_free_owned_rid(decode_set)
 	_free_owned_rid(input_texture)
 	_free_owned_rid(map_index_texture)
 	_free_owned_rid(pyramid_buffer)
+	_free_owned_rid(gi_sky_raw_buffer)
+	_free_owned_rid(dir0_raw_buffer)
+	_free_owned_rid(dir1_raw_buffer)
 	var readback_t0 := Time.get_ticks_usec()
 	var all_horizon_data: PackedByteArray = _rd.buffer_get_data(horizon_buffer)
 	var all_occluder_data: PackedByteArray = _rd.buffer_get_data(occluder_buffer)
+	var all_gi_sky_data: PackedByteArray = _rd.buffer_get_data(gi_sky_buffer)
+	var all_dir0_data: PackedByteArray = _rd.buffer_get_data(dir0_buffer)
+	var all_dir1_data: PackedByteArray = _rd.buffer_get_data(dir1_buffer)
 	var metrics_data: PackedByteArray = _rd.buffer_get_data(metrics_buffer)
 	var readback_ms := float(Time.get_ticks_usec() - readback_t0) / 1000.0
 	if all_horizon_data.size() != physical_pixels * 4:
@@ -281,6 +325,12 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 	if all_occluder_data.size() != physical_pixels * 4:
 		_cleanup()
 		return _failure("occluder_readback_size_mismatch", t0)
+	if all_gi_sky_data.size() != physical_pixels * 4:
+		_cleanup()
+		return _failure("gi_sky_readback_size_mismatch", t0)
+	if all_dir0_data.size() != physical_pixels * 4 or all_dir1_data.size() != physical_pixels * 4:
+		_cleanup()
+		return _failure("horizon_dir_readback_size_mismatch", t0)
 
 	var layer_bytes: int = layout.layer_size.x * layout.layer_size.y * 4
 	var upload_t0 := Time.get_ticks_usec()
@@ -297,6 +347,18 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 				all_occluder_data.slice(begin, begin + layer_bytes)):
 			_cleanup()
 			return _failure("gi_occluder_layer_upload_failed:%d" % layer_id, t0)
+		if not tiles.upload_gi_sky_layer(layer_id,
+				all_gi_sky_data.slice(begin, begin + layer_bytes)):
+			_cleanup()
+			return _failure("gi_sky_layer_upload_failed:%d" % layer_id, t0)
+		if not tiles.upload_horizon_dir0_layer(layer_id,
+				all_dir0_data.slice(begin, begin + layer_bytes)):
+			_cleanup()
+			return _failure("horizon_dir0_layer_upload_failed:%d" % layer_id, t0)
+		if not tiles.upload_horizon_dir1_layer(layer_id,
+				all_dir1_data.slice(begin, begin + layer_bytes)):
+			_cleanup()
+			return _failure("horizon_dir1_layer_upload_failed:%d" % layer_id, t0)
 	var upload_ms := float(Time.get_ticks_usec() - upload_t0) / 1000.0
 	var non_converged := metrics_data.decode_u32(0) if metrics_data.size() >= 4 else 0
 	var conservative_tail_rays := metrics_data.decode_u32(4) if metrics_data.size() >= 8 else 0
@@ -307,6 +369,8 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 		"ok": true,
 		"path": "gpu_compute_hierarchical",
 		"gi_occluder_ok": true,
+		"gi_sky_ok": true,
+		"horizon_dir_ok": true,
 		"occluder_output_bytes": physical_pixels * 4,
 		"occluder_hash": hash(all_occluder_data),
 		# 哨兵占比：无有效遮挡源的 texel 比例。开阔地形天然偏高，但接近 1.0 说明
@@ -344,6 +408,7 @@ func _create_shader_bundle() -> Dictionary:
 		["decode", DECODE_SHADER],
 		["pyramid", PYRAMID_SHADER],
 		["trace", TRACE_SHADER],
+		["blur", BLUR_SHADER],
 	]:
 		var path := String(entry[1])
 		# Exported projects carry imported SPIR-V. Source GLSL is available before import.

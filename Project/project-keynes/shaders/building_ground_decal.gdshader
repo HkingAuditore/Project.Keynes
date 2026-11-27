@@ -61,6 +61,10 @@ uniform float gi_bent_strength = 0.35;
 uniform float gi_normal_floor = 0.85;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/cloud_shadow.gdshaderinc"
+#ifndef PK_WEB_BUILDING_MIN
+#define PK_WORLD_LIGHTING_FIELD
+#endif
+#include "res://shaders/include/world_lighting_field.gdshaderinc"
 vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 #include "res://shaders/include/terrain_horizon.gdshaderinc"
 #include "res://shaders/include/building_form.gdshaderinc"
@@ -465,15 +469,26 @@ void fragment() {
 	vec2 map_uv = v_map_uv + (v_ux * p.x + uy * p.y) / max(world_size, vec2(0.0001));
 	float direct = 1.0;
 	float sky = 1.0;
-	if (visual_quality >= 2 && terrain_horizon_strength > 0.0) {
-		TerrainHorizonSample hs = terrain_horizon_evaluate(map_uv, v_sun_dir);
-		if (hs.has_data) {
-			direct = hs.direct_visibility;
-			sky = terrain_horizon_apply_normal(hs.sky_visibility, v_ground_n, hs.bent_normal);
+	vec3 wl_bounce = vec3(0.0);
+	if (visual_quality >= 2) {
+		if (world_lighting_active()) {
+			vec4 wl = sample_world_lighting(map_uv);
+			TerrainHorizonSample hs = terrain_horizon_sample_gi_sky_only(map_uv);
+			direct = wl.a;
+			if (hs.has_data) {
+				sky = terrain_horizon_apply_normal(hs.sky_visibility, v_ground_n, hs.bent_normal);
+			}
+			wl_bounce = wl.rgb * world_lighting_radiance_scale * 0.18;
+		} else if (terrain_horizon_strength > 0.0) {
+			TerrainHorizonSample hs = terrain_horizon_evaluate(map_uv, v_sun_dir);
+			if (hs.has_data) {
+				direct = hs.direct_visibility;
+				sky = terrain_horizon_apply_normal(hs.sky_visibility, v_ground_n, hs.bent_normal);
+			}
 		}
 	}
 	float cloud_visibility = cloud_shadow_direct_visibility(map_uv, 1.0);
-	c *= v_amb * sky + v_sun_l * direct * cloud_visibility;
+	c *= v_amb * sky + wl_bounce + v_sun_l * direct * cloud_visibility;
 	if (live) c += emit * tod_exposure;
 	if (!live) {
 		float gray = dot(c, vec3(0.299, 0.587, 0.114));

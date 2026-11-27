@@ -349,6 +349,27 @@ var boundary_warp_clamped: int = 0
 # 层数不足 7 / 该层被中性化时为 false，shader 的 VT_USE_BOUNDARY_WARP 退化成直边六边形
 # （仍与 CPU cube_round 逐点一致，只是没有弯曲格界）。
 var terrain_warp_layer_bound: bool = false
+var terrain_gi_sky_layer_bound: bool = false
+var terrain_horizon_dir_layers_bound: bool = false
+
+# ─── [ptt-gi] 轻量化预计算辐射传输全局光照（Precomputed Terrain Transfer GI）───
+# ptt_transfer_idx_tex : 4 层 RGBA8 Texture2DArray（ptt_gi_size），每层每像素存 2 个来源 GI
+#                        texel 坐标 (R=x0, G=y0, B=x1, A=y1)，共 K=8 共享权重重采样索引。
+# ptt_coupling_tex     : RGBA8 ImageTexture（ptt_gi_size）：
+#                        R = round(C_i * 255)，G/B = round((n.xy * 0.5 + 0.5) * 255)，
+#                        A = round(clamp(n.z, 0, 1) * 255)。
+# ptt_albedo_tex       : RGBA8 ImageTexture（ptt_gi_size）：RGB = 地表代表色，A = 255 陆地 / 0 水体。
+var ptt_transfer_idx_tex: Texture2DArray = null
+var ptt_coupling_tex: ImageTexture = null
+signal ptt_albedo_changed
+var ptt_albedo_tex: ImageTexture = null
+var ptt_albedo_bytes := PackedByteArray()
+var ptt_gi_size: Vector2i = Vector2i.ZERO
+var ptt_gi_ready: bool = false
+var ptt_bake_deferred := false
+var ptt_albedo_refresh_suspended := false
+# Latest published cell colors, also used when PTT starts or resumes after mobile LOW.
+var bounce_lut_bytes := PackedByteArray()
 
 # v9.perf：每像素 → HexCell 引用 lookup（W*H 个，与 derived_size 严格对齐）。
 # 在 _bake_height_biome_moisture 里第一遍 warp + cube_round 时顺手填好；之后

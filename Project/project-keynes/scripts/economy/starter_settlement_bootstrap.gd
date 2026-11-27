@@ -7,6 +7,7 @@ const MONEY_SCALE := 10000
 const GOODS_SCALE := 1000
 const STARTER_POPULATION := 40
 const SURVIVAL_DAYS := 15
+const COLD_FUR_BUFFER_DAYS := 30
 ## Opening reserve covers roughly four months of the observed starting basket,
 ## allowing initially unemployed founders time to enter new jobs.
 const CASH_PER_PERSON := 60 * MONEY_SCALE
@@ -152,9 +153,15 @@ static func build_many(map: MapData, facade: EconomyFacade,
 		var clothing_good := String(start.get("starter_clothing_good_id", ""))
 		if clothing_good.is_empty() or goods.find(clothing_good) < 0:
 			return _error("starter_good_missing", "经济目录缺少开局衣物：%s" % clothing_good)
-		stock[start_cell * goods.size() + goods.find(clothing_good)] += \
+		var base_clothing_stock := \
 			STARTER_POPULATION * (SURVIVAL_DAYS if route_buildings.has(
 				"hide_scraping_shelter") else LOCAL_INPUT_BUFFER_DAYS) * GOODS_SCALE
+		var cold_exposure_q16 := int(start.get("cold_exposure_q16", 0))
+		var clothing_demand_per_day := int(start.get("clothing_demand_per_day", 0))
+		if cold_exposure_q16 > 0 and clothing_demand_per_day > 0:
+			base_clothing_stock = maxi(
+				base_clothing_stock, clothing_demand_per_day * COLD_FUR_BUFFER_DAYS)
+		stock[start_cell * goods.size() + goods.find(clothing_good)] += base_clothing_stock
 		var construction_seed := String(start.get(
 			"starter_construction_seed_building_id", ""))
 		var selected_construction_goods: PackedStringArray = start.get(

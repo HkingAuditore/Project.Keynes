@@ -541,6 +541,8 @@ static func _water_program_prefix(host, kind: String) -> String:
 		prefix += PK_WEB_TEXTURE_BUDGET_DEFINE
 	if _cloud_shadow_direct_active(host):
 		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
+	if _world_lighting_field_active(host):
+		prefix += "#define PK_WORLD_LIGHTING_FIELD\n"
 	prefix += host.SPLIT_WATER_ONLY_DEFINE
 	# [cell-field 2026-11-18] 放在**最后**：既有 define 的顺序一个字节都不动（字节契约），
 	# 而「关 = 空串」时这条语句本身不产生任何字节。陆地侧的同名调用在
@@ -576,6 +578,12 @@ static func _desktop_sky_quality_prefix(host) -> String:
 
 
 
+static func _world_lighting_field_active(host) -> bool:
+	return host.get("_world_lighting_field") != null \
+		and not OS.has_feature("web") \
+		and not DCFeatureFlags.is_compatibility_renderer()
+
+
 static func _apply_shader_variant_prefix(host, shader: Shader, source_path: String) -> Shader:
 
 	if shader == null:
@@ -599,6 +607,8 @@ static func _apply_shader_variant_prefix(host, shader: Shader, source_path: Stri
 		prefix += _desktop_sky_quality_prefix(host)
 	if _cloud_shadow_direct_active(host) and _is_world_map_shader_path(host, source_path):
 		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
+	if _world_lighting_field_active(host) and _is_world_map_shader_path(host, source_path):
+		prefix += "#define PK_WORLD_LIGHTING_FIELD\n"
 	# mobile/web 共用 MOBILE_QUALITY_* 编译期档（由 set_mobile_quality_tier 推送）。
 	if host._mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
 		prefix += _shader_quality_define_prefix(host, host._mobile_quality_tier_define)

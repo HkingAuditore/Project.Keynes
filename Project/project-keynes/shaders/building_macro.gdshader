@@ -66,6 +66,10 @@ uniform float gi_bent_strength = 0.35;
 uniform float gi_normal_floor = 0.85;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/cloud_shadow.gdshaderinc"
+#ifndef PK_WEB_BUILDING_MIN
+#define PK_WORLD_LIGHTING_FIELD
+#endif
+#include "res://shaders/include/world_lighting_field.gdshaderinc"
 vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 #include "res://shaders/include/terrain_horizon.gdshaderinc"
 
@@ -76,14 +80,25 @@ vec2 lut_uv(float cell) {
 }
 
 // 只有高画质付 horizon 的 4 次采样；其余档位返回精确中性值，与接入前一致。
-TerrainHorizonSample macro_horizon(vec2 map_uv, vec3 sun_dir) {
+TerrainHorizonSample macro_horizon(vec2 map_uv, vec3 sun_dir, out vec3 wl_bounce) {
+	wl_bounce = vec3(0.0);
 	TerrainHorizonSample neutral;
 	neutral.direct_visibility = 1.0;
 	neutral.sky_visibility = 1.0;
 	neutral.bent_normal = vec3(0.0, 0.0, 1.0);
 	neutral.nearest_packed = vec4(0.0);
 	neutral.has_data = false;
-	if (visual_quality < 2 || terrain_horizon_strength <= 0.0) {
+	if (visual_quality < 2) {
+		return neutral;
+	}
+	if (world_lighting_active()) {
+		vec4 wl = sample_world_lighting(map_uv);
+		TerrainHorizonSample hs = terrain_horizon_sample_gi_sky_only(map_uv);
+		hs.direct_visibility = wl.a;
+		wl_bounce = wl.rgb * world_lighting_radiance_scale * 0.18;
+		return hs;
+	}
+	if (terrain_horizon_strength <= 0.0) {
 		return neutral;
 	}
 	return terrain_horizon_evaluate(map_uv, sun_dir);
@@ -121,7 +136,8 @@ void fragment() {
 		terrain_xy = (visual_sample_terrain_normal(UV).rg * 2.0 - 1.0)
 			* terrain_normal_influence;
 	}
-	TerrainHorizonSample hs = macro_horizon(UV, ed.sun_dir);
+	vec3 wl_bounce = vec3(0.0);
+	TerrainHorizonSample hs = macro_horizon(UV, ed.sun_dir, wl_bounce);
 	float cloud_visibility = cloud_shadow_direct_visibility(UV, ed.local_day);
 
 	// The macro mark is a tiny house glyph rather than a flat occupancy blob:
@@ -193,6 +209,7 @@ void fragment() {
 		* cloud_visibility;
 	float mdl = max(dot(N, -ed.sun_dir), 0.0) * ed.moon_strength;
 	vec3 building_light = (amb * amb_gain * sky
+		+ wl_bounce
 		+ ed.sun_col * ndl * BUILDING_MACRO_SUN_GAIN
 		+ EARTH_MOONLIGHT * mdl * BUILDING_MACRO_MOON_GAIN) * tod_exposure;
 	color *= max(building_light, vec3(0.05));

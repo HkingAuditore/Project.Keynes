@@ -75,43 +75,31 @@ static func bake_geometry_fallback(baker: MapBaker, map: MapData, world: WorldDa
 
 
 static func bake_horizon(baker: MapBaker, world: WorldData, hex_size: float) -> void:
-	# [terrain-horizon] 8 方向 horizon angle 烘焙，三条平台路径：
-	#   1. GPU 离屏（默认仅桌面，DCFeatureFlags.terrain_horizon_gpu_bake_active）：这里只登记
-	#      参数，实际由 HexRenderer.set_map 用 SubViewport + canvas shader 在场景树内延迟烘焙。
-	#      生成期不阻塞、不占 CPU marching。
-	#   2. CPU C++（DCAtlasEncoders.encode_horizon_tex，native SoA marching）：
-	#      - 桌面 GPU 关时；
-	#      - **Web 全部档位**（[terrain-web-baked-surface 2026-11-01]）：LOW/MID/HIGH 都 CPU 烘
-	#        一张，否则 shader 侧 PK_WEB_HORIZON 解不到数据。步数用 TERRAIN_HORIZON_STEPS_WEB
-	#        =128（真机 probe：512×298=15ms / 1024×596=79ms / 2048×1192=489ms native；
-	#        max_distance=24 hex 还会自然截断有效步数），一次性生成期成本换"Web 地形也有
-	#        烘焙法线 + horizon 阴影"。
-	#   3. mobile：null，shader 检测 terrain_horizon_tex_bound=false → 无阴影回退。
-	#      mobile 不放宽成 CPU marching：低端移动 GPU 的收益抵不上生成期卡顿。
+	# 瓦片 compute 和单图路径共享参数。移动端单图开关只控制离屏 canvas 烘焙。
 	world.terrain_horizon_gpu_pending = false
-	world.terrain_horizon_gpu_params = {}
 	var horizon_height_scale_hex := maxf(float(ProjectSettings.get_setting(
 		"project_keynes/rendering/map_tiles/horizon_height_scale_hex",
 		MapBaker.TERRAIN_HORIZON_HEIGHT_SCALE_HEX)), 0.01)
+	var wb: Vector2 = world.world_bounds.size
+	var tx: float = (wb.x / float(world.hm_size.x)) if world.hm_size.x > 0 else 1.0
+	var ty: float = (wb.y / float(world.hm_size.y)) if world.hm_size.y > 0 else 1.0
+	var params := {
+		"steps": MapBaker.TERRAIN_HORIZON_STEPS,
+		"step_px": MapBaker.TERRAIN_HORIZON_STEP_PX,
+		"step_growth": MapBaker.TERRAIN_HORIZON_STEP_GROWTH,
+		"lowpass_radius": MapBaker.TERRAIN_HORIZON_LOWPASS_RADIUS,
+		"max_horizon_angle": MapBaker.TERRAIN_HORIZON_MAX_ANGLE,
+		"bias": MapBaker.TERRAIN_HORIZON_BIAS,
+		"height_world_scale": maxf(hex_size * horizon_height_scale_hex, 1e-4),
+		"max_distance_world": maxf(hex_size * MapBaker.TERRAIN_HORIZON_MAX_DISTANCE_HEX, 1e-4),
+		"sea_level": world.sea_level,
+		"texel_x": tx,
+		"texel_y": ty,
+		# 真正经度周期：柱状地图东西连续，marching 须按此周期折叠（≠含 padding 的 world_bounds.x）。
+		"wrap_period_x": world.wrap_period_x,
+	}
+	world.terrain_horizon_gpu_params = params
 	if DCFeatureFlags.terrain_horizon_gpu_bake_active() and not OS.has_feature("web"):
-		var wb: Vector2 = world.world_bounds.size
-		var tx: float = (wb.x / float(world.hm_size.x)) if world.hm_size.x > 0 else 1.0
-		var ty: float = (wb.y / float(world.hm_size.y)) if world.hm_size.y > 0 else 1.0
-		world.terrain_horizon_gpu_params = {
-			"steps": MapBaker.TERRAIN_HORIZON_STEPS,
-			"step_px": MapBaker.TERRAIN_HORIZON_STEP_PX,
-			"step_growth": MapBaker.TERRAIN_HORIZON_STEP_GROWTH,
-			"lowpass_radius": MapBaker.TERRAIN_HORIZON_LOWPASS_RADIUS,
-			"max_horizon_angle": MapBaker.TERRAIN_HORIZON_MAX_ANGLE,
-			"bias": MapBaker.TERRAIN_HORIZON_BIAS,
-			"height_world_scale": maxf(hex_size * horizon_height_scale_hex, 1e-4),
-			"max_distance_world": maxf(hex_size * MapBaker.TERRAIN_HORIZON_MAX_DISTANCE_HEX, 1e-4),
-			"sea_level": world.sea_level,
-			"texel_x": tx,
-			"texel_y": ty,
-			# 真正经度周期：柱状地图东西连续，marching 须按此周期折叠（≠含 padding 的 world_bounds.x）。
-			"wrap_period_x": world.wrap_period_x,
-		}
 		world.terrain_horizon_gpu_pending = true
 		# 不清空 world.terrain_horizon_tex：regenerate 时旧图短暂沿用，GPU 烘完后回填，避免闪烁。
 	elif OS.has_feature("web"):
@@ -122,10 +110,10 @@ static func bake_horizon(baker: MapBaker, world: WorldData, hex_size: float) -> 
 		# 代价：marching 内多写 4 字节/像素 occluder，horizon 部分逐字节不变。
 		var horizon_bundle: Dictionary = DCAtlasEncoders.encode_horizon_bundle(
 			world.height_buffer, world.hm_size, world.world_bounds.size, hex_size, world.terrain_horizon_tex,
-			baker._world_ext, MapBaker.TERRAIN_HORIZON_STEPS_WEB, MapBaker.TERRAIN_HORIZON_STEP_PX, MapBaker.TERRAIN_HORIZON_MAX_ANGLE,
-			MapBaker.TERRAIN_HORIZON_BIAS, hex_size * horizon_height_scale_hex, world.wrap_period_x,
-			world.sea_level, MapBaker.TERRAIN_HORIZON_STEP_GROWTH, MapBaker.TERRAIN_HORIZON_LOWPASS_RADIUS,
-			hex_size * MapBaker.TERRAIN_HORIZON_MAX_DISTANCE_HEX, baker._enum_atlas_data)
+			baker._world_ext, MapBaker.TERRAIN_HORIZON_STEPS_WEB, params.step_px, params.max_horizon_angle,
+			params.bias, params.height_world_scale, params.wrap_period_x,
+			params.sea_level, params.step_growth, params.lowpass_radius,
+			params.max_distance_world, baker._enum_atlas_data)
 		world.terrain_horizon_tex = horizon_bundle.get("horizon_tex", null)
 		world.gi_occluder_tex = horizon_bundle.get("occluder_tex", null)
 		print("[terrain-horizon/web] bundle horizon=%s occluder=%s native_ms=%.1f fallback=%s" % [
@@ -137,7 +125,36 @@ static func bake_horizon(baker: MapBaker, world: WorldData, hex_size: float) -> 
 	else:
 		world.terrain_horizon_tex = DCAtlasEncoders.encode_horizon_tex(
 			world.height_buffer, world.hm_size, world.world_bounds.size, hex_size, world.terrain_horizon_tex,
-			baker._world_ext, MapBaker.TERRAIN_HORIZON_STEPS, MapBaker.TERRAIN_HORIZON_STEP_PX, MapBaker.TERRAIN_HORIZON_MAX_ANGLE,
-			MapBaker.TERRAIN_HORIZON_BIAS, hex_size * horizon_height_scale_hex, world.wrap_period_x,
-			world.sea_level, MapBaker.TERRAIN_HORIZON_STEP_GROWTH, MapBaker.TERRAIN_HORIZON_LOWPASS_RADIUS,
-			hex_size * MapBaker.TERRAIN_HORIZON_MAX_DISTANCE_HEX)
+			baker._world_ext, params.steps, params.step_px, params.max_horizon_angle,
+			params.bias, params.height_world_scale, params.wrap_period_x,
+			params.sea_level, params.step_growth, params.lowpass_radius, params.max_distance_world)
+
+
+static func bake_legacy_surface_fallback(baker: MapBaker, world: WorldData, hex_size: float) -> void:
+	# 兜底：旧的 RG8 粗法线包（无 BA/relief 通道）。
+	var normal_data: Dictionary = await NativeLoadingTasks.compute(baker._world_ext,"normal",{
+		"buffer":world.height_buffer,"width":world.hm_size.x,"height":world.hm_size.y,
+		"coarse_radius":4,"slope_gain":8.0,"wrap_x":true,"world_size_x":world.world_bounds.size.x,
+		"world_size_y":world.world_bounds.size.y,"hex_size":hex_size,
+		"sample_radius_hex":MapBaker.TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,"height_scale_hex":MapBaker.TERRAIN_NORMAL_HEIGHT_SCALE_HEX}, baker._loading_frames)
+	var rg8_bytes := PackedByteArray()
+	var gd_normal_tex: ImageTexture = null
+	if not bool(normal_data.get("fallback",true)):
+		rg8_bytes = normal_data.get("data", PackedByteArray())
+	else:
+		gd_normal_tex = DCAtlasEncoders.encode_terrain_normal_tex(world.height_buffer,world.hm_size,4,8.0,true,baker._world_ext,world.world_bounds.size,hex_size,MapBaker.TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,MapBaker.TERRAIN_NORMAL_HEIGHT_SCALE_HEX)
+		if gd_normal_tex != null and gd_normal_tex.get_image() != null \
+				and gd_normal_tex.get_image().get_format() == Image.FORMAT_RG8:
+			rg8_bytes = gd_normal_tex.get_image().get_data()
+	var fallback := baker._upload_legacy_surface_fallback(
+		rg8_bytes, world.hm_size, world.terrain_normal_tex)
+	world.terrain_normal_tex = fallback.get("normal_tex", null)
+	if world.terrain_normal_tex == null:
+		# 无 DLL 环境（GDScript 编码器）拿不到 RG8 字节时，至少保留 2D 法线给其它层。
+		world.terrain_normal_tex = gd_normal_tex
+	world.terrain_surface_tex = fallback.get("surface_tex", null)
+	# [C 2026-11-01] 水深兜底也升级 RGBA8：R=旧 buffer 水深、GBA=0（无软权重）→
+	# compact water 的 max(二元权重, 软权重) 自动退化为旧二元行为。
+	world.water_depth_tex = baker._upload_legacy_water_depth_fallback(world)
+	print("[terrain-baked-surface] fallback water_depth=RGBA8 tex=%s derived=%s" % [
+		world.water_depth_tex != null, str(world.derived_size)])

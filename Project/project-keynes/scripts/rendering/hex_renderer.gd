@@ -58,6 +58,7 @@ const BuildingVisualLayerScript = preload("res://scripts/rendering/building_visu
 const ResourceVisualLayerScript = preload("res://scripts/rendering/resource_visual_layer.gd")
 const WorldSkyBackgroundScript = preload("res://scripts/rendering/world_sky_background.gd")
 const CloudShadowFieldScript = preload("res://scripts/rendering/cloud_shadow_field.gd")
+const WorldLightingFieldScript = preload("res://scripts/rendering/world_lighting_field.gd")
 var _resource_visual_layer: Node2D
 var _resource_visual_cpu_ms := 0.0
 
@@ -131,6 +132,7 @@ const PK_WEB_DEFER_VEG_LAYERS := RendererWebPolicy.PK_WEB_DEFER_VEG_LAYERS
 var _lut_bound := {}
 var _weather_layer: WeatherLayer = null  # v9.split：天气独立层
 var _cloud_shadow_field: Variant = null
+var _world_lighting_field: Variant = null
 var _border_layer: CountryBorderLayer = null  # 国界线（几何 ribbon，z=6）
 var _fog_layer: FogOfWarLayer = null  # 视野迷雾（全图 quad，z=12，盖住天气与国界）
 var _fog_enabled: bool = false
@@ -361,6 +363,9 @@ func _create_water_quad(prefix: String, kind: String) -> void: return RendererSh
 func _apply_water_uniforms() -> void: return RendererShaderWater._apply_water_uniforms(self)
 func _push_water_lighting_uniforms() -> void: return RendererShaderWater._push_water_lighting_uniforms(self)
 func _configure_cloud_shadow_field() -> void: return RendererShaderWater._configure_cloud_shadow_field(self)
+func _configure_world_lighting_field() -> void: RendererLightingBindings.configure_world_lighting_field(self)
+func _push_world_lighting_field_inputs() -> void: RendererLightingBindings.push_world_lighting_material_inputs(self)
+func _sync_world_lighting_daylight() -> void: RendererLightingBindings.sync_world_lighting_daylight(self)
 func _push_cloud_shadow_tuning() -> void: return RendererShaderWater._push_cloud_shadow_tuning(self)
 func _push_cloud_shadow_material_inputs() -> void: return RendererShaderWater._push_cloud_shadow_material_inputs(self)
 func _push_water_fog_uniforms() -> void: return RendererShaderWater._push_water_fog_uniforms(self)
@@ -629,8 +634,6 @@ func _on_terrain_horizon_frame_drawn() -> void:
 func set_terrain_horizon_strength(v: float) -> void: RendererTerrainHorizon.set_terrain_horizon_strength(self, v)
 
 func set_terrain_horizon_softness(v: float) -> void: RendererTerrainHorizon.set_terrain_horizon_softness(self, v)
-
-func set_terrain_horizon_max_angle(v: float) -> void: RendererTerrainHorizon.set_terrain_horizon_max_angle(self, v)
 
 func set_terrain_horizon_cast_floor(v: float) -> void: RendererTerrainHorizon.set_terrain_horizon_cast_floor(self, v)
 
