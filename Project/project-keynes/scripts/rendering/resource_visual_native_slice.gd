@@ -18,12 +18,15 @@ static func inputs(context) -> Dictionary:
 	var world: WorldData = context.world
 	var profile: ResourceVisualProfile = context.profile
 	var has_world := world != null
-	var has_lookup := has_world and not world.pixel_to_cell_lookup.is_empty()
+	var has_object_lookup := has_world and not world.pixel_to_cell_lookup.is_empty()
+	var has_numeric_lookup := has_world and not world.pixel_owner_indices.is_empty() \
+		and world.pixel_owner_indices.size() == int(world.derived_size.x) * int(world.derived_size.y)
+	var has_lookup := has_object_lookup or has_numeric_lookup
 	# The same bake publication owns object lookup and its pure-value columns.
 	# Unknown/custom lookups use the script path; never rescan a raster per frame.
 	var owner_index := world.pixel_owner_indices if has_lookup else PackedInt64Array()
 	var owner_present := world.pixel_owner_present if has_lookup else PackedByteArray()
-	if has_lookup and owner_index.size() != world.pixel_to_cell_lookup.size():
+	if has_object_lookup and owner_index.size() != world.pixel_to_cell_lookup.size():
 		return {}
 	return {
 		"families": context.inputs.families, "forms": context.inputs.forms,

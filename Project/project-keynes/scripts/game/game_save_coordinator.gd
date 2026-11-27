@@ -426,9 +426,11 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 	for section_id in collected.sections:
 		var section = collected.sections[section_id]
 		frozen_sections[section_id] = section if section is PackedByteArray else var_to_bytes(section)
+	collected.sections.clear()
 	var result: Dictionary
 	if not background_write:
 		result = _repository.write_slot(slot_id, header, frozen_sections)
+		frozen_sections.clear()
 		_restore_clock_mode(was_paused, previous_speed, generation)
 	else:
 		# 捕获已经完成；恢复模拟后，压缩/SHA/回读验证/原子替换仍走原仓库路径。

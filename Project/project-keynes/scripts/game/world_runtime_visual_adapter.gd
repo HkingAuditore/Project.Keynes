@@ -20,6 +20,8 @@ func _bind_renderer_and_camera(host, safe_area: Rect2) -> void:
 		if host._load_slot_id.is_empty():
 			host._loading_visual_step("initialize_runtime_vision")
 			_initialize_runtime_vision(host, false)
+		if host._world_data != null and host._world_data.has_method("retire_pixel_object_lookup"):
+			host._world_data.retire_pixel_object_lookup()
 		return
 	host._renderer.hex_size = host.hex_size
 	var ext = host._generator.get_data_core_world_ext() if host._generator != null and host._generator.has_method("get_data_core_world_ext") else null
@@ -37,6 +39,11 @@ func _bind_renderer_and_camera(host, safe_area: Rect2) -> void:
 		return
 	if host._renderer.loading_layer_progress.is_connected(layer_progress):
 		host._renderer.loading_layer_progress.disconnect(layer_progress)
+	# Baking and initial renderer setup (including TerrainCoverageMesh) have
+	# finished consuming pixel_to_cell_lookup; retire the ~28 MB object array
+	# while keeping the compact pixel_owner_indices snapshot for runtime queries.
+	if host._world_data != null and host._world_data.has_method("retire_pixel_object_lookup"):
+		host._world_data.retire_pixel_object_lookup()
 	if host._map_overlay_layer != null:
 		host._map_overlay_layer.set_bounds(host._renderer.get_world_bounds())
 		host._map_overlay_layer.set_horizontal_wrap(host.map_wrap_period_x())

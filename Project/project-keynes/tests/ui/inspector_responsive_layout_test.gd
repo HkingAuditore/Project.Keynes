@@ -12,6 +12,12 @@ func _run() -> void:
 	_check_wide(failures, 1212.0, 860.0)
 	_check_compact(failures, 1211.0)
 	_check_compact(failures, 1024.0)
+	_check_list_wing_layout(failures, 1920.0, 880.0, 420.0)
+	_check_list_wing_layout(failures, 1600.0, 800.0, 340.0)
+	_check_list_wing_layout(failures, 1366.0, 800.0, 340.0)
+	_check_list_wing_layout(failures, 1212.0, 800.0, 340.0)
+	_check_list_wing_compact(failures, 1211.0)
+	_check_list_wing_compact(failures, 1024.0)
 	_check_family_layout(failures, 1920.0, 1360.0, 900.0)
 	_check_family_layout(failures, 1600.0, 1248.0, 788.0)
 	_check_family_layout(failures, 1366.0, 1080.0, 620.0)
@@ -25,6 +31,7 @@ func _run() -> void:
 		failures.append("closed Inspector did not keep its 460px dossier width")
 	await _check_scene_geometry(failures)
 	await _check_detail_close_width_restore(failures)
+	await _check_list_wing_scene(failures)
 	await _check_military_row_cost(failures)
 	if failures.is_empty():
 		print("[inspector-responsive-layout] PASS")
@@ -307,5 +314,120 @@ func _check_military_row_cost(failures: PackedStringArray) -> void:
 	if not is_equal_approx(row.text_room(), room_before):
 		failures.append("military row text room shifted on hover: %.0f -> %.0f" % [
 			room_before, row.text_room()])
+	root.queue_free()
+	await process_frame
+
+
+func _check_list_wing_layout(failures: PackedStringArray, viewport_width: float,
+		expected_width: float, expected_wing: float) -> void:
+	var layout := GameUIManager.inspector_layout_for_width(
+		viewport_width, false, false, true)
+	if bool(layout.get("compact", true)) \
+			or not is_equal_approx(float(layout.get("panel_width", 0.0)), expected_width) \
+			or not is_equal_approx(float(layout.get("list_wing_width", 0.0)), expected_wing) \
+			or float(layout.get("map_width", 0.0)) < 320.0:
+		failures.append("%.0fpx list wing layout mismatch: %s" % [viewport_width, layout])
+
+
+func _check_list_wing_compact(failures: PackedStringArray, viewport_width: float) -> void:
+	var layout := GameUIManager.inspector_layout_for_width(
+		viewport_width, false, false, true)
+	if not bool(layout.get("compact", false)) \
+			or not is_equal_approx(float(layout.get("panel_width", 0.0)), 460.0) \
+			or not is_zero_approx(float(layout.get("list_wing_width", -1.0))):
+		failures.append("%.0fpx narrow viewport should keep 460px single column: %s" % [
+			viewport_width, layout])
+
+
+func _check_list_wing_scene(failures: PackedStringArray) -> void:
+	var root := Control.new()
+	root.size = Vector2(1920.0, 720.0)
+	root.theme = load("res://assets/themes/player_ui_theme.tres") as Theme
+	get_root().add_child(root)
+	var panel := (load("res://scenes/ui/inspector_panel.tscn") as PackedScene) \
+		.instantiate() as InspectorPanel
+	root.add_child(panel)
+	panel.visible = true
+	panel.set_compact_detail_mode(false)
+	panel.set_list_wing_enabled(true)
+	panel.custom_minimum_size.x = 880.0
+	panel.offset_left = -880.0
+	var model := {
+		"cell_index": 7,
+		"header": {"kicker": "区域 1, 1", "title": "沃野城", "subtitle": "测试国"},
+		"kpis": [],
+		"tabs": [
+			{"id": "geography", "label": "地理", "icon": "geo"},
+			{"id": "population", "label": "人口", "icon": "population.crowd"},
+			{"id": "buildings", "label": "建筑", "icon": "building"},
+			{"id": "military", "label": "军事", "icon": "country.military"},
+		],
+		"categories": {
+			"geography": {
+				"sections": [
+					{"id": "physical_geography", "title": "地貌与地表", "metrics": [
+						{"id": "m1", "title": "地貌", "value": "平原"}]},
+					{"id": "natural_resources", "title": "自然资源", "resource_rows": [
+						{"id": "iron", "name": "铁矿", "value": "120", "density": "丰富",
+							"delta": "", "extractable": true, "accent": UITokens.RESOURCE,
+							"icon": "resource", "visible": true}]},
+				],
+			},
+			"population": {
+				"metrics": [{"id": "population_funds", "title": "居民存款", "value": "100"}],
+				"cohort_rows": [
+					{"id": "cohort_1", "name": "农民", "population": "100 人",
+						"wealth": "10", "net": "+1", "living_standard": "温饱",
+						"satisfaction": "80.0%", "visible": true},
+				],
+			},
+			"buildings": {
+				"metrics": [{"id": "building_total", "title": "建筑总数", "value": "2 栋"}],
+				"construction_entry": {"title": "营造新建筑", "available": true},
+				"building_rows": [
+					{"id": "b_1", "name": "农田", "count": "2", "owner": "业主 · 农民",
+						"status": "正常", "profit": "+5", "visible": true},
+				],
+			},
+			"military": {
+				"military_cell": {},
+			},
+		},
+	}
+	panel.set_model_for_selection(model)
+	await process_frame
+	if not panel.has_list_wing() or not panel.list_wing_open() \
+			or panel._list_content.get_child_count() == 0 \
+			or panel._content_box.get_child_count() == 0:
+		failures.append("geography tab with resources did not split into ListShell + ContentBox")
+	# 点开对象详情应冲掉列表，关闭后恢复列表。
+	panel.show_object_detail(_family_detail_payload())
+	await process_frame
+	if not panel.detail_open() or panel.list_wing_open():
+		failures.append("opening object detail did not replace ListShell")
+	panel.close_detail(false)
+	await process_frame
+	if panel.detail_open() or not panel.list_wing_open():
+		failures.append("closing object detail did not restore ListShell")
+	# 建筑页：building_rows 进左翼，construction_entry 仍留在右栏。
+	panel.select_tab("buildings")
+	await process_frame
+	if not panel.list_wing_open() or panel._list_content.get_child_count() == 0 \
+			or panel._content_box.get_child_count() < 2:
+		failures.append("buildings tab did not keep construction_entry in right column while moving rows left")
+	# 窄屏退化为单栏，切回宽屏恢复双栏。
+	panel.set_compact_detail_mode(true)
+	await process_frame
+	if panel.list_wing_open() or panel._list_content.get_child_count() != 0:
+		failures.append("compact mode did not collapse ListShell back into ContentBox")
+	panel.set_compact_detail_mode(false)
+	await process_frame
+	if not panel.list_wing_open() or panel._list_content.get_child_count() == 0:
+		failures.append("leaving compact mode did not restore ListShell")
+	# 军事页无左翼内容，保持 460 单栏。
+	panel.select_tab("military")
+	await process_frame
+	if panel.has_list_wing() or panel.list_wing_open():
+		failures.append("military tab should not open ListShell")
 	root.queue_free()
 	await process_frame

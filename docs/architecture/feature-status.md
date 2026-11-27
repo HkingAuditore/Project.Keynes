@@ -1,14 +1,50 @@
 # 专项现状与验证记录
 
+## 最后一城叛乱处理（2026-11-27）
+
+- 方案 D：保留「最后一城不能独立」。`advance_independence` 在该国只剩 1 格时取消建国请求，
+  给玩家一条「最后一城不能独立」提示，并把该格交给 host 在次日 prepare 调
+  `clear_cell_mobilization_independence(cell)` 清掉所有动员行的 `flags & 8`；经济扫描在
+  `country_cell_count(country) <= 1` 时兜底清位，覆盖清位请求尚未落地就存档的窗口。
+- 玩家保留城市，不进入零领土/游戏结束；链条停在当前阶，读档后不再反复排队或建国。
+  独立入队同时收口为「只认原生 `flags & 8`」：`finish_unrest_choice` 不再根据动作和成败自行推断。
+- 修复前该分支静默丢弃请求，行可能永久停在 stage 4/flags&8，事件文案与实际结果相反。
+- 验证：`tests/economy/stratum_chain_pacing_test.gd` 72/0（新增清位契约与第 4 阶招安失败规则）、
+  `economy_stratum_save_restore_test` 107/0、`stratum_unrest_service_test` 15/0、
+  `narrative_event_runtime_test` 89/0、`golden_day_hash_test` 203/0、`politics_parse_probe` PASS；
+  `check_world_ext_bindings` 等静态护栏通过（`check_size_ratchet` 仍报 6 个既有超长 UI 文件）。
+
+## 叛乱链改为阈值驱动（2026-11-27）
+
+- 行动失败不再直接升阶：只增加组织度/后遗症，把 `next_check_day` 推后 10 天，模拟继续。
+  链只在 `next_check_day` 到达且组织度与 power 同时越过下一阶门槛时升阶（去掉原来的 0.35 骰），
+  对齐 Victoria 3 式「局势自己走到下一档才出下一幕」。
+- 成功降阶并把 `next_check_day` 推到 `cooldown_until_day`，冷却期内不升阶；第 3 阶镇压失败
+  不再直接置独立位，只有第 4 阶镇压失败（或弃城）才置 `flags & 8`。
+- 行动文案与 tooltip 同步：第 1–3 阶镇压失败只写「组织度上涨」，第 4 阶失败（含招安失败）才写「此城脱离」；
+  招安失败写明后果；「置之不理」不再声称阶段会前进。AI 升阶事实在 AI 行动未改变行时也会发布。
+- 验证：新增 `tests/economy/stratum_chain_pacing_test.gd` 53/0（失败不升阶、第 3 阶不跳独立、
+  第 4 阶失败置独立、成功推进冷却、tooltip 契约）；`economy_stratum_save_restore_test` 107/0、
+  `tests/politics/stratum_unrest_service_test` 15/0、`narrative_event_runtime_test` 89/0、
+  `politics_parse_probe` PASS。`satisfaction_runtime_test` 为 49 项 1 失败（回放后整档 hash 不一致，
+  探针确认该夹具动员行数始终为 0，与本次阈值改动无关，属工作区既有失败）。
+
+## 第四阶段失败由 Economy 统一确认（2026-11-27）
+
+- 第四阶段招安失败现在由 Economy 设置 `flags & 8`，与镇压失败和弃城使用同一独立标记。
+- Narrative 不再根据阶段和掷骰结果自行创建独立状态，只消费 Economy 应用结果后的行标记。
+- `stratum_chain_pacing_test.gd` 增加第四阶段招安失败的独立标记覆盖。
+
 ## 经济系统性数值再平衡（2026-11-27）
 
 - **硬/软投入重构**：`NativeEconomyRuntime` 将软投入（`0 < required_q16 < 65536`）改为无软料 100% 基础产出、齐备最高 `+40%` 封顶增产（`SOFT_PRODUCTIVITY_BONUS_CAP_Q16 = 26214`，多软投入按权重归一化共享 `+40%` 上限，消除 32 栋零硬投入工业建筑及其他误标主原料，全部工业建筑至少含 1 项硬主原料）。
-- **科技加法叠加与产出耦合消耗**：建筑产出修正由多维叠乘改为加法池化 `1 + ΣΔ` 并封顶 `4.0x`（`OUTPUT_FACTOR_MAX_Q16 = 262144`）；生产投入随建筑产出倍率按 `1 + 0.60 * max(0, M_out - 1)` 联动放大（保障净物料转换效率提升，同时 `country.production.input_factor` 下限由 `0.40` 上调至 `0.80`）；同步重标 `technology_network.json`（单行业/家族/地理/商品/全局加成封顶并清除 9 项负居民消费项）。
+- **科技加法叠加与产出耦合消耗**：建筑产出修正由多维叠乘改为加法池化 `1 + ΣΔ`，只保留 `0.10x` 下限（`OUTPUT_FACTOR_MIN_Q16 = 6554`）；同日取消运行时 `4.0x` 封顶（原 `OUTPUT_FACTOR_MAX_Q16 = 262144`），池化倍率只受各修正定义的 `max_value` 与 Q16/int32 数值边界约束；生产投入随建筑产出倍率按 `1 + 0.60 * max(0, M_out - 1)` 联动放大（保障净物料转换效率提升，同时 `country.production.input_factor` 下限由 `0.40` 上调至 `0.80`）；同步重标 `technology_network.json`（单行业/家族/地理/商品/全局加成封顶并清除 9 项负居民消费项）。
 - **基础数值与按财富递增消费**：`default_economy.tres` 全局产出效率由 `1.5x` 回撤至 `1.0x`，各部门维护折旧周期由 6–20 年缩短至 2–5 年（`[1460, 900, 1095, 730, 1825]`）；通过 `tools/economy/rebalance_economy_content.py` 去除石器时代后 2× 食物膨胀（石器起始采集/狩猎食物做 1.45× 补偿以适配 1.0× 全局效率），将 255 栋工业建筑投入产出价值比中位数校准至 `0.550`（45%–70%），并提高居民非食物基础消费占比至 `35%–52%`（`wealth=1.0`）；将 `HOUSEHOLD_WEALTH_ANCHORS_Q16` 扩展至 15 档（`1/16x`–`1024x`，即人均最高 `10,240` 货币），解耦 `Need` 数量增长与 `VariantChoice` 品质升级，防止富裕阶层过食主粮。未改动过剩减产与“应收尽收”机制。
 - **验证**：
   - 静态护栏 13/13 全部通过（`check_cpp_deps`、`check_committed_views`、`check_save_contracts`、`check_module_api`、`check_script_native_access` 等 0 违规）；Windows `template_debug` / `template_release` 扩展双目标构建并重新预烘焙（991 项）。
-  - 新增契约测试 `economy_rebalance_contract_test.gd` 20/20 通过（4 项软投入叠加实测 `1.3999x` 封顶；全 467 科技 `coke_ovens` 实测产出 `2.199x`、投入 `1.389x`、净效率 `+58.3%`、`input_factor = 0.800`；`owner_household` 在 `1x/16x/128x/1024x` 财富下日消费支出 `243.9 → 987.9 → 2,933.0 → 11,881.5` 货币、`48.7x` 增长且主粮严格封顶 `1.23x`）。
+  - 新增契约测试 `economy_rebalance_contract_test.gd` 21/21 通过（4 项软投入叠加实测 `1.3999x` 封顶；全 467 科技 `coke_ovens` 实测产出 `2.199x`、投入 `1.389x`、净效率 `+58.3%`、`input_factor = 0.800`；同一建筑在科技之上再叠 `+4.0` 城市商品产出加成后实测产出 `6.199x`，证明 `4.0x` 运行时封顶已移除而非被静默截断；`owner_household` 在 `1x/16x/128x/1024x` 财富下日消费支出 `243.9 → 987.9 → 2,933.0 → 11,881.5` 货币、`48.7x` 增长且主粮严格封顶 `1.23x`）。
   - 运行时回归与确定性：`consumption_satisfaction_runtime_test.gd`（49/49）、`economy_birth_runtime_test.gd`（65/65）、`economy_cadence_runtime_test.gd`、`starter_settlement_soak_test.gd`（180 天 16/16）、`check_golden_determinism.py`（2 轮 0 差异）、`check_replay_matrix.py`（默认边界与军事续跑矩阵全部 0 差异）通过。
+  - 取消封顶复验（2026-11-27）：`template_debug` / `template_release` 双目标重建通过；`economy_rebalance_contract_test.gd` 21/21、`economy_birth_runtime_test.gd` 65/65、`economy_cadence_runtime_test.gd`、`check_golden_determinism.py`（2 轮 0 差异）通过；CI 静态护栏 12 项 0 违规。`check_size_ratchet` 报出的 6 个超长文件、以及 3 项依赖 `clang++`/`g++`、symlink 权限、`os.getloadavg` 的 Windows 不可运行项，均为既有环境或工作区问题，不在本次改动文件内。
   - 5 年（1825 天）正式开局浸泡（`economy_balance_soak.gd`，`seed=20260727`，`ok=true`、`coverage_ok=true`、全期三账误差均为 `0/0/0`）：第 1825 天总库存由基线（2026-11-08）`51,337,024` 降至 `3,415,964`（`-93.3%`），“应收尽收”占比由 `22.4%` 降至 `0.7%`，日产出稳定在 `87,593`（基线 `507,083`）；当前石器时代 `wild_game` 生态密度与 `starvation_satisfaction_threshold = 0.75` 叠加使前 5 年人口自 `160` 缓降至 `59`（0 饥荒报错，满意度从第 30 天 `0.196` 持续回升至第 1825 天 `0.532`），后续可结合开局规划器生态密度估算继续优化。
 
 ## PC-Web 画质对齐桌面高画质与原生 HiDPI（2026-11-26）

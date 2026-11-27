@@ -4,6 +4,7 @@ const InspectorTaxDrafts = preload("res://scripts/ui/components/inspector_tax_dr
 
 const InspectorStructure = preload("res://scripts/ui/components/inspector_structure.gd")
 const InspectorCategoryPatch = preload("res://scripts/ui/components/inspector_category_patch.gd")
+const InspectorListWing = preload("res://scripts/ui/components/inspector_list_wing.gd")
 
 
 const ResourceListScene := preload("res://scenes/ui/resource_list.tscn")
@@ -45,6 +46,7 @@ signal population_discontent_changed(cell_index: int, discontent: Dictionary)
 signal tab_data_requested(tab_id: String)
 signal object_details_requested(request: Dictionary)
 signal detail_visibility_changed(open: bool)
+signal list_wing_visibility_changed(open: bool)
 signal family_colonization_requested(family_handle: int, source_cell: int)
 signal construction_page_requested(sector: String, search: String, sort: String, offset: int)
 signal construction_requested(request: Dictionary)
@@ -68,7 +70,11 @@ var _current_tab := "geography"
 var _tabs_signature_cache := ""
 var _cell_index := -1
 var _scroll_by_tab: Dictionary = {}
+var _list_scroll_by_tab: Dictionary = {}
 var _compact_detail := false
+var _list_wing_enabled := false
+var _has_list_wing := false
+var _list_wing_notified := false
 
 var _kicker_label: Label
 var _title_label: Label
@@ -79,6 +85,9 @@ var _kpi_cards: Array = []
 var _chapter_nav: DossierChapterNav
 var _scroll: ScrollContainer
 var _content_box: VBoxContainer
+var _list_shell: PanelContainer
+var _list_scroll: ScrollContainer
+var _list_content: VBoxContainer
 var _inspector_root: VBoxContainer
 var _detail_shell: PanelContainer
 var _object_detail_dialog: ObjectDetailDialog
@@ -149,6 +158,9 @@ func _ready() -> void:
 	_chapter_nav = get_node_or_null("%ChapterNav") as DossierChapterNav
 	_scroll = get_node_or_null("%Scroll") as ScrollContainer
 	_content_box = get_node_or_null("%ContentBox") as VBoxContainer
+	_list_shell = get_node_or_null("%ListShell") as PanelContainer
+	_list_scroll = get_node_or_null("%ListScroll") as ScrollContainer
+	_list_content = get_node_or_null("%ListContent") as VBoxContainer
 	_inspector_root = get_node_or_null("%InspectorRoot") as VBoxContainer
 	_detail_shell = get_node_or_null("%DetailShell") as PanelContainer
 	_object_detail_dialog = get_node_or_null("%ObjectDetail") as ObjectDetailDialog
@@ -241,6 +253,7 @@ func set_model_for_selection(model: Dictionary) -> void:
 	var cell_changed := new_cell_index != _cell_index
 	if cell_changed:
 		_scroll_by_tab.clear()
+		_list_scroll_by_tab.clear()
 		_pending_tax.clear()
 		_draft_tax.clear()
 		_deferred_object_detail_payload.clear()
@@ -251,6 +264,8 @@ func set_model_for_selection(model: Dictionary) -> void:
 		_cell_index = new_cell_index
 		if _scroll != null:
 			_scroll.scroll_vertical = 0
+		if _list_scroll != null:
+			_list_scroll.scroll_vertical = 0
 	_model = model
 	if _model.is_empty():
 		_publish_population_discontent({})
@@ -349,20 +364,31 @@ func reset_for_world() -> void:
 	_current_tab = "geography"
 	_publish_population_discontent({})
 	_scroll_by_tab.clear()
+	_list_scroll_by_tab.clear()
 	_pending_tax.clear()
 	_draft_tax.clear()
 	close_detail(false)
 	if _military_dossier != null:
 		_military_dossier.clear()
 	_directory_available = true
+	_has_list_wing = false
 	_tabs_signature_cache = ""
 	_section_collapsed.clear()
 	_kpi_values.clear()
 	_clear_block_controls()
+	if _list_content != null:
+		for child in _list_content.get_children():
+			_list_content.remove_child(child)
+			child.queue_free()
+	if _list_shell != null:
+		_list_shell.visible = false
+	_notify_list_wing_changed()
 	if _chapter_nav != null:
 		_chapter_nav.set_chapters([], "")
 	if _scroll != null:
 		_scroll.scroll_vertical = 0
+	if _list_scroll != null:
+		_list_scroll.scroll_vertical = 0
 
 
 func visible_node_count() -> int:
@@ -470,6 +496,10 @@ func _render_content(reset_scroll: bool) -> void:
 	for child in _content_box.get_children():
 		_content_box.remove_child(child)
 		child.queue_free()
+	if _list_content != null:
+		for child in _list_content.get_children():
+			_list_content.remove_child(child)
+			child.queue_free()
 	_clear_block_controls()
 	_tax_context = {}
 	_tax_editors.clear()
@@ -482,8 +512,13 @@ func _render_content(reset_scroll: bool) -> void:
 	_build_category_content(data)
 	_rebuild_tax_editor_registry()
 	_restore_tax_drafts()
-	if reset_scroll and _scroll != null:
-		_scroll.scroll_vertical = 0
+	if reset_scroll:
+		if _scroll != null:
+			_scroll.scroll_vertical = 0
+		if _list_scroll != null:
+			_list_scroll.scroll_vertical = 0
+	_sync_split_layout()
+	_notify_list_wing_changed()
 	_publish_population_discontent(data)
 
 
@@ -511,14 +546,27 @@ func _restore_tax_drafts() -> void:
 
 func _build_category_content(data: Dictionary) -> void:
 	_tax_context = data.get("tax_context", {})
-	var root_data := data.duplicate(false)
+	var split := InspectorListWing.split_category(_current_tab, data)
+	_has_list_wing = bool(split.get("has_left", false))
+	var use_wing := _has_list_wing and _list_wing_enabled and not _compact_detail and _list_content != null
+	var right_source: Dictionary = split.get("right", data) if use_wing else data
+	var root_data := right_source.duplicate(false)
 	root_data.erase("sections")
 	root_data.erase("tax_context")
 	_build_category_block(_content_box, root_data)
-	for raw_section in data.get("sections", []):
+	for raw_section in right_source.get("sections", []):
 		var section: Dictionary = raw_section
-		var body := _add_collapsible_section(section)
+		var body := _add_collapsible_section(section, _content_box)
 		_build_category_block(body, section)
+	if use_wing:
+		var left_source: Dictionary = split.get("left", {})
+		var left_root := left_source.duplicate(false)
+		left_root.erase("sections")
+		_build_category_block(_list_content, left_root)
+		for raw_section in left_source.get("sections", []):
+			var section: Dictionary = raw_section
+			var body := _add_collapsible_section(section, _list_content)
+			_build_category_block(body, section)
 	_build_page_tax_section(_tax_context)
 
 
@@ -575,7 +623,7 @@ func _build_category_block(host: Control, data: Dictionary) -> void:
 		row.set_badges(badges)
 		_badge_row = row
 
-	if data.has("building_rows") and data.has("construction_entry"):
+	if data.has("construction_entry"):
 		_build_construction_entry(host, data.get("construction_entry", {}))
 
 	# 军事页签：一整张撕纸台账。驻军条 / 部队 / 训练 / 三行官营建筑都由它自绘，
@@ -1058,7 +1106,7 @@ func _apply_category_block_patch(data: Dictionary) -> void:
 		data)
 
 
-func _add_collapsible_section(section: Dictionary) -> VBoxContainer:
+func _add_collapsible_section(section: Dictionary, host: Control = null) -> VBoxContainer:
 	var section_id := String(section.get("id", "section"))
 	var key := "%s:%s" % [_current_tab, section_id]
 	var collapsed := bool(_section_collapsed.get(key, section.get("collapsed", false)))
@@ -1089,7 +1137,8 @@ func _add_collapsible_section(section: Dictionary) -> VBoxContainer:
 		if expanded:
 			UIAnimation.crossfade(body, UITokens.ANIM_FAST)
 	)
-	_content_box.add_child(root)
+	var parent_box: Control = host if host != null else _content_box
+	parent_box.add_child(root)
 	_section_refs[section_id] = refs
 	return body
 
@@ -1321,8 +1370,25 @@ func detail_open() -> bool:
 
 
 func set_compact_detail_mode(compact: bool) -> void:
+	if _compact_detail == compact:
+		_sync_split_layout()
+		return
 	_compact_detail = compact
-	_sync_split_layout()
+	if _has_list_wing and _list_wing_enabled and not _model.is_empty():
+		_render_content(false)
+	else:
+		_sync_split_layout()
+
+
+func set_list_wing_enabled(enabled: bool) -> void:
+	if _list_wing_enabled == enabled:
+		_sync_split_layout()
+		return
+	_list_wing_enabled = enabled
+	if _has_list_wing and not _compact_detail and not _model.is_empty():
+		_render_content(false)
+	else:
+		_sync_split_layout()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -1383,6 +1449,7 @@ func _open_building_workspace() -> void:
 func _show_detail_shell() -> void:
 	_detail_shell.visible = true
 	_sync_split_layout()
+	_list_wing_notified = has_list_wing()
 	detail_visibility_changed.emit(true)
 
 
@@ -1399,6 +1466,7 @@ func _on_detail_closed() -> void:
 	_detail_shell.visible = false
 	_set_family_chrome(false)
 	_sync_split_layout()
+	_list_wing_notified = has_list_wing()
 	_inspector_root.visible = true
 	if restore_family_focus and _family_list != null:
 		_family_list.focus_selected()
@@ -1432,22 +1500,47 @@ func _sync_split_layout() -> void:
 		split.clip_contents = not _family_chrome_active
 	var inspecting := _detail_shell.visible
 	_detail_shell.clip_contents = not _family_chrome_active
+	var wing_visible := _list_shell != null and _has_list_wing and _list_wing_enabled \
+		and not inspecting and not _compact_detail and _directory_available
+	if _list_shell != null:
+		_list_shell.visible = wing_visible
+		_list_shell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_list_shell.size_flags_stretch_ratio = 1.0
+	var has_left := inspecting or wing_visible
 	# 家族栏始终保留右侧目录；普通对象详情仍沿用窄窗独占策略。
 	var family_open := _family_workspace != null and _family_workspace.visible
 	var can_split := family_open or (not _compact_detail \
-		and size.x >= SPLIT_DETAIL_MIN_WIDTH)
+		and (size.x >= SPLIT_DETAIL_MIN_WIDTH or wing_visible))
 	var show_dossier := (not inspecting or can_split) and _directory_available
 	_inspector_root.visible = show_dossier
-	_inspector_root.size_flags_horizontal = Control.SIZE_FILL if inspecting \
+	_inspector_root.size_flags_horizontal = Control.SIZE_FILL if has_left \
 		else Control.SIZE_EXPAND_FILL
-	_inspector_root.size_flags_stretch_ratio = 0.0 if inspecting else 1.0
+	_inspector_root.size_flags_stretch_ratio = 0.0 if has_left else 1.0
 	_detail_shell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_detail_shell.size_flags_stretch_ratio = 1.0
+
+
+func has_list_wing() -> bool:
+	return _has_list_wing and not detail_open() and _directory_available
+
+
+func list_wing_open() -> bool:
+	return _list_shell != null and _list_shell.visible
+
+
+func _notify_list_wing_changed() -> void:
+	var active := has_list_wing()
+	if active == _list_wing_notified:
+		return
+	_list_wing_notified = active
+	list_wing_visibility_changed.emit(active)
 
 
 func _on_tab_selected(tab_id: String) -> void:
 	if _scroll != null:
 		_scroll_by_tab[_current_tab] = _scroll.scroll_vertical
+	if _list_scroll != null:
+		_list_scroll_by_tab[_current_tab] = _list_scroll.scroll_vertical
 	close_detail()
 	_current_tab = tab_id
 	if _chapter_nav != null:
@@ -1459,8 +1552,12 @@ func _on_tab_selected(tab_id: String) -> void:
 
 
 func _restore_tab_scroll(tab_id: String) -> void:
-	if _scroll != null and tab_id == _current_tab:
+	if tab_id != _current_tab:
+		return
+	if _scroll != null:
 		_scroll.scroll_vertical = int(_scroll_by_tab.get(tab_id, 0))
+	if _list_scroll != null:
+		_list_scroll.scroll_vertical = int(_list_scroll_by_tab.get(tab_id, 0))
 
 
 func _request_tab_data_if_missing(tab_id: String) -> void:

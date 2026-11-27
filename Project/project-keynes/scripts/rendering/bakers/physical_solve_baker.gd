@@ -1128,10 +1128,16 @@ static func _ensure_ocean_pixel_to_cell_index(baker: MapBaker, map: MapData, wor
 		return
 	baker._ocean_pixel_to_cell_idx = PackedInt32Array()
 	baker._ocean_pixel_to_cell_idx.resize(n)
-	var lookup := world.pixel_to_cell_lookup
-	for i in range(n):
-		var cell = lookup[i] if i < lookup.size() else null
-		baker._ocean_pixel_to_cell_idx[i] = map.index_of(cell) if cell != null else -1
+	if world.pixel_owner_indices.size() == n:
+		var owners := world.pixel_owner_indices
+		var present := world.pixel_owner_present
+		for i in range(n):
+			baker._ocean_pixel_to_cell_idx[i] = int(owners[i]) if (present.size() <= i or present[i] != 0) else -1
+	else:
+		var lookup := world.pixel_to_cell_lookup
+		for i in range(n):
+			var cell = lookup[i] if i < lookup.size() else null
+			baker._ocean_pixel_to_cell_idx[i] = map.index_of(cell) if cell != null else -1
 	baker._ocean_pixel_cache_key = cache_key
 
 

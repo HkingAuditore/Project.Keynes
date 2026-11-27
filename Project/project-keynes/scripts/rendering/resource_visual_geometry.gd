@@ -455,19 +455,30 @@ static func _candidate_allowed(context: Context, point: Vector2, family: int, so
 		var terrain := context.world.sample_biome(point)
 		water = terrain in [TerrainType.TERRAIN.OCEAN, TerrainType.TERRAIN.COAST,
 			TerrainType.TERRAIN.LAKE, TerrainType.TERRAIN.SEA_ICE]
-	elif context.world != null and not context.world.pixel_to_cell_lookup.is_empty():
+	elif context.world != null and (not context.world.pixel_owner_indices.is_empty() \
+			or not context.world.pixel_to_cell_lookup.is_empty()):
 		# Active tiled rendering can retire biome_buffer. Its static pixel→cell
-		# lookup is still authoritative; an empty old atlas never means all land.
+		# lookup (or compact numeric owner snapshot) is still authoritative;
+		# an empty old atlas never means all land.
 		var uv := context.world._world_to_uv(point)
 		var x := clampi(roundi(uv.x * float(context.world.derived_size.x - 1)), 0, context.world.derived_size.x - 1)
 		var y := clampi(roundi(uv.y * float(context.world.derived_size.y - 1)), 0, context.world.derived_size.y - 1)
 		var index := y * context.world.derived_size.x + x
-		if index < 0 or index >= context.world.pixel_to_cell_lookup.size():
-			return false
-		var owner_cell: HexCell = context.world.pixel_to_cell_lookup[index]
-		if owner_cell == null:
-			return false
-		var owner_index := int(owner_cell.index)
+		var owner_index := -1
+		if not context.world.pixel_owner_indices.is_empty():
+			if index < 0 or index >= context.world.pixel_owner_indices.size():
+				return false
+			if index < context.world.pixel_owner_present.size() \
+					and context.world.pixel_owner_present[index] == 0:
+				return false
+			owner_index = int(context.world.pixel_owner_indices[index])
+		else:
+			if index < 0 or index >= context.world.pixel_to_cell_lookup.size():
+				return false
+			var owner_cell: HexCell = context.world.pixel_to_cell_lookup[index]
+			if owner_cell == null:
+				return false
+			owner_index = int(owner_cell.index)
 		water = owner_index >= 0 and owner_index < context.map.is_water_arr.size() and context.map.is_water_arr[owner_index] != 0
 	if family == 3:
 		return water or flow > 0.78

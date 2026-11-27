@@ -40,7 +40,7 @@ static func prepare_sea_ice_fraction_atlas(baker: MapBaker, map: MapData, world:
 	var n: int = W * H
 	if n <= 0:
 		return out
-	if world.pixel_to_cell_lookup.size() != n:
+	if world.pixel_to_cell_lookup.size() != n and world.pixel_owner_indices.size() != n:
 		push_warning("MapBaker.prepare_sea_ice_fraction_atlas: pixel_to_cell_lookup missing; falling back to zeros")
 		var zero_buf := PackedByteArray()
 		zero_buf.resize(n)
@@ -132,6 +132,12 @@ static func ensure_sea_ice_pixel_to_cell_index(baker: MapBaker, map: MapData, wo
 		return
 	baker._sea_ice_pixel_to_cell_idx = PackedInt32Array()
 	baker._sea_ice_pixel_to_cell_idx.resize(n)
+	if world.pixel_owner_indices.size() == n:
+		var owners := world.pixel_owner_indices
+		var present := world.pixel_owner_present
+		for i in range(n):
+			baker._sea_ice_pixel_to_cell_idx[i] = int(owners[i]) if (present.size() <= i or present[i] != 0) else -1
+		return
 	var lookup := world.pixel_to_cell_lookup
 	for i in range(n):
 		var cell = lookup[i]

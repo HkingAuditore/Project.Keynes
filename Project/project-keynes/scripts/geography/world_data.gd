@@ -381,6 +381,15 @@ func publish_pixel_lookup(lookup: Array, indices: PackedInt64Array,
 	pixel_owner_present = present
 
 
+## Retire the ~28 MB Array[HexCell] object lookup after baking while keeping the
+## compact numeric pixel_owner_indices / pixel_owner_present snapshot intact.
+## Uses in-place clear() to avoid triggering the setter's invalidation hook.
+func retire_pixel_object_lookup() -> void:
+	if pixel_owner_indices.is_empty():
+		return
+	pixel_to_cell_lookup.clear()
+
+
 # Both native terrain paths already build their object lookup from these rows.
 # Build its numeric snapshot in that same loop, then retain the existing CSR
 # reverse-list publication order. No renderer slice scans the raster to convert it.

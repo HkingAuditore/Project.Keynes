@@ -100,25 +100,27 @@ func write_slot(slot_id: String, header_fields: Dictionary, sections: Dictionary
 		return _error("slot_invalid", "存档槽位无效。")
 	_ensure_directory()
 	var section_table: Array = []
-	var normalized_sections: Dictionary = sections.duplicate(true)
-	# PKSV v2 always carries the runtime section.  Low-level repository tests and
-	# legacy callers may omit it; an empty section keeps the container shape
-	# valid while the runtime coordinator supplies the authoritative payload.
-	if not normalized_sections.has("simulation_runtime"):
-		normalized_sections["simulation_runtime"] = PackedByteArray()
-	if normalized_sections.size() > ContainerReader.MAX_SECTIONS:
+	var has_runtime := sections.has("simulation_runtime")
+	var section_count := sections.size() + (0 if has_runtime else 1)
+	if section_count > ContainerReader.MAX_SECTIONS:
 		return _error("save_too_large", "存档数据数量超过容量限制。")
 	var total_bytes := 0
 	var blocks: Array[PackedByteArray] = []
 	var offset := 0
-	var section_ids := normalized_sections.keys()
+	var section_ids := sections.keys()
+	# PKSV v2 always carries the runtime section.  Low-level repository tests and
+	# legacy callers may omit it; an empty section keeps the container shape
+	# valid while the runtime coordinator supplies the authoritative payload.
+	if not has_runtime:
+		section_ids.append("simulation_runtime")
 	section_ids.sort()
 	for raw_id in section_ids:
 		if not raw_id is String or raw_id.is_empty():
 			return _error("save_section_table_invalid", "存档数据名称无效。")
 		var section_id := String(raw_id)
-		var bytes: PackedByteArray = normalized_sections[raw_id] if normalized_sections[raw_id] is PackedByteArray \
-			else var_to_bytes(normalized_sections[raw_id])
+		var raw_value = sections[raw_id] if sections.has(raw_id) else PackedByteArray()
+		var bytes: PackedByteArray = raw_value if raw_value is PackedByteArray \
+			else var_to_bytes(raw_value)
 		if bytes.size() > ContainerReader.MAX_SECTION_BYTES \
 				or bytes.size() > ContainerReader.MAX_TOTAL_BYTES - total_bytes:
 			return _error("save_too_large", "存档数据超过容量限制。")
@@ -166,7 +168,10 @@ func write_slot(slot_id: String, header_fields: Dictionary, sections: Dictionary
 		file.store_buffer(block)
 	file.flush()
 	file.close()
-	var verified := _read_container(temp_path, true)
+	# Release compressed blocks before read-back verification, and validate
+	# sections streaming one-by-one without retaining all decompressed payloads.
+	blocks.clear()
+	var verified := _read_container(temp_path, false, true)
 	if not bool(verified.get("ok", false)):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(temp_path))
 		return _error("save_verify_failed", "临时存档校验失败：%s" % String(verified.get("message", "")))
