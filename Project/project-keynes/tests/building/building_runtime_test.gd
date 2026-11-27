@@ -2834,7 +2834,7 @@ func _test_high_unemployment_investment_catchup(
 	_set_building_first_output_quantity(catalog, knapping_id, 100)
 	_strip_building_inputs(catalog, knapping_id)
 	_ensure_building_input(catalog, knapping_id, goods.find("flint"), 1, 65536)
-	_pin_household_need_good(catalog, "household_goods", tool_good, 20000)
+	_pin_household_need_good(catalog, "household_goods", tool_good, 3000)
 	_pin_household_need_good(catalog, "staple_food", goods.find("game_meat"), 1000)
 	_pin_household_need_good(catalog, "home_energy", goods.find("logs"), 1000)
 	# Hold output prices while testing job creation; market price adjustment
@@ -4296,7 +4296,7 @@ func _test_all_survival_food_outputs_are_retained(catalog: Dictionary,
 	var output_offsets: PackedInt32Array = fixture_catalog.building_output_offsets
 	var output_quantities: PackedInt64Array = fixture_catalog.building_output_quantities.duplicate()
 	output_quantities[int(output_offsets[farm_id])] = 1
-	output_quantities[int(output_offsets[farm_id]) + 1] = 1000
+	output_quantities[int(output_offsets[farm_id]) + 1] = 1500
 	fixture_catalog.building_output_quantities = output_quantities
 	var profile := source_profile.duplicate(true)
 	profile.starvation_death_rate_q32 = 0

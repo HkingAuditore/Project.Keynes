@@ -1975,15 +1975,15 @@ Dictionary DCWorldExt::get_family_colonization_quotes(
         out["nonbinding"] = false;
         return out;
     }
-    const Variant visible_variant = _map_data->get(StringName("visible_arr"));
-    if (visible_variant.get_type() != Variant::PACKED_BYTE_ARRAY) {
+    const Variant explored_variant = _map_data->get(StringName("explored_arr"));
+    if (explored_variant.get_type() != Variant::PACKED_BYTE_ARRAY) {
         Dictionary out;
         out["ok"] = false;
         out["code"] = "colonization_visibility_unavailable";
         runtime_from(_economy_runtime)->fill_colonization_query_flags(out);
         return out;
     }
-    const PackedByteArray visible = visible_variant;
+    const PackedByteArray visible = explored_variant;
     const uint64_t revision = static_cast<uint64_t>(static_cast<int64_t>(
         _map_data->get(StringName("vision_revision"))));
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
@@ -2032,12 +2032,12 @@ Dictionary DCWorldExt::start_family_colonization(
         return forward_economy_boundary_request(*_runtime_host, std::move(request));
     }
     if (_economy_runtime == nullptr || _map_data == nullptr) return unavailable();
-    const Variant visible_variant = _map_data->get(StringName("visible_arr"));
-    if (visible_variant.get_type() != Variant::PACKED_BYTE_ARRAY) {
+    const Variant explored_variant = _map_data->get(StringName("explored_arr"));
+    if (explored_variant.get_type() != Variant::PACKED_BYTE_ARRAY) {
         Dictionary out; out["ok"] = false;
         out["code"] = "colonization_visibility_unavailable"; return out;
     }
-    const PackedByteArray visible = visible_variant;
+    const PackedByteArray visible = explored_variant;
     const uint64_t revision = static_cast<uint64_t>(static_cast<int64_t>(
         _map_data->get(StringName("vision_revision"))));
     // A running worker rarely yields the economy boundary to this thread, so

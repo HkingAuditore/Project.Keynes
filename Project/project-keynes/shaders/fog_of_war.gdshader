@@ -192,8 +192,10 @@ uniform float axial_tilt_rad : hint_range(0.0, 0.7854) = 0.4101523;
 // world_map 的早退分支输出与 unexplored_color 匹配的常量色；一旦开了光照（q>=1）
 // 两者必然对不齐，所以早退只在 q0 允许（见 FogOfWarLayer）。
 uniform vec3 unexplored_color : source_color = vec3(0.52, 0.56, 0.64);
-uniform vec3 explored_color : source_color = vec3(0.74, 0.78, 0.84);
-uniform float explored_alpha : hint_range(0.0, 1.0) = 0.46;
+// 已探索但离开当前视野的格子要明显区别于完全可见区域。提高薄纱不透明度，
+// 同时把颜色压向冷灰蓝，让远景仍能读出地形轮廓但不会误认为已经在视野内。
+uniform vec3 explored_color : source_color = vec3(0.62, 0.69, 0.78);
+uniform float explored_alpha : hint_range(0.0, 1.0) = 0.64;
 // 未探索区云缝下面的低层层云。它承担玩法遮挡，不应被画成黑色峡谷。
 uniform vec3 deck_color : source_color = vec3(0.58, 0.65, 0.76);
 // 边界噪声位移（hex 直径倍数）。让迷雾边缘不贴着 hex 轮廓走。

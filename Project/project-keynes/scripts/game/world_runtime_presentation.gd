@@ -243,6 +243,16 @@ func _bind_settlement_labels() -> void:
 		map_wrap_period_x(), _fog_of_war_enabled)
 
 
+func sync_settlement_labels(force_full: bool = false) -> void:
+	if _settlement_label_layer != null:
+		_settlement_label_layer.sync_from_runtime(force_full)
+
+
+func set_player_capital_cell(cell_index: int) -> void:
+	if _settlement_label_layer != null:
+		_settlement_label_layer.set_player_capital_cell(cell_index)
+
+
 ## G4 moved host responsibilities
 func on_season_changed(host, _season_idx: int) -> void:
 	if host._generator == null or host._current_map == null or host._world_data == null:

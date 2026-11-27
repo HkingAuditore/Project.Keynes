@@ -152,6 +152,9 @@ D+1 待结算维护回执，验证 PKMI v4 往返、同日防重、国库现金�
 | 22 `TRANSFER_GOODS` | Country | 24 `TRANSFER_GOODS_BETWEEN_COUNTRIES` | 同上，`domain` = good |
 | 23 `ANNEX_COUNTRY` | Country | 27 `ANNEX_COUNTRY` | target = 受害国，`cell`/`aux` = 吞并国 slot/generation |
 
+自动军饷模式在军事摘要采集阶段解析 `soldier` 职业缓存，再读取士兵生活成本。该阶段可能早于
+逐格军事视图采集，不能直接读取尚未初始化的职业缓存，否则生活成本与 `PAY_WAGES` 需求会被误判为 0。
+
 ### 5.1 回执
 
 `_military_pending_intents` 是跨日集合，行状态 `receipt_pending`：1 等待、2 成功待发、3 失败待发

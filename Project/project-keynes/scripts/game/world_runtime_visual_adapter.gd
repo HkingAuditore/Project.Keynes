@@ -131,6 +131,7 @@ func _defer_settlement_labels_after_ready(host) -> void:
 func _bind_settlement_labels(host) -> void:
 	host._bind_presentation_resources()
 	host._presentation._bind_settlement_labels()
+	host._presentation.set_player_capital_cell(_resolve_player_start_cell(host))
 
 
 # ─── 国界线与视野迷雾 ─────────────────────────────────────────────────
@@ -324,6 +325,8 @@ func finalize_save_restore_visuals(host) -> Dictionary:
 		push_warning("[fog] legacy save without native vision checkpoint: " + legacy_notice)
 		if host._ui_manager != null and host._ui_manager.has_method("show_transient_message"):
 			host._ui_manager.show_transient_message(legacy_notice)
+	host._presentation.set_player_capital_cell(start_cell)
+	host._presentation.sync_settlement_labels(true)
 	return refresh_country_visuals(host, "save_restore_finalized")
 
 

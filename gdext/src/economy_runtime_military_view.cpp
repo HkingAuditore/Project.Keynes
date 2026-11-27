@@ -213,7 +213,13 @@ void NativeEconomyRuntime::military_read_equipment_production(
 int64_t NativeEconomyRuntime::military_soldier_living_cost(
         int32_t country_slot) const {
     (void)country_slot;  // the soldier plan is country independent in v1
-    const int32_t soldier_profession = _soldier_profession_id;
+    // Resolve the cached profession through the same lazy initializer used by
+    // the other military view helpers.  This method is called directly by the
+    // military digest during wage planning, before `military_read_cell_view`
+    // is guaranteed to have initialized the cache.  Reading the raw member
+    // here leaves it at -1 on a fresh runtime and silently makes AUTO wages 0.
+    const int32_t soldier_profession = const_cast<NativeEconomyRuntime *>(this)
+        ->military_soldier_profession();
     if (soldier_profession < 0) return 0;
     // Soldier cohorts exist per (soldier, ethnicity); the plan is identical for
     // every ethnicity, so the first resolvable signature is representative.

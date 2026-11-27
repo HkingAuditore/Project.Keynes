@@ -318,9 +318,7 @@
 				"route.geography.coast"
 			],
 			"hard_prerequisite_ids": [],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": true,
@@ -552,9 +550,7 @@
 			"hard_prerequisite_ids": [
 				"tech.early_knowledge_institution"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -1185,9 +1181,7 @@
 			"hard_prerequisite_ids": [
 				"tech.gathering"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -1414,7 +1408,7 @@
 				{
 					"stat": "country.output.good.prepared_staples_factor",
 					"operation": 0.0,
-					"value": 0.12,
+					"value": 0.059,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.prepared_staples_factor",
 					"subject_display_name": "prepared_staples",
@@ -1426,7 +1420,7 @@
 				{
 					"stat": "country.output.family.staple_preparation_factor",
 					"operation": 0.0,
-					"value": 0.336,
+					"value": 0.084,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.staple_preparation_factor",
 					"subject_display_name": "staple_preparation",
@@ -1528,9 +1522,7 @@
 			"hard_prerequisite_ids": [
 				"tech.hunting"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -1540,7 +1532,7 @@
 				{
 					"stat": "country.output.family.hunting_factor",
 					"operation": 0.0,
-					"value": 0.84,
+					"value": 0.6,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.hunting_factor",
 					"subject_display_name": "hunting",
@@ -1655,9 +1647,7 @@
 			"hard_prerequisite_ids": [
 				"tech.clay_identification"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -1830,7 +1820,7 @@
 				{
 					"stat": "country.output.family.specialty_commodity_crops_factor",
 					"operation": 0.0,
-					"value": 0.264,
+					"value": 0.066,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.specialty_commodity_crops_factor",
 					"subject_display_name": "specialty_commodity_crops",
@@ -1931,9 +1921,7 @@
 			"hard_prerequisite_ids": [
 				"tech.spice_identification"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -1943,7 +1931,7 @@
 				{
 					"stat": "country.output.terrain.jungle.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.148,
+					"value": 0.059,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.jungle.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -2192,9 +2180,7 @@
 			"hard_prerequisite_ids": [
 				"tech.gold_placer_identification"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": true,
@@ -2435,9 +2421,7 @@
 			"hard_prerequisite_ids": [
 				"tech.silver_vein_identification"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": true,
@@ -2716,9 +2700,7 @@
 				"tech.food_storage",
 				"tech.fire_control"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -2728,7 +2710,7 @@
 				{
 					"stat": "country.output.terrain.floodplain.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.149,
+					"value": 0.066,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.floodplain.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -2980,7 +2962,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.038,
+					"value": 0.023,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -2992,7 +2974,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.03,
+					"value": -0.009,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -3089,7 +3071,7 @@
 				{
 					"stat": "country.output.good.corn_grain_factor",
 					"operation": 0.0,
-					"value": 0.12,
+					"value": 0.056,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.corn_grain_factor",
 					"subject_display_name": "corn_grain",
@@ -3163,9 +3145,7 @@
 				"tech.maize_identification",
 				"tech.gathering"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -3305,7 +3285,7 @@
 				{
 					"stat": "country.output.good.wheat_grain_factor",
 					"operation": 0.0,
-					"value": 0.12,
+					"value": 0.047,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.wheat_grain_factor",
 					"subject_display_name": "wheat_grain",
@@ -3379,9 +3359,7 @@
 				"tech.wheat_identification",
 				"tech.gathering"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -3521,7 +3499,7 @@
 				{
 					"stat": "country.output.good.rice_grain_factor",
 					"operation": 0.0,
-					"value": 0.12,
+					"value": 0.068,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.rice_grain_factor",
 					"subject_display_name": "rice_grain",
@@ -3692,9 +3670,7 @@
 				"tech.potato_identification",
 				"tech.gathering"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -3811,9 +3787,7 @@
 			"hard_prerequisite_ids": [
 				"tech.wild_tuber_collection"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -3835,7 +3809,7 @@
 				{
 					"stat": "country.output.good.prepared_staples_factor",
 					"operation": 0.0,
-					"value": 0.12,
+					"value": 0.059,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.prepared_staples_factor",
 					"subject_display_name": "prepared_staples",
@@ -3847,7 +3821,7 @@
 				{
 					"stat": "country.output.family.staple_preparation_factor",
 					"operation": 0.0,
-					"value": 0.336,
+					"value": 0.084,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.staple_preparation_factor",
 					"subject_display_name": "staple_preparation",
@@ -3949,7 +3923,7 @@
 				{
 					"stat": "country.output.family.specialty_commodity_crops_factor",
 					"operation": 0.0,
-					"value": 0.264,
+					"value": 0.066,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.specialty_commodity_crops_factor",
 					"subject_display_name": "specialty_commodity_crops",
@@ -4036,9 +4010,7 @@
 				"tech.cotton_identification",
 				"tech.gathering"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -4048,7 +4020,7 @@
 				{
 					"stat": "country.output.terrain.jungle.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.148,
+					"value": 0.059,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.jungle.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -4189,7 +4161,7 @@
 				{
 					"stat": "country.output.terrain.grassland.extractive_factor",
 					"operation": 0.0,
-					"value": 0.148,
+					"value": 0.07,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.grassland.extractive_factor",
 					"subject_display_name": "extractive",
@@ -4201,7 +4173,7 @@
 				{
 					"stat": "country.output.landform.plain.manufacturing_factor",
 					"operation": 0.0,
-					"value": 0.54,
+					"value": 0.257,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.plain.manufacturing_factor",
 					"subject_display_name": "manufacturing",
@@ -4277,9 +4249,7 @@
 				"tech.flax_identification",
 				"tech.gathering"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -4429,7 +4399,7 @@
 				{
 					"stat": "country.output.family.cloth_weaving_factor",
 					"operation": 0.0,
-					"value": 0.288,
+					"value": 0.072,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.cloth_weaving_factor",
 					"subject_display_name": "cloth_weaving",
@@ -4969,9 +4939,7 @@
 				"tech.medicinal_herb_identification",
 				"tech.gathering"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -5097,7 +5065,7 @@
 				{
 					"stat": "country.output.terrain.swamp.extractive_factor",
 					"operation": 0.0,
-					"value": 0.45,
+					"value": 0.35,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.swamp.extractive_factor",
 					"subject_display_name": "extractive",
@@ -5225,9 +5193,7 @@
 				"tech.rice_identification",
 				"tech.reed_harvesting"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -5497,7 +5463,7 @@
 				{
 					"stat": "country.output.family.cloth_weaving_factor",
 					"operation": 0.0,
-					"value": 0.12,
+					"value": 0.03,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.cloth_weaving_factor",
 					"subject_display_name": "cloth_weaving",
@@ -5591,9 +5557,7 @@
 			"hard_prerequisite_ids": [
 				"tech.early_knowledge_institution"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -5617,7 +5581,7 @@
 				{
 					"stat": "country.output.family.research_institution_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.114,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.research_institution_factor",
 					"subject_display_name": "research_institution",
@@ -5629,7 +5593,7 @@
 				{
 					"stat": "country.output.knowledge_factor",
 					"operation": 0.0,
-					"value": 0.24,
+					"value": 0.17,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.knowledge_factor",
 					"subject_display_name": "knowledge",
@@ -5698,9 +5662,7 @@
 			"hard_prerequisite_ids": [
 				"tech.early_knowledge_institution"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -5782,9 +5744,7 @@
 			"hard_prerequisite_ids": [
 				"tech.early_knowledge_institution"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -5879,7 +5839,7 @@
 				{
 					"stat": "country.output.family.salt_extraction_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.24,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.salt_extraction_factor",
 					"subject_display_name": "salt_extraction",
@@ -6135,9 +6095,7 @@
 				"tech.deadwood_collection",
 				"tech.gathering"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -6371,7 +6329,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.05,
+					"value": -0.016,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -6501,9 +6459,7 @@
 			"hard_prerequisite_ids": [
 				"tech.stone_knapping"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -6513,7 +6469,7 @@
 				{
 					"stat": "country.output.family.construction_methods_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.147,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.construction_methods_factor",
 					"subject_display_name": "construction_methods",
@@ -6809,9 +6765,7 @@
 				"tech.clay_identification",
 				"tech.fire_control"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -6821,7 +6775,7 @@
 				{
 					"stat": "country.output.landform.hill.extractive_factor",
 					"operation": 0.0,
-					"value": 0.5,
+					"value": 0.2,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.hill.extractive_factor",
 					"subject_display_name": "extractive",
@@ -6951,9 +6905,7 @@
 			"hard_prerequisite_ids": [
 				"tech.early_knowledge_institution"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": true,
 			"is_era_key": false,
 			"is_starting": false,
@@ -6963,7 +6915,7 @@
 				{
 					"stat": "country.economy_output_factor",
 					"operation": 0.0,
-					"value": 0.05,
+					"value": 0.039,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.economy_output_factor",
 					"subject_display_name": "economy_output",
@@ -7464,7 +7416,7 @@
 				{
 					"stat": "country.output.terrain.grassland.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.146,
+					"value": 0.061,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.grassland.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -7618,9 +7570,7 @@
 			"hard_prerequisite_ids": [
 				"tech.natural_observation"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -7630,7 +7580,7 @@
 				{
 					"stat": "country.output.family.research_institution_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.114,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.research_institution_factor",
 					"subject_display_name": "research_institution",
@@ -7642,7 +7592,7 @@
 				{
 					"stat": "country.output.knowledge_factor",
 					"operation": 0.0,
-					"value": 0.24,
+					"value": 0.17,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.knowledge_factor",
 					"subject_display_name": "knowledge",
@@ -7714,9 +7664,7 @@
 				"tech.phenology_observation",
 				"tech.oral_memory_practice"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -7823,9 +7771,7 @@
 			"hard_prerequisite_ids": [
 				"tech.wild_maize_collection"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -7835,7 +7781,7 @@
 				{
 					"stat": "country.output.good.corn_grain_factor",
 					"operation": 0.0,
-					"value": 0.12,
+					"value": 0.056,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.corn_grain_factor",
 					"subject_display_name": "corn_grain",
@@ -7910,9 +7856,7 @@
 			"hard_prerequisite_ids": [
 				"tech.maize_seed_saving"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -7922,7 +7866,7 @@
 				{
 					"stat": "country.output.good.corn_grain_factor",
 					"operation": 0.0,
-					"value": 0.25,
+					"value": 0.118,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.corn_grain_factor",
 					"subject_display_name": "corn_grain",
@@ -7999,9 +7943,7 @@
 			"hard_prerequisite_ids": [
 				"tech.wild_wheat_collection"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -8011,7 +7953,7 @@
 				{
 					"stat": "country.output.good.wheat_grain_factor",
 					"operation": 0.0,
-					"value": 0.12,
+					"value": 0.047,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.wheat_grain_factor",
 					"subject_display_name": "wheat_grain",
@@ -8086,9 +8028,7 @@
 			"hard_prerequisite_ids": [
 				"tech.wheat_seed_saving"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -8098,7 +8038,7 @@
 				{
 					"stat": "country.output.good.wheat_grain_factor",
 					"operation": 0.0,
-					"value": 0.28,
+					"value": 0.109,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.wheat_grain_factor",
 					"subject_display_name": "wheat_grain",
@@ -8174,9 +8114,7 @@
 				"tech.tuber_storage",
 				"tech.gathering"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -8285,9 +8223,7 @@
 			"hard_prerequisite_ids": [
 				"tech.wild_rice_collection"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -8297,7 +8233,7 @@
 				{
 					"stat": "country.output.good.rice_grain_factor",
 					"operation": 0.0,
-					"value": 0.12,
+					"value": 0.068,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.rice_grain_factor",
 					"subject_display_name": "rice_grain",
@@ -8373,9 +8309,7 @@
 			"hard_prerequisite_ids": [
 				"tech.early_knowledge_institution"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -8458,9 +8392,7 @@
 				"tech.early_knowledge_institution",
 				"tech.herd_management"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -8567,9 +8499,7 @@
 			"hard_prerequisite_ids": [
 				"tech.composite_tools"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -8671,9 +8601,7 @@
 			"hard_prerequisite_ids": [
 				"tech.communal_specialization"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -9017,7 +8945,7 @@
 				{
 					"stat": "country.output.family.construction_methods_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.147,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.construction_methods_factor",
 					"subject_display_name": "construction_methods",
@@ -9293,7 +9221,7 @@
 				{
 					"stat": "country.output.family.copper_extraction_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.2,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.copper_extraction_factor",
 					"subject_display_name": "copper_extraction",
@@ -9432,9 +9360,7 @@
 				"tech.natural_copper_identification",
 				"tech.ground_stone_tools"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -9444,7 +9370,7 @@
 				{
 					"stat": "country.output.landform.mountain.extractive_factor",
 					"operation": 0.0,
-					"value": 0.162,
+					"value": 0.065,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.mountain.extractive_factor",
 					"subject_display_name": "extractive",
@@ -9608,9 +9534,7 @@
 				"tech.natural_copper_working",
 				"tech.fire_control"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -9620,7 +9544,7 @@
 				{
 					"stat": "country.output.family.copper_extraction_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.2,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.copper_extraction_factor",
 					"subject_display_name": "copper_extraction",
@@ -9993,9 +9917,7 @@
 			"hard_prerequisite_ids": [
 				"tech.crop_domestication"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -10005,7 +9927,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.113,
+					"value": 0.067,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -10105,9 +10027,7 @@
 				"tech.earth_building",
 				"tech.flint_identification"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -10290,7 +10210,7 @@
 				{
 					"stat": "country.output.good.rice_grain_factor",
 					"operation": 0.0,
-					"value": 0.14,
+					"value": 0.079,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.rice_grain_factor",
 					"subject_display_name": "rice_grain",
@@ -10302,7 +10222,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.132,
+					"value": 0.078,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -10409,9 +10329,7 @@
 			"hard_prerequisite_ids": [
 				"tech.composite_tools"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -10421,7 +10339,7 @@
 				{
 					"stat": "country.output.good.wheat_grain_factor",
 					"operation": 0.0,
-					"value": 0.18,
+					"value": 0.07,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.wheat_grain_factor",
 					"subject_display_name": "wheat_grain",
@@ -10433,7 +10351,7 @@
 				{
 					"stat": "country.output.good.corn_grain_factor",
 					"operation": 0.0,
-					"value": 0.18,
+					"value": 0.085,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.corn_grain_factor",
 					"subject_display_name": "corn_grain",
@@ -10457,7 +10375,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.17,
+					"value": 0.101,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -10847,7 +10765,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.113,
+					"value": 0.067,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -11026,7 +10944,7 @@
 				{
 					"stat": "country.output.good.rice_grain_factor",
 					"operation": 0.0,
-					"value": 0.22,
+					"value": 0.125,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.rice_grain_factor",
 					"subject_display_name": "rice_grain",
@@ -11144,7 +11062,7 @@
 				{
 					"stat": "country.output.landform.volcano.extractive_factor",
 					"operation": 0.0,
-					"value": 0.333,
+					"value": 0.133,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.volcano.extractive_factor",
 					"subject_display_name": "extractive",
@@ -11423,7 +11341,7 @@
 				{
 					"stat": "country.output.landform.mountain.extractive_factor",
 					"operation": 0.0,
-					"value": 0.162,
+					"value": 0.065,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.mountain.extractive_factor",
 					"subject_display_name": "extractive",
@@ -11435,7 +11353,7 @@
 				{
 					"stat": "country.output.landform.volcano.extractive_factor",
 					"operation": 0.0,
-					"value": 0.333,
+					"value": 0.133,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.volcano.extractive_factor",
 					"subject_display_name": "extractive",
@@ -11637,7 +11555,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.05,
+					"value": -0.016,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -11894,7 +11812,7 @@
 				{
 					"stat": "country.output.landform.hill.extractive_factor",
 					"operation": 0.0,
-					"value": 0.5,
+					"value": 0.2,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.hill.extractive_factor",
 					"subject_display_name": "extractive",
@@ -12499,7 +12417,7 @@
 				{
 					"stat": "country.output.good.wheat_grain_factor",
 					"operation": 0.0,
-					"value": 0.18,
+					"value": 0.07,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.wheat_grain_factor",
 					"subject_display_name": "wheat_grain",
@@ -12672,7 +12590,7 @@
 				{
 					"stat": "country.output.good.wheat_grain_factor",
 					"operation": 0.0,
-					"value": -0.05,
+					"value": -0.02,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.wheat_grain_factor",
 					"subject_display_name": "wheat_grain",
@@ -12813,7 +12731,7 @@
 				{
 					"stat": "country.output.terrain.swamp.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.15000000000000002,
+					"value": 0.1,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.swamp.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -12837,7 +12755,7 @@
 				{
 					"stat": "country.output.terrain.swamp.extractive_factor",
 					"operation": 0.0,
-					"value": -0.065,
+					"value": -0.05,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.swamp.extractive_factor",
 					"subject_display_name": "extractive",
@@ -13100,7 +13018,7 @@
 				{
 					"stat": "country.output.family.cloth_weaving_factor",
 					"operation": 0.0,
-					"value": 0.288,
+					"value": 0.072,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.cloth_weaving_factor",
 					"subject_display_name": "cloth_weaving",
@@ -13112,7 +13030,7 @@
 				{
 					"stat": "country.output.family.specialty_commodity_crops_factor",
 					"operation": 0.0,
-					"value": 0.264,
+					"value": 0.066,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.specialty_commodity_crops_factor",
 					"subject_display_name": "specialty_commodity_crops",
@@ -13269,7 +13187,7 @@
 				{
 					"stat": "country.output.terrain.grassland.extractive_factor",
 					"operation": 0.0,
-					"value": 0.205,
+					"value": 0.095,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.grassland.extractive_factor",
 					"subject_display_name": "extractive",
@@ -13406,7 +13324,7 @@
 				{
 					"stat": "country.output.family.specialty_commodity_crops_factor",
 					"operation": 0.0,
-					"value": 0.549,
+					"value": 0.137,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.specialty_commodity_crops_factor",
 					"subject_display_name": "specialty_commodity_crops",
@@ -13554,7 +13472,7 @@
 				{
 					"stat": "country.output.terrain.jungle.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.148,
+					"value": 0.059,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.jungle.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -13720,7 +13638,7 @@
 				{
 					"stat": "country.output.family.specialty_commodity_crops_factor",
 					"operation": 0.0,
-					"value": 0.528,
+					"value": 0.132,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.specialty_commodity_crops_factor",
 					"subject_display_name": "specialty_commodity_crops",
@@ -14079,7 +13997,7 @@
 				{
 					"stat": "country.output.terrain.grassland.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.257,
+					"value": 0.107,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.grassland.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -14231,7 +14149,7 @@
 				{
 					"stat": "country.output.terrain.grassland.extractive_factor",
 					"operation": 0.0,
-					"value": 0.048,
+					"value": 0.023,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.grassland.extractive_factor",
 					"subject_display_name": "extractive",
@@ -14365,7 +14283,7 @@
 				{
 					"stat": "country.output.family.staple_preparation_factor",
 					"operation": 0.0,
-					"value": 0.699,
+					"value": 0.174,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.staple_preparation_factor",
 					"subject_display_name": "staple_preparation",
@@ -14492,21 +14410,9 @@
 			"starter_capability_tags": [],
 			"modifier_terms": [
 				{
-					"stat": "country.consumption.good.processed_food_factor",
-					"operation": 0.0,
-					"value": -0.08,
-					"subject_kind": "v0_verified",
-					"subject_id": "country.consumption.good.processed_food_factor",
-					"subject_display_name": "processed_food",
-					"effect_class": "v0_verified",
-					"effect_rationale": "该科技调整processed_food_factor。",
-					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::effective_household_good_quantity"
-				},
-				{
 					"stat": "country.output.terrain.salt_flat.extractive_factor",
 					"operation": 0.0,
-					"value": 0.429,
+					"value": 0.172,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.salt_flat.extractive_factor",
 					"subject_display_name": "extractive",
@@ -14633,9 +14539,7 @@
 			"hard_prerequisite_ids": [
 				"tech.early_knowledge_institution"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": true,
 			"is_era_key": false,
 			"is_starting": false,
@@ -14645,7 +14549,7 @@
 				{
 					"stat": "country.economy_output_factor",
 					"operation": 0.0,
-					"value": 0.05,
+					"value": 0.039,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.economy_output_factor",
 					"subject_display_name": "economy_output",
@@ -14657,7 +14561,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.075,
+					"value": 0.044,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -14761,7 +14665,7 @@
 				{
 					"stat": "country.output.family.construction_methods_factor",
 					"operation": 0.0,
-					"value": 0.3,
+					"value": 0.122,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.construction_methods_factor",
 					"subject_display_name": "construction_methods",
@@ -15175,7 +15079,7 @@
 				{
 					"stat": "country.output.terrain.grassland.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.166,
+					"value": 0.069,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.grassland.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -15325,7 +15229,7 @@
 				{
 					"stat": "country.output.good.corn_grain_factor",
 					"operation": 0.0,
-					"value": 0.18,
+					"value": 0.085,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.corn_grain_factor",
 					"subject_display_name": "corn_grain",
@@ -15796,7 +15700,7 @@
 				{
 					"stat": "country.output.terrain.jungle.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.205,
+					"value": 0.082,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.jungle.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -16116,7 +16020,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.03,
+					"value": -0.009,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -16317,7 +16221,7 @@
 				{
 					"stat": "country.output.good.prepared_staples_factor",
 					"operation": 0.0,
-					"value": 0.25,
+					"value": 0.124,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.prepared_staples_factor",
 					"subject_display_name": "prepared_staples",
@@ -16329,7 +16233,7 @@
 				{
 					"stat": "country.output.terrain.floodplain.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.149,
+					"value": 0.066,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.floodplain.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -16592,7 +16496,7 @@
 				{
 					"stat": "country.output.terrain.floodplain.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.149,
+					"value": 0.066,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.floodplain.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -16774,7 +16678,7 @@
 				{
 					"stat": "country.output.terrain.floodplain.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.149,
+					"value": 0.066,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.floodplain.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -17316,7 +17220,7 @@
 				{
 					"stat": "country.output.good.rice_grain_factor",
 					"operation": 0.0,
-					"value": 0.25,
+					"value": 0.142,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.rice_grain_factor",
 					"subject_display_name": "rice_grain",
@@ -17472,7 +17376,7 @@
 				{
 					"stat": "country.output.good.prepared_staples_factor",
 					"operation": 0.0,
-					"value": 0.25,
+					"value": 0.124,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.prepared_staples_factor",
 					"subject_display_name": "prepared_staples",
@@ -17484,7 +17388,7 @@
 				{
 					"stat": "country.output.family.staple_preparation_factor",
 					"operation": 0.0,
-					"value": 0.699,
+					"value": 0.174,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.staple_preparation_factor",
 					"subject_display_name": "staple_preparation",
@@ -17631,7 +17535,7 @@
 				{
 					"stat": "country.output.landform.plateau.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.614,
+					"value": 0.214,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.plateau.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -17643,7 +17547,7 @@
 				{
 					"stat": "country.output.landform.mountain.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.72,
+					"value": 0.4,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.mountain.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -17834,7 +17738,7 @@
 				{
 					"stat": "country.output.family.cloth_weaving_factor",
 					"operation": 0.0,
-					"value": 0.6,
+					"value": 0.15,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.cloth_weaving_factor",
 					"subject_display_name": "cloth_weaving",
@@ -18160,7 +18064,7 @@
 				{
 					"stat": "country.output.manufacturing_factor",
 					"operation": 0.0,
-					"value": 0.56,
+					"value": 0.192,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.manufacturing_factor",
 					"subject_display_name": "manufacturing",
@@ -18567,7 +18471,7 @@
 				{
 					"stat": "country.output.good.wheat_grain_factor",
 					"operation": 0.0,
-					"value": 0.28,
+					"value": 0.109,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.wheat_grain_factor",
 					"subject_display_name": "wheat_grain",
@@ -18719,7 +18623,7 @@
 				{
 					"stat": "country.output.manufacturing_factor",
 					"operation": 0.0,
-					"value": 0.5,
+					"value": 0.171,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.manufacturing_factor",
 					"subject_display_name": "manufacturing",
@@ -18973,9 +18877,7 @@
 				"tech.early_trade",
 				"tech.permanent_settlements"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -19101,9 +19003,7 @@
 				"tech.natural_copper_identification",
 				"tech.ground_stone_tools"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -19309,7 +19209,7 @@
 				{
 					"stat": "country.output.family.copper_extraction_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.2,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.copper_extraction_factor",
 					"subject_display_name": "copper_extraction",
@@ -19462,9 +19362,7 @@
 				"tech.salt_preservation",
 				"tech.fire_control"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -19474,7 +19372,7 @@
 				{
 					"stat": "country.output.family.salt_extraction_factor",
 					"operation": 0.0,
-					"value": 0.54,
+					"value": 0.36,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.salt_extraction_factor",
 					"subject_display_name": "salt_extraction",
@@ -19618,7 +19516,7 @@
 				{
 					"stat": "country.output.family.research_institution_factor",
 					"operation": 0.0,
-					"value": 0.12,
+					"value": 0.038,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.research_institution_factor",
 					"subject_display_name": "research_institution",
@@ -19630,7 +19528,7 @@
 				{
 					"stat": "country.output.knowledge_factor",
 					"operation": 0.0,
-					"value": 0.08,
+					"value": 0.057,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.knowledge_factor",
 					"subject_display_name": "knowledge",
@@ -20312,18 +20210,6 @@
 					"effect_rationale": "该科技调整speed_factor。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "economy_runtime_trade_settlement.cpp:1426-1447"
-				},
-				{
-					"stat": "country.consumption.good.salt_factor",
-					"operation": 0.0,
-					"value": -0.05,
-					"subject_kind": "v0_verified_shape",
-					"subject_id": "country.consumption.good.salt_factor",
-					"subject_display_name": "salt",
-					"effect_class": "v0_verified_shape",
-					"effect_rationale": "该科技调整salt_factor。",
-					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::effective_household_good_quantity"
 				}
 			],
 			"expected_bindings": [
@@ -20822,9 +20708,7 @@
 			"hard_prerequisite_ids": [
 				"tech.fishing_boats"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -21221,7 +21105,7 @@
 				{
 					"stat": "country.output.family.research_institution_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.114,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.research_institution_factor",
 					"subject_display_name": "research_institution",
@@ -21402,7 +21286,7 @@
 				{
 					"stat": "country.output.family.paper_making_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.136,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.paper_making_factor",
 					"subject_display_name": "paper_making",
@@ -22088,7 +21972,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.075,
+					"value": 0.044,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -22551,7 +22435,7 @@
 				{
 					"stat": "country.output.landform.mountain.extractive_factor",
 					"operation": 0.0,
-					"value": 0.162,
+					"value": 0.065,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.mountain.extractive_factor",
 					"subject_display_name": "extractive",
@@ -22674,7 +22558,7 @@
 				{
 					"stat": "country.output.family.iron_extraction_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.2,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.iron_extraction_factor",
 					"subject_display_name": "iron_extraction",
@@ -22874,7 +22758,7 @@
 				{
 					"stat": "country.output.family.iron_extraction_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.2,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.iron_extraction_factor",
 					"subject_display_name": "iron_extraction",
@@ -22886,7 +22770,7 @@
 				{
 					"stat": "country.output.family.metal_toolmaking_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.118,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.metal_toolmaking_factor",
 					"subject_display_name": "metal_toolmaking",
@@ -23567,9 +23451,7 @@
 			"hard_prerequisite_ids": [
 				"tech.early_knowledge_institution"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": true,
 			"is_era_key": false,
 			"is_starting": false,
@@ -23579,7 +23461,7 @@
 				{
 					"stat": "country.economy_output_factor",
 					"operation": 0.0,
-					"value": 0.04,
+					"value": 0.032,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.economy_output_factor",
 					"subject_display_name": "economy_output",
@@ -23822,9 +23704,7 @@
 				"tech.permanent_settlements",
 				"tech.earth_building"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -23961,9 +23841,7 @@
 				"tech.state_bureaucracy",
 				"tech.iron_smelting"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -24535,7 +24413,7 @@
 				{
 					"stat": "country.output.landform.plateau.extractive_factor",
 					"operation": 0.0,
-					"value": 0.285,
+					"value": 0.233,
 					"subject_kind": "v0_verified_shape",
 					"subject_id": "country.output.landform.plateau.extractive_factor",
 					"subject_display_name": "extractive",
@@ -24547,7 +24425,7 @@
 				{
 					"stat": "country.output.landform.plateau.agriculture_factor",
 					"operation": 0.0,
-					"value": -0.07500000000000001,
+					"value": -0.026,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.plateau.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -24624,7 +24502,7 @@
 				{
 					"stat": "country.output.landform.hill.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.285,
+					"value": 0.2,
 					"subject_kind": "v0_verified_shape",
 					"subject_id": "country.output.landform.hill.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -24636,7 +24514,7 @@
 				{
 					"stat": "country.output.terrain.hill.extractive_factor",
 					"operation": 0.0,
-					"value": -0.07500000000000001,
+					"value": -0.058,
 					"subject_kind": "v0_verified_shape",
 					"subject_id": "country.output.terrain.hill.extractive_factor",
 					"subject_display_name": "extractive",
@@ -24735,7 +24613,7 @@
 				{
 					"stat": "country.output.terrain.steppe.agriculture_factor",
 					"operation": 0.0,
-					"value": -0.05,
+					"value": -0.041,
 					"subject_kind": "v0_verified_shape",
 					"subject_id": "country.output.terrain.steppe.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -25104,7 +24982,7 @@
 				{
 					"stat": "country.output.family.paper_making_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.136,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.paper_making_factor",
 					"subject_display_name": "paper_making",
@@ -26249,7 +26127,7 @@
 				{
 					"stat": "country.output.energy_factor",
 					"operation": 0.0,
-					"value": 0.4,
+					"value": 0.181,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.energy_factor",
 					"subject_display_name": "energy",
@@ -26402,7 +26280,7 @@
 				{
 					"stat": "country.output.energy_factor",
 					"operation": 0.0,
-					"value": 0.16,
+					"value": 0.072,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.energy_factor",
 					"subject_display_name": "energy",
@@ -26543,7 +26421,7 @@
 				{
 					"stat": "country.output.terrain.grassland.extractive_factor",
 					"operation": 0.0,
-					"value": 0.097,
+					"value": 0.046,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.grassland.extractive_factor",
 					"subject_display_name": "extractive",
@@ -26886,7 +26764,7 @@
 				{
 					"stat": "country.output.family.steelmaking_factor",
 					"operation": 0.0,
-					"value": 0.21,
+					"value": 0.117,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.steelmaking_factor",
 					"subject_display_name": "steelmaking",
@@ -27072,7 +26950,7 @@
 				{
 					"stat": "country.output.landform.hill.manufacturing_factor",
 					"operation": 0.0,
-					"value": 0.42,
+					"value": 0.168,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.hill.manufacturing_factor",
 					"subject_display_name": "manufacturing",
@@ -27285,7 +27163,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.116,
+					"value": 0.043,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -27598,7 +27476,7 @@
 				{
 					"stat": "country.output.family.research_institution_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.114,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.research_institution_factor",
 					"subject_display_name": "research_institution",
@@ -27939,7 +27817,7 @@
 				{
 					"stat": "country.output.family.cloth_weaving_factor",
 					"operation": 0.0,
-					"value": 0.528,
+					"value": 0.132,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.cloth_weaving_factor",
 					"subject_display_name": "cloth_weaving",
@@ -28532,9 +28410,7 @@
 				"tech.hand_pottery",
 				"tech.woodblock_printing"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -29674,7 +29550,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.075,
+					"value": 0.044,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -29686,7 +29562,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.03,
+					"value": -0.009,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -29824,7 +29700,7 @@
 				{
 					"stat": "country.output.good.prepared_staples_factor",
 					"operation": 0.0,
-					"value": 0.12,
+					"value": 0.059,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.prepared_staples_factor",
 					"subject_display_name": "prepared_staples",
@@ -29836,7 +29712,7 @@
 				{
 					"stat": "country.output.family.staple_preparation_factor",
 					"operation": 0.0,
-					"value": 0.336,
+					"value": 0.084,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.staple_preparation_factor",
 					"subject_display_name": "staple_preparation",
@@ -30000,7 +29876,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.193,
+					"value": 0.07,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -30157,7 +30033,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": -0.03,
+					"value": -0.018,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -30332,7 +30208,7 @@
 				{
 					"stat": "country.output.landform.mountain.extractive_factor",
 					"operation": 0.0,
-					"value": 0.188,
+					"value": 0.075,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.mountain.extractive_factor",
 					"subject_display_name": "extractive",
@@ -30504,7 +30380,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.135,
+					"value": 0.05,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -30845,7 +30721,7 @@
 				{
 					"stat": "country.output.terrain.delta.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.24,
+					"value": 0.234,
 					"subject_kind": "v0_verified_shape",
 					"subject_id": "country.output.terrain.delta.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -31133,9 +31009,7 @@
 			"hard_prerequisite_ids": [
 				"tech.early_knowledge_institution"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": true,
 			"is_era_key": false,
 			"is_starting": false,
@@ -31145,7 +31019,7 @@
 				{
 					"stat": "country.economy_output_factor",
 					"operation": 0.0,
-					"value": 0.04,
+					"value": 0.032,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.economy_output_factor",
 					"subject_display_name": "economy_output",
@@ -31466,7 +31340,7 @@
 				{
 					"stat": "country.output.terrain.grassland.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.206,
+					"value": 0.086,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.grassland.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -31634,9 +31508,7 @@
 			"hard_prerequisite_ids": [
 				"tech.road_engineering"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -31766,9 +31638,7 @@
 				"tech.iron_smelting",
 				"tech.crucible_steel"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -32102,9 +31972,7 @@
 				"tech.masonry",
 				"tech.blast_furnace"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -32319,7 +32187,7 @@
 				{
 					"stat": "country.output.terrain.mountain.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.45,
+					"value": 0.4,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.mountain.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -32464,7 +32332,7 @@
 				{
 					"stat": "country.output.landform.plain.manufacturing_factor",
 					"operation": 0.0,
-					"value": 0.3,
+					"value": 0.143,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.plain.manufacturing_factor",
 					"subject_display_name": "manufacturing",
@@ -32651,18 +32519,6 @@
 					"runtime_consumer": "economy_runtime_trade_settlement.cpp:1426-1447"
 				},
 				{
-					"stat": "country.consumption.good.spices_factor",
-					"operation": 0.0,
-					"value": -0.05,
-					"subject_kind": "v0_verified_shape",
-					"subject_id": "country.consumption.good.spices_factor",
-					"subject_display_name": "spices",
-					"effect_class": "v0_verified_shape",
-					"effect_rationale": "该科技调整spices_factor。",
-					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::effective_household_good_quantity"
-				},
-				{
 					"stat": "country.trade.speed_factor",
 					"operation": 0.0,
 					"value": 0.035,
@@ -32715,9 +32571,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "林间休耕玉米 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.kingdom_administration",
@@ -32823,9 +32677,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "高原梯田工程 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.kingdom_administration",
@@ -32869,7 +32721,7 @@
 				{
 					"stat": "country.output.landform.hill.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.285,
+					"value": 0.2,
 					"subject_kind": "v0_verified_shape",
 					"subject_id": "country.output.landform.hill.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -32881,7 +32733,7 @@
 				{
 					"stat": "country.output.landform.plateau.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.07500000000000001,
+					"value": 0.026,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.plateau.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -32962,7 +32814,7 @@
 				{
 					"stat": "country.output.terrain.hill.extractive_factor",
 					"operation": 0.0,
-					"value": 0.285,
+					"value": 0.221,
 					"subject_kind": "v0_verified_shape",
 					"subject_id": "country.output.terrain.hill.extractive_factor",
 					"subject_display_name": "extractive",
@@ -33000,9 +32852,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "丘陵采石伐木 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.kingdom_administration",
@@ -33046,7 +32896,7 @@
 				{
 					"stat": "country.output.terrain.hill.extractive_factor",
 					"operation": 0.0,
-					"value": 0.155,
+					"value": 0.12,
 					"subject_kind": "v0_verified_shape",
 					"subject_id": "country.output.terrain.hill.extractive_factor",
 					"subject_display_name": "extractive",
@@ -33096,9 +32946,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "矿坑用材 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.kingdom_administration",
@@ -33192,9 +33040,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "草原商道 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.kingdom_administration",
@@ -33299,9 +33145,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "草场租约 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.kingdom_administration",
@@ -33410,7 +33254,7 @@
 				{
 					"stat": "country.output.family.specialty_commodity_crops_factor",
 					"operation": 0.0,
-					"value": 0.264,
+					"value": 0.066,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.specialty_commodity_crops_factor",
 					"subject_display_name": "specialty_commodity_crops",
@@ -33512,9 +33356,7 @@
 			"hard_prerequisite_ids": [
 				"tech.rubber_identification"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -33524,7 +33366,7 @@
 				{
 					"stat": "country.output.terrain.jungle.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.148,
+					"value": 0.059,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.jungle.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -33641,7 +33483,7 @@
 				{
 					"stat": "country.output.family.specialty_commodity_crops_factor",
 					"operation": 0.0,
-					"value": 0.264,
+					"value": 0.066,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.specialty_commodity_crops_factor",
 					"subject_display_name": "specialty_commodity_crops",
@@ -33805,7 +33647,7 @@
 				{
 					"stat": "country.output.terrain.jungle.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.205,
+					"value": 0.082,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.jungle.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -34586,7 +34428,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.1,
+					"value": 0.037,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -34726,7 +34568,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.02,
+					"value": -0.006,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -36019,7 +35861,7 @@
 				{
 					"stat": "country.output.landform.rift_valley.extractive_factor",
 					"operation": 0.0,
-					"value": 0.54,
+					"value": 0.4,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.rift_valley.extractive_factor",
 					"subject_display_name": "extractive",
@@ -36031,7 +35873,7 @@
 				{
 					"stat": "country.output.terrain.badlands.extractive_factor",
 					"operation": 0.0,
-					"value": 0.54,
+					"value": 0.311,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.badlands.extractive_factor",
 					"subject_display_name": "extractive",
@@ -36197,7 +36039,7 @@
 				{
 					"stat": "country.output.terrain.salt_flat.extractive_factor",
 					"operation": 0.0,
-					"value": 0.571,
+					"value": 0.228,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.salt_flat.extractive_factor",
 					"subject_display_name": "extractive",
@@ -36209,7 +36051,7 @@
 				{
 					"stat": "country.output.terrain.desert.extractive_factor",
 					"operation": 0.0,
-					"value": 0.4,
+					"value": 0.16,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.desert.extractive_factor",
 					"subject_display_name": "extractive",
@@ -36718,7 +36560,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.075,
+					"value": 0.044,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -36906,9 +36748,7 @@
 				"tech.oceanic_navigation",
 				"tech.salt_preservation"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -37254,7 +37094,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.113,
+					"value": 0.067,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -37266,7 +37106,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.03,
+					"value": -0.009,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -37414,7 +37254,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.075,
+					"value": 0.044,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -38019,9 +37859,7 @@
 				"tech.guild_apprenticeship",
 				"tech.mercantile_networks"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -38156,9 +37994,7 @@
 			"hard_prerequisite_ids": [
 				"tech.early_knowledge_institution"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": true,
 			"is_era_key": false,
 			"is_starting": false,
@@ -38168,7 +38004,7 @@
 				{
 					"stat": "country.economy_output_factor",
 					"operation": 0.0,
-					"value": 0.04,
+					"value": 0.032,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.economy_output_factor",
 					"subject_display_name": "economy_output",
@@ -38262,9 +38098,7 @@
 				"tech.gunpowder_weapons",
 				"tech.horse_domestication"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -38423,9 +38257,7 @@
 				"tech.gunpowder_weapons",
 				"tech.masonry"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -38579,9 +38411,7 @@
 				"tech.oceanic_navigation",
 				"tech.military.coastal_transport"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -38713,9 +38543,7 @@
 				"tech.gunpowder_formulation",
 				"tech.water_power"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -38834,9 +38662,7 @@
 				"tech.gunpowder_formulation",
 				"tech.fermentation"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -38975,7 +38801,7 @@
 				{
 					"stat": "country.output.family.metal_toolmaking_factor",
 					"operation": 0.0,
-					"value": 0.3,
+					"value": 0.098,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.metal_toolmaking_factor",
 					"subject_display_name": "metal_toolmaking",
@@ -39293,7 +39119,7 @@
 				{
 					"stat": "country.output.terrain.jungle.manufacturing_factor",
 					"operation": 0.0,
-					"value": 0.45,
+					"value": 0.4,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.jungle.manufacturing_factor",
 					"subject_display_name": "manufacturing",
@@ -39986,7 +39812,7 @@
 				{
 					"stat": "country.output.terrain.floodplain.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.125,
+					"value": 0.055,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.floodplain.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -40180,7 +40006,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.05,
+					"value": -0.016,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -40672,7 +40498,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.04,
+					"value": -0.013,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -41226,7 +41052,7 @@
 				{
 					"stat": "country.output.terrain.grassland.extractive_factor",
 					"operation": 0.0,
-					"value": 0.148,
+					"value": 0.07,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.grassland.extractive_factor",
 					"subject_display_name": "extractive",
@@ -41387,7 +41213,7 @@
 				{
 					"stat": "country.output.landform.plateau.extractive_factor",
 					"operation": 0.0,
-					"value": 0.205,
+					"value": 0.167,
 					"subject_kind": "v0_verified_shape",
 					"subject_id": "country.output.landform.plateau.extractive_factor",
 					"subject_display_name": "extractive",
@@ -41990,7 +41816,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.135,
+					"value": 0.05,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -42462,9 +42288,7 @@
 				"tech.agricultural_improvement",
 				"tech.scientific_classification"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -42498,7 +42322,7 @@
 				{
 					"stat": "country.output.good.rice_grain_factor",
 					"operation": 0.0,
-					"value": 0.12,
+					"value": 0.068,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.rice_grain_factor",
 					"subject_display_name": "rice_grain",
@@ -42510,7 +42334,7 @@
 				{
 					"stat": "country.output.good.corn_grain_factor",
 					"operation": 0.0,
-					"value": 0.12,
+					"value": 0.056,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.corn_grain_factor",
 					"subject_display_name": "corn_grain",
@@ -42710,7 +42534,7 @@
 				{
 					"stat": "country.output.manufacturing_factor",
 					"operation": 0.0,
-					"value": 0.08,
+					"value": 0.027,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.manufacturing_factor",
 					"subject_display_name": "manufacturing",
@@ -42883,7 +42707,7 @@
 				{
 					"stat": "country.output.good.prepared_staples_factor",
 					"operation": 0.0,
-					"value": 0.125,
+					"value": 0.062,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.prepared_staples_factor",
 					"subject_display_name": "prepared_staples",
@@ -43510,9 +43334,7 @@
 				"tech.atmospheric_engine",
 				"tech.precision_engineering"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -43674,16 +43496,9 @@
 			"starter_capability_tags": [],
 			"modifier_terms": [
 				{
-					"stat": "country.consumption.good.processed_food_factor",
-					"operation": 0.0,
-					"value": -0.08,
-					"subject_kind": "v0_verified",
-					"subject_id": "country.consumption.good.processed_food_factor",
-					"subject_display_name": "processed_food",
-					"effect_class": "v0_verified",
-					"effect_rationale": "该科技调整processed_food_factor。",
-					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::effective_household_good_quantity"
+					"stat": "country.economy_output_factor",
+					"operation": "add",
+					"value": 0.016
 				}
 			],
 			"expected_bindings": [
@@ -43856,9 +43671,7 @@
 				"tech.chartered_companies",
 				"tech.probability_statistics"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -43958,9 +43771,7 @@
 			"hard_prerequisite_ids": [
 				"tech.early_knowledge_institution"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": true,
 			"is_era_key": false,
 			"is_starting": false,
@@ -43970,7 +43781,7 @@
 				{
 					"stat": "country.economy_output_factor",
 					"operation": 0.0,
-					"value": 0.04,
+					"value": 0.032,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.economy_output_factor",
 					"subject_display_name": "economy_output",
@@ -43982,7 +43793,7 @@
 				{
 					"stat": "country.output.knowledge_factor",
 					"operation": 0.0,
-					"value": 0.2,
+					"value": 0.142,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.knowledge_factor",
 					"subject_display_name": "knowledge",
@@ -44065,9 +43876,7 @@
 				"tech.standardization",
 				"tech.gunpowder_formulation"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -44209,9 +44018,7 @@
 				"tech.horse_domestication",
 				"tech.military.corned_powder"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -44437,9 +44244,7 @@
 				"tech.cartography",
 				"tech.property_cadastre"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -44582,9 +44387,7 @@
 			"hard_prerequisite_ids": [
 				"tech.public_health"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -44723,7 +44526,7 @@
 				{
 					"stat": "country.output.terrain.swamp.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.45,
+					"value": 0.3,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.swamp.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -44858,7 +44661,7 @@
 				{
 					"stat": "country.output.family.chemical_industry_factor",
 					"operation": 0.0,
-					"value": 0.1,
+					"value": 0.042,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.chemical_industry_factor",
 					"subject_display_name": "chemical_industry",
@@ -45003,9 +44806,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "转口港 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.global_exchange",
@@ -45113,9 +44914,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "农牧轮作 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.global_exchange",
@@ -45209,9 +45008,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "绿洲渠网 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.global_exchange",
@@ -45306,9 +45103,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "绿洲驿站 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.global_exchange",
@@ -45404,9 +45199,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "圩田稻作 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.global_exchange",
@@ -45450,7 +45243,7 @@
 				{
 					"stat": "country.output.terrain.delta.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.17,
+					"value": 0.166,
 					"subject_kind": "v0_verified_shape",
 					"subject_id": "country.output.terrain.delta.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -45530,7 +45323,7 @@
 				{
 					"stat": "country.output.manufacturing_factor",
 					"operation": 0.0,
-					"value": 0.24,
+					"value": 0.082,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.manufacturing_factor",
 					"subject_display_name": "manufacturing",
@@ -45861,9 +45654,7 @@
 				"tech.canning",
 				"tech.steam_power"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -45976,7 +45767,7 @@
 				{
 					"stat": "country.output.manufacturing_factor",
 					"operation": 0.0,
-					"value": 0.14,
+					"value": 0.048,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.manufacturing_factor",
 					"subject_display_name": "manufacturing",
@@ -45988,7 +45779,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": -0.06,
+					"value": -0.036,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -46181,7 +45972,7 @@
 				{
 					"stat": "country.output.family.steelmaking_factor",
 					"operation": 0.0,
-					"value": 0.21,
+					"value": 0.117,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.steelmaking_factor",
 					"subject_display_name": "steelmaking",
@@ -46406,9 +46197,7 @@
 				"tech.hydraulic_engineering",
 				"tech.coke_smelting"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -46633,7 +46422,7 @@
 				{
 					"stat": "country.output.family.iron_extraction_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.2,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.iron_extraction_factor",
 					"subject_display_name": "iron_extraction",
@@ -46851,9 +46640,7 @@
 				"tech.coal_mining",
 				"tech.steam_pumping"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -46887,7 +46674,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.174,
+					"value": 0.064,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -47030,7 +46817,7 @@
 				{
 					"stat": "country.output.family.cloth_weaving_factor",
 					"operation": 0.0,
-					"value": 0.48,
+					"value": 0.12,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.cloth_weaving_factor",
 					"subject_display_name": "cloth_weaving",
@@ -47339,7 +47126,7 @@
 				{
 					"stat": "country.output.manufacturing_factor",
 					"operation": 0.0,
-					"value": 0.12,
+					"value": 0.041,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.manufacturing_factor",
 					"subject_display_name": "manufacturing",
@@ -47586,7 +47373,7 @@
 				{
 					"stat": "country.output.family.metal_toolmaking_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.118,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.metal_toolmaking_factor",
 					"subject_display_name": "metal_toolmaking",
@@ -48046,7 +47833,7 @@
 				{
 					"stat": "country.output.landform.mountain.extractive_factor",
 					"operation": 0.0,
-					"value": 0.162,
+					"value": 0.065,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.mountain.extractive_factor",
 					"subject_display_name": "extractive",
@@ -48239,7 +48026,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.116,
+					"value": 0.043,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -48546,9 +48333,7 @@
 			"hard_prerequisite_ids": [
 				"tech.soil_experimentation"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -48558,7 +48343,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.116,
+					"value": 0.043,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -48737,9 +48522,7 @@
 				"tech.machine_tools",
 				"tech.mechanized_agriculture"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -48930,7 +48713,7 @@
 				{
 					"stat": "country.output.family.paper_making_factor",
 					"operation": 0.0,
-					"value": 0.66,
+					"value": 0.249,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.paper_making_factor",
 					"subject_display_name": "paper_making",
@@ -49089,7 +48872,7 @@
 				{
 					"stat": "country.output.good.wheat_grain_factor",
 					"operation": 0.0,
-					"value": 0.2,
+					"value": 0.078,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.wheat_grain_factor",
 					"subject_display_name": "wheat_grain",
@@ -49101,7 +48884,7 @@
 				{
 					"stat": "country.output.good.corn_grain_factor",
 					"operation": 0.0,
-					"value": 0.2,
+					"value": 0.094,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.corn_grain_factor",
 					"subject_display_name": "corn_grain",
@@ -49429,9 +49212,7 @@
 				"tech.factory_system",
 				"tech.probability_statistics"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -49441,7 +49222,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.03,
+					"value": -0.009,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -49555,7 +49336,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.05,
+					"value": -0.016,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -49704,7 +49485,7 @@
 				{
 					"stat": "country.output.manufacturing_factor",
 					"operation": 0.0,
-					"value": 0.16,
+					"value": 0.055,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.manufacturing_factor",
 					"subject_display_name": "manufacturing",
@@ -49865,7 +49646,7 @@
 				{
 					"stat": "country.output.manufacturing_factor",
 					"operation": 0.0,
-					"value": 0.44,
+					"value": 0.151,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.manufacturing_factor",
 					"subject_display_name": "manufacturing",
@@ -50363,9 +50144,7 @@
 				"tech.cooperative_association",
 				"tech.factory_system"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -50498,9 +50277,7 @@
 				"tech.actuarial_insurance",
 				"tech.industrial_organization"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -50602,9 +50379,7 @@
 				"tech.scientific_classification",
 				"tech.experimental_science"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -50614,7 +50389,7 @@
 				{
 					"stat": "country.output.terrain.floodplain.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.106,
+					"value": 0.047,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.floodplain.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -50692,9 +50467,7 @@
 			"hard_prerequisite_ids": [
 				"tech.early_knowledge_institution"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": true,
 			"is_era_key": false,
 			"is_starting": false,
@@ -50704,7 +50477,7 @@
 				{
 					"stat": "country.economy_output_factor",
 					"operation": 0.0,
-					"value": 0.04,
+					"value": 0.032,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.economy_output_factor",
 					"subject_display_name": "economy_output",
@@ -50716,7 +50489,7 @@
 				{
 					"stat": "country.output.manufacturing_factor",
 					"operation": 0.0,
-					"value": 0.24,
+					"value": 0.082,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.manufacturing_factor",
 					"subject_display_name": "manufacturing",
@@ -50800,9 +50573,7 @@
 				"tech.military.powder_milling",
 				"tech.iron_smelting"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -51062,9 +50833,7 @@
 			"hard_prerequisite_ids": [
 				"tech.rail_logistics"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -51228,9 +50997,7 @@
 			"hard_prerequisite_ids": [
 				"tech.managerial_hierarchy"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -51419,9 +51186,7 @@
 				"tech.industrial_chemistry",
 				"tech.military.powder_milling"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -51735,7 +51500,7 @@
 				{
 					"stat": "country.output.family.chemical_industry_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.152,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.chemical_industry_factor",
 					"subject_display_name": "chemical_industry",
@@ -51747,7 +51512,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.03,
+					"value": -0.009,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -52027,7 +51792,7 @@
 				{
 					"stat": "country.output.landform.plateau.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.386,
+					"value": 0.134,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.plateau.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -52198,7 +51963,7 @@
 				{
 					"stat": "country.output.terrain.steppe.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.285,
+					"value": 0.232,
 					"subject_kind": "v0_verified_shape",
 					"subject_id": "country.output.terrain.steppe.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -52222,7 +51987,7 @@
 				{
 					"stat": "country.output.terrain.floodplain.agriculture_factor",
 					"operation": 0.0,
-					"value": -0.07500000000000001,
+					"value": -0.033,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.floodplain.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -52261,9 +52026,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "出口工业 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.enlightenment_institutions",
@@ -52395,9 +52158,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "远洋渔业 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.enlightenment_institutions",
@@ -52491,9 +52252,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "矿冶联合 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.enlightenment_institutions",
@@ -52769,9 +52528,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "港口腹地 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.enlightenment_institutions",
@@ -52823,18 +52580,6 @@
 					"effect_rationale": "该科技调整capacity_factor。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "economy_runtime_trade.cpp:760-783"
-				},
-				{
-					"stat": "country.consumption.good.glassware_factor",
-					"operation": 0.0,
-					"value": -0.05,
-					"subject_kind": "v0_verified_shape",
-					"subject_id": "country.consumption.good.glassware_factor",
-					"subject_display_name": "glassware",
-					"effect_class": "v0_verified_shape",
-					"effect_rationale": "该科技调整glassware_factor。",
-					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::effective_household_good_quantity"
 				}
 			],
 			"content_effects": [],
@@ -52865,9 +52610,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "集雨网络 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.enlightenment_institutions",
@@ -52911,7 +52654,7 @@
 				{
 					"stat": "country.output.terrain.steppe.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.155,
+					"value": 0.127,
 					"subject_kind": "v0_verified_shape",
 					"subject_id": "country.output.terrain.steppe.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -53174,7 +52917,7 @@
 				{
 					"stat": "country.output.terrain.tundra.extractive_factor",
 					"operation": 0.0,
-					"value": 0.285,
+					"value": 0.259,
 					"subject_kind": "v0_verified_shape",
 					"subject_id": "country.output.terrain.tundra.extractive_factor",
 					"subject_display_name": "extractive",
@@ -53225,9 +52968,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "高山寒牧 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.enlightenment_institutions",
@@ -53324,9 +53065,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "极地牧业 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.enlightenment_institutions",
@@ -53372,7 +53111,7 @@
 				{
 					"stat": "country.output.terrain.tundra.extractive_factor",
 					"operation": 0.0,
-					"value": 0.155,
+					"value": 0.141,
 					"subject_kind": "v0_verified_shape",
 					"subject_id": "country.output.terrain.tundra.extractive_factor",
 					"subject_display_name": "extractive",
@@ -53516,9 +53255,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "旱区矿水 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.enlightenment_institutions",
@@ -53576,7 +53313,7 @@
 				{
 					"stat": "country.output.terrain.badlands.extractive_factor",
 					"operation": 0.0,
-					"value": 0.155,
+					"value": 0.089,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.badlands.extractive_factor",
 					"subject_display_name": "extractive",
@@ -53956,7 +53693,7 @@
 				{
 					"stat": "country.output.family.research_institution_factor",
 					"operation": 0.0,
-					"value": 0.12,
+					"value": 0.038,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.research_institution_factor",
 					"subject_display_name": "research_institution",
@@ -54157,7 +53894,7 @@
 				{
 					"stat": "country.output.family.oil_extraction_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.225,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.oil_extraction_factor",
 					"subject_display_name": "oil_extraction",
@@ -54330,7 +54067,7 @@
 				{
 					"stat": "country.output.terrain.desert.extractive_factor",
 					"operation": 0.0,
-					"value": 0.3,
+					"value": 0.12,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.desert.extractive_factor",
 					"subject_display_name": "extractive",
@@ -55126,7 +54863,7 @@
 				{
 					"stat": "country.output.energy_factor",
 					"operation": 0.0,
-					"value": 0.2,
+					"value": 0.09,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.energy_factor",
 					"subject_display_name": "energy",
@@ -55597,7 +55334,7 @@
 				{
 					"stat": "country.output.family.chemical_industry_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.152,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.chemical_industry_factor",
 					"subject_display_name": "chemical_industry",
@@ -55854,9 +55591,7 @@
 				"tech.electromagnetic_induction",
 				"tech.electrification"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -56718,9 +56453,7 @@
 				"tech.internal_combustion",
 				"tech.cotton_gardening"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -56730,7 +56463,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.075,
+					"value": 0.044,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -57165,7 +56898,7 @@
 				{
 					"stat": "country.output.family.cloth_weaving_factor",
 					"operation": 0.0,
-					"value": 0.096,
+					"value": 0.024,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.cloth_weaving_factor",
 					"subject_display_name": "cloth_weaving",
@@ -57540,7 +57273,7 @@
 				{
 					"stat": "country.output.family.oil_extraction_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.225,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.oil_extraction_factor",
 					"subject_display_name": "oil_extraction",
@@ -57692,9 +57425,7 @@
 				"tech.industrial_statistics",
 				"tech.industrial_research"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -57704,7 +57435,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.04,
+					"value": -0.013,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -57884,7 +57615,7 @@
 				{
 					"stat": "country.output.energy_factor",
 					"operation": 0.0,
-					"value": 0.16,
+					"value": 0.072,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.energy_factor",
 					"subject_display_name": "energy",
@@ -57892,18 +57623,6 @@
 					"effect_rationale": "该科技调整energy_factor。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
-				},
-				{
-					"stat": "country.consumption.good.meat_factor",
-					"operation": 0.0,
-					"value": -0.08,
-					"subject_kind": "v0_verified",
-					"subject_id": "country.consumption.good.meat_factor",
-					"subject_display_name": "meat",
-					"effect_class": "v0_verified",
-					"effect_rationale": "该科技调整meat_factor。",
-					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::effective_household_good_quantity"
 				},
 				{
 					"stat": "country.climate.profile.pasture_livestock.heat_stress_loss_factor",
@@ -58118,33 +57837,9 @@
 			"starter_capability_tags": [],
 			"modifier_terms": [
 				{
-					"stat": "country.consumption.good.fish_factor",
-					"operation": 0.0,
-					"value": -0.1,
-					"subject_kind": "v0_verified",
-					"subject_id": "country.consumption.good.fish_factor",
-					"subject_display_name": "fish",
-					"effect_class": "v0_verified",
-					"effect_rationale": "该科技调整fish_factor。",
-					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::effective_household_good_quantity"
-				},
-				{
-					"stat": "country.consumption.good.meat_factor",
-					"operation": 0.0,
-					"value": -0.1,
-					"subject_kind": "v0_verified",
-					"subject_id": "country.consumption.good.meat_factor",
-					"subject_display_name": "meat",
-					"effect_class": "v0_verified",
-					"effect_rationale": "该科技调整meat_factor。",
-					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::effective_household_good_quantity"
-				},
-				{
 					"stat": "country.output.terrain.grassland.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.186,
+					"value": 0.077,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.grassland.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -58316,9 +58011,7 @@
 				"tech.limited_liability",
 				"tech.corporate_management"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -58420,9 +58113,7 @@
 				"tech.microbiology",
 				"tech.crop_breeding"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -58432,7 +58123,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.057,
+					"value": 0.034,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -58521,9 +58212,7 @@
 			"hard_prerequisite_ids": [
 				"tech.early_knowledge_institution"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": true,
 			"is_era_key": false,
 			"is_starting": false,
@@ -58533,7 +58222,7 @@
 				{
 					"stat": "country.economy_output_factor",
 					"operation": 0.0,
-					"value": 0.03,
+					"value": 0.024,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.economy_output_factor",
 					"subject_display_name": "economy_output",
@@ -58545,7 +58234,7 @@
 				{
 					"stat": "country.output.energy_factor",
 					"operation": 0.0,
-					"value": 0.3,
+					"value": 0.136,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.energy_factor",
 					"subject_display_name": "energy",
@@ -58627,9 +58316,7 @@
 				"tech.mass_production",
 				"tech.military.smokeless_powder"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -58830,9 +58517,7 @@
 			"hard_prerequisite_ids": [
 				"tech.internal_combustion"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -59061,9 +58746,7 @@
 			"hard_prerequisite_ids": [
 				"tech.radio"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -59229,9 +58912,7 @@
 				"tech.military.smokeless_powder",
 				"tech.electrochemistry"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -59411,7 +59092,7 @@
 				{
 					"stat": "country.output.family.metal_toolmaking_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.118,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.metal_toolmaking_factor",
 					"subject_display_name": "metal_toolmaking",
@@ -59591,7 +59272,7 @@
 				{
 					"stat": "country.output.family.paper_making_factor",
 					"operation": 0.0,
-					"value": 0.21,
+					"value": 0.079,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.paper_making_factor",
 					"subject_display_name": "paper_making",
@@ -59876,7 +59557,7 @@
 				{
 					"stat": "country.output.family.construction_methods_factor",
 					"operation": 0.0,
-					"value": 0.45,
+					"value": 0.184,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.construction_methods_factor",
 					"subject_display_name": "construction_methods",
@@ -60041,18 +59722,6 @@
 					"effect_rationale": "该科技调整fish_factor。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::effective_building_output_quantity"
-				},
-				{
-					"stat": "country.consumption.good.fish_factor",
-					"operation": 0.0,
-					"value": -0.04,
-					"subject_kind": "v0_verified",
-					"subject_id": "country.consumption.good.fish_factor",
-					"subject_display_name": "fish",
-					"effect_class": "v0_verified",
-					"effect_rationale": "该科技调整fish_factor。",
-					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::effective_household_good_quantity"
 				},
 				{
 					"stat": "country.input.good.fish_factor",
@@ -60220,9 +59889,7 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"reveal_category": "environment_observation",
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"reveal_summary": "冶炼整合 按地理/产业观测条件揭示。",
 			"reveal_template_reason": "按该科技的真实观察或产业问题设置揭示条件，不使用通用模板。",
 			"era_entry_milestone_id": "tech.industrialization",
@@ -60532,7 +60199,7 @@
 				{
 					"stat": "country.output.good.prepared_staples_factor",
 					"operation": 0.0,
-					"value": 0.125,
+					"value": 0.062,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.good.prepared_staples_factor",
 					"subject_display_name": "prepared_staples",
@@ -60761,7 +60428,7 @@
 				{
 					"stat": "country.output.landform.mountain.extractive_factor",
 					"operation": 0.0,
-					"value": 0.162,
+					"value": 0.065,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.mountain.extractive_factor",
 					"subject_display_name": "extractive",
@@ -60773,7 +60440,7 @@
 				{
 					"stat": "country.output.landform.volcano.extractive_factor",
 					"operation": 0.0,
-					"value": 0.333,
+					"value": 0.133,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.volcano.extractive_factor",
 					"subject_display_name": "extractive",
@@ -61173,7 +60840,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.174,
+					"value": 0.064,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -61646,7 +61313,7 @@
 				{
 					"stat": "country.output.terrain.desert.extractive_factor",
 					"operation": 0.0,
-					"value": 0.3,
+					"value": 0.12,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.desert.extractive_factor",
 					"subject_display_name": "extractive",
@@ -61658,7 +61325,7 @@
 				{
 					"stat": "country.output.landform.lowland.extractive_factor",
 					"operation": 0.0,
-					"value": 0.54,
+					"value": 0.4,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.lowland.extractive_factor",
 					"subject_display_name": "extractive",
@@ -61937,7 +61604,7 @@
 				{
 					"stat": "country.output.family.research_institution_factor",
 					"operation": 0.0,
-					"value": 0.21,
+					"value": 0.067,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.research_institution_factor",
 					"subject_display_name": "research_institution",
@@ -62157,7 +61824,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.174,
+					"value": 0.064,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -62567,7 +62234,7 @@
 				{
 					"stat": "country.output.energy_factor",
 					"operation": 0.0,
-					"value": 0.2,
+					"value": 0.09,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.energy_factor",
 					"subject_display_name": "energy",
@@ -62803,7 +62470,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.06,
+					"value": -0.019,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -63326,7 +62993,7 @@
 				{
 					"stat": "country.output.landform.hill.manufacturing_factor",
 					"operation": 0.0,
-					"value": 0.58,
+					"value": 0.232,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.landform.hill.manufacturing_factor",
 					"subject_display_name": "manufacturing",
@@ -64325,7 +63992,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.077,
+					"value": 0.028,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -64721,7 +64388,7 @@
 				{
 					"stat": "country.output.terrain.grassland.extractive_factor",
 					"operation": 0.0,
-					"value": 0.205,
+					"value": 0.096,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.terrain.grassland.extractive_factor",
 					"subject_display_name": "extractive",
@@ -65176,7 +64843,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.03,
+					"value": -0.009,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -65188,7 +64855,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.116,
+					"value": 0.043,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -65717,9 +65384,7 @@
 			"hard_prerequisite_ids": [
 				"tech.early_knowledge_institution"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": true,
 			"is_era_key": false,
 			"is_starting": false,
@@ -65729,7 +65394,7 @@
 				{
 					"stat": "country.economy_output_factor",
 					"operation": 0.0,
-					"value": 0.03,
+					"value": 0.024,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.economy_output_factor",
 					"subject_display_name": "economy_output",
@@ -65741,7 +65406,7 @@
 				{
 					"stat": "country.output.energy_factor",
 					"operation": 0.0,
-					"value": 0.24,
+					"value": 0.108,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.energy_factor",
 					"subject_display_name": "energy",
@@ -69099,7 +68764,7 @@
 				{
 					"stat": "country.output.family.oil_extraction_factor",
 					"operation": 0.0,
-					"value": 0.24,
+					"value": 0.15,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.oil_extraction_factor",
 					"subject_display_name": "oil_extraction",
@@ -69111,7 +68776,7 @@
 				{
 					"stat": "country.output.family.chemical_industry_factor",
 					"operation": 0.0,
-					"value": 0.24,
+					"value": 0.101,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.chemical_industry_factor",
 					"subject_display_name": "chemical_industry",
@@ -70332,7 +69997,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.241,
+					"value": 0.088,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -71729,9 +71394,7 @@
 			"hard_prerequisite_ids": [
 				"tech.early_knowledge_institution"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": true,
 			"is_era_key": false,
 			"is_starting": false,
@@ -71741,7 +71404,7 @@
 				{
 					"stat": "country.economy_output_factor",
 					"operation": 0.0,
-					"value": 0.03,
+					"value": 0.024,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.economy_output_factor",
 					"subject_display_name": "economy_output",
@@ -71753,7 +71416,7 @@
 				{
 					"stat": "country.output.knowledge_factor",
 					"operation": 0.0,
-					"value": 0.3,
+					"value": 0.211,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.knowledge_factor",
 					"subject_display_name": "knowledge",
@@ -72360,7 +72023,7 @@
 				{
 					"stat": "country.output.family.metal_toolmaking_factor",
 					"operation": 0.0,
-					"value": 0.45,
+					"value": 0.148,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.metal_toolmaking_factor",
 					"subject_display_name": "metal_toolmaking",
@@ -72663,7 +72326,7 @@
 				{
 					"stat": "country.output.family.chemical_industry_factor",
 					"operation": 0.0,
-					"value": 0.36,
+					"value": 0.152,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.chemical_industry_factor",
 					"subject_display_name": "chemical_industry",
@@ -72675,7 +72338,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.04,
+					"value": -0.013,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -73542,7 +73205,7 @@
 				{
 					"stat": "country.output.agriculture_factor",
 					"operation": 0.0,
-					"value": 0.075,
+					"value": 0.044,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.agriculture_factor",
 					"subject_display_name": "agriculture",
@@ -73853,7 +73516,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.116,
+					"value": 0.043,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -74582,7 +74245,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.212,
+					"value": 0.077,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -75553,7 +75216,7 @@
 				{
 					"stat": "country.production.input_factor",
 					"operation": 0.0,
-					"value": -0.03,
+					"value": -0.009,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.production.input_factor",
 					"subject_display_name": "input",
@@ -76113,7 +75776,7 @@
 				{
 					"stat": "country.output.extractive_factor",
 					"operation": 0.0,
-					"value": 0.116,
+					"value": 0.043,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.extractive_factor",
 					"subject_display_name": "extractive",
@@ -77359,7 +77022,7 @@
 				{
 					"stat": "country.output.family.steelmaking_factor",
 					"operation": 0.0,
-					"value": 0.66,
+					"value": 0.366,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.output.family.steelmaking_factor",
 					"subject_display_name": "steelmaking",
@@ -77607,9 +77270,7 @@
 				"tech.machine_learning",
 				"tech.distributed_intelligence"
 			],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": true,
 			"is_era_key": false,
 			"is_starting": false,
@@ -77619,7 +77280,7 @@
 				{
 					"stat": "country.economy_output_factor",
 					"operation": 0.0,
-					"value": 0.03,
+					"value": 0.024,
 					"subject_kind": "v0_verified",
 					"subject_id": "country.economy_output_factor",
 					"subject_display_name": "economy_output",

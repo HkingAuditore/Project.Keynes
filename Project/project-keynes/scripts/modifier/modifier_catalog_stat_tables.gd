@@ -13,7 +13,7 @@ const TECHNOLOGY_STATS := [
 	["country.output.manufacturing_factor", 0.0, 8.0],
 	["country.output.energy_factor", 0.0, 8.0],
 	["country.output.knowledge_factor", 0.0, 8.0],
-	["country.production.input_factor", 0.40, 4.0],
+	["country.production.input_factor", 0.80, 4.0],
 	["country.household.consumption_factor", 0.40, 4.0],
 	["country.resource.use_factor", 0.40, 4.0],
 	["country.population.death_factor", 0.3333, 4.0],

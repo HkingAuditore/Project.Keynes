@@ -1152,6 +1152,8 @@ func _defer_settlement_labels_after_ready() -> void:
 	await _visual_adapter._defer_settlement_labels_after_ready(self)
 func _bind_settlement_labels() -> void:
 	_visual_adapter._bind_settlement_labels(self)
+func settlement_label_layer() -> SettlementLabelLayer:
+	return _presentation._settlement_label_layer
 func _bind_country_visuals() -> void:
 	_visual_adapter._bind_country_visuals(self)
 func _connect_country_committed() -> void:

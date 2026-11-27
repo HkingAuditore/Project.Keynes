@@ -217,7 +217,7 @@ vertical_alignment = 1
 theme_override_colors/font_color = Color(0.4, 0.31, 0.22, 0.92)
 theme_override_font_sizes/font_size = 16
 theme_type_variation = &"PKDossierKicker"
-text = "存款"
+text = "存款/人"
 
 [node name="Income" type="Label" parent="Slide/Column/CohortCard/Margin/Body/Header"]
 layout_mode = 2
@@ -229,7 +229,7 @@ vertical_alignment = 1
 theme_override_colors/font_color = Color(0.4, 0.31, 0.22, 0.92)
 theme_override_font_sizes/font_size = 16
 theme_type_variation = &"PKDossierKicker"
-text = "收入"
+text = "收入/人"
 
 [node name="Rule" type="Control" parent="Slide/Column/CohortCard/Margin/Body"]
 layout_mode = 2

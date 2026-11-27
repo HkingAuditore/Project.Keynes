@@ -122,6 +122,38 @@ int64_t NativeEconomyRuntime::debit_local_merchants(int32_t cell, int64_t amount
     return distributed;
 }
 
+int64_t NativeEconomyRuntime::soft_input_marginal_bonus_q16(
+        const BuildingType &type, int64_t required_q16) const {
+    const int64_t req = std::clamp<int64_t>(required_q16, 0, Q16_ONE);
+    if (req <= 0 || req >= Q16_ONE) return 0;
+    int64_t soft_weight_sum = 0;
+    for (int32_t i = 0; i < type.input_count; ++i) {
+        const int64_t r = std::clamp<int64_t>(
+            _building_inputs[type.input_begin + i].required_q16, 0, Q16_ONE);
+        if (r > 0 && r < Q16_ONE) soft_weight_sum += r;
+    }
+    if (soft_weight_sum <= 0) return 0;
+    if (soft_weight_sum <= SOFT_PRODUCTIVITY_BONUS_CAP_Q16) return req;
+    int64_t dummy_sat = 0;
+    return mul_div_sat(req, SOFT_PRODUCTIVITY_BONUS_CAP_Q16, soft_weight_sum,
+                       dummy_sat);
+}
+
+int64_t NativeEconomyRuntime::clamp_soft_productivity_bonus_q16(int64_t bonus_sum_q16) {
+    return Q16_ONE + std::clamp<int64_t>(
+        bonus_sum_q16, 0, SOFT_PRODUCTIVITY_BONUS_CAP_Q16);
+}
+
+int64_t NativeEconomyRuntime::throughput_input_scale_q16(
+        int32_t output_factor_q16, int64_t &sat) {
+    if (output_factor_q16 <= Q16_ONE) return Q16_ONE;
+    const int64_t excess_q16 = static_cast<int64_t>(output_factor_q16) - Q16_ONE;
+    return saturating_add(
+        Q16_ONE,
+        mul_div_sat(excess_q16, THROUGHPUT_INPUT_COUPLING_Q16, Q16_ONE, sat),
+        sat);
+}
+
 int64_t NativeEconomyRuntime::effective_building_output_quantity(
         BuildingGroupConstRef group, int32_t good_id, int64_t base_quantity,
         int64_t utilization_q16, int64_t building_days,
@@ -141,8 +173,6 @@ int64_t NativeEconomyRuntime::effective_building_output_quantity_at(
     const int64_t utilized = mul_div_sat(
         physical_base, std::clamp<int64_t>(utilization_q16, 0, Q16_ONE),
         Q16_ONE, sat);
-    const int64_t building_output = mul_div_sat(utilized,
-        std::max<int32_t>(0, output_factor_q16), Q16_ONE, sat);
     const int32_t country_slot = cell >= 0 &&
             cell < static_cast<int32_t>(_epoch_cell_country.size())
         ? _epoch_cell_country[static_cast<size_t>(cell)] : -1;
@@ -152,23 +182,38 @@ int64_t NativeEconomyRuntime::effective_building_output_quantity_at(
     const int64_t good_factor_q16 = country_slot >= 0 && good_id >= 0 &&
             good_factor_index < _epoch_country_good_output_factor_q16.size()
         ? _epoch_country_good_output_factor_q16[good_factor_index] : Q16_ONE;
-    const int64_t country_good_output = mul_div_sat(
-        building_output, std::max<int64_t>(0, good_factor_q16), Q16_ONE, sat);
-    return mul_div_sat(country_good_output, std::max<int32_t>(0,
-        city_good_output_factor_q16(cell, good_id)), Q16_ONE, sat);
+    const int64_t city_good_factor_q16 = city_good_output_factor_q16(cell, good_id);
+    if (output_factor_q16 <= 0 || good_factor_q16 <= 0 || city_good_factor_q16 <= 0)
+        return 0;
+    const int64_t combined_factor_q16 = std::clamp<int64_t>(
+        static_cast<int64_t>(output_factor_q16) +
+            (good_factor_q16 - Q16_ONE) +
+            (city_good_factor_q16 - Q16_ONE),
+        static_cast<int64_t>(OUTPUT_FACTOR_MIN_Q16),
+        static_cast<int64_t>(OUTPUT_FACTOR_MAX_Q16));
+    return mul_div_sat(utilized, combined_factor_q16, Q16_ONE, sat);
 }
 
 int64_t NativeEconomyRuntime::effective_production_input_quantity(
         int32_t cell, int32_t good_id, int64_t base_quantity,
-        int64_t &sat) const {
+        int64_t &sat, int32_t output_factor_q16) const {
+    int64_t quantity = std::max<int64_t>(0, base_quantity);
+    if (quantity <= 0) return 0;
+    const int64_t throughput_scale = throughput_input_scale_q16(
+        output_factor_q16, sat);
+    if (throughput_scale != Q16_ONE) {
+        quantity = mul_div_sat(quantity, throughput_scale, Q16_ONE, sat);
+    }
     const int32_t country = cell >= 0 && cell < static_cast<int32_t>(
             _epoch_cell_country.size()) ? _epoch_cell_country[cell] : -1;
     if (country < 0 || good_id < 0 || good_id >= static_cast<int32_t>(
             _good_ids.size()) || country >= static_cast<int32_t>(
             _epoch_country_production_input_factor_q16.size()))
-        return std::max<int64_t>(0, base_quantity);
-    int64_t quantity = mul_div_sat(std::max<int64_t>(0, base_quantity),
-        _epoch_country_production_input_factor_q16[country], Q16_ONE, sat);
+        return quantity;
+    const int32_t country_input_factor_q16 = std::max<int32_t>(
+        PRODUCTION_INPUT_FACTOR_MIN_Q16,
+        _epoch_country_production_input_factor_q16[country]);
+    quantity = mul_div_sat(quantity, country_input_factor_q16, Q16_ONE, sat);
     const size_t index = static_cast<size_t>(country) * _good_ids.size() + good_id;
     if (index >= _epoch_country_good_input_factor_q16.size()) return quantity;
     return mul_div_sat(quantity, _epoch_country_good_input_factor_q16[index],

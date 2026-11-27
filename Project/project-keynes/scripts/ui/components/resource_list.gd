@@ -83,7 +83,9 @@ func _apply_row(refs: Dictionary, data: Dictionary) -> void:
 	var delta_label := refs.get("delta") as Label
 	delta_label.text = String(data.get("delta", ""))
 	var delta_text := delta_label.text
-	delta_label.visible = delta_text != ""
+	# 保留日变化列的占位，即使当前没有可显示的变化值。
+	# HBoxContainer 会在 visible=false 时移除该列，导致储量列在行间横向跳动。
+	delta_label.visible = true
 	delta_label.add_theme_color_override(
 		"font_color",
 		UITokens.DOSSIER_VERDIGRIS if delta_text.begins_with("+") \

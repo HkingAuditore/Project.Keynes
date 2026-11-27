@@ -284,8 +284,10 @@ void NativeEconomyRuntime::review_recovery_building_group(int32_t g) {
             saturating_add(std::max<int64_t>(0, group.last_sold),
                 unit_period_output - 1, _saturation_count) / unit_period_output)
         : 0;
+    const int64_t owner_shortfall = std::max<int64_t>(
+        0, group.count - std::max<int64_t>(0, group.filled_owner));
     const int64_t confirmed_excess = std::max<int64_t>(
-        0, group.count - supported_count);
+        std::max<int64_t>(0, group.count - supported_count), owner_shortfall);
     if (confirmed_excess <= 0) {
         group.recovery_failed_reviews = 0;
         return;

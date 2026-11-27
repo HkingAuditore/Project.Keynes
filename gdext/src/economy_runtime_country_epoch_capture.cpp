@@ -746,10 +746,11 @@ bool NativeEconomyRuntime::capture_country_epoch(
             freeze_geography(_country_landform_sector_output_stat_ids,
                 _modifier_landform_ids.size(),
                 _epoch_country_landform_sector_output_factor_q16);
-            _epoch_country_production_input_factor_q16[country] =
+            _epoch_country_production_input_factor_q16[country] = std::max<int32_t>(
+                PRODUCTION_INPUT_FACTOR_MIN_Q16,
                 modifier_factor_q16(modifier_api::effective_value(*_modifier_runtime,
                     ModifierApi::COUNTRY, _country_production_input_stat_id,
-                    country_handle, 0, 1.0));
+                    country_handle, 0, 1.0)));
             _epoch_country_household_consumption_factor_q16[country] =
                 modifier_factor_q16(modifier_api::effective_value(*_modifier_runtime,
                     ModifierApi::COUNTRY,

@@ -853,18 +853,17 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
             reject(INVESTMENT_REJECTION_SPONSOR_CAPITAL);
             continue;
         }
+        const int32_t target_output_factor_q16 =
+            resolve_target_building_output_factor_q16(cell, type_id, -1);
         int64_t daily_input_cost = 0;
         int64_t daily_input_base_cost = 0;
-        // Hard inputs may ceiling entry utilization. Soft tools only cut
-        // throughput efficiency (and bill the covered share) — matching
-        // production's optional-productivity path.
+        // Hard inputs may ceiling entry utilization. Soft tools add a capped
+        // productivity bonus on top of 100% bare output when profitable.
         int64_t hard_input_coverage_bound_q16 = Q16_ONE;
-        int64_t soft_efficiency_q16 = Q16_ONE;
+        int64_t soft_bonus_sum_q16 = 0;
         // Value of one full daily recipe's outputs at the frozen local
-        // prices. This is used only for the optional-input decision: a
-        // soft input is purchased when its marginal output value exceeds
-        // its full purchase cost, otherwise the investment is evaluated
-        // at bare efficiency with zero soft-input cost.
+        // prices (including target modifiers). Used for the optional-input
+        // marginal value test.
         int64_t daily_output_value = 0;
         for (int32_t output_edge = 0;
              output_edge < type.output_count; ++output_edge) {
@@ -875,8 +874,11 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
             const int64_t price = std::max<int64_t>(0,
                 market_store().price[market_store().index(
                     market, output.good_id)]);
+            const int64_t target_qty = effective_building_output_quantity_at(
+                cell, target_output_factor_q16, output.good_id, output.quantity,
+                Q16_ONE, 1, _saturation_count);
             daily_output_value = saturating_add(daily_output_value,
-                goods_cost(std::max<int64_t>(0, output.quantity), price,
+                goods_cost(std::max<int64_t>(0, target_qty), price,
                     _saturation_count), _saturation_count);
         }
         for (int32_t i = 0; i < type.input_count; ++i) {
@@ -885,7 +887,7 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
             int64_t best_base_price = 0;
             int64_t best_coverage_q16 = -1;
             int64_t best_cold_cover = -1;
-            int32_t best_efficiency_q16 = Q16_ONE;
+            int64_t best_physical_daily = 0;
             for (int32_t c = input.candidate_begin;
                  c < input.candidate_begin + input.candidate_count; ++c) {
                 const InputCandidate &candidate = _building_input_candidates[c];
@@ -898,6 +900,9 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
                     physical_daily = saturating_add(
                         physical_daily, 1, _saturation_count);
                 }
+                physical_daily = effective_production_input_quantity(
+                    cell, candidate.good_id, physical_daily,
+                    _saturation_count, target_output_factor_q16);
                 const int64_t input_index = market_store().index(
                     market, candidate.good_id);
                 const int32_t input_signal = market_signal_index(
@@ -923,11 +928,10 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
                     ? startup_producer_hard_input_cover_q16(
                         cell, candidate.good_id, _saturation_count)
                     : Q16_ONE;
-                const int64_t base_effective_price = mul_div_sat(
-                    market_store().price[market_store().index(market, candidate.good_id)], Q16_ONE,
-                    candidate.efficiency_q16, _saturation_count);
+                const int64_t base_unit_price = market_store().price[
+                    market_store().index(market, candidate.good_id)];
                 const TransactionQuote input_quote = quote_transaction(
-                    cell, candidate.good_id, base_effective_price,
+                    cell, candidate.good_id, base_unit_price,
                     false, true, _saturation_count, GOODS_SCALE);
                 const int64_t effective_price = input_quote.buyer_outlay;
                 if (coverage_q16 > best_coverage_q16 ||
@@ -939,24 +943,20 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
                     best_coverage_q16 = coverage_q16;
                     best_cold_cover = cold_cover;
                     best_price = effective_price;
-                    best_base_price = base_effective_price;
-                    best_efficiency_q16 = std::max<int32_t>(1,
-                        candidate.efficiency_q16);
+                    best_base_price = base_unit_price;
+                    best_physical_daily = physical_daily;
                 }
             }
             const int64_t required_q16 = std::clamp<int64_t>(
                 input.required_q16, 0, Q16_ONE);
             // Soft inputs match production: missing every candidate is
-            // zero coverage / zero bill, not a hard INPUT_CHAIN reject.
+            // zero bonus / zero bill, not a hard INPUT_CHAIN reject.
             // Hard-required edges with no priced SKU still fail the chain.
             if (best_price == std::numeric_limits<int64_t>::max()) {
                 if (required_q16 >= Q16_ONE) {
                     daily_input_cost = std::numeric_limits<int64_t>::max();
                     break;
                 }
-                soft_efficiency_q16 = std::min<int64_t>(
-                    soft_efficiency_q16,
-                    std::clamp<int64_t>(Q16_ONE - required_q16, 0, Q16_ONE));
                 continue;
             }
             if (required_q16 >= Q16_ONE) {
@@ -965,49 +965,46 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
                     std::clamp<int64_t>(
                         std::max<int64_t>(0, best_coverage_q16), 0, Q16_ONE));
             } else if (required_q16 > 0) {
-                // Evaluate both soft-input choices. The bare branch keeps
-                // only (1 - required) productivity and pays nothing. The
-                // tooled branch restores full productivity and pays the
-                // complete physical input bill. This makes investment
-                // profitability use max(bare, tooled), rather than
-                // treating a partially available tool as mandatory cost.
-                const int64_t physical_daily = mul_div_sat(
-                    input.quantity, Q16_ONE,
-                    best_efficiency_q16,
-                    _saturation_count);
+                // Soft inputs add a capped productivity bonus when purchased.
                 const int64_t tooled_cost = goods_cost(
-                    std::max<int64_t>(1, physical_daily), best_price,
+                    std::max<int64_t>(1, best_physical_daily), best_price,
                     _saturation_count);
+                const int64_t marginal_bonus_q16 =
+                    soft_input_marginal_bonus_q16(type, required_q16);
                 const int64_t marginal_output_value = mul_div_sat(
-                    daily_output_value, required_q16, Q16_ONE,
+                    daily_output_value, marginal_bonus_q16, Q16_ONE,
                     _saturation_count);
                 const bool buy_soft = tooled_cost > 0 &&
-                    marginal_output_value >= tooled_cost;
+                    best_coverage_q16 > 0 &&
+                    marginal_output_value > tooled_cost;
                 if (buy_soft) {
                     daily_input_cost = saturating_add(daily_input_cost,
                         tooled_cost, _saturation_count);
                     daily_input_base_cost = saturating_add(
                         daily_input_base_cost,
-                        goods_cost(std::max<int64_t>(1, physical_daily),
+                        goods_cost(std::max<int64_t>(1, best_physical_daily),
                             best_base_price, _saturation_count),
                         _saturation_count);
-                } else {
-                    soft_efficiency_q16 = std::min<int64_t>(
-                        soft_efficiency_q16,
-                        std::clamp<int64_t>(Q16_ONE - required_q16,
-                            0, Q16_ONE));
+                    soft_bonus_sum_q16 = saturating_add(
+                        soft_bonus_sum_q16,
+                        mul_div_sat(marginal_bonus_q16,
+                            std::clamp<int64_t>(best_coverage_q16, 0, Q16_ONE),
+                            Q16_ONE, _saturation_count),
+                        _saturation_count);
                 }
                 continue;
             }
-            // Hard inputs bill their full physical recipe quantity;
+            // Hard inputs bill their full coupled physical recipe quantity;
             // utilization scales the period bill later.
-            const int64_t bill_quantity = input.quantity;
+            const int64_t bill_quantity = best_physical_daily;
             daily_input_cost = saturating_add(daily_input_cost,
                 goods_cost(bill_quantity, best_price, _saturation_count),
                 _saturation_count);
             daily_input_base_cost = saturating_add(
                 daily_input_base_cost, goods_cost(bill_quantity, best_base_price, _saturation_count), _saturation_count);
         }
+        const int64_t soft_efficiency_q16 =
+            clamp_soft_productivity_bonus_q16(soft_bonus_sum_q16);
         if (daily_input_cost == std::numeric_limits<int64_t>::max()) {
             // A hard production input shortage must still expose the
             // construction BOM.  Otherwise a producer such as the
@@ -1253,11 +1250,14 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
                 const OutputInvestmentSignal &output_signal = output_signals[i];
                 const int64_t research_demand =
                     epoch_procurement_demand_daily(cell, output.good_id);
-                const int64_t prospective_quantity =
+                const int64_t prospective_base_quantity =
                     effective_building_output_quantity_for_target(
                         cell, type_id, target_signature,
-                        output.good_id, output.quantity, throughput_q16, 1,
+                        output.good_id, output.quantity, utilization_q16, 1,
                         _saturation_count);
+                const int64_t prospective_quantity = mul_div_sat(
+                    prospective_base_quantity, soft_efficiency_q16, Q16_ONE,
+                    _saturation_count);
                 const int64_t retail_price = market_store().price[
                     market_store().index(market, output.good_id)];
                 int64_t retained_quantity = 0;

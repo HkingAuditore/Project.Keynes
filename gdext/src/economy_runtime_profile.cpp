@@ -394,7 +394,7 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     {
         const std::vector<int32_t> horizons = packed_i32(
             profile, "building_maintenance_horizon_days_by_sector");
-        const int32_t defaults[5] = {5475, 2920, 3650, 2190, 7300};
+        const int32_t defaults[5] = {1460, 900, 1095, 730, 1825};
         for (int32_t sector = 0; sector < 5; ++sector) {
             const int32_t value = sector < static_cast<int32_t>(horizons.size())
                 ? horizons[static_cast<size_t>(sector)] : defaults[sector];

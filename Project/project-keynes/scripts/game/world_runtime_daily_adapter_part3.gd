@@ -139,6 +139,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 	if ideology != null:
 		ideology.drain_receipts()
 	host.simulation_committed.emit(from_day, host._runtime_commit_day, host._runtime_commit_generation)
+	host._presentation.sync_settlement_labels(false)
 	ext.finish_runtime_display_frame()
 	if not whole_graph:
 		# This path publishes the installed map directly, without a queued worker texture.

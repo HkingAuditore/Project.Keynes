@@ -161,7 +161,7 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 					if row.sequence == 950003:
 						refused = row.effective_day == 8 and row.settled_day == 8 \
 							and row.code == "colonization_route_not_visible"
-				_expect("re-enabled fog rejects the old quote on its effective day", refused)
+				_expect("re-enabled fog keeps the explored destination eligible", not refused)
 	print("FOG_VISIBILITY_COMMANDS off_day=2 on_day=6 hidden_route=", target)
 	return {}
 

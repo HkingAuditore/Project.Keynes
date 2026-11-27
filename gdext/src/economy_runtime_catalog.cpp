@@ -86,9 +86,6 @@ using namespace godot;
 using namespace variant_helpers;
 
 namespace {
-constexpr std::array<int32_t, 9> HOUSEHOLD_WEALTH_ANCHORS_Q16 = {
-    4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576};
-
 std::vector<uint8_t> economy_packed_u8(const Dictionary &d, const char *key) {
     std::vector<uint8_t> out;
     const StringName k(key);
@@ -1232,7 +1229,7 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
                 std::clamp<int64_t>(pow_q16(
                     HOUSEHOLD_WEALTH_ANCHORS_Q16[anchor],
                     _variants[v].wealth_elasticity_q16, _saturation_count),
-                    0, std::numeric_limits<int32_t>::max()));
+                    Q16_ONE / 16, Q16_ONE * 64));
         }
     }
     _components.resize(component_goods.size());

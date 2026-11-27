@@ -93,8 +93,9 @@ var economic_sector_id: String = ""
 @export var input_good_ids: PackedStringArray = PackedStringArray()
 @export var input_quantities_per_day: PackedInt64Array = PackedInt64Array()
 ## Parallel Q16 hardness per input slot. Empty preserves legacy fully hard inputs.
-## 65536 means missing stock stops production; 0 means the input is purely optional;
-## intermediate values leave a baseline output floor when the input is missing.
+## 65536 means missing stock stops production; 0 means the input is disabled;
+## intermediate values (1..65535) are optional soft enhancers adding a capped
+## productivity bonus on top of 100% bare output.
 @export var input_required_q16: PackedInt32Array = PackedInt32Array()
 ## Optional parallel input constraints. Empty category IDs preserve exact-good
 ## recipes. A category input accepts every technology-available good in that

@@ -934,11 +934,21 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
         // 命中缓存不申请整行写租约；只有实际重算才进入既有跟踪写路径。
         auto writable_group = building_at(group_index);
         writable_group.output_factor_q16 = Q16_ONE;
+        auto combine_additive_output_q16 = [](std::initializer_list<double> factors) -> int32_t {
+            double delta_sum = 0.0;
+            for (double f : factors) {
+                if (!std::isfinite(f) || f <= 0.0) return 0;
+                delta_sum += (f - 1.0);
+            }
+            const int32_t raw_q16 = modifier_factor_q16(1.0 + delta_sum);
+            return std::clamp<int32_t>(raw_q16,
+                OUTPUT_FACTOR_MIN_Q16, OUTPUT_FACTOR_MAX_Q16);
+        };
         if (!cell_country_valid) {
             writable_group.modifier_handle = 0;
-            writable_group.output_factor_q16 = modifier_factor_q16(
-                static_cast<double>(family_owned_factor_q16) / Q16_ONE *
-                static_cast<double>(cell_sector_factor_q16) / Q16_ONE);
+            writable_group.output_factor_q16 = combine_additive_output_q16({
+                static_cast<double>(family_owned_factor_q16) / Q16_ONE,
+                static_cast<double>(cell_sector_factor_q16) / Q16_ONE});
         } else {
             writable_group.modifier_handle = modifier_api::ensure_building_identity(*_modifier_runtime,
                 group.cell, group.type_id, group.owner_signature_id);
@@ -950,17 +960,18 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
                     ModifierApi::ECONOMY, exact_building_stat_id, 0,
                     static_cast<uint64_t>(group.cell), 1.0)
                 : 1.0;
-            writable_group.output_factor_q16 = modifier_factor_q16(
-                (static_cast<double>(country_factor_q16) / Q16_ONE) *
-                (static_cast<double>(sector_factor_q16) / Q16_ONE) *
-                (static_cast<double>(research_factor_q16) / Q16_ONE) *
-                (static_cast<double>(family_factor_q16) / Q16_ONE) *
-                (static_cast<double>(building_type_factor_q16) / Q16_ONE) *
-                (static_cast<double>(terrain_sector_factor_q16) / Q16_ONE) *
-                (static_cast<double>(landform_sector_factor_q16) / Q16_ONE) *
-                (static_cast<double>(family_owned_factor_q16) / Q16_ONE) *
-                (static_cast<double>(cell_sector_factor_q16) / Q16_ONE) *
-                building_factor * exact_building_factor);
+            writable_group.output_factor_q16 = combine_additive_output_q16({
+                static_cast<double>(country_factor_q16) / Q16_ONE,
+                static_cast<double>(sector_factor_q16) / Q16_ONE,
+                static_cast<double>(research_factor_q16) / Q16_ONE,
+                static_cast<double>(family_factor_q16) / Q16_ONE,
+                static_cast<double>(building_type_factor_q16) / Q16_ONE,
+                static_cast<double>(terrain_sector_factor_q16) / Q16_ONE,
+                static_cast<double>(landform_sector_factor_q16) / Q16_ONE,
+                static_cast<double>(family_owned_factor_q16) / Q16_ONE,
+                static_cast<double>(cell_sector_factor_q16) / Q16_ONE,
+                building_factor,
+                exact_building_factor});
         }
         cache.country_factor_q16 = country_factor_q16;
         cache.sector_factor_q16 = sector_factor_q16;
@@ -984,114 +995,125 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
     }
 }
 
+int32_t NativeEconomyRuntime::resolve_target_building_output_factor_q16(
+        int32_t cell, int32_t type_id, int32_t owner_signature_id) {
+    if (_modifier_runtime == nullptr) return Q16_ONE;
+    const int32_t country_slot = cell >= 0 &&
+            cell < static_cast<int32_t>(_epoch_cell_country.size())
+        ? _epoch_cell_country[static_cast<size_t>(cell)] : -1;
+    const uint64_t modifier_handle = owner_signature_id >= 0
+        ? modifier_api::ensure_building_identity(*_modifier_runtime,
+            cell, type_id, owner_signature_id)
+        : 0;
+    const double country_factor = country_slot >= 0 &&
+            country_slot < static_cast<int32_t>(_epoch_country_output_factor_q16.size())
+        ? static_cast<double>(_epoch_country_output_factor_q16[
+            static_cast<size_t>(country_slot)]) / Q16_ONE
+        : 1.0;
+    const int32_t sector = type_id >= 0 &&
+            type_id < static_cast<int32_t>(_building_types.size())
+        ? _building_types[static_cast<size_t>(type_id)].economic_sector : 2;
+    const bool sector_factor_applicable =
+        sector >= 0 && sector < CIVIL_SECTOR_COUNT;
+    const double sector_factor = sector_factor_applicable &&
+            country_slot >= 0 &&
+            static_cast<size_t>(country_slot) * 5U +
+                    static_cast<size_t>(sector) <
+                _epoch_country_sector_output_factor_q16.size()
+        ? static_cast<double>(_epoch_country_sector_output_factor_q16[
+            static_cast<size_t>(country_slot) * 5U +
+            static_cast<size_t>(sector)]) / Q16_ONE
+        : 1.0;
+    int32_t family = -1;
+    if (type_id >= 0 &&
+        type_id < static_cast<int32_t>(_building_upgrade_family_indices.size())) {
+        family = _building_upgrade_family_indices[
+            static_cast<size_t>(type_id)];
+    }
+    const bool research_institution = family >= 0 &&
+        family < static_cast<int32_t>(_building_upgrade_family_ids.size()) &&
+        _building_upgrade_family_ids[static_cast<size_t>(family)] ==
+            "research_institution";
+    const double research_factor = research_institution && country_slot >= 0 &&
+            country_slot < static_cast<int32_t>(
+                _epoch_country_research_output_factor_q16.size())
+        ? static_cast<double>(_epoch_country_research_output_factor_q16[
+            static_cast<size_t>(country_slot)]) / Q16_ONE
+        : 1.0;
+    const size_t family_factor_index = static_cast<size_t>(
+        std::max(0, country_slot)) * _building_upgrade_family_ids.size() +
+        static_cast<size_t>(std::max(0, family));
+    const double family_factor = country_slot >= 0 && family >= 0 &&
+            family_factor_index < _epoch_country_family_output_factor_q16.size()
+        ? static_cast<double>(_epoch_country_family_output_factor_q16[
+            family_factor_index]) / Q16_ONE
+        : 1.0;
+    const size_t building_factor_index = static_cast<size_t>(
+        std::max(0, country_slot)) * _building_type_ids.size() +
+        static_cast<size_t>(std::max(0, type_id));
+    const double building_type_factor = country_slot >= 0 && type_id >= 0 &&
+            building_factor_index <
+                _epoch_country_building_output_factor_q16.size()
+        ? static_cast<double>(_epoch_country_building_output_factor_q16[
+            building_factor_index]) / Q16_ONE
+        : 1.0;
+    const int32_t terrain = cell >= 0 && cell < static_cast<int32_t>(
+            _building_terrain.size()) ? _building_terrain[cell] : -1;
+    const int32_t landform = cell >= 0 && cell < static_cast<int32_t>(
+            _building_landform.size()) ? _building_landform[cell] : -1;
+    const size_t terrain_index = (static_cast<size_t>(std::max(0, country_slot)) *
+            _modifier_terrain_ids.size() + static_cast<size_t>(std::max(0, terrain))) *
+            5U + static_cast<size_t>(std::max(0, sector));
+    const size_t landform_index = (static_cast<size_t>(std::max(0, country_slot)) *
+            _modifier_landform_ids.size() + static_cast<size_t>(std::max(0, landform))) *
+            5U + static_cast<size_t>(std::max(0, sector));
+    const double terrain_factor = sector_factor_applicable && country_slot >= 0 && terrain >= 0 &&
+            terrain_index < _epoch_country_terrain_sector_output_factor_q16.size()
+        ? static_cast<double>(_epoch_country_terrain_sector_output_factor_q16[
+            terrain_index]) / Q16_ONE : 1.0;
+    const double landform_factor = sector_factor_applicable && country_slot >= 0 && landform >= 0 &&
+            landform_index < _epoch_country_landform_sector_output_factor_q16.size()
+        ? static_cast<double>(_epoch_country_landform_sector_output_factor_q16[
+            landform_index]) / Q16_ONE : 1.0;
+    const size_t cell_sector_index = static_cast<size_t>(
+        std::max(0, cell)) * 5U + static_cast<size_t>(std::max(0, sector));
+    const double cell_sector_factor = sector_factor_applicable && cell >= 0 &&
+            cell_sector_index < _epoch_cell_sector_output_factor_q16.size()
+        ? static_cast<double>(_epoch_cell_sector_output_factor_q16[
+            cell_sector_index]) / Q16_ONE : 1.0;
+    const int32_t exact_building_stat_id = type_id >= 0 &&
+            type_id < static_cast<int32_t>(
+                _city_building_output_stat_ids.size())
+        ? _city_building_output_stat_ids[static_cast<size_t>(type_id)] : -1;
+    const double exact_building_factor = exact_building_stat_id >= 0
+        ? modifier_api::effective_value(*_modifier_runtime,
+            ModifierApi::ECONOMY, exact_building_stat_id, 0,
+            static_cast<uint64_t>(cell), 1.0)
+        : 1.0;
+    const double building_factor = modifier_api::economy_building_output_factor(
+        *_modifier_runtime, modifier_handle, static_cast<uint64_t>(cell), sector);
+    const double factors[] = {
+        country_factor, sector_factor, research_factor, family_factor,
+        building_type_factor, terrain_factor, landform_factor,
+        cell_sector_factor, building_factor, exact_building_factor};
+    double delta_sum = 0.0;
+    for (double f : factors) {
+        if (!std::isfinite(f) || f <= 0.0) return 0;
+        delta_sum += (f - 1.0);
+    }
+    return std::clamp<int32_t>(
+        modifier_factor_q16(1.0 + delta_sum),
+        OUTPUT_FACTOR_MIN_Q16, OUTPUT_FACTOR_MAX_Q16);
+}
+
 int64_t NativeEconomyRuntime::effective_building_output_quantity_for_target(
         int32_t cell, int32_t type_id, int32_t owner_signature_id,
         int32_t good_id, int64_t base_quantity, int64_t utilization_q16,
         int64_t building_days, int64_t &sat) {
-    BuildingGroup target;
-    target.cell = cell;
-    target.type_id = type_id;
-    target.owner_signature_id = owner_signature_id;
-    target.output_factor_q16 = Q16_ONE;
-    if (_modifier_runtime != nullptr) {
-        const int32_t country_slot = cell >= 0 &&
-                cell < static_cast<int32_t>(_epoch_cell_country.size())
-            ? _epoch_cell_country[static_cast<size_t>(cell)] : -1;
-        const uint64_t country_handle = country_slot >= 0 &&
-                country_slot < static_cast<int32_t>(_epoch_country_handles.size())
-            ? _epoch_country_handles[static_cast<size_t>(country_slot)] : 0;
-        target.modifier_handle = owner_signature_id >= 0
-            ? modifier_api::ensure_building_identity(*_modifier_runtime,
-                cell, type_id, owner_signature_id)
-            : 0;
-        const double country_factor = country_slot >= 0 &&
-                country_slot < static_cast<int32_t>(_epoch_country_output_factor_q16.size())
-            ? static_cast<double>(_epoch_country_output_factor_q16[
-                static_cast<size_t>(country_slot)]) / Q16_ONE
-            : 1.0;
-        const int32_t sector = type_id >= 0 &&
-                type_id < static_cast<int32_t>(_building_types.size())
-            ? _building_types[static_cast<size_t>(type_id)].economic_sector : 2;
-        const bool sector_factor_applicable =
-            sector >= 0 && sector < CIVIL_SECTOR_COUNT;
-        const double sector_factor = sector_factor_applicable &&
-                country_slot >= 0 &&
-                static_cast<size_t>(country_slot) * 5U +
-                        static_cast<size_t>(sector) <
-                    _epoch_country_sector_output_factor_q16.size()
-            ? static_cast<double>(_epoch_country_sector_output_factor_q16[
-                static_cast<size_t>(country_slot) * 5U +
-                static_cast<size_t>(sector)]) / Q16_ONE
-            : 1.0;
-        int32_t family = -1;
-        if (type_id >= 0 &&
-            type_id < static_cast<int32_t>(_building_upgrade_family_indices.size())) {
-            family = _building_upgrade_family_indices[
-                static_cast<size_t>(type_id)];
-        }
-        const bool research_institution = family >= 0 &&
-            family < static_cast<int32_t>(_building_upgrade_family_ids.size()) &&
-            _building_upgrade_family_ids[static_cast<size_t>(family)] ==
-                "research_institution";
-        const double research_factor = research_institution && country_slot >= 0 &&
-                country_slot < static_cast<int32_t>(
-                    _epoch_country_research_output_factor_q16.size())
-            ? static_cast<double>(_epoch_country_research_output_factor_q16[
-                static_cast<size_t>(country_slot)]) / Q16_ONE
-            : 1.0;
-        const size_t family_factor_index = static_cast<size_t>(
-            std::max(0, country_slot)) * _building_upgrade_family_ids.size() +
-            static_cast<size_t>(std::max(0, family));
-        const double family_factor = country_slot >= 0 && family >= 0 &&
-                family_factor_index < _epoch_country_family_output_factor_q16.size()
-            ? static_cast<double>(_epoch_country_family_output_factor_q16[
-                family_factor_index]) / Q16_ONE
-            : 1.0;
-        const size_t building_factor_index = static_cast<size_t>(
-            std::max(0, country_slot)) * _building_type_ids.size() +
-            static_cast<size_t>(std::max(0, type_id));
-        const double building_type_factor = country_slot >= 0 && type_id >= 0 &&
-                building_factor_index <
-                    _epoch_country_building_output_factor_q16.size()
-            ? static_cast<double>(_epoch_country_building_output_factor_q16[
-                building_factor_index]) / Q16_ONE
-            : 1.0;
-        const int32_t terrain = cell >= 0 && cell < static_cast<int32_t>(
-                _building_terrain.size()) ? _building_terrain[cell] : -1;
-        const int32_t landform = cell >= 0 && cell < static_cast<int32_t>(
-                _building_landform.size()) ? _building_landform[cell] : -1;
-        const size_t terrain_index = (static_cast<size_t>(std::max(0, country_slot)) *
-                _modifier_terrain_ids.size() + static_cast<size_t>(std::max(0, terrain))) *
-                5U + static_cast<size_t>(sector);
-        const size_t landform_index = (static_cast<size_t>(std::max(0, country_slot)) *
-                _modifier_landform_ids.size() + static_cast<size_t>(std::max(0, landform))) *
-                5U + static_cast<size_t>(sector);
-        const double terrain_factor = country_slot >= 0 && terrain >= 0 &&
-                terrain_index < _epoch_country_terrain_sector_output_factor_q16.size()
-            ? static_cast<double>(_epoch_country_terrain_sector_output_factor_q16[
-                terrain_index]) / Q16_ONE : 1.0;
-        const double landform_factor = country_slot >= 0 && landform >= 0 &&
-                landform_index < _epoch_country_landform_sector_output_factor_q16.size()
-            ? static_cast<double>(_epoch_country_landform_sector_output_factor_q16[
-                landform_index]) / Q16_ONE : 1.0;
-        const int32_t exact_building_stat_id = type_id >= 0 &&
-                type_id < static_cast<int32_t>(
-                    _city_building_output_stat_ids.size())
-            ? _city_building_output_stat_ids[static_cast<size_t>(type_id)] : -1;
-        const double exact_building_factor = exact_building_stat_id >= 0
-            ? modifier_api::effective_value(*_modifier_runtime,
-                ModifierApi::ECONOMY, exact_building_stat_id, 0,
-                static_cast<uint64_t>(cell), 1.0)
-            : 1.0;
-        target.output_factor_q16 = modifier_factor_q16(
-            country_factor * sector_factor * research_factor * family_factor *
-            building_type_factor * terrain_factor * landform_factor *
-            modifier_api::economy_building_output_factor(*_modifier_runtime,
-                target.modifier_handle, static_cast<uint64_t>(cell), sector) *
-            exact_building_factor);
-    }
-    return effective_building_output_quantity_at(target.cell,
-        target.output_factor_q16, good_id, base_quantity, utilization_q16,
+    const int32_t output_factor_q16 = resolve_target_building_output_factor_q16(
+        cell, type_id, owner_signature_id);
+    return effective_building_output_quantity_at(cell,
+        output_factor_q16, good_id, base_quantity, utilization_q16,
         building_days, sat);
 }
 

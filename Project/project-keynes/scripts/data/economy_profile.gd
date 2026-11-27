@@ -284,7 +284,7 @@ extends Resource
 ## maintenance recipe empty. Order: agriculture, extractive, manufacturing,
 ## energy, knowledge.
 @export var building_maintenance_horizon_days_by_sector: PackedInt32Array = PackedInt32Array([
-	5475, 2920, 3650, 2190, 7300,
+	1460, 900, 1095, 730, 1825,
 ])
 ## Applied only to derived (empty-recipe) daily quantities, not authored recipes.
 @export_range(1, 262144, 1) var building_maintenance_cost_factor_q16: int = 65536

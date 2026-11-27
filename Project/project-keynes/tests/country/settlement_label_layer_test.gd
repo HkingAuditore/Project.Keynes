@@ -68,6 +68,15 @@ func _run() -> void:
 	layer.sync_from_runtime()
 	_expect("增量可释放地名", not layer._settlements.has(0) and
 		layer._settlements.has(1))
+	camera.zoom = Vector2(0.4, 0.4)
+	layer.set_player_capital_cell(1)
+	layer._process(0.0)
+	_expect("首都格在远景仍保留地名", _visible_count(layer) == 1 and
+		layer._pool[0].text == "青禾村")
+	var host := WorldRuntimeHost.new()
+	_expect("运行期宿主暴露 settlement_label_layer 接口",
+		host.has_method("settlement_label_layer") and host.settlement_label_layer() == null)
+	host.free()
 	print("=== settlement label layer %s: checks=%d failures=%d ===" % [
 		"PASS" if _failures == 0 else "FAIL", _checks, _failures])
 	quit(0 if _failures == 0 else 1)

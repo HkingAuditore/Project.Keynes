@@ -94,7 +94,9 @@ godot::Dictionary NativeSimulationHost::submit_economy_boundary_request(
 
 const std::vector<uint8_t> *NativeSimulationHost::colonization_visibility() const {
     if (!_executor_vision || !_executor_vision->frame) return nullptr;
-    return _executor_vision->fog_enabled ? &_executor_vision->frame->visible : &_executor_vision->all_visible;
+    // 开拓可以前往曾经探索过、但当前观察源已经看不到的格子。
+    // 未探索格仍为 0，路线搜索因此继续阻止盲目开拓。
+    return _executor_vision->fog_enabled ? &_executor_vision->frame->explored : &_executor_vision->all_visible;
 }
 
 bool NativeSimulationHost::service_economy_boundary_requests() {
@@ -114,7 +116,7 @@ bool NativeSimulationHost::service_economy_boundary_requests() {
         auto *economy = _economy_production_runtime;
         const auto &vision = *_executor_vision;
         const auto &frame = *vision.frame;
-        const auto &visible = frame.fog_enabled ? frame.visible : vision.all_visible;
+        const auto &visible = frame.fog_enabled ? frame.explored : vision.all_visible;
         for (const auto &request : requests) {
             auto &r = *request;
             if (economy == nullptr || economy_api::epoch_active(*economy)) {

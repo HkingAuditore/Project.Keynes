@@ -361,6 +361,10 @@ func _cohort_rows(snapshot: Dictionary, mobilization: Dictionary) -> Array:
 		var living_level := int(living_levels[i]) if i < living_levels.size() else -1
 		var org = organization.get(profession_index, null)
 		var income_raw := int(income[i]) if i < income.size() else 0
+		# 展板按阶层人口展示可比较的人均口径，避免大阶层仅因人数多而
+		# 看起来存款和收入更高。金额仍以原生子单位保存，先在人均后格式化。
+		var funds_per_capita := int(funds[i]) / people if i < funds.size() and people > 0 else 0
+		var income_per_capita := income_raw / people if people > 0 else 0
 		var share := influences[i] / total_influence
 		rows.append({
 			"id": int(handles[i]) if i < handles.size() else i,
@@ -370,9 +374,9 @@ func _cohort_rows(snapshot: Dictionary, mobilization: Dictionary) -> Array:
 			"population": people,
 			"population_text": UITokens.format_compact_number_cn(float(people), 1),
 			"share": clampf(share, 0.0, 1.0),
-			"funds_text": _money_text(int(funds[i]) if i < funds.size() else 0),
-			"income_text": _signed_money_text(income_raw),
-			"income_positive": income_raw >= 0,
+			"funds_text": _money_text(funds_per_capita),
+			"income_text": _signed_money_text(income_per_capita),
+			"income_positive": income_per_capita >= 0,
 			"living_level": living_level,
 			# 生活水平的词、图标、颜色统一取自地块档案的同一份口径，
 			# 免得展板与档案对同一个阶层说出两种生活水平。

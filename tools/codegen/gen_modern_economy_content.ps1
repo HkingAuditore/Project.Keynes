@@ -195,17 +195,9 @@ function PI64([long[]]$Values) {
 }
 
 function Scale-Food-Output-Quantities([string]$Content) {
-    $outputs = @(Content-Strings $Content 'output_good_ids')
-    $quantities = @(Content-Numbers $Content 'output_quantities_per_day')
-    if ($outputs.Count -eq 0 -or $outputs.Count -ne $quantities.Count) { return $Content }
-    for ($i = 0; $i -lt $outputs.Count; $i++) {
-        if ($outputs[$i] -in $foodOutputGoodIds) {
-            $quantities[$i] = [long]$quantities[$i] * 2
-        }
-    }
-    return [regex]::Replace($Content,
-        '(?m)^output_quantities_per_day = PackedInt64Array\(.*\)\r?$',
-        'output_quantities_per_day = ' + (PI64 @($quantities)))
+    # Removed legacy 2x food output inflation so food supply tracks balanced
+    # historical people-per-worker ladders without chronic surplus.
+    return $Content
 }
 function PI32([int[]]$Values) {
     if ($Values.Count -eq 0) { return 'PackedInt32Array()' }
@@ -631,48 +623,48 @@ $needSpecs = @(
     @{id='staple_food'; tier='essential'; base=550; wealth=4096; min=49152; max=81920; price=98304; quantityPrice=16384; quantityFloor=32768;
         variants=@(@('prepared_staples'),@('bread'),@('grain'),@('wheat_grain'),
             @('rice_grain'),@('corn_grain'),@('potatoes'),@('gathered_plants'))},
-    @{id='protein'; tier='essential'; base=180; wealth=16384; min=32768; max=131072; price=98304; quantityPrice=98304; quantityFloor=9830;
+    @{id='protein'; tier='essential'; base=180; wealth=16384; min=32768; max=163840; price=98304; quantityPrice=98304; quantityFloor=9830;
         variants=@(@('game_meat'),@('meat'),@('fish'),@('canned_fish'),@('dairy_products'))},
-    @{id='produce'; tier='essential'; base=300; wealth=16384; min=32768; max=131072; price=98304; quantityPrice=65536; quantityFloor=4096;
+    @{id='produce'; tier='essential'; base=300; wealth=16384; min=32768; max=163840; price=98304; quantityPrice=65536; quantityFloor=4096;
         variants=@(@('vegetables'),@('processed_food'))},
-    @{id='food_fat'; tier='essential'; base=35; wealth=12288; min=32768; max=131072; price=98304; quantityPrice=49152; quantityFloor=8192;
+    @{id='food_fat'; tier='essential'; base=35; wealth=14746; min=32768; max=163840; price=98304; quantityPrice=49152; quantityFloor=8192;
         variants=@(@('edible_oil'))},
-    @{id='seasoning'; tier='essential'; base=5; wealth=16384; min=16384; max=196608; price=98304; quantityPrice=65536; quantityFloor=4096;
+    @{id='seasoning'; tier='essential'; base=8; wealth=19661; min=16384; max=196608; price=98304; quantityPrice=65536; quantityFloor=4096;
         variants=@(@('salt'),@('spices'))},
-    @{id='clothing'; tier='essential'; base=3; wealth=32768; min=16384; max=196608; price=65536; quantityPrice=32768; quantityFloor=16384;
+    @{id='clothing'; tier='essential'; base=16; wealth=29491; min=16384; max=393216; price=65536; quantityPrice=32768; quantityFloor=16384;
         variants=@(@('cloth'),@('fur'),@('clothing'),@('footwear'))},
-    @{id='housing'; tier='essential'; base=5; wealth=32768; min=16384; max=196608; price=65536;
+    @{id='housing'; tier='essential'; base=24; wealth=29491; min=16384; max=393216; price=65536;
         variants=@(@('reed_bundle','bast_fiber'),@('turf_block','lumber'),
             @('adobe_brick','lumber'),@('raw_stone','lime','lumber'),
             @('bricks','lime','lumber'),@('cement','glass','steel'),
             @('concrete','steel','glass'),@('construction_components'))},
-    @{id='household_goods'; tier='comfort'; base=2; wealth=49152; min=8192; max=262144; price=49152;
+    @{id='household_goods'; tier='comfort'; base=12; wealth=36045; min=8192; max=655360; price=49152;
         variants=@(@('furniture'),@('leather_goods'))},
-    @{id='domestic_wares'; tier='comfort'; base=1; wealth=49152; min=8192; max=262144; price=49152;
+    @{id='domestic_wares'; tier='comfort'; base=10; wealth=36045; min=8192; max=655360; price=49152;
         variants=@(@('pottery'),@('glassware'),@('metal_housewares'))},
-    @{id='hygiene'; tier='essential'; base=10; wealth=32768; min=16384; max=196608; price=65536;
+    @{id='hygiene'; tier='essential'; base=26; wealth=29491; min=16384; max=393216; price=65536;
         variants=@(@('soap'),@('detergent'))},
-    @{id='healthcare'; tier='essential'; base=3; wealth=32768; min=16384; max=196608; price=32768;
+    @{id='healthcare'; tier='essential'; base=12; wealth=29491; min=16384; max=393216; price=32768;
         variants=@(@('medicinal_herbs'),@('pharmaceuticals'))},
-    @{id='home_energy'; tier='essential'; base=80; wealth=32768; min=16384; max=196608; price=65536;
+    @{id='home_energy'; tier='essential'; base=180; wealth=29491; min=16384; max=393216; price=65536;
         variants=@(@('logs'),@('charcoal'),@('coal'),@('natural_gas'),@('refined_fuel'),@('electricity'))},
-    @{id='transport'; tier='comfort'; base=3; wealth=49152; min=8192; max=262144; price=49152;
+    @{id='transport'; tier='comfort'; base=10; wealth=39322; min=8192; max=786432; price=49152;
         variants=@(@('horses'),@('automobiles','refined_fuel'))},
-    @{id='communication'; tier='comfort'; base=1; wealth=49152; min=8192; max=262144; price=49152;
+    @{id='communication'; tier='comfort'; base=6; wealth=42598; min=8192; max=1048576; price=49152;
         variants=@(@('radio_equipment'),@('telecom_equipment'),
             @('radio_equipment','batteries'),
             @('telecom_equipment','batteries'))},
-    @{id='education_culture'; tier='comfort'; base=2; wealth=49152; min=8192; max=262144; price=49152;
+    @{id='education_culture'; tier='comfort'; base=10; wealth=42598; min=8192; max=1048576; price=49152;
         variants=@(@('manuscripts'),@('paper'),@('printed_materials'),@('computers'))},
-    @{id='recreation'; tier='comfort'; base=3; wealth=49152; min=8192; max=262144; price=49152;
+    @{id='recreation'; tier='comfort'; base=14; wealth=39322; min=8192; max=786432; price=49152;
         variants=@(@('beverages'),@('computers'))},
-    @{id='durable_goods'; tier='luxury'; base=1; wealth=65536; min=4096; max=393216; price=32768;
+    @{id='durable_goods'; tier='luxury'; base=6; wealth=49152; min=4096; max=1048576; price=32768;
         variants=@(@('household_appliances'),@('autonomous_systems'))},
-    @{id='work_equipment'; tier='comfort'; base=2; wealth=49152; min=8192; max=262144; price=49152;
+    @{id='work_equipment'; tier='comfort'; base=10; wealth=36045; min=8192; max=655360; price=49152;
         variants=@(@('chipped_stone_tools'),@('bronze_tools'),@('tools'),@('precision_tools'))},
-    @{id='luxury'; tier='luxury'; base=1; wealth=98304; min=1024; max=524288; price=32768;
+    @{id='luxury'; tier='luxury'; base=8; wealth=55706; min=1024; max=2097152; price=32768;
         variants=@(@('beverages'),@('fine_clothing'),@('fine_furniture'))},
-    @{id='status_goods'; tier='luxury'; base=1; wealth=98304; min=1024; max=524288; price=32768;
+    @{id='status_goods'; tier='luxury'; base=6; wealth=55706; min=1024; max=2097152; price=32768;
         variants=@(@('jewelry'),@('fur'))}
 )
 

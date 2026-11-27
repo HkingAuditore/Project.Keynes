@@ -1510,6 +1510,10 @@ func _detail_data(host, ideology_id: int, offer := false) -> Dictionary:
 		"notes": notes, "supports": supports, "breakdown": breakdown}
 
 
+func _support_details(host, live: Dictionary, location: int) -> Array[Dictionary]:
+	return IdeologySupport._support_details(host, live, location)
+
+
 # --- resonance and synergy threads ----------------------------------------
 
 

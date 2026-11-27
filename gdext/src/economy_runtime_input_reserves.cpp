@@ -98,17 +98,6 @@ int64_t NativeEconomyRuntime::rebuild_production_input_reserves_for_cell(
         // optional productivity, not a floor-gated capacity band.
         return std::clamp<int64_t>(output_scale_q16, 0, Q16_ONE);
     };
-    auto soft_efficiency_q16 = [&](const ProductionInput &input,
-                                   int64_t coverage_q16) -> int64_t {
-        const int64_t required = std::clamp<int64_t>(input.required_q16, 0, Q16_ONE);
-        if (required <= 0) return Q16_ONE;
-        coverage_q16 = std::clamp<int64_t>(coverage_q16, 0, Q16_ONE);
-        if (required >= Q16_ONE) return coverage_q16;
-        return std::clamp<int64_t>(
-            Q16_ONE - required + mul_div_sat(
-                coverage_q16, required, Q16_ONE, _saturation_count),
-            0, Q16_ONE);
-    };
     int64_t groups_rebuilt = 0;
     const int32_t group_begin = _building_cell_offsets[cell];
     const int32_t group_end = _building_cell_offsets[cell + 1];
@@ -218,7 +207,7 @@ int64_t NativeEconomyRuntime::rebuild_production_input_reserves_for_cell(
                 const int64_t physical = effective_production_input_quantity(
                     cell, candidate.good_id,
                     physical_numerator / candidate.efficiency_q16,
-                    _saturation_count);
+                    _saturation_count, group.output_factor_q16);
                 const int64_t available = std::max<int64_t>(0,
                     market_store().stock[market_store().index(market, candidate.good_id)] -
                     _production_input_reserve[signal]);
@@ -232,7 +221,7 @@ int64_t NativeEconomyRuntime::rebuild_production_input_reserves_for_cell(
                 const int64_t unit_physical = effective_production_input_quantity(
                     cell, candidate.good_id,
                     unit_numerator / candidate.efficiency_q16,
-                    _saturation_count);
+                    _saturation_count, group.output_factor_q16);
                 const int64_t effective_price = mul_div_sat(
                     market_store().price[market_store().index(market, candidate.good_id)],
                     unit_physical, GOODS_SCALE, _saturation_count);
@@ -250,12 +239,8 @@ int64_t NativeEconomyRuntime::rebuild_production_input_reserves_for_cell(
                 }
             }
             if (selected < 0) {
-                // Soft shortage cuts throughput efficiency later; hard zeros.
+                // Soft inputs are capped productivity bonuses only; bare activity stays 100%.
                 if (required >= Q16_ONE) executable_q16 = 0;
-                else if (required > 0) {
-                    executable_q16 = mul_div_sat(executable_q16,
-                        soft_efficiency_q16(input, 0), Q16_ONE, _saturation_count);
-                }
                 continue;
             }
             const InputCandidate &candidate = _building_input_candidates[selected];
@@ -263,10 +248,6 @@ int64_t NativeEconomyRuntime::rebuild_production_input_reserves_for_cell(
             selected_physical[i] = selected_physical_qty;
             if (required >= Q16_ONE) {
                 executable_q16 = std::min(executable_q16, best_capacity_q16);
-            } else if (required > 0) {
-                executable_q16 = mul_div_sat(executable_q16,
-                    soft_efficiency_q16(input, best_capacity_q16), Q16_ONE,
-                    _saturation_count);
             }
             if (!produces_survival_food &&
                 _survival_food_good_mask[candidate.good_id] != 0) {

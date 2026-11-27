@@ -66,6 +66,8 @@ var _slot_style: Array[StringName] = []
 var _slot_tweens: Array = []
 var _last_camera_position := Vector2.INF
 var _last_zoom := -1.0
+var _last_viewport_size := Vector2.ZERO
+var _last_canvas_transform := Transform2D.IDENTITY
 var _dirty := true
 var _player_capital_cell := -1
 var _hover_cell := -1
@@ -168,17 +170,24 @@ func sync_from_runtime(force_full: bool = false) -> void:
 			}
 			_add_to_row(cell)
 	_revision = int(packet.get("revision", _revision))
-	_dirty = true
+	if bool(packet.get("full_snapshot", false)) or not cells.is_empty():
+		_dirty = true
 
 
 func _process(_delta: float) -> void:
 	if _camera == null or _map == null:
 		return
 	var zoom_value := _camera.zoom.x
+	var viewport_size := get_viewport_rect().size
+	var canvas_transform := get_viewport().get_canvas_transform()
 	if _camera.position.distance_squared_to(_last_camera_position) > 4.0 \
-			or not is_equal_approx(zoom_value, _last_zoom):
+			or not is_equal_approx(zoom_value, _last_zoom) \
+			or not viewport_size.is_equal_approx(_last_viewport_size) \
+			or not canvas_transform.is_equal_approx(_last_canvas_transform):
 		_last_camera_position = _camera.position
 		_last_zoom = zoom_value
+		_last_viewport_size = viewport_size
+		_last_canvas_transform = canvas_transform
 		_dirty = true
 	if _dirty:
 		var rebuild_started_usec := Time.get_ticks_usec()

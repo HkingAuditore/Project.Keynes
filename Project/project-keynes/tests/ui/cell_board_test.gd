@@ -212,6 +212,12 @@ func _test_cohort_ranking() -> void:
 	if rows.size() == 5:
 		var merchant := _row_id(rows, 14)
 		_expect("存款极高的小阶层按影响力进前五", merchant >= 0)
+		var farmer := _row_id(rows, 11)
+		if farmer >= 0:
+			_expect("存款显示为阶层人均值",
+				String((rows[farmer] as Dictionary).get("funds_text", "")) == "0.17")
+			_expect("收入显示为阶层人均值",
+				String((rows[farmer] as Dictionary).get("income_text", "")) == "+0.02")
 		var landlord := _row_id(rows, 16)
 		_expect("人口最少的地主被挤出前五", landlord < 0)
 		_expect("影响力占比合计不超过 1", _total_share(rows) <= 1.0001)
@@ -220,7 +226,6 @@ func _test_cohort_ranking() -> void:
 			_expect("组织度落在对应职业上",
 				is_equal_approx(float((rows[worker] as Dictionary).get("organization", -1.0)),
 					13107.0 / 65536.0))
-		var farmer := _row_id(rows, 11)
 		if farmer >= 0:
 			_expect("无组织读数的阶层不出组织格",
 				float((rows[farmer] as Dictionary).get("organization", 0.0)) < 0.0)

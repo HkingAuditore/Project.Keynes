@@ -623,12 +623,15 @@ controls and CSV v20 exposes the portfolio and liquidation diagnostics.
 
 ## 2026-07-23 lifecycle and investment-capacity correction
 
-Producer lifecycle classification now advances `severe_loss_cycles` only from
-an actual settled production cycle whose realized margin crosses the configured
-loss threshold. Missing labor, inputs, resources, or working capital is an
-execution blockage: the group stays active/idle, retains its labor claim and
-restart intent, and does not enter loss liquidation merely because settlement
-was zero.
+Producer lifecycle classification advances `severe_loss_cycles` from an actual
+settled production cycle whose realized margin crosses the configured loss
+threshold, or from an owner-shortfall building group, including service
+buildings. Missing inputs,
+resources, or working capital on a staffed group remains an execution blockage:
+the group stays active/idle, retains its labor claim and restart intent, and does
+not enter loss liquidation merely because settlement was zero. A group whose
+owner count is below its building count reaches the same hysteresis threshold,
+and the excess buildings enter the existing suspended recovery/liquidation path.
 
 `endogenous_owner_portfolio_v8` subtracts both unused installed output capacity
 and aggregate pending-construction output from each marginal-good deficit before

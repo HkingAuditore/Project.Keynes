@@ -21,18 +21,18 @@ if not os.path.isfile(os.path.join(_PROJECT_ROOT, "project.godot")):
     raise SystemExit("找不到 Godot 工程目录: " + _PROJECT_ROOT)
 NETWORK = os.path.join(_PROJECT_ROOT, "data", "technology", "technology_network.json")
 
-SECTOR_SCALE = 2.0
-FAMILY_SCALE = 3.0
-GEO_SCALE = 3.0
+SECTOR_SCALE = 1.0
+FAMILY_SCALE = 1.0
+GEO_SCALE = 1.0
 SECTOR_CAP = {
-    "country.output.agriculture_factor": 3.00,
-    "country.output.extractive_factor": 3.00,
-    "country.output.manufacturing_factor": 3.00,
-    "country.output.energy_factor": 2.00,
-    "country.output.knowledge_factor": 2.00,
+    "country.output.agriculture_factor": 0.80,
+    "country.output.extractive_factor": 0.85,
+    "country.output.manufacturing_factor": 0.85,
+    "country.output.energy_factor": 0.75,
+    "country.output.knowledge_factor": 0.75,
 }
-FAMILY_CAP = 2.60
-GEO_CAP = 1.00
+FAMILY_CAP = 0.60
+GEO_CAP = 0.40
 
 
 def main():

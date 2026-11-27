@@ -21,6 +21,7 @@ var _workspace_ref: WeakRef
 var _card_key := ""
 var _pressing := false
 var _press_pos := Vector2.ZERO
+var _press_touch_index := -1
 
 
 static func bind_card(workspace: Control, key: String, card: Dictionary) -> void:
@@ -152,16 +153,38 @@ func _gui_input(event: InputEvent) -> void:
 	if not TouchUI.is_touch() or ws == null or not is_instance_valid(ws):
 		return
 	var mb := event as InputEventMouseButton
-	if mb == null or mb.button_index != MOUSE_BUTTON_LEFT:
+	if mb != null:
+		if mb.button_index != MOUSE_BUTTON_LEFT:
+			return
+		var global_pos := get_global_transform_with_canvas() * mb.position
+		if mb.pressed:
+			# Android/Web 可能同时派发原始触摸和兼容鼠标事件，只保留原始触摸状态。
+			if _press_touch_index >= 0:
+				return
+			_pressing = true
+			_press_touch_index = -1
+			_press_pos = global_pos
+			return
+		if not _pressing or _press_touch_index >= 0:
+			return
+		_pressing = false
+		if global_pos.distance_to(_press_pos) <= DRAG_TOLERANCE:
+			_open_sheet(ws)
+			accept_event()
 		return
-	if mb.pressed:
+	var touch := event as InputEventScreenTouch
+	if touch == null:
+		return
+	if touch.pressed:
 		_pressing = true
-		_press_pos = mb.position
+		_press_touch_index = touch.index
+		_press_pos = touch.position
 		return
-	if not _pressing:
+	if not _pressing or _press_touch_index != touch.index:
 		return
 	_pressing = false
-	if mb.position.distance_to(_press_pos) <= DRAG_TOLERANCE:
+	_press_touch_index = -1
+	if touch.position.distance_to(_press_pos) <= DRAG_TOLERANCE:
 		_open_sheet(ws)
 		accept_event()
 

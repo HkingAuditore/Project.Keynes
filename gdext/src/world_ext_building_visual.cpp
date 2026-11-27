@@ -1,6 +1,7 @@
 #include "world_ext.h"
 #include "building_visual_cache.h"
 #include "building_visual_instance_selection.h"
+#include "building_visual_layout.h"
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
@@ -1493,22 +1494,24 @@ void plan_cells(const PlanInputs &in, PlanOutputs &po) {
         const float style = float(era * kArchetypeCount) / 65.0f;
         const double home_x = double(POS_X[i]);
         const double home_y = double(POS_Y[i]);
-
-        // Settlement centre: jittered off the cell centre, away from river water.
+        // Settlement centre: jitter off the cell centre, away from river water.
         double cx = home_x;
         double cy = home_y;
-        for (int attempt = 0; attempt < 6; ++attempt) {
-            const double radius = attempt == 5 ? 0.0 : plan.range(0.0, 0.14) * inradius;
-            const double angle = plan.range(0.0, kTau);
-            const double tx = home_x + std::cos(angle) * radius;
-            const double ty = home_y + std::sin(angle) * radius;
-            if (sample_flow(tx, ty) < river_threshold * 0.8) {
-                cx = tx;
-                cy = ty;
-                break;
+        const double centre_clearance = river_threshold * 0.8;
+        if (flow_valid && sample_flow(home_x, home_y) >= centre_clearance) {
+            building_visual::move_core_to_dry_bank(home_x, home_y, inradius,
+                    hex_limit, river_threshold,
+                    stable_hash(CELL[i], 0, 0, 103, layout_seed), sample_flow,
+                    inside_hex, cx, cy);
+        } else {
+            for (int attempt = 0; attempt < 6; ++attempt) {
+                const double radius = attempt == 5 ? 0.0 : plan.range(0.0, 0.14) * inradius;
+                const double angle = plan.range(0.0, kTau);
+                const double tx = home_x + std::cos(angle) * radius;
+                const double ty = home_y + std::sin(angle) * radius;
+                if (sample_flow(tx, ty) < centre_clearance) { cx = tx; cy = ty; break; }
             }
         }
-
         // --- Slots: industry by family weight, housing by tier and wealth ---
         slots.clear();
         double weight_total = 0.0;

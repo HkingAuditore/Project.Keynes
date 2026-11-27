@@ -280,23 +280,9 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                     !building_available(cell, group.type_id, true)) continue;
                 const BuildingType &type = _building_types[group.type_id];
                 int64_t group_floor_q16 = 0;
-                // The owner floor is expressed in full-recipe output.  When a
-                // soft input is absent, production deliberately keeps only the
-                // bare efficiency (1 - required), so the planned activity must
-                // be lifted to preserve the same survival quantity.  Without
-                // this conversion a missing tool silently halves food output
-                // and can turn a temporary shortage into starvation.
-                int64_t bare_efficiency_q16 = Q16_ONE;
-                for (int32_t i = 0; i < type.input_count; ++i) {
-                    const ProductionInput &input = _building_inputs[
-                        type.input_begin + i];
-                    const int64_t required = std::clamp<int64_t>(
-                        input.required_q16, 0, Q16_ONE);
-                    if (required > 0 && required < Q16_ONE)
-                        bare_efficiency_q16 = std::min<int64_t>(
-                            bare_efficiency_q16, Q16_ONE - required);
-                }
-                if (bare_efficiency_q16 <= 0) bare_efficiency_q16 = 1;
+                // Soft inputs are capped productivity bonuses on top of 100%
+                // bare output, so missing soft tools never cut below full-recipe
+                // survival output.
                 for (int32_t i = 0; i < type.output_count; ++i) {
                     const int32_t good = _building_outputs[type.output_begin + i].good_id;
                     if (_survival_food_good_mask[good] != 0) {
@@ -307,14 +293,6 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                         group_floor_q16 = std::max(
                             group_floor_q16, owner_clothing_floor_q16[owner]);
                 }
-                if (group_floor_q16 > 0 && bare_efficiency_q16 < Q16_ONE)
-                    group_floor_q16 = std::clamp<int64_t>(
-                        saturating_add(
-                            saturating_mul(group_floor_q16, Q16_ONE,
-                                _saturation_count),
-                            bare_efficiency_q16 - 1, _saturation_count) /
-                            bare_efficiency_q16,
-                        0, Q16_ONE);
                 _building_survival_utilization_floor_q16[g] = group_floor_q16;
             }
         }
@@ -689,7 +667,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 const int64_t physical = effective_production_input_quantity(
                     group.cell, candidate.good_id,
                     physical_numerator / candidate.efficiency_q16,
-                    _saturation_count);
+                    _saturation_count, group.output_factor_q16);
                 const int64_t candidate_cost = mul_div_sat(
                     physical,
                     market_store().price[market_store().index(market, candidate.good_id)],
@@ -1000,6 +978,8 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
         group.sample_unit_input_cost = input_cost;
         group.sample_unit_maintenance_cost = maintenance_cost;
         group.last_margin_gap_q16 = static_cast<int32_t>(margin_gap);
+        const bool owner_shortfall = group.count > 0 &&
+            group.filled_owner < group.count;
         bool suspended_now = false;
         if (type.kind != 2 && group.operating_state == 0) {
             // 停业沿用实际经营收支；业主生活成本属于岗位机会评价。
@@ -1076,10 +1056,10 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             const bool realized_severe_loss = settled_production &&
                 !positive_self_employment &&
                 realized_after_tax_margin <= _building_severe_loss_threshold_q16.get();
-            if (realized_severe_loss) {
-                // Count consecutive observed owner losses. A single settled loss
-                // must remain visible to employment and audit while the configured
-                // hysteresis threshold decides when the group is suspended.
+            if (realized_severe_loss || owner_shortfall) {
+                // Count consecutive severe losses or owner-shortfall reviews.
+                // A single observation remains visible to employment and audit
+                // while the configured hysteresis threshold decides suspension.
                 const int32_t threshold = std::max(1, _building_severe_loss_cycles.get());
                 group.severe_loss_cycles = static_cast<uint16_t>(std::min<int32_t>(
                     threshold, static_cast<int32_t>(group.severe_loss_cycles) + 1));
@@ -1090,8 +1070,9 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                     invalidate_cell_monetary_units(group.cell);
                 }
             } else {
-                // Zero settlement covers labor, input, resource and financing
-                // blockages. None is a realized loss observation.
+                // A staffed building with no settled loss may simply be blocked
+                // by labor, inputs, resources or working capital. None of those
+                // conditions advances the lifecycle counter.
                 group.severe_loss_cycles = 0;
             }
             group.pending_operating_state = 255;
@@ -1102,6 +1083,28 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 suspended_now = true;
                 invalidate_cell_monetary_units(group.cell);
             }
+        }
+        // Service buildings do not participate in producer profit/loss
+        // classification, but an owner-shortfall service group still has a
+        // finite lifecycle and must be eligible for the same liquidation path.
+        if (type.kind == 2 && group.operating_state == 0 && owner_shortfall) {
+            const int32_t threshold = std::max(1, _building_severe_loss_cycles.get());
+            group.severe_loss_cycles = static_cast<uint16_t>(std::min<int32_t>(
+                threshold, static_cast<int32_t>(group.severe_loss_cycles) + 1));
+            if (group.severe_loss_cycles >= threshold) {
+                group.operating_state = 1;
+                group.recovery_cycles = 0;
+                group.pending_operating_state = 255;
+                suspended_now = true;
+                invalidate_cell_monetary_units(group.cell);
+            }
+        }
+        if (type.kind == 2 && group.operating_state == 1 &&
+            group.filled_owner < group.count &&
+            group.severe_loss_cycles >= _building_severe_loss_cycles.get() &&
+            group_index < static_cast<int32_t>(
+                _building_recovery_liquidation_eligible.size())) {
+            _building_recovery_liquidation_eligible[group_index] = 1;
         }
         if (type.kind != 2 && group.operating_state == 1 && !suspended_now &&
             group.recovery_cooldown_cycles == 0) {
@@ -1114,7 +1117,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             // and must not keep a profitable suspended lot permanently idle
             // (e.g. flint_quarry tools shelf empty after a price spike).
             bool physical_inputs_available = true;
-            int64_t soft_coverage_scale_q16 = Q16_ONE;
+            int64_t soft_bonus_sum_q16 = 0;
             int64_t restart_input_unit_cost = 0;
             int64_t restart_hard_input_unit_cost = 0;
             for (int32_t i = 0; i < type.input_count && physical_inputs_available; ++i) {
@@ -1137,14 +1140,15 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                             Q16_ONE, _saturation_count) < effective)
                         physical = saturating_add(physical, 1, _saturation_count);
                     physical = effective_production_input_quantity(
-                        group.cell, candidate.good_id, physical, _saturation_count);
+                        group.cell, candidate.good_id, physical,
+                        _saturation_count, group.output_factor_q16);
                     const int64_t physical_numerator = saturating_add(
                         saturating_mul(item.quantity, Q16_ONE, _saturation_count),
                         candidate.efficiency_q16 - 1, _saturation_count);
                     const int64_t unit_physical = effective_production_input_quantity(
                         group.cell, candidate.good_id,
                         physical_numerator / std::max<int32_t>(1, candidate.efficiency_q16),
-                        _saturation_count);
+                        _saturation_count, group.output_factor_q16);
                     const int64_t candidate_cost = mul_div_sat(
                         unit_physical,
                         market_store().price[market_store().index(market, candidate.good_id)],
@@ -1167,17 +1171,24 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                     }
                 } else if (candidate_available &&
                     best_unit_cost != std::numeric_limits<int64_t>::max()) {
-                    // Soft and stocked: bill only the covered share that
-                    // production would actually purchase.
-                    restart_input_unit_cost = saturating_add(
-                        restart_input_unit_cost, best_unit_cost,
-                        _saturation_count);
-                } else {
-                    // Soft and unstocked: coverage 0 → efficiency 1-required.
-                    soft_coverage_scale_q16 = std::min<int64_t>(
-                        soft_coverage_scale_q16, Q16_ONE - required_q16);
+                    // Soft and stocked: include cost & capped bonus only if profitable.
+                    const int64_t marginal_bonus_q16 =
+                        soft_input_marginal_bonus_q16(type, required_q16);
+                    const int64_t marginal_revenue = mul_div_sat(
+                        revenue, marginal_bonus_q16,
+                        Q16_ONE, _saturation_count);
+                    if (marginal_revenue > best_unit_cost) {
+                        restart_input_unit_cost = saturating_add(
+                            restart_input_unit_cost, best_unit_cost,
+                            _saturation_count);
+                        soft_bonus_sum_q16 = saturating_add(
+                            soft_bonus_sum_q16, marginal_bonus_q16,
+                            _saturation_count);
+                    }
                 }
             }
+            const int64_t soft_coverage_scale_q16 =
+                clamp_soft_productivity_bonus_q16(soft_bonus_sum_q16);
             // Production clamps a resource-limited group to its capacity or
             // safe-harvest budget, so restart needs one building's worth, not
             // the whole group: 35 hunting camps built in a good decade need
@@ -1285,7 +1296,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             int64_t recovery_profit_margin = expected_profit_margin;
             int64_t recovery_margin_denominator = std::max<int64_t>(
                 MONEY_SCALE, operating);
-            if (soft_coverage_scale_q16 < Q16_ONE ||
+            if (soft_coverage_scale_q16 != Q16_ONE ||
                 restart_input_unit_cost != input_cost) {
                 const int64_t recovery_revenue = mul_div_sat(
                     revenue, soft_coverage_scale_q16, Q16_ONE, _saturation_count);
@@ -1361,9 +1372,12 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             }
             if (group_index < static_cast<int32_t>(
                     _building_recovery_liquidation_eligible.size())) {
+                const bool owner_shortfall = group.count > 0 &&
+                    group.filled_owner < group.count &&
+                    group.severe_loss_cycles >= _building_severe_loss_cycles.get();
                 _building_recovery_liquidation_eligible[group_index] =
-                    executable &&
-                    recovery_profit_margin < _building_restart_margin_q16.get();
+                    owner_shortfall || (executable &&
+                        recovery_profit_margin < _building_restart_margin_q16.get());
             }
             // Recovery must be able to bootstrap an empty owner roster. The
             // employment pass only advertises vacancies for ACTIVE groups, so
@@ -1371,7 +1385,10 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             // All buildings use the same current-price cash + owner-retained
             // income test; survival goods receive no special profitability
             // exemption.
-            const bool viable = executable &&
+            const bool vacancy_expired = group.count > 0 &&
+                group.filled_owner < group.count &&
+                group.severe_loss_cycles >= _building_severe_loss_cycles.get();
+            const bool viable = !vacancy_expired && executable &&
                 recovery_profit_margin >= _building_restart_margin_q16.get();
             if (viable) {
                 group.pending_operating_state = 0;
@@ -1449,7 +1466,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                     }
                     physical = effective_production_input_quantity(
                         group.cell, candidate.good_id, physical,
-                        _saturation_count);
+                        _saturation_count, group.output_factor_q16);
                     int64_t quantity = saturating_add(saturating_mul(
                         physical, purchase_scale_q16, _saturation_count),
                         Q16_ONE - 1, _saturation_count) / Q16_ONE;
@@ -1466,7 +1483,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                     const int64_t unit_physical = effective_production_input_quantity(
                         group.cell, candidate.good_id,
                         unit_numerator / candidate.efficiency_q16,
-                        _saturation_count);
+                        _saturation_count, group.output_factor_q16);
                     const int64_t effective_price = mul_div_sat(
                         market_store().price[market_store().index(market, candidate.good_id)],
                         unit_physical, GOODS_SCALE, _saturation_count);

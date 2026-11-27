@@ -1,5 +1,16 @@
 # 专项现状与验证记录
 
+## 经济系统性数值再平衡（2026-11-27）
+
+- **硬/软投入重构**：`NativeEconomyRuntime` 将软投入（`0 < required_q16 < 65536`）改为无软料 100% 基础产出、齐备最高 `+40%` 封顶增产（`SOFT_PRODUCTIVITY_BONUS_CAP_Q16 = 26214`，多软投入按权重归一化共享 `+40%` 上限，消除 32 栋零硬投入工业建筑及其他误标主原料，全部工业建筑至少含 1 项硬主原料）。
+- **科技加法叠加与产出耦合消耗**：建筑产出修正由多维叠乘改为加法池化 `1 + ΣΔ` 并封顶 `4.0x`（`OUTPUT_FACTOR_MAX_Q16 = 262144`）；生产投入随建筑产出倍率按 `1 + 0.60 * max(0, M_out - 1)` 联动放大（保障净物料转换效率提升，同时 `country.production.input_factor` 下限由 `0.40` 上调至 `0.80`）；同步重标 `technology_network.json`（单行业/家族/地理/商品/全局加成封顶并清除 9 项负居民消费项）。
+- **基础数值与按财富递增消费**：`default_economy.tres` 全局产出效率由 `1.5x` 回撤至 `1.0x`，各部门维护折旧周期由 6–20 年缩短至 2–5 年（`[1460, 900, 1095, 730, 1825]`）；通过 `tools/economy/rebalance_economy_content.py` 去除石器时代后 2× 食物膨胀（石器起始采集/狩猎食物做 1.45× 补偿以适配 1.0× 全局效率），将 255 栋工业建筑投入产出价值比中位数校准至 `0.550`（45%–70%），并提高居民非食物基础消费占比至 `35%–52%`（`wealth=1.0`）；将 `HOUSEHOLD_WEALTH_ANCHORS_Q16` 扩展至 15 档（`1/16x`–`1024x`，即人均最高 `10,240` 货币），解耦 `Need` 数量增长与 `VariantChoice` 品质升级，防止富裕阶层过食主粮。未改动过剩减产与“应收尽收”机制。
+- **验证**：
+  - 静态护栏 13/13 全部通过（`check_cpp_deps`、`check_committed_views`、`check_save_contracts`、`check_module_api`、`check_script_native_access` 等 0 违规）；Windows `template_debug` / `template_release` 扩展双目标构建并重新预烘焙（991 项）。
+  - 新增契约测试 `economy_rebalance_contract_test.gd` 20/20 通过（4 项软投入叠加实测 `1.3999x` 封顶；全 467 科技 `coke_ovens` 实测产出 `2.199x`、投入 `1.389x`、净效率 `+58.3%`、`input_factor = 0.800`；`owner_household` 在 `1x/16x/128x/1024x` 财富下日消费支出 `243.9 → 987.9 → 2,933.0 → 11,881.5` 货币、`48.7x` 增长且主粮严格封顶 `1.23x`）。
+  - 运行时回归与确定性：`consumption_satisfaction_runtime_test.gd`（49/49）、`economy_birth_runtime_test.gd`（65/65）、`economy_cadence_runtime_test.gd`、`starter_settlement_soak_test.gd`（180 天 16/16）、`check_golden_determinism.py`（2 轮 0 差异）、`check_replay_matrix.py`（默认边界与军事续跑矩阵全部 0 差异）通过。
+  - 5 年（1825 天）正式开局浸泡（`economy_balance_soak.gd`，`seed=20260727`，`ok=true`、`coverage_ok=true`、全期三账误差均为 `0/0/0`）：第 1825 天总库存由基线（2026-11-08）`51,337,024` 降至 `3,415,964`（`-93.3%`），“应收尽收”占比由 `22.4%` 降至 `0.7%`，日产出稳定在 `87,593`（基线 `507,083`）；当前石器时代 `wild_game` 生态密度与 `starvation_satisfaction_threshold = 0.75` 叠加使前 5 年人口自 `160` 缓降至 `59`（0 饥荒报错，满意度从第 30 天 `0.196` 持续回升至第 1825 天 `0.532`），后续可结合开局规划器生态密度估算继续优化。
+
 ## PC-Web 画质对齐桌面高画质与原生 HiDPI（2026-11-26）
 
 - 新增 `DCFeatureFlags.is_mobile_web()` / `is_desktop_web()` / `is_limited_render_platform()`，将移动浏览器的降档策略与 PC 浏览器解耦；保留 `uses_shader_quality_tier()` 作为 Web 共享低/中档与迷雾/天气预热前缀契约。
@@ -24,6 +35,18 @@
 
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
+
+## 建筑长期空置自动退出（2026-11-27）
+
+- 原生建筑计划现在把“业主数量小于建筑数量”计入既有
+  `severe_loss_cycles` 生命周期计数。达到配置阈值后进入亏损停产状态，沿用现有
+  恢复与清算流程，服务类建筑也适用；达到空缺阈值后不再用收益门槛阻止清算，
+  清算确认的过剩量至少覆盖业主缺口。
+  有足够业主但缺原料、资源或周转资金的建筑仍按经营阻塞处理。
+- 停产后的恢复仍需可执行且达到重启利润门槛；无法恢复的空置建筑进入确认过剩产能清算，
+  不新增存档字段。
+- 验证：模块地图、C++ 依赖、模块契约、提交视图和存档契约检查通过；Windows 原生扩展
+  已完成修改文件的编译，但链接阶段因运行中的 Godot 锁定 DLL 未完成。
 
 ## 无界面性能录制（2026-11-26）
 
@@ -1126,6 +1149,18 @@ day 24 的 `manual_3` 只有 1.03 MiB），决定项是格数 × 历史填充度
 
 2 年/10 年 soak 与逐日一致性对比本轮未跑；soak CSV 不含人口/货币/货品守恒列，
 守恒证据来自 roundtrip 日志（`population_error=0`、`money_error=0`）而非 soak。
+
+## 河流穿越陆地地块的建筑布局（2026-11-27）
+
+玩家反馈有河流经过的陆地地块上城市建筑没有正确出现。根因是建筑原生布局器只在地块中心附近
+做最多六次、半径不超过地块内半径 14% 的避河抖动。河道占据地块中心时，广场和建筑候选仍落在
+河道上，候选的角点检查会把整座城市的建筑体全部拒绝，河岸两侧仍有空间也无法出图。
+
+现在只有河流靠近地块中心时才触发确定性的多环搜索。搜索对候选中心采样小邻域，优先选择有
+足够干燥空间的河岸位置，随后继续沿用原有的建筑角点避河检查。无河流中心的地块沿用原抖动
+路径，建筑实例 ABI、河流纹理和每日模拟状态不变。回归夹具加入
+`tests/building/building_visual_native_bridge_test.gd`，构造竖向河道穿过陆地地块并检查河流拒绝
+计数与陆侧建筑实例同时存在。
 
 ## 早期时代夜间火光（2026-11-20）
 
@@ -4295,3 +4330,9 @@ STORM/MONSOON 补过 `meaningful_precip`、补 `wx->temp_anomaly` 与独立的 `
 - 方案侧：`food_fat_livestock` 变体从 12 套方案各删 10 个数组列（共 120 列，含 24 个偏移列），脚本化删除并逐文件校验三条不变量（`need_variant_offsets` 尾值 = 变体数、`variant_component_offsets` 尾值 = 分量列长、两组偏移单调）。删除后 12 套方案与 HEAD 逐字节一致——另一路那笔未提交的「双变体」改动正好被本次撤销。
 - 验证：`modern_economy_catalog_test` 红点与改前**逐条相同**（16 条，无新增无消除）；`technology_content_binding_audit_test` PASS；`gameplay_start_runtime_test` 0 失败。
 - 已知未做：`data/loading_catalog_v1/*.res` 仍未重烘（同上一条原因）；另一路两个未提交的诊断脚本 `tests/economy/food_fat_fallback_check_test.gd`、`food_fat_market_probe_test.gd` 其假设（畜产品当油）已被本次作废，其中后者断言「双变体方案存在」会红——这两个文件未跟踪，不进提交，处置权归其作者。
+
+## 2026-11-27 已探索区域的迷雾与开拓目标
+
+- 迷雾层提高已探索未可见区域的薄纱不透明度至 0.64，并改用更深的冷灰蓝色，使远景地形与当前可见区域的区别更清楚；未探索区域的完全遮挡规则保持不变。
+- 玩家家族开拓的报价、路线和生效日复核改用 `explored_arr` 作为知识边界。已探索但当前视野外的格子可以作为目的地，未探索格仍不可达。该边界只改变玩家开拓输入，AI 的当前视野规划保持原有路径。
+- 本次已完成源码与文档同步；Windows x86_64 `template_debug` 与 `template_release` 增量构建均通过，未运行 Godot 图形回归。

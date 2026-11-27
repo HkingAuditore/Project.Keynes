@@ -129,13 +129,14 @@ func _run() -> void:
 	var family_handle := int((families.family_handles as PackedInt64Array)[0])
 	var source_before := int(ext.get_population_cell_snapshot(0).population)
 	var family_before: Dictionary = ext.get_family_snapshot(family_handle)
-	fixture.map.visible_arr[1] = 0
+	# 路线仍要求中间格已探索，但不再要求它此刻处于视野内。
+	fixture.map.explored_arr[1] = 0
 	fixture.map.vision_revision += 1
 	var hidden_route: Dictionary = ext.get_family_colonization_quotes(
 		country_handle, 2, family_handle, 0, 0, 64)
-	_expect("a route with any fogged intermediate cell produces no quote",
+	_expect("a route with an unexplored intermediate cell produces no quote",
 		bool(hidden_route.get("ok", false)) and int(hidden_route.get("total", -1)) == 0)
-	fixture.map.visible_arr[1] = 1
+	fixture.map.explored_arr[1] = 1
 	fixture.map.vision_revision += 1
 
 	var quotes: Dictionary = ext.get_family_colonization_quotes(

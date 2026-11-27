@@ -12,32 +12,8 @@ namespace pk {
 namespace {
 using Clock = std::chrono::steady_clock;
 
-constexpr std::array<int32_t, 9> HOUSEHOLD_WEALTH_ANCHORS_Q16 = {
-    4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576};
-
 double elapsed_ms(const Clock::time_point &start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
-}
-
-int64_t interpolate_household_wealth_lut(
-        int64_t wealth_ratio_q16, const std::array<int32_t, 9> &lut,
-        int64_t & /*sat*/) {
-    const int64_t ratio = std::clamp<int64_t>(
-        wealth_ratio_q16, HOUSEHOLD_WEALTH_ANCHORS_Q16.front(),
-        HOUSEHOLD_WEALTH_ANCHORS_Q16.back());
-    const auto upper = std::upper_bound(
-        HOUSEHOLD_WEALTH_ANCHORS_Q16.begin(),
-        HOUSEHOLD_WEALTH_ANCHORS_Q16.end(), ratio);
-    if (upper == HOUSEHOLD_WEALTH_ANCHORS_Q16.begin()) return lut.front();
-    if (upper == HOUSEHOLD_WEALTH_ANCHORS_Q16.end()) return lut.back();
-    const size_t hi = static_cast<size_t>(
-        upper - HOUSEHOLD_WEALTH_ANCHORS_Q16.begin());
-    const size_t lo = hi - 1;
-    const int64_t x0 = HOUSEHOLD_WEALTH_ANCHORS_Q16[lo];
-    const int64_t x1 = HOUSEHOLD_WEALTH_ANCHORS_Q16[hi];
-    const int64_t y0 = lut[lo];
-    const int64_t y1 = lut[hi];
-    return y0 + (y1 - y0) * (ratio - x0) / (x1 - x0);
 }
 
 int64_t household_threshold_activation_q16(
@@ -52,6 +28,26 @@ int64_t household_threshold_activation_q16(
         std::max<int64_t>(1, full - threshold_months_q16);
 }
 } // namespace
+
+int64_t NativeEconomyRuntime::interpolate_household_wealth_lut(
+        int64_t wealth_ratio_q16,
+        const std::array<int32_t, HOUSEHOLD_WEALTH_ANCHOR_COUNT> &lut,
+        int64_t & /*sat*/) {
+    const auto &anchors = HOUSEHOLD_WEALTH_ANCHORS_Q16;
+    const int64_t ratio = std::clamp<int64_t>(
+        wealth_ratio_q16, anchors.front(), anchors.back());
+    const auto upper = std::upper_bound(
+        anchors.begin(), anchors.end(), ratio);
+    if (upper == anchors.begin()) return lut.front();
+    if (upper == anchors.end()) return lut.back();
+    const size_t hi = static_cast<size_t>(upper - anchors.begin());
+    const size_t lo = hi - 1;
+    const int64_t x0 = anchors[lo];
+    const int64_t x1 = anchors[hi];
+    const int64_t y0 = lut[lo];
+    const int64_t y1 = lut[hi];
+    return y0 + (y1 - y0) * (ratio - x0) / (x1 - x0);
+}
 
 int64_t NativeEconomyRuntime::variant_unit_price(int32_t market, int32_t variant_id,
                                                   int64_t &sat) const {
@@ -490,6 +486,7 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
         // 所有候选都为零时，原循环只写零后立即 continue；不必再遍历未解锁候选。
         if (memo_active && base_score_sum == 0 && safe_zero_skip) continue;
         std::array<int64_t, MAX_VARIANTS_PER_NEED> cohort_variant_scores{};
+        int64_t activation_score_sum = 0;
         int64_t score_sum = 0;
         for (int32_t v = 0; v < need.variant_count; ++v) {
             const int32_t variant_id = need.variant_begin + v;
@@ -498,20 +495,24 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
                 cohort_variant_scores[v] = 0;
                 continue;
             }
-            int64_t score = std::max<int64_t>(0, mul_div_sat(
+            int64_t activated = std::max<int64_t>(0, mul_div_sat(
                 base_v_score,
                 family_variant_preference_factor_q16(slot, variant_id, sat, family_good_factors.data()),
                 Q16_ONE, sat));
-            score = mul_div_sat(score, interpolate_household_wealth_lut(
-                wealth_ratio_q16, _variants[variant_id].wealth_lut_q16, sat),
-                Q16_ONE, sat);
-            score = mul_div_sat(score, household_threshold_activation_q16(
+            activated = mul_div_sat(activated, household_threshold_activation_q16(
                 savings_months_q16,
                 _variants[variant_id].savings_threshold_months_q16, sat),
                 Q16_ONE, sat);
-            cohort_variant_scores[v] = std::max<int64_t>(0, score);
+            activated = std::max<int64_t>(0, activated);
+            activation_score_sum = saturating_add(
+                activation_score_sum, activated, sat);
+            const int64_t score = std::max<int64_t>(0, mul_div_sat(
+                activated, interpolate_household_wealth_lut(
+                    wealth_ratio_q16, _variants[variant_id].wealth_lut_q16, sat),
+                Q16_ONE, sat));
+            cohort_variant_scores[v] = score;
             score_sum = saturating_add(
-                score_sum, cohort_variant_scores[v], sat);
+                score_sum, score, sat);
         }
         if (score_sum <= 0) continue;
         int64_t desired = desired_need_units_for_funds(
@@ -519,7 +520,7 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
             need_composites[need_index], funds_override, sat);
         if (base_score_sum > 0) {
             desired = mul_div_sat(
-                desired, score_sum, base_score_sum, sat);
+                desired, activation_score_sum, base_score_sum, sat);
         }
         int64_t prefix = 0;
         int64_t allocated = 0;
@@ -1355,6 +1356,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             }
             std::array<int64_t, MAX_VARIANTS_PER_NEED> cohort_variant_scores{};
             int64_t base_score_sum = 0;
+            int64_t activation_score_sum = 0;
             int64_t score_sum = 0;
             for (int32_t v = 0; v < need.variant_count; ++v) {
                 const int32_t variant_id = need.variant_begin + v;
@@ -1370,22 +1372,26 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 }
                 base_score_sum = saturating_add(
                     base_score_sum, base_score, sat);
-                int64_t score = mul_div_sat(
+                int64_t activated = mul_div_sat(
                     base_score,
                     family_variant_preference_factor_q16(slot, variant_id, sat,
                         family_good_cache_disabled ? nullptr : household_family_good_factors.data()),
                     Q16_ONE, sat);
-                score = mul_div_sat(score, interpolate_household_wealth_lut(
-                    cohort_wealth_ratio_q16[local],
-                    _variants[variant_id].wealth_lut_q16, sat),
-                    Q16_ONE, sat);
-                score = mul_div_sat(score, household_threshold_activation_q16(
+                activated = mul_div_sat(activated, household_threshold_activation_q16(
                     cohort_savings_months_q16[local],
                     _variants[variant_id].savings_threshold_months_q16, sat),
                     Q16_ONE, sat);
-                cohort_variant_scores[v] = std::max<int64_t>(0, score);
+                activated = std::max<int64_t>(0, activated);
+                activation_score_sum = saturating_add(
+                    activation_score_sum, activated, sat);
+                const int64_t score = std::max<int64_t>(0, mul_div_sat(
+                    activated, interpolate_household_wealth_lut(
+                        cohort_wealth_ratio_q16[local],
+                        _variants[variant_id].wealth_lut_q16, sat),
+                    Q16_ONE, sat));
+                cohort_variant_scores[v] = score;
                 score_sum = saturating_add(
-                    score_sum, cohort_variant_scores[v], sat);
+                    score_sum, score, sat);
             }
             // A normative target is independent of wealth, shelf stock,
             // price elasticity and savings-gated variant preferences. Keep an
@@ -1416,7 +1422,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 need_composite_cache[need_index], sat);
             if (base_score_sum > 0) {
                 ordinary_desired = mul_div_sat(
-                    ordinary_desired, score_sum, base_score_sum, sat);
+                    ordinary_desired, activation_score_sum, base_score_sum, sat);
             }
             int64_t survival_floor = survival_required;
             if (survival_food && food_substitute_cap_q16 > 0) {

@@ -13,13 +13,13 @@ const TIER_RATIO := [0.55, 1.0, 1.8]
 const TIER_TOLERANCE := 0.06
 
 const BUDGETS := {
-	"country.economy_output_factor": 0.78,
-	"country.output.agriculture_factor": 3.01,
-	"country.output.extractive_factor": 3.01,
-	"country.output.manufacturing_factor": 3.01,
-	"country.output.energy_factor": 2.01,
-	"country.output.knowledge_factor": 2.01,
-	"country.production.input_factor": 0.91,
+	"country.economy_output_factor": 0.36,
+	"country.output.agriculture_factor": 0.81,
+	"country.output.extractive_factor": 0.86,
+	"country.output.manufacturing_factor": 0.86,
+	"country.output.energy_factor": 0.76,
+	"country.output.knowledge_factor": 0.76,
+	"country.production.input_factor": 0.21,
 	"country.construction.cost_factor": 0.81,
 	"country.construction.time_factor": 0.81,
 	"country.trade.capacity_factor": 1.41,
@@ -32,8 +32,9 @@ const BUDGETS := {
 	"country.research.society_efficiency": 2.41,
 	"country.population.death_factor": 0.46,
 }
-const FAMILY_BUDGET := 2.61
-const GEO_BUDGET := 1.01
+const FAMILY_BUDGET := 0.61
+const GEO_BUDGET := 0.41
+const GOOD_OUTPUT_BUDGET := 0.56
 const MIN_GEO_NODES := 30
 const MIN_RULE_TERMS := 15
 
@@ -157,6 +158,21 @@ func _init() -> void:
 		elif stat.contains(".terrain.") or stat.contains(".landform."):
 			if float(totals[stat]) > GEO_BUDGET + 0.0001:
 				_fail("geo budget exceeded on %s: %.3f" % [stat, float(totals[stat])])
+				failures += 1
+		elif stat.begins_with("country.output.good."):
+			if float(totals[stat]) > GOOD_OUTPUT_BUDGET + 0.0001:
+				_fail("good output budget exceeded on %s: %.3f" % [stat, float(totals[stat])])
+				failures += 1
+
+	# ---- 4b. 科技树不得包含压低居民消费的负向消费修正
+	for value in nodes:
+		var node: Dictionary = value
+		for term_value in node.get("modifier_terms", []):
+			var term: Dictionary = term_value
+			var stat := String(term.get("stat", ""))
+			var val := float(term.get("value", 0.0))
+			if (stat.begins_with("country.consumption.good.") or stat == "country.household.consumption_factor") and val < 0.0:
+				_fail("%s reduces household consumption via %s = %.3f" % [node.get("id"), stat, val])
 				failures += 1
 
 	# ---- 5. 地理与军事通道覆盖

@@ -133,6 +133,45 @@ func _run() -> void:
 		if body_buffer[i * 16 + 14] > 0.25:
 			only_land_cell = false
 	_expect("water cell contributes no buildings", only_land_cell)
+	# A river can cross a land cell without making the whole settlement
+	# unbuildable. The planner must move the settlement core to a bank and keep
+	# body instances on the dry side instead of rejecting every lot.
+	var river_flow := PackedFloat32Array()
+	river_flow.resize(64 * 64)
+	for y in 64:
+		for x in 64:
+			river_flow[y * 64 + x] = 1.0 if absf(float(x) - 31.5) <= 4.0 else 0.0
+	var river_chunk: Dictionary = ext.bake_building_visual_chunk({
+		"cell_indices": PackedInt32Array([0]),
+		"cell_pos_x": PackedFloat32Array([0.0]),
+		"cell_pos_y": PackedFloat32Array([0.0]),
+		"type_offsets": PackedInt32Array([0, 1]),
+		"type_indices": PackedInt32Array([workshop]),
+		"type_counts": PackedInt64Array([64]),
+		"era_indices": PackedInt32Array([10]),
+		"type_to_archetype": type_to_archetype,
+		"is_water": PackedByteArray([0]),
+		"settlement_tiers": PackedByteArray([5]),
+		"living_levels": PackedByteArray([4]),
+		"rich_buckets": PackedByteArray([2]),
+		"poor_buckets": PackedByteArray([1]),
+		"quality": 1, "instance_cap": 100, "hex_size": 22.0, "cell_count": 1,
+		"river_clear_threshold": 0.42,
+		"flow_buffer": river_flow, "flow_w": 64, "flow_h": 64,
+		"flow_origin_x": -44.0, "flow_origin_y": -44.0,
+		"flow_size_x": 88.0, "flow_size_y": 88.0,
+	})
+	var river_body_buffer := PackedFloat32Array(river_chunk.get(
+		"buffer", PackedFloat32Array()))
+	var river_bank_bodies := true
+	for i in range(int(river_body_buffer.size() / 16)):
+		if absf(river_body_buffer[i * 16 + 3]) <= 3.0:
+			river_bank_bodies = false
+			break
+	_expect("river-crossed land cell keeps dry-bank building bodies",
+		bool(river_chunk.get("ok", false))
+		and int(river_chunk.get("instance_count", 0)) > 0
+		and river_bank_bodies)
 	var native_chunk_again: Dictionary = ext.bake_building_visual_chunk({
 		"cell_indices": PackedInt32Array([0, 1]),
 		"cell_pos_x": PackedFloat32Array([0.0, 22.0]),

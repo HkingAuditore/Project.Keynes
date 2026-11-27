@@ -126,6 +126,14 @@ func _deferred_bridge(ext: Object, compiled: Dictionary, handle: int) -> void:
 			"country_transactions": fiscal.get("economy_asset_transactions", {}),
 			"military": snapshot})
 		_expect("deferred day executes " + str(day), bool(report.get("ok", false)))
+		if day == 0:
+			# AUTO wages must resolve the soldier profession before reading its
+			# living-cost plan.  A fresh economy used to leave that lazy cache at
+			# -1, making both values zero and suppressing every wage transfer.
+			_expect("AUTO soldier wage has a living-cost basis",
+				int(snapshot.get("soldier_living_cost", 0)) > 0 and
+				int(snapshot.get("daily_wage", 0)) > 0,
+				str(snapshot))
 		_expect("deferred bridge cash remains neutral " + str(day), int(ext.get_country_treasury_snapshot(handle).cash) == opening)
 		_expect("deferred cohort/escrow unchanged " + str(day), _cohort_total(ext) == cohort_open and int(fiscal.get("economy_asset_transactions", {}).get("reserved_cash", -1)) == 0)
 		if day == 0: emitted_material = int(report.get("intents_submitted", 0)) > 0
