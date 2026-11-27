@@ -201,9 +201,5 @@
             /*seq_threshold=*/8, encode_rows);
     mark("encode");
 
-    // 逐缓冲 FNV：只服务于人工对拍（换实现后确认逐字节等价）。
-    // **不要**把它挪进条件分支：`tests/ui/visual_tile_native_bake_test.gd` 用
-    // `first.hashes == second.hashes` 断言逐块确定性，一旦默认返回空 dict，
-    // 那条断言就退化成 `{} == {}` 恒真（2026-11-18 曾有人把它包进
-    // `emit_layer_hashes` 开关并默认关闭，会静默削弱该测试）。
+    // 确定性测试显式请求哈希，并核对常规烘焙与诊断烘焙的输出字节。
     Dictionary hashes;

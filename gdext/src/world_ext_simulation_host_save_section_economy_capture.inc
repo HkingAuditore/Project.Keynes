@@ -41,10 +41,10 @@
         // 且 capture_worker_day_input() 直接用 `neighbors.size() != cells*6` 判失败
         // → world_clock.pause(true)，真机表现就是"日期停在 day 0"。
         // 这里在喂给经济输入时把 CSR 展开成稠密表，缺邻居填 -1（沿用稠密表的哨兵值）。
-        economy_input->neighbors = snapshot.neighbor_indices;
-        if (economy_input->neighbors.size() != static_cast<size_t>(cells) * 6u &&
+        const size_t dense_count = static_cast<size_t>(cells) * 6u;
+        if (snapshot.neighbor_indices.size() != dense_count &&
             snapshot.neighbor_offsets.size() == static_cast<size_t>(cells) + 1u) {
-            std::vector<int32_t> dense(static_cast<size_t>(cells) * 6u, -1);
+            std::vector<int32_t> dense(dense_count, -1);
             for (size_t c = 0; c < static_cast<size_t>(cells); ++c) {
                 const int32_t begin = snapshot.neighbor_offsets[c];
                 const int32_t end = snapshot.neighbor_offsets[c + 1];
@@ -55,7 +55,9 @@
                     dense[c * 6u + slot] = snapshot.neighbor_indices[static_cast<size_t>(k)];
                 }
             }
-            economy_input->neighbors = std::move(dense);
+            economy_input->neighbors = std::make_shared<const std::vector<int32_t>>(std::move(dense));
+        } else {
+            economy_input->neighbors = std::make_shared<const std::vector<int32_t>>(snapshot.neighbor_indices);
         }
         economy_input->fog_solved = snapshot.fog_solved;
         economy_input->geography[5] = snapshot.visible;

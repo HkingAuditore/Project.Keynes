@@ -437,7 +437,7 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     };
 
 #include "world_ext_bake_visual_tiles_section_relief_and_tile_encoding.inc"
-    {
+    if (bool(knobs.get("include_hashes", false))) {
         auto hash_bytes = [](const PackedByteArray &data) -> int64_t {
             uint64_t h = 1469598103934665603ULL;
             const uint8_t *p = data.ptr();
@@ -458,10 +458,10 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
             hashes["edge_distance"] = hash_bytes(edge_distance_data);
             if (BW_W != nullptr) hashes["boundary_warp"] = hash_bytes(boundary_warp_data);
         }
+        mark("hash");
     }
 
     const auto t1 = std::chrono::high_resolution_clock::now();
-    mark("hash");
     out["profile"] = prof;
     out["fallback"] = false;
     out["reason"] = String();

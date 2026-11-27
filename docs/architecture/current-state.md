@@ -228,6 +228,9 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 | `run_bake_erosion_spl_pass`（**新增**） | 同上 | 与融合 pass 共用同一份 `pk_erosion` 管线实现（不复制算法）；只给测试 / A/B probe 喂合成高度场，生产走融合 pass |
 | `run_bake_erosion_pass`（液滴，保留） | 同上 | ABI 不变；只在 `carve` / `droplet` 与 legacy 回退路径执行 |
 
+`run_bake_visual_tile_layer_pass` 默认省略诊断用哈希扫描。需要校验产物时，调用方通过
+`include_hashes=true` 请求各层字节的哈希和该步骤的耗时。
+
 生成链路里的分支：`MapBaker.bake_world()` 优先调融合几何 pass；侵蚀阶段按 `dem_erosion_mode` 走
 
 - `carve`：几何刻谷（Priority-Flood 填洼 → MFD 汇水 → `log(A)` 映射谷深 → 倒角谷壁）+ 液滴，**逐位回退基线**；

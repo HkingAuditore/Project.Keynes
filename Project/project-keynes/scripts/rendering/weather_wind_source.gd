@@ -65,20 +65,19 @@ static func build_image(map: MapData, dims: Vector2i) -> Image:
 	if map == null or dims.x <= 0 or dims.y <= 0 \
 			or map.wind_x_arr.size() == 0 or map.wind_y_arr.size() != map.wind_x_arr.size():
 		return null
-	var n := mini(map.wind_x_arr.size(), dims.x * dims.y)
+	var slots := dims.x * dims.y
+	var n := mini(map.wind_x_arr.size(), slots)
 	if n <= 0:
 		return null
 	var speed_arr := map.wind_speed_arr
 	var image := Image.create(dims.x, dims.y, false, Image.FORMAT_RGBA8)
-	for i in range(dims.x * dims.y):
-		var wind := Vector2.ZERO
-		var speed := 0.0
-		if i < n:
-			wind = Vector2(map.wind_x_arr[i], map.wind_y_arr[i])
-			if wind.length_squared() > 0.000001:
-				wind = wind.normalized()
-			if i < speed_arr.size():
-				speed = float(speed_arr[i])
+	if n < slots:
+		image.fill(encode_wind(Vector2.ZERO, 0.0))
+	for i in n:
+		var wind := Vector2(map.wind_x_arr[i], map.wind_y_arr[i])
+		if wind.length_squared() > 0.000001:
+			wind = wind.normalized()
+		var speed := float(speed_arr[i]) if i < speed_arr.size() else 0.0
 		image.set_pixel(i % dims.x, int(i / dims.x), encode_wind(wind, speed))
 	return image
 

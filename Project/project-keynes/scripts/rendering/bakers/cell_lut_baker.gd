@@ -276,8 +276,6 @@ static func _publish_cell_lut_textures(baker: MapBaker, world: WorldData,
 	report["texture_upload_ms"] = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
 	# [cell-field 2026-11-18] cell_table 紧跟 eco_lut 发布（同一个 refresh），
 	# 是追加工件：上面三张 LUT 的字节与上传时机一行没改。
-	# layer0/2 由 enum_changed 门控重建，layer1 只在 dyn_changed 时重写 —— 与
-	# dyn_lut 的更新节奏严格同步（每天都变的是 state，不是 class）。
 	#
 	# 放在 helper 里而不是 bake_cell_luts 的调用点：native 的 defer_upload 路径由
 	# flush_staged_cell_lut_upload 直接调本函数发布，绕开 bake_cell_luts；表若留在
@@ -285,18 +283,12 @@ static func _publish_cell_lut_textures(baker: MapBaker, world: WorldData,
 	# map 取 baker._last_bake_map：发布器签名里没有 map，而整个会话就是 bake_world
 	# 那一个实例（天气表也用该引用）；null 时
 	# _publish_cell_table 自己会把 bound/layers 归零。
-	# [vision-dirty-aux] 视野脏格必须并进 class_indices：cell_table 的 aux 层
-	# （layer2.R = 雾 k，PW_CELL_FIELD 路径唯一的 k 来源）只按 class_indices 重建。
-	# 只填 dirty_indices 时 `_cell_table_static_words()` 的循环是 `indices.size()`=0 次，
-	# aux 永远停在初始 255 —— 雾层在 draw list 里、k 读出来却全是"可见"（雾画不出来）。
-	# 并集只覆盖真正变化的格，不需要 force_full_encode 的全量重编。
-	var table_static_cells := class_indices
-	if not dirty_indices.is_empty():
-		table_static_cells = class_indices.duplicate()
-		table_static_cells.append_array(dirty_indices)
+	# Worker updates already include vision changes in class_indices. Callers
+	# without a separate classification mask use dirty_indices when encoding.
+	var full_table := force_full_encode or enum_changed
 	report.merge(_publish_cell_table(baker, baker._last_bake_map, world, e, d,
-		enum_changed or not table_static_cells.is_empty(), dyn_changed,
-		table_static_cells, force_full_encode or enum_changed), true)
+		full_table or not class_indices.is_empty(), dyn_changed,
+		class_indices, full_table), true)
 	var bounce_t0_us := Time.get_ticks_usec()
 	report["bounce_lut_published"] = false
 	if enum_changed or dyn_changed or world.bounce_lut_tex == null:

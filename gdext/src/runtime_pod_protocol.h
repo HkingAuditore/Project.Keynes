@@ -225,7 +225,8 @@ struct RuntimeEconomyDayInput {
     std::array<std::vector<uint8_t>, 6> geography; // terrain, landform, vegetation, water, river, visibility
     // weather_type, cover
     std::array<std::vector<uint8_t>, 2> climate_u8;
-    std::vector<int32_t> neighbors;
+    // Dense cell * 6 + direction indices, shared by the frozen day-input copies.
+    std::shared_ptr<const std::vector<int32_t>> neighbors;
     std::vector<std::vector<float>> reserves;
     std::vector<std::vector<float>> changes;
     std::vector<uint8_t> resource_habitat; // cell_resource_habitat_mask; empty when absent

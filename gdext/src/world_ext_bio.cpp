@@ -331,7 +331,8 @@ const char *NativeSimulationHost::stage_bio_occupancy(DayExecution &day) {
         climate.vegetation.size() != count || environment->is_water.size() != count ||
         environment->has_river.size() != count || environment->landform.size() != count ||
         environment->cell_elevation.size() != count || environment->province_ids.size() != count ||
-        environment->economy_input->neighbors.size() != count * 6u) {
+        !environment->economy_input->neighbors ||
+        environment->economy_input->neighbors->size() != count * 6u) {
         return "bio_day_tail_input_shape_invalid";
     }
 
@@ -343,7 +344,7 @@ const char *NativeSimulationHost::stage_bio_occupancy(DayExecution &day) {
     BioOccupancyInputs inputs{environment->is_water.data(), climate.vegetation.data(),
         environment->landform.data(), environment->has_river.data(),
         climate.temperature_30d_ema.data(), climate.moisture.data(), environment->cell_elevation.data(),
-        environment->province_ids.data(), environment->economy_input->neighbors.data(),
+        environment->province_ids.data(), environment->economy_input->neighbors->data(),
         state.introduce_cells.data(), state.introduce_bits.data(),
         static_cast<int>(state.introduce_cells.size()), {}};
     inputs.reserves.reserve(state.carrier_resources.size());

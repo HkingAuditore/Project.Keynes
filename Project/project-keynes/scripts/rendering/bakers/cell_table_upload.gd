@@ -111,9 +111,9 @@ static func _publish_cell_table(baker: MapBaker, map: MapData, world: WorldData,
 				required_images[CellTableCodecScript.LAYER_CLASS_BY_INDEX] = true
 				images[CellTableCodecScript.LAYER_CLASS_BY_INDEX] = _cell_table_image(
 					CellTableCodecScript.index_space_fill_bytes(map_w, map_h), map_w, map_h)
-		# [aux-upload-gate] 绑静态重建，不用「值相等」判断：值比较在缓存领先 GPU 时会
-		# 永久判为「没变」，aux 就再也传不上去。静态重建一次多传一层 60×40 RGBA8（≈9.6 KB）。
-		if need_all or static_changed:
+		# The cache holds the last submitted bytes. Rebuilding a class does
+		# not require uploading the fog/depth image again if those bytes match.
+		if need_all or aux != previous_aux:
 			required_images[CellTableCodecScript.LAYER_AUX] = true
 			images[CellTableCodecScript.LAYER_AUX] = _cell_table_image(
 				_cell_words_to_offset(aux, layout).to_byte_array(), map_w, map_h)
@@ -170,11 +170,7 @@ static func _publish_cell_table(baker: MapBaker, map: MapData, world: WorldData,
 		world.cell_table_fog_coverage = null
 	if images[CellTableCodecScript.LAYER_CLASS] != null or aux_image != null:
 		world.land_base_revision += 1
-	# [aux-upload-gate] 缓存只能记**真正上传成功**的那一份。原来无条件写回算出来的 `aux`：
-	# 一旦某次没建 image（`aux != previous_aux` 比的是「算过的值」）也就没上传，但缓存已经
-	# 变成新值，之后每次都相等 ⇒ 永远不再上传，GPU 停在首帧 255。实测就是
-	# `aux_cache.R=0 / aux@offset=255 / gpu_aux_zero=0/2400`，表现为「雾从来没画过」。
-	# 改为按层 dirty：未上传的层沿用上次上传的字节，等值比较才真正等于「脏」。
+	# Remember only the submitted layers so failed preparation can be retried.
 	baker._cell_table_source_cache = {"texture": tex, "layout": layout,
 		"class": classes if uploaded["class"] else previous_class,
 		"aux": aux if uploaded["aux"] else previous_aux,
