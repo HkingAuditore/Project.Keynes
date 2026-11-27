@@ -1,4 +1,8 @@
+class_name TechnologyAuthoringInspector
 extends RefCounted
+
+const EffectFields = preload("res://scripts/tools/technology_authoring/technology_inspector_effect_fields.gd")
+const ReviewFields = preload("res://scripts/tools/technology_authoring/technology_inspector_review_fields.gd")
 
 ## Builds the full-field inspector for one technology.
 ##
@@ -497,394 +501,34 @@ func _build_relation(key: String, label: String) -> void:
 # --------------------------------------------------------------------------
 
 func _build_modifier_terms(row_data: Dictionary, key: String, label: String) -> void:
-	var box := _add_block("%s（上限 6 条）" % label, key)
-	var terms: Array = row_data.get(key, [])
-	for slot in range(terms.size()):
-		var term: Dictionary = terms[slot]
-		var captured := slot
-		var frame := VBoxContainer.new()
-		frame.add_theme_constant_override("separation", 2)
-		box.add_child(frame)
-		var head := HBoxContainer.new()
-		frame.add_child(head)
-		var stat_button := Button.new()
-		stat_button.text = String(term.get("stat", "（选择 stat）"))
-		stat_button.clip_text = true
-		stat_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		stat_button.tooltip_text = _editor.call("stat_hint", String(term.get("stat", "")))
-		head.add_child(stat_button)
-		stat_button.pressed.connect(func() -> void:
-			_editor.call("open_stat_picker", func(picked: String) -> void:
-				_editor.call("commit_term_field", _technology_id, captured, "stat", picked)))
-		var operation := OptionButton.new()
-		for index in range(OPERATION_NAMES.size()):
-			operation.add_item(String(OPERATION_NAMES[index]), index)
-		operation.select(clampi(int(term.get("operation", 0)), 0, 3))
-		head.add_child(operation)
-		operation.item_selected.connect(func(index: int) -> void:
-			_editor.call("commit_term_field", _technology_id, captured, "operation",
-				float(index)))
-		var value := SpinBox.new()
-		value.min_value = -1000.0
-		value.max_value = 1000.0
-		value.step = 0.01
-		value.value = float(term.get("value", 0.0))
-		head.add_child(value)
-		value.value_changed.connect(func(next: float) -> void:
-			_editor.call("commit_term_field", _technology_id, captured, "value", next))
-		var remove := Button.new()
-		remove.text = "移除"
-		head.add_child(remove)
-		remove.pressed.connect(func() -> void:
-			_editor.call("remove_term", _technology_id, captured))
-		var subject := HBoxContainer.new()
-		frame.add_child(subject)
-		_term_line(subject, "对象类型", String(term.get("subject_kind", "")), captured,
-			"subject_kind", 96, true)
-		_term_line(subject, "对象 ID", String(term.get("subject_id", "")), captured,
-			"subject_id", 120, false)
-		_term_line(subject, "对象名称", String(term.get("subject_display_name", "")),
-			captured, "subject_display_name", 120, false)
-		var semantics := HBoxContainer.new()
-		frame.add_child(semantics)
-		_term_line(semantics, "效果类别", String(term.get("effect_class", "")), captured,
-			"effect_class", 120, true)
-		_term_line(semantics, "运行时消费者", String(term.get("runtime_consumer", "")),
-			captured, "runtime_consumer", 200, true)
-		var rationale := HBoxContainer.new()
-		frame.add_child(rationale)
-		_term_line(rationale, "效果理由", String(term.get("effect_rationale", "")),
-			captured, "effect_rationale", 320, false)
-		var preview := Label.new()
-		preview.text = "玩家文案预览：%s %s" % [
-			_editor.call("term_subject_label", term),
-			ValidatorScript.modifier_delta(term)]
-		preview.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-		frame.add_child(preview)
-		if ValidatorScript.same_target_conflict(row_data, term):
-			var conflict := Label.new()
-			conflict.text = "冲突：本科技同时解锁并加成 %s（technology_unlock_same_target_modifier）" % String(
-				term.get("subject_id", ""))
-			conflict.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			conflict.add_theme_color_override("font_color", UITokens.RISK)
-			frame.add_child(conflict)
-		var status := String(term.get("implementation_status", ""))
-		if status != "runtime_consumed":
-			var warning := Label.new()
-			warning.text = "implementation_status 必须为 runtime_consumed，当前为「%s」" % status
-			warning.add_theme_color_override("font_color", UITokens.RISK)
-			frame.add_child(warning)
-			var fix := Button.new()
-			fix.text = "修正为 runtime_consumed"
-			frame.add_child(fix)
-			fix.pressed.connect(func() -> void:
-				_editor.call("commit_term_field", _technology_id, captured,
-					"implementation_status", "runtime_consumed"))
-		box.add_child(HSeparator.new())
-	if terms.size() < 6:
-		var add := Button.new()
-		add.text = "添加 Modifier 项"
-		box.add_child(add)
-		add.pressed.connect(func() -> void: _editor.call("add_term", _technology_id))
-
+	EffectFields._build_modifier_terms(self, row_data, key, label)
 
 func _term_line(row: HBoxContainer, label: String, value: String, slot: int,
 		key: String, width: int, suggest: bool) -> void:
-	var caption := Label.new()
-	caption.text = label
-	row.add_child(caption)
-	var field := LineEdit.new()
-	field.text = value
-	field.custom_minimum_size.x = width
-	field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(field)
-	field.text_submitted.connect(func(text: String) -> void:
-		_editor.call("commit_term_field", _technology_id, slot, key, text))
-	field.focus_exited.connect(func() -> void:
-		_editor.call("commit_term_field", _technology_id, slot, key, field.text))
-	if not suggest:
-		return
-	var pick := Button.new()
-	pick.text = "…"
-	row.add_child(pick)
-	pick.pressed.connect(func() -> void:
-		_editor.call("open_term_value_picker", key,
-			func(picked: String) -> void:
-				field.text = picked
-				_editor.call("commit_term_field", _technology_id, slot, key, picked)))
-
-
-# --------------------------------------------------------------------------
-# Content unlocks
-# --------------------------------------------------------------------------
+	EffectFields._term_line(self, row, label, value, slot, key, width, suggest)
 
 func _build_content_effects(row_data: Dictionary, key: String, label: String) -> void:
-	var box := _add_block(label, key)
-	var effects: Array = row_data.get(key, [])
-	for slot in range(effects.size()):
-		var effect: Dictionary = effects[slot]
-		var captured := slot
-		var row := HBoxContainer.new()
-		box.add_child(row)
-		var caption := Label.new()
-		caption.text = "%s · %s" % [String(effect.get("kind", "")), String(effect.get("id", ""))]
-		caption.custom_minimum_size.x = 200
-		caption.tooltip_text = JSON.stringify(effect, "  ")
-		row.add_child(caption)
-		var operation := Label.new()
-		operation.text = String(effect.get("operation", ""))
-		row.add_child(operation)
-		var exists := bool(_editor.call("content_exists", String(effect.get("kind", "")),
-			String(effect.get("id", ""))))
-		var state := Label.new()
-		state.text = "已存在" if exists else "内容不存在"
-		state.add_theme_color_override("font_color",
-			UITokens.GOOD if exists else UITokens.RISK)
-		row.add_child(state)
-		var remove := Button.new()
-		remove.text = "移除"
-		row.add_child(remove)
-		remove.pressed.connect(func() -> void:
-			_editor.call("remove_array_entry", _technology_id, key, captured))
-	var add := Button.new()
-	add.text = "添加解锁效果"
-	box.add_child(add)
-	add.pressed.connect(func() -> void:
-		_editor.call("prompt_content_effect", _technology_id))
-
+	EffectFields._build_content_effects(self, row_data, key, label)
 
 func _build_expected_bindings(row_data: Dictionary, key: String, label: String) -> void:
-	var box := _add_block("%s（kind 1=物资 2=建筑 3=资源）" % label, key)
-	var bindings: Array = row_data.get(key, [])
-	for slot in range(bindings.size()):
-		var binding: Dictionary = bindings[slot]
-		var captured := slot
-		var row := HBoxContainer.new()
-		box.add_child(row)
-		var caption := Label.new()
-		caption.text = "kind %d · %s" % [int(binding.get("kind", 0)),
-			String(binding.get("id", ""))]
-		caption.custom_minimum_size.x = 240
-		row.add_child(caption)
-		var remove := Button.new()
-		remove.text = "移除"
-		row.add_child(remove)
-		remove.pressed.connect(func() -> void:
-			_editor.call("remove_array_entry", _technology_id, key, captured))
-	var add := Button.new()
-	add.text = "从解锁效果同步预期绑定"
-	box.add_child(add)
-	add.pressed.connect(func() -> void:
-		_editor.call("sync_expected_bindings", _technology_id))
-
+	EffectFields._build_expected_bindings(self, row_data, key, label)
 
 func _build_support_buildings(row_data: Dictionary, key: String, label: String) -> void:
-	var box := _add_block(label, key)
-	var rows: Array = row_data.get(key, [])
-	for slot in range(rows.size()):
-		var entry: Dictionary = rows[slot]
-		var captured := slot
-		var row := HBoxContainer.new()
-		box.add_child(row)
-		var caption := Label.new()
-		caption.text = "%s（%s）" % [String(entry.get("name", "")), String(entry.get("id", ""))]
-		caption.custom_minimum_size.x = 240
-		row.add_child(caption)
-		var remove := Button.new()
-		remove.text = "移除"
-		row.add_child(remove)
-		remove.pressed.connect(func() -> void:
-			_editor.call("remove_array_entry", _technology_id, key, captured))
-	var add := Button.new()
-	add.text = "添加支撑建筑"
-	box.add_child(add)
-	add.pressed.connect(func() -> void:
-		_editor.call("prompt_support_building", _technology_id))
+	EffectFields._build_support_buildings(self, row_data, key, label)
 
-
-# --------------------------------------------------------------------------
-# Research routes and knowledge basis
-# --------------------------------------------------------------------------
 
 func _build_research_routes(row_data: Dictionary, key: String, label: String) -> void:
-	var box := _add_block(label, key)
-	var routes: Array = row_data.get(key, [])
-	for slot in range(routes.size()):
-		var route: Dictionary = routes[slot]
-		var captured := slot
-		var frame := VBoxContainer.new()
-		box.add_child(frame)
-		var head := HBoxContainer.new()
-		frame.add_child(head)
-		var id_field := LineEdit.new()
-		id_field.text = String(route.get("id", ""))
-		id_field.placeholder_text = "research_route.<名称>"
-		id_field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		head.add_child(id_field)
-		id_field.focus_exited.connect(func() -> void:
-			_editor.call("commit_route_field", _technology_id, captured, "id",
-				id_field.text))
-		var remove := Button.new()
-		remove.text = "移除"
-		head.add_child(remove)
-		remove.pressed.connect(func() -> void:
-			_editor.call("remove_array_entry", _technology_id, key, captured))
-		var meta := HBoxContainer.new()
-		frame.add_child(meta)
-		_route_line(meta, "名称", String(route.get("display_name", "")), captured,
-			"display_name")
-		_route_line(meta, "类型", String(route.get("route_type", "")), captured,
-			"route_type")
-		var description := LineEdit.new()
-		description.text = String(route.get("description", ""))
-		description.placeholder_text = "描述（必填）"
-		frame.add_child(description)
-		description.focus_exited.connect(func() -> void:
-			_editor.call("commit_route_field", _technology_id, captured, "description",
-				description.text))
-		var atoms: PackedStringArray = PackedStringArray()
-		ValidatorScript.collect_technology_atoms(route.get("condition", {}), atoms)
-		var atom_label := Label.new()
-		atom_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		atom_label.text = "条件引用：%s" % ("、".join(atoms) if not atoms.is_empty() else "（无）")
-		frame.add_child(atom_label)
-		var condition := TextEdit.new()
-		condition.text = JSON.stringify(route.get("condition", {}), "  ")
-		condition.custom_minimum_size.y = 74
-		frame.add_child(condition)
-		var status := Label.new()
-		frame.add_child(status)
-		condition.focus_exited.connect(func() -> void:
-			var parsed: Variant = JSON.parse_string(condition.text)
-			if not parsed is Dictionary:
-				status.text = "条件必须是 JSON 对象，未提交。"
-				status.add_theme_color_override("font_color", UITokens.RISK)
-				return
-			status.text = ""
-			_editor.call("commit_route_field", _technology_id, captured, "condition",
-				parsed))
-		var helper := Button.new()
-		helper.text = "以某科技为条件"
-		frame.add_child(helper)
-		helper.pressed.connect(func() -> void:
-			_editor.call("prompt_route_condition", _technology_id, captured))
-		box.add_child(HSeparator.new())
-	var add := Button.new()
-	add.text = "添加研究路线"
-	box.add_child(add)
-	add.pressed.connect(func() -> void: _editor.call("add_route", _technology_id))
-
+	ReviewFields._build_research_routes(self, row_data, key, label)
 
 func _route_line(row: HBoxContainer, label: String, value: String, slot: int,
 		key: String) -> void:
-	var caption := Label.new()
-	caption.text = label
-	row.add_child(caption)
-	var field := LineEdit.new()
-	field.text = value
-	field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(field)
-	field.focus_exited.connect(func() -> void:
-		_editor.call("commit_route_field", _technology_id, slot, key, field.text))
-
+	ReviewFields._route_line(self, row, label, value, slot, key)
 
 func _build_knowledge_basis(row_data: Dictionary, key: String, label: String) -> void:
-	var basis: Dictionary = row_data.get(key, {})
-	var box := _add_block(label, key)
-	var required := Label.new()
-	required.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	var required_ids: Array = basis.get("required_ids", [])
-	required.text = "必需：%s" % ("、".join(PackedStringArray(
-		required_ids.map(func(v): return String(v)))) if not required_ids.is_empty() else "（无）")
-	box.add_child(required)
-	var groups: Array = basis.get("alternative_groups", [])
-	for group_value in groups:
-		var group_label := Label.new()
-		group_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		group_label.text = "任一：%s" % "、".join(PackedStringArray(
-			(group_value as Array).map(func(v): return String(v))))
-		box.add_child(group_label)
-	var actions := HBoxContainer.new()
-	box.add_child(actions)
-	var sync := Button.new()
-	sync.text = "按硬前置与路线重建"
-	actions.add_child(sync)
-	sync.pressed.connect(func() -> void:
-		_editor.call("rebuild_knowledge_basis", _technology_id))
-	var exemption := LineEdit.new()
-	exemption.text = String(basis.get("exemption_reason", ""))
-	exemption.placeholder_text = "豁免理由"
-	exemption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	actions.add_child(exemption)
-	exemption.focus_exited.connect(func() -> void:
-		_editor.call("commit_basis_exemption", _technology_id, exemption.text))
-
-
-# --------------------------------------------------------------------------
-# Review metadata
-# --------------------------------------------------------------------------
+	ReviewFields._build_knowledge_basis(self, row_data, key, label)
 
 func _build_topology_review(row_data: Dictionary, key: String, label: String) -> void:
-	var review: Dictionary = row_data.get(key, {})
-	var box := _add_block(label, key)
-	var head := HBoxContainer.new()
-	box.add_child(head)
-	var role := OptionButton.new()
-	var roles := ValidatorScript.TOPOLOGY_REVIEW_ROLES
-	var current := String(review.get("role", ""))
-	var selected := roles.find(current)
-	for index in range(roles.size()):
-		role.add_item(String(roles[index]), index)
-	role.select(maxi(0, selected))
-	head.add_child(role)
-	role.item_selected.connect(func(index: int) -> void:
-		_editor.call("commit_review_field", _technology_id, key, "role",
-			String(roles[index])))
-	var rationale := LineEdit.new()
-	rationale.text = String(review.get("rationale", ""))
-	rationale.placeholder_text = "理由（必填）"
-	rationale.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(rationale)
-	rationale.focus_exited.connect(func() -> void:
-		_editor.call("commit_review_field", _technology_id, key, "rationale",
-			rationale.text))
-	var families := TextEdit.new()
-	var family_ids: Array = review.get("expected_hard_family_ids", [])
-	families.text = "\n".join(PackedStringArray(
-		family_ids.map(func(v): return String(v))))
-	families.custom_minimum_size.y = 44
-	box.add_child(families)
-	var hint := Label.new()
-	hint.text = "预期硬前置分支族（每行一个；汇聚角色不可为空）"
-	box.add_child(hint)
-	families.focus_exited.connect(func() -> void:
-		var out: Array = []
-		for line in families.text.split("\n"):
-			var trimmed := String(line).strip_edges()
-			if not trimmed.is_empty():
-				out.append(trimmed)
-		_editor.call("commit_review_field", _technology_id, key,
-			"expected_hard_family_ids", out))
-
+	ReviewFields._build_topology_review(self, row_data, key, label)
 
 func _build_building_review(row_data: Dictionary, key: String, label: String) -> void:
-	var review: Dictionary = row_data.get(key, {})
-	var row := _field_row(label, key)
-	var policy := OptionButton.new()
-	var policies := ValidatorScript.BUILDING_UNLOCK_POLICIES
-	var current := String(review.get("policy", ""))
-	for index in range(policies.size()):
-		policy.add_item(String(policies[index]), index)
-	policy.select(maxi(0, policies.find(current)))
-	row.add_child(policy)
-	policy.item_selected.connect(func(index: int) -> void:
-		_editor.call("commit_review_field", _technology_id, key, "policy",
-			String(policies[index])))
-	var rationale := LineEdit.new()
-	rationale.text = String(review.get("rationale", ""))
-	rationale.placeholder_text = "理由（必填）"
-	rationale.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(rationale)
-	rationale.focus_exited.connect(func() -> void:
-		_editor.call("commit_review_field", _technology_id, key, "rationale",
-			rationale.text))
+	ReviewFields._build_building_review(self, row_data, key, label)

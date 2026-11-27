@@ -12,6 +12,8 @@
 class_name WorldClock
 extends Node
 
+const FrameAdvance = preload("res://scripts/geography/world_clock_frame_advance.gd")
+const EconomyGate = preload("res://scripts/geography/world_clock_economy_gate.gd")
 const WorldDayCostProbe = preload("res://scripts/diagnostics/world_day_cost_probe.gd")
 var _day_cost_probe = WorldDayCostProbe.new()
 
@@ -135,23 +137,7 @@ var _runtime_calendar_admit: Callable
 var _runtime_calendar_through := -1
 var _runtime_calendar_fraction := 0.0
 var _publishing_runtime_date := false
-
-# ─── 经济日结闸门（方案 A）────────────────────────────────────────────────
-# 正式包上 day 由仿真提交日 +1 发布（world_runtime_daily_adapter_part3.gd:129 →
-# publish_runtime_date），因为 world_runtime_generation_adapter.gd:349 一绑 runtime
-# calendar，_process 开头就直接 return，_day_carry 那套根本不执行。经济完全
-# 不在这条链上，所以 day 会一路涨而 eco_day 冻住且无人报警（3650 那次就是这个形状）。
-# 这里只做一件事：显示日不得领先「经济已结算日 + bound」，超了就把日历钉在原地并报警。
-# 数据由 heartbeat 每 5 秒喂一次（player_game.gd 的 _economy_probe），不进每帧。
-var _economy_settled_day: int = -1            # newest_state_day；-1 = 尚未喂入
-var _eco_settled_day_last_msec: int = 0       # 仅诊断：eco_day 最后一次前进的时刻
-var _eco_gate_blocked: bool = false           # 闸门已闭（去抖之后）
-var _eco_gate_over_count: int = 0             # 连续超限的心跳数
-var _eco_gate_hold_start_msec: int = 0
-var _eco_gate_last_log_msec: int = 0
-var _eco_gate_trip_count: int = 0
-## GM 出口：真冻结时只放行不静默 —— 日志照打，并多一个 force_open=1。
-var _eco_gate_force_open: bool = false
+var _economy_gate := EconomyGate.new()
 
 # 任务 2：上次发射 day_phase_changed 时的 phase 值，用于节流判定。
 # -1.0 是哨兵值，表示"从来没发射过"，第一次 _process 必发。
@@ -257,11 +243,6 @@ const _DAY_COST_EMA_ALPHA: float = 0.2
 # 单日成本发散时的吞吐下限：保证最坏情况仍每 8 帧推进一天。没有这个下限，
 # 一次异常尖峰进入 EMA 就能把吞吐压到比固定 1x 更差。
 const _MIN_THROUGHPUT_DAYS_PER_FRAME: float = 0.125
-## 经济闸门去抖：连续这么多个心跳（5 秒/次）都超限才真的停。去抖会放行第一个心跳，
-## 因此实际出现的最大滞后 = bound + 一个心跳的推进量（10x 下约 +50 天），
-## 不是 bound 本身。验收别拿 bound 当最大滞后。
-const _ECO_GATE_TRIP_HEARTBEATS: int = 2
-const _ECO_GATE_LOG_MS: int = 5000
 const _MONTH_LENGTHS: Array[int] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 const _MONTH_NAMES_SHORT: Array[String] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -312,24 +293,7 @@ func _emit_initial_signals() -> void:
 	visual_day_phase_changed.emit(visual_day_phase)
 
 func _advance_one_sim_day() -> void:
-	if day_cost_probe_on:
-		day_cost_flush()
-		_dcp_day = _last_day + 1
-		_dcp_dispatch_usec = Time.get_ticks_usec()
-	_last_day += 1
-	if _max_worker_lag_days > 0:
-		_worker_lag_days += 1
-	day_changed.emit(_last_day)
-	if day_cost_probe_on:
-		day_cost_add(&"clk", _dcp_elapsed_ms(_dcp_dispatch_usec))
-	var day_season: int = season_index_for_day(_last_day)
-	if day_season != _last_season:
-		_last_season = day_season
-		season_changed.emit(day_season)
-	var day_year: int = year_index_for_day(_last_day)
-	if day_year != _last_year:
-		_last_year = day_year
-		_apply_year_rollover(day_year)
+	FrameAdvance._advance_one_sim_day(self)
 
 
 # ─── Web 单日成本探针 ────────────────────────────────────────────────────
@@ -404,293 +368,27 @@ func bind_runtime_calendar(admit: Callable) -> void:
 
 
 func publish_runtime_date(committed: int) -> void:
-	if not _runtime_calendar_admit.is_valid() or committed + 1 <= _last_day:
-		return
-	# 经济闸门：只钉显示日 —— 不更新 _last_day、不发 day_changed、不翻季节/年份。
-	# _runtime_calendar_through 由 _process_runtime_calendar 自己维护，这里不动它，
-	# 所以仿真侧继续推进，只有日历停住，不会反过来卡死仿真。
-	if _eco_gate_blocked and not _eco_gate_force_open:
-		return
-	_last_day = committed + 1
-	current_day = float(_last_day) + _runtime_calendar_fraction
-	_runtime_calendar_through = maxi(_runtime_calendar_through, committed)
-	_publishing_runtime_date = true
-	day_changed.emit(_last_day)
-	var season := season_index_for_day(_last_day)
-	if season != _last_season:
-		_last_season = season
-		season_changed.emit(season)
-	var year := year_index_for_day(_last_day)
-	if year != _last_year:
-		_last_year = year
-		_apply_year_rollover(year)
-	_publishing_runtime_date = false
+	FrameAdvance.publish_runtime_date(self, committed)
 
 
-func _process_runtime_calendar(delta: float) -> void:
-	_runtime_calendar_fraction += delta * speed_multiplier
-	var elapsed_days := int(_runtime_calendar_fraction)
-	_runtime_calendar_fraction -= elapsed_days
-	if elapsed_days > 0:
-		_runtime_calendar_through = int(_runtime_calendar_admit.call(
-			_runtime_calendar_through + elapsed_days + 1))
-	current_day = float(_last_day) + _runtime_calendar_fraction
-	var dp := day_phase()
-	if _should_emit_day_phase(dp):
-		_last_emit_day_phase = dp
-		day_phase_changed.emit(dp)
-	var sp := season_phase()
-	if _should_emit_season_phase(sp):
-		_last_emit_season_phase = sp
-		season_phase_changed.emit(sp)
-	_advance_visual_day_phase(delta)
-
-
-## 方案 A 的滞后上限（天）。依据盘上 12 份 11-19 跑批：1x 全程 gap ≤2；10x 峰值 40，
-## 而 eco_day 是 5 秒缓存、只会偏旧，10x 下陈旧量约 5×dps ≈ 50，故 10x 端要 ~90。
-## 换算成「每倍速 10 天」：1x=20（下限）、10x=100、20x 封顶 200。
-func _eco_lag_bound() -> float:
-	return clampf(maxf(speed_multiplier, 1.0) * 10.0, 20.0, 200.0)
-
-
-## 由 heartbeat 每 5 秒喂入一次经济已结算日（report 的 newest_state_day）。
-## 单调不减。判定的时机就在这里（一次心跳一次），publish_runtime_date 只读
-## _eco_gate_blocked，不再做比较，所以没有每帧/每次发布的开销。
 func set_economy_settled_day(day: int) -> void:
-	if day < 0:
-		return
-	var now := Time.get_ticks_msec()
-	if day > _economy_settled_day:
-		_economy_settled_day = day
-		_eco_settled_day_last_msec = now
-	var over := float(day_index() - _economy_settled_day) > _eco_lag_bound()
-	if over:
-		_eco_gate_over_count += 1
-	else:
-		_eco_gate_over_count = 0
-	if over and not _eco_gate_blocked and _eco_gate_over_count >= _ECO_GATE_TRIP_HEARTBEATS:
-		_eco_gate_blocked = true
-		_eco_gate_trip_count += 1
-		_eco_gate_hold_start_msec = now
-		_eco_gate_last_log_msec = 0
-	if _eco_gate_blocked and not over:
-		_eco_gate_blocked = false
-		_log_eco_gate(true)
-	elif _eco_gate_blocked:
-		_log_eco_gate(false)
+	_economy_gate.observe(day, day_index(), speed_multiplier)
 
-
-## 读档后必须调用：eco 缓存留着旧值会把恢复后的日历硬钉死（restore_state 直接写
-## _last_day，绕过 publish_runtime_date，所以闸门拦不住读档本身）。
 func reset_economy_settled_day() -> void:
-	_economy_settled_day = -1
-	_eco_settled_day_last_msec = 0
-	_eco_gate_blocked = false
-	_eco_gate_over_count = 0
-	_eco_gate_hold_start_msec = 0
-	_eco_gate_last_log_msec = 0
+	_economy_gate.reset()
 
-
-## GM 强制放行出口：只放行，不静默 —— 日志照打并带 force_open=1。
 func set_economy_gate_force_open(enabled: bool) -> void:
-	_eco_gate_force_open = enabled
-
+	_economy_gate.set_force_open(enabled)
 
 func is_economy_gate_blocked() -> bool:
-	return _eco_gate_blocked and not _eco_gate_force_open
+	return _economy_gate.is_blocked()
 
-
-func _log_eco_gate(recovered: bool) -> void:
-	var now := Time.get_ticks_msec()
-	if recovered:
-		_eco_gate_last_log_msec = now
-		print("[calendar/eco-gate] recovered day=%d eco_day=%d bound=%d held_ms=%d trips=%d" % [
-			day_index(), _economy_settled_day, int(_eco_lag_bound()),
-			now - _eco_gate_hold_start_msec, _eco_gate_trip_count])
-		return
-	if _eco_gate_last_log_msec != 0 and now - _eco_gate_last_log_msec < _ECO_GATE_LOG_MS:
-		return
-	_eco_gate_last_log_msec = now
-	var idle_ms := -1
-	if _eco_settled_day_last_msec > 0:
-		idle_ms = now - _eco_settled_day_last_msec
-	print("[calendar/eco-gate] day=%d eco_day=%d bound=%d speed=%.2f held_days=%d held_ms=%d eco_idle_ms=%d over_heartbeats=%d trips=%d force_open=%d" % [
-		day_index(), _economy_settled_day, int(_eco_lag_bound()), speed_multiplier,
-		day_index() - _economy_settled_day, now - _eco_gate_hold_start_msec,
-		idle_ms, _eco_gate_over_count, _eco_gate_trip_count,
-		1 if _eco_gate_force_open else 0])
+func _process_runtime_calendar(delta: float) -> void:
+	FrameAdvance._process_runtime_calendar(self, delta)
 
 
 func _process(delta: float) -> void:
-	if authority_fault_hold:
-		paused = true
-		return
-	if paused or speed_multiplier <= 0.0:
-		return
-	if _runtime_calendar_admit.is_valid():
-		_process_runtime_calendar(delta)
-		return
-	var proc_start_us: int = Time.get_ticks_usec()
-	# 自初始化兜底：_emit_initial_signals（call_deferred）可能晚于首帧 _process。
-	# _last_day 仍是 -1 哨兵时，先对齐到当前整日，避免 current_day 派生出负值。
-	if _last_day < 0:
-		_last_day = int(floor(current_day))
-		_day_carry = current_day - float(_last_day)
-	# best-effort 吞吐模型（plan/best-effort-sim-stepping）：倍速 = 目标天/秒。
-	# 本帧目标推进量先按硬上限封顶——即便上一帧卡顿导致 delta 巨大，也不会把
-	# 成百天一次性灌进来点燃死亡螺旋。
-	# 软 backpressure（非 *_day_barrier 的来源）只是诊断信号，不参与限流。它只能由
-	# 日推进本身清除，一旦拿来砍倍速就会自锁：降速 → 更少日推进 → 更晚清除。
-	# 硬 barrier 不同：它只在冻结周期的结算截止点抬起，必须停下新的一天，并发一次
-	# 真实帧 pulse 让同日 catchup 收尾。
-	var simulation_budget_start_us: int = Time.get_ticks_usec()
-	if _worker_lag_over_budget():
-		_lag_blocked_frames += 1
-	var hard_day_barrier := _day_advance_blocked_by_barrier()
-	var pulse_start_us: int = Time.get_ticks_usec()
-	# climate_input_capacity_day_barrier parks day advance only. Capacity is
-	# freed by the worker draining the environment ring while WorldRuntimeHost
-	# pumps peers and retries the retained day — NOT by MapGenerator's economy
-	# graph pulse. Emitting pulse here re-ran capture_economy_day_inputs every
-	# frame (often 20–30ms) and starved the capacity retry, permanently nailing
-	# the calendar at 50x with a full ring.
-	if hard_day_barrier and needs_continuation_pulse():
-		simulation_backpressure_pulse.emit(_last_day)
-		# 重读必须走同一个判定：pulse 只清 continuation 那一类 source，
-		# 限额打满（或限流模式下的豁免）仍必须生效。
-		hard_day_barrier = _day_advance_blocked_by_barrier()
-	_last_pulse_ms = float(Time.get_ticks_usec() - pulse_start_us) / 1000.0
-	# pulse 已经吃满帧预算时才把新的一天让给下一帧，避免 pulse + 完整日 tick 叠成
-	# 尖峰。pulse 很便宜时当帧继续推进，不再为"曾经有过 barrier"额外罚一帧。
-	var sim_budget := sim_budget_ms()
-	var blocked := hard_day_barrier or _last_pulse_ms >= sim_budget
-	# 连续限流：每帧推进天数上限 = 帧预算 / 实测单日成本。单日 8ms 以内不封顶，
-	# 单日 80ms 时降到 0.1 天/帧——吞吐平滑下降而帧率守住，代替旧的倍速悬崖。
-	var throughput_cap := float(max_sim_days_per_frame)
-	if _day_cost_ms_ema > 0.0:
-		throughput_cap = clampf(sim_budget / _day_cost_ms_ema,
-			_MIN_THROUGHPUT_DAYS_PER_FRAME, float(max_sim_days_per_frame))
-	_last_throughput_cap = throughput_cap
-	var target: float = 0.0 if blocked else minf(delta * speed_multiplier, throughput_cap)
-	_day_carry += target
-
-	# 时间盒 + 硬上限：本帧最多推进 max_sim_days_per_frame 天，且至少跑满 1 天后
-	# 一旦累计耗时超预算就停。每个 _advance_one_sim_day 会同步触发 _on_day_changed
-	# → 一个完整 SUS tick，所以这里的墙钟测量天然涵盖当日全部模拟 + 渲染同步成本。
-	var t0_us: int = Time.get_ticks_usec()
-	var ran: int = 0
-	while not paused and not blocked and _day_carry >= 1.0 and ran < max_sim_days_per_frame:
-		# 时间盒从 continuation pulse 之前开始计时；无 pulse 的普通帧仍保证至少推进
-		# 一天，保持低倍速/轻负载吞吐行为不变。
-		if ran > 0 and float(Time.get_ticks_usec() - simulation_budget_start_us) / 1000.0 \
-				>= sim_budget:
-			break
-		_day_carry -= 1.0
-		_advance_one_sim_day()
-		ran += 1
-		# A day_changed handler may have raised a country/economy settlement
-		# barrier. Re-read it before this render frame advances another day.
-		# 限额同理：一天推完之后 worker 的提交水位可能已经变化，同一帧内
-		# 保守地一起重读，避免一帧里把领先量拉过上限。
-		blocked = _day_advance_blocked_by_barrier()
-
-	# best-effort：本帧没追完的整数天直接丢弃，只保留 < 1 天的小数 carry。这是杜绝
-	# spiral 的关键——债务永不累积，过载时有效倍速平滑降级、FPS 保持稳定。
-	if _day_carry >= 1.0:
-		_day_carry -= floor(_day_carry)
-
-	# best-effort 诊断（临时，plan/best-effort-sim-stepping）：本帧推进了几天、
-	# 日循环花了多久。和 render-profile 的 sus_frame_avg(~45ms) 对比即可定位：
-	#   loop_ms ≈ proc_ms ≪ 45ms  → 35ms 在 _process 之外（渲染/present GPU 同步）。
-	#   loop_ms ≈ 45ms            → 日循环本身超预算（budget 失效或单日 >预算）。
-	_rate_frames += 1
-	_rate_delta_sum += delta
-	_rate_days += ran
-	if blocked:
-		_rate_blocked += 1
-	if ran > 0 and float(Time.get_ticks_usec() - simulation_budget_start_us) / 1000.0 >= sim_budget:
-		_rate_budget_break += 1
-	if _rate_next_msec == 0:
-		_rate_next_msec = Time.get_ticks_msec() + 2000
-	elif Time.get_ticks_msec() >= _rate_next_msec:
-		var span_s := maxf(0.001, float(_rate_frames) * (_rate_delta_sum / float(maxi(1, _rate_frames))))
-		# [clock/rate] 每 2 秒一行实测吞吐：天数/秒、日成本、节流上限、平均帧率。
-		# 排查"×10 到底有没有 10 天/秒"直接看这一行，不用再心算 heartbeat 差值。
-		print("[clock/rate] dps=%.2f speed=%.0fx cap=%.2fd/f cost=%.0fms fps=%.1f blocked=%d budget_break=%d"
-			% [float(_rate_days) / span_s, speed_multiplier, _last_throughput_cap,
-				_day_cost_ms_ema, float(_rate_frames) / span_s, _rate_blocked, _rate_budget_break])
-		WebTelemetry.emit("clock_rate", {
-			"frames": _rate_frames,
-			"days": _rate_days,
-			"blocked": _rate_blocked,
-			"budget_break": _rate_budget_break,
-			"cap": snappedf(_last_throughput_cap, 0.01),
-			"cost": int(_day_cost_ms_ema),
-			"dps": snappedf(float(_rate_days) / span_s, 0.01),
-			"speed": speed_multiplier,
-		})
-		WebTelemetry.flush()
-		_rate_frames = 0
-		_rate_blocked = 0
-		_rate_budget_break = 0
-		_rate_days = 0
-		_rate_delta_sum = 0.0
-		_rate_next_msec = Time.get_ticks_msec() + 2000
-	_last_advanced_days = ran
-	_last_loop_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-	# 单日成本 EMA 的样本 = 本帧模拟总墙钟（含 continuation pulse）/ 实际推进天数。
-	# 只在真正推进过日子的帧采样；纯 barrier 帧没有可归属的天数。
-	if ran > 0:
-		var per_day_ms := float(Time.get_ticks_usec() - simulation_budget_start_us) \
-			/ 1000.0 / float(ran)
-		_day_cost_ms_ema = per_day_ms if _day_cost_ms_ema <= 0.0 else \
-			_day_cost_ms_ema + _DAY_COST_EMA_ALPHA * (per_day_ms - _day_cost_ms_ema)
-
-	# current_day 派生：已模拟整数日 + 小数 carry。低速（target<1）下 carry 平滑累加，
-	# 驱动 day_phase/season_phase 连续过渡；高速下小数部分无实际意义但无害。
-	# season/year 已在 _advance_one_sim_day 内逐日处理，这里不再重复检测。
-	current_day = float(_last_day) + _day_carry
-	# 任务 2：day_phase 节流发射
-	var dp := day_phase()
-	if _should_emit_day_phase(dp):
-		_last_emit_day_phase = dp
-		day_phase_changed.emit(dp)
-	# Fast-tick perf opt (D)：season_phase 同款节流发射。
-	var sp := season_phase()
-	if _should_emit_season_phase(sp):
-		_last_emit_season_phase = sp
-		season_phase_changed.emit(sp)
-
-	# [cylindrical-earth-daylight] 推进视觉昼夜（晨昏线）相位，按真实 delta 匀速绕圈，
-	# 与 speed_multiplier 解耦 → 快进时晨昏线移动速度不变，杜绝全屏明暗闪烁。
-	_advance_visual_day_phase(delta)
-
-	# best-effort 诊断打印（临时）：每 ~120 个 _process 帧打一行，含 delta、目标天、
-	# 实际推进天数 ran、continuation 脉冲段墙钟 pulse、日循环墙钟 loop、
-	# 整个 _process 墙钟 full（含 pulse + loop + 相位信号）。
-	_last_full_proc_ms = float(Time.get_ticks_usec() - proc_start_us) / 1000.0
-	if debug_step_log and Engine.get_process_frames() % 120 == 0:
-		var barrier_names := PackedStringArray()
-		for key in _simulation_backpressure_sources.keys():
-			barrier_names.append(String(key))
-		barrier_names.sort()
-		print("[clock/step] delta=%.1fms speed=%.0fx target=%.2fd cap=%.2fd/f cost=%.2fms ran=%d pulse=%.2fms loop=%.2fms full=%.2fms carry=%.2f barrier=%s"
-			% [delta * 1000.0, speed_multiplier, delta * speed_multiplier,
-				_last_throughput_cap, _day_cost_ms_ema, ran,
-				_last_pulse_ms, _last_loop_ms, _last_full_proc_ms, _day_carry,
-				",".join(barrier_names)])
-		if ran > 0 and _last_loop_ms >= sim_budget and not _last_fat_slice_diag.is_empty():
-			print("[clock/fat-day] loop=%.2fms largest=%.2fms job=%s stage=%s over_budget=%s native_stage=%s"
-				% [_last_loop_ms,
-					float(_last_fat_slice_diag.get("largest_slice_ms", 0.0)),
-					str(_last_fat_slice_diag.get("largest_slice_job", "")),
-					str(_last_fat_slice_diag.get("largest_slice_stage", "")),
-					str(_last_fat_slice_diag.get("commit_over_budget", false)),
-					str(_last_fat_slice_diag.get("native_stage", ""))])
-	# Web 单日成本探针：本帧最后一个日桶到这里一定已跑完（day_changed 同步派发），
-	# 帧尾补发一次。已经在 _advance_one_sim_day 开头发过的桶是空的，不会重复。
-	if day_cost_probe_on:
-		day_cost_flush()
+	FrameAdvance._process(self, delta)
 
 # ─── 派生查询 ────────────────────────────────────────────────────────────
 
@@ -778,17 +476,7 @@ func set_visual_shader_days_per_year(value: float) -> void:
 
 
 func _advance_visual_day_phase(delta: float) -> void:
-	# 钉住时不推进、不发信号，避免实时晨昏线把 GM 太阳预览冲掉。
-	if visual_day_phase_held:
-		return
-	if visual_tod_follow_speed:
-		var year_days := float(days_per_year())
-		var year_progress := current_day / year_days
-		visual_day_phase = fposmod(0.25 + year_progress * _visual_shader_days_per_year, 1.0)
-	else:
-		var period: float = maxf(visual_daylen_seconds, 1.0)
-		visual_day_phase = fposmod(visual_day_phase + delta / period, 1.0)
-	visual_day_phase_changed.emit(visual_day_phase)
+	FrameAdvance._advance_visual_day_phase(self, delta)
 
 
 func hold_visual_day_phase(phase: float) -> void:
@@ -814,26 +502,11 @@ func hour_of_day() -> int:
 	# [cylindrical-earth-daylight] 改读 visual_day_phase，让 UI 小时位与屏幕可见的太阳位置一致。
 	return int(floor(fposmod(visual_day_phase - 0.75, 1.0) * 24.0)) % 24
 
-# 任务 2：节流判定——默认每帧发射；当 day_phase_emit_step > 0 时，
-# 累计变化 ≥ step 才发射。特別处理：phase 跳回 0 的跈变，应视为"必发"以避免突变时错过。
 func _should_emit_day_phase(dp: float) -> bool:
-	if _last_emit_day_phase < 0.0:
-		return true
-	if day_phase_emit_step <= 0.0:
-		return true
-	var diff: float = absf(dp - _last_emit_day_phase)
-	# 跳回的临界情况：上次 0.99 + 这次 0.01，diff=0.98，仍会大于 step，正常发射
-	return diff >= day_phase_emit_step
+	return FrameAdvance._should_emit_day_phase(self, dp)
 
-# Fast-tick perf opt (D)：season_phase 节流判定，语义同上。
-# season_phase ∈ [0, 4)，回绕临界情况同样会 diff 很大，自动通过阈值。
 func _should_emit_season_phase(sp: float) -> bool:
-	if _last_emit_season_phase < 0.0:
-		return true
-	if season_phase_emit_step <= 0.0:
-		return true
-	var diff: float = absf(sp - _last_emit_season_phase)
-	return diff >= season_phase_emit_step
+	return FrameAdvance._should_emit_season_phase(self, sp)
 
 func season_name(idx: int) -> String:
 	match idx:
@@ -1001,7 +674,7 @@ func restore_state(state: Dictionary) -> Dictionary:
 	visual_day_phase = fposmod(float(state.get("visual_day_phase", 0.25)), 1.0)
 	visual_day_phase_held = false
 	_last_day = int(state.get("last_day", int(floor(current_day))))
-	# 读档后经济日与时钟同时回退：清空 eco 缓存，否则旧值立刻把恢复后的日历硬钉死。
+	# 读档后经济日与时钟同时回退，需要清空旧世界的经济日缓存。
 	reset_economy_settled_day()
 	_last_season = int(state.get("last_season", season_index_for_day(_last_day)))
 	_last_year = int(state.get("last_year", year_index_for_day(_last_day)))

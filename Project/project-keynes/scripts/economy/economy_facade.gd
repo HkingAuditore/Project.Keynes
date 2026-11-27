@@ -26,32 +26,7 @@ const SATISFACTION_DIMENSION_NAMES := [
 	"生存", "基本生活", "舒适", "奢侈", "收入增长", "储蓄", "税负", "社会发展",
 ]
 
-enum Opcode {
-	TRANSFER_TO_COHORT = 1,
-	MINT_TO_COHORT = 2,
-	BURN_FROM_COHORT = 3,
-	ADD_STOCK = 4,
-	REMOVE_STOCK = 5,
-	ADD_POPULATION = 6,
-	MOVE_POPULATION = 7,
-	CHANGE_SIGNATURE = 8,
-	TRANSFER_FROM_COHORT = 9,
-	BUILD = 10,
-	DEMOLISH = 11,
-	COUNTRY_GOOD_TO_MARKET = 12,
-	MARKET_GOOD_TO_COUNTRY = 13,
-	FAMILY_FREE_BUILDING = 14,
-	FAMILY_POPULATION_REWARD = 15,
-	TREASURY_SPONSORED_BUILD = 16,
-	# 35: 国库出资拆除。16 在移除侧的镜像：官营建筑组的属主是保留的官营签名，
-	# 不是任何活着的族群，所以普通拆除（11）永远够不到它——11 用族群句柄反解属主。
-	TREASURY_SPONSORED_DEMOLISH = 35,
-	FAMILY_COLONIZATION_START = 17,
-	FAMILY_COLONIZATION_CANCEL = 18,
-	FAMILY_COLONIZATION_SETTLE = 19,
-	FAMILY_ABSORB_ANONYMOUS = 21,
-	FAMILY_PURCHASE_DISCOUNT = 22,
-}
+
 
 const OWNERSHIP_TREASURY_SPONSORED_PRIVATE := 1
 
@@ -89,6 +64,11 @@ const BUILDING_VISUAL_CATALOG_KEYS := [
 	"building_construction_offsets", "building_construction_good_ids",
 ]
 
+const EconomyQueries = preload("res://scripts/economy/economy_facade_queries.gd")
+const EconomyCommands = preload("res://scripts/economy/economy_facade_commands.gd")
+const EconomySession = preload("res://scripts/economy/economy_facade_session.gd")
+const Opcode = EconomyCommands.Opcode
+
 
 func building_visual_catalog() -> Dictionary:
 	var out := {}
@@ -109,1350 +89,346 @@ func configure_cooperative(context, world_ext: DCWorldExt, cell_count: int, seed
 
 func bootstrap(population_packet: Dictionary = {}, market_packet: Dictionary = {},
 		building_packet: Dictionary = {}) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "economy facade is not configured"}
-	var packet := population_packet
-	if packet.is_empty():
-		packet = {
-			"cell_indices": PackedInt32Array(),
-			"signature_ids": PackedInt32Array(),
-			"population": PackedInt64Array(),
-			"funds": PackedInt64Array(),
-		}
-	var markets := market_packet.duplicate(true)
-	for key in building_packet:
-		markets[key] = building_packet[key]
-	return _world_ext.bootstrap_economy(packet, markets)
+	return EconomyCommands.bootstrap(self, population_packet, market_packet, building_packet)
 
 func submit(commands: Array[Dictionary]) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "economy facade is not configured"}
-	var batch := {
-		"opcodes": PackedInt32Array(),
-		"effective_days": PackedInt64Array(),
-		"sequences": PackedInt64Array(),
-		"target_handles": PackedInt64Array(),
-		"i32_0": PackedInt32Array(),
-		"i32_1": PackedInt32Array(),
-		"i64_0": PackedInt64Array(),
-		"i64_1": PackedInt64Array(),
-	}
-	for command in commands:
-		batch.opcodes.append(int(command.get("opcode", 0)))
-		batch.effective_days.append(int(command.get("effective_day", 0)))
-		batch.sequences.append(int(command.get("sequence", 0)))
-		batch.target_handles.append(int(command.get("target_handle", 0)))
-		batch.i32_0.append(int(command.get("i32_0", 0)))
-		batch.i32_1.append(int(command.get("i32_1", 0)))
-		batch.i64_0.append(int(command.get("i64_0", 0)))
-		batch.i64_1.append(int(command.get("i64_1", 0)))
-	return _world_ext.submit_economy_commands(batch)
+	return EconomyCommands.submit(self, commands)
 
 func add_stock(cell_idx: int, good_id: StringName, quantity: int,
 		effective_day: int, sequence: int) -> Dictionary:
-	var goods: PackedStringArray = _catalog.get("good_ids", PackedStringArray())
-	var good_idx: int = goods.find(String(good_id))
-	if good_idx < 0:
-		return {"ok": false, "reason": "unknown good id: %s" % String(good_id)}
-	return submit([{
-		"opcode": Opcode.ADD_STOCK,
-		"effective_day": effective_day,
-		"sequence": sequence,
-		"target_handle": 0,
-		"i32_0": cell_idx,
-		"i32_1": good_idx,
-		"i64_0": quantity,
-		"i64_1": 0,
-	}])
+	return EconomyCommands.add_stock(self, cell_idx, good_id, quantity, effective_day, sequence)
 
 func mint_to_cohort(cohort_handle: int, amount: int,
 		effective_day: int, sequence: int) -> Dictionary:
-	if amount <= 0:
-		return {"ok": false, "reason": "amount must be positive"}
-	return submit([{
-		"opcode": Opcode.MINT_TO_COHORT,
-		"effective_day": effective_day,
-		"sequence": sequence,
-		"target_handle": cohort_handle,
-		"i64_0": amount,
-	}])
+	return EconomyCommands.mint_to_cohort(self, cohort_handle, amount, effective_day, sequence)
 
-## GM 铸币与转账同批提交，复用原生审计和国家资金协调器。
 func mint_to_treasury(country_handle: int, cell_idx: int, amount: int,
 		effective_day: int, sequence: int) -> Dictionary:
-	if amount <= 0 or country_handle == 0:
-		return {"ok": false, "reason": "invalid_treasury_mint"}
-	var snapshot := population_cell_snapshot(cell_idx)
-	var handles: PackedInt64Array = snapshot.get("handles", PackedInt64Array())
-	if handles.is_empty():
-		return {"ok": false, "reason": "treasury_mint_cohort_unavailable"}
-	return submit([
-		{"opcode": Opcode.MINT_TO_COHORT, "target_handle": handles[0],
-			"i64_0": amount, "effective_day": effective_day, "sequence": sequence},
-		{"opcode": Opcode.TRANSFER_FROM_COHORT, "target_handle": handles[0],
-			"i64_0": amount, "i64_1": country_handle,
-			"effective_day": effective_day, "sequence": sequence + 1},
-	])
-
+	return EconomyCommands.mint_to_treasury(self, country_handle, cell_idx, amount, effective_day, sequence)
 
 func burn_from_cohort(cohort_handle: int, amount: int,
 		effective_day: int, sequence: int) -> Dictionary:
-	if amount <= 0:
-		return {"ok": false, "reason": "amount must be positive"}
-	return submit([{
-		"opcode": Opcode.BURN_FROM_COHORT,
-		"effective_day": effective_day,
-		"sequence": sequence,
-		"target_handle": cohort_handle,
-		"i64_0": amount,
-	}])
+	return EconomyCommands.burn_from_cohort(self, cohort_handle, amount, effective_day, sequence)
 
 func add_population(cohort_handle: int, amount: int,
 		effective_day: int, sequence: int) -> Dictionary:
-	if amount <= 0:
-		return {"ok": false, "reason": "amount must be positive"}
-	return submit([{
-		"opcode": Opcode.ADD_POPULATION,
-		"effective_day": effective_day,
-		"sequence": sequence,
-		"target_handle": cohort_handle,
-		"i64_0": amount,
-	}])
+	return EconomyCommands.add_population(self, cohort_handle, amount, effective_day, sequence)
 
 func transfer_country_cash_to_cohort(country_handle: int, cohort_handle: int,
 		amount: int, effective_day: int, sequence: int) -> Dictionary:
-	return submit([{"opcode": Opcode.TRANSFER_TO_COHORT,
-		"target_handle": cohort_handle, "i64_0": amount, "i64_1": country_handle,
-		"effective_day": effective_day, "sequence": sequence}])
+	return EconomyCommands.transfer_country_cash_to_cohort(self, country_handle, cohort_handle, amount, effective_day, sequence)
 
 func transfer_cohort_cash_to_country(cohort_handle: int, country_handle: int,
 		amount: int, effective_day: int, sequence: int) -> Dictionary:
-	return submit([{"opcode": Opcode.TRANSFER_FROM_COHORT,
-		"target_handle": cohort_handle, "i64_0": amount, "i64_1": country_handle,
-		"effective_day": effective_day, "sequence": sequence}])
+	return EconomyCommands.transfer_cohort_cash_to_country(self, cohort_handle, country_handle, amount, effective_day, sequence)
 
 func transfer_country_good_to_market(country_handle: int, cell_idx: int,
 		good_id: StringName, quantity: int, effective_day: int, sequence: int) -> Dictionary:
-	return _submit_country_good_transfer(Opcode.COUNTRY_GOOD_TO_MARKET, country_handle,
-		cell_idx, good_id, quantity, effective_day, sequence)
+	return EconomyCommands.transfer_country_good_to_market(self, country_handle, cell_idx, good_id, quantity, effective_day, sequence)
 
 func transfer_market_good_to_country(country_handle: int, cell_idx: int,
 		good_id: StringName, quantity: int, effective_day: int, sequence: int) -> Dictionary:
-	return _submit_country_good_transfer(Opcode.MARKET_GOOD_TO_COUNTRY, country_handle,
-		cell_idx, good_id, quantity, effective_day, sequence)
+	return EconomyCommands.transfer_market_good_to_country(self, country_handle, cell_idx, good_id, quantity, effective_day, sequence)
 
 func _submit_country_good_transfer(opcode: int, country_handle: int, cell_idx: int,
 		good_id: StringName, quantity: int, effective_day: int, sequence: int) -> Dictionary:
-	var goods: PackedStringArray = _catalog.get("good_ids", PackedStringArray())
-	var good_idx := goods.find(String(good_id))
-	if good_idx < 0:
-		return {"ok": false, "reason": "unknown good id: %s" % String(good_id)}
-	return submit([{"opcode": opcode, "target_handle": country_handle,
-		"i32_0": cell_idx, "i32_1": good_idx, "i64_0": quantity,
-		"effective_day": effective_day, "sequence": sequence}])
+	return EconomyCommands._submit_country_good_transfer(self, opcode, country_handle, cell_idx, good_id, quantity, effective_day, sequence)
 
 func population_cell_summary(cell_idx: int) -> Dictionary:
-	if not _configured:
-		return {}
-	if _world_ext.has_method("get_population_cell_summary"):
-		return _world_ext.get_population_cell_summary(cell_idx)
-	return _world_ext.get_population_cell_snapshot(cell_idx)
+	return EconomyQueries.population_cell_summary(self, cell_idx)
 
 func named_settlement_snapshot() -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "native settlement runtime unavailable"}
-	return _world_ext.get_named_settlement_snapshot()
+	return EconomyQueries.named_settlement_snapshot(self)
 
 func settlement_delta(since_revision: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "native settlement runtime unavailable"}
-	return _world_ext.get_settlement_delta(since_revision)
-
+	return EconomyQueries.settlement_delta(self, since_revision)
 
 func population_cell_snapshot(cell_idx: int, include_details: bool = true) -> Dictionary:
-	if not _configured:
-		return {}
-	var snapshot: Dictionary = _world_ext.get_population_cell_snapshot(
-		cell_idx, include_details)
-	if snapshot.has("populations"):
-		EconomyFacadeDisplayScript.attach_population_display_metadata(self, snapshot)
-		snapshot["details_available"] = true
-		snapshot["details_pending"] = false
-	else:
-		snapshot["details_available"] = false
-		snapshot["details_pending"] = bool(snapshot.get("busy", false))
-	return snapshot
+	return EconomyQueries.population_cell_snapshot(self, cell_idx, include_details)
 
 func market_cell_snapshot(cell_idx: int) -> Dictionary:
-	if not _configured:
-		return {}
-	var snapshot: Dictionary = _world_ext.get_market_cell_snapshot(cell_idx)
-	var has_details := snapshot.has("good_ids")
-	if has_details:
-		snapshot["details_available"] = true
-		snapshot["details_pending"] = false
-	else:
-		snapshot["details_available"] = false
-		snapshot["details_pending"] = bool(snapshot.get("busy", false))
-	return snapshot
+	return EconomyQueries.market_cell_snapshot(self, cell_idx)
 
-
-## 有界地图状况视图。NativeEconomyRuntime 只返回请求地块的定点严重度，
-## 不把市场/人口/建筑矩阵复制进 MapData。
 func cell_situation_snapshot(requested_cells: PackedInt32Array) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "economy_situation_visual_api_unavailable"}
-	return _world_ext.get_cell_situation_snapshot(
-		requested_cells)
+	return EconomyQueries.cell_situation_snapshot(self, requested_cells)
 
-## 冷路径满意度溯源。只读且只在原生 slice 之间安全，Inspector 打开时才调用。
 func explain_cohort_satisfaction(cohort_handle: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "satisfaction explain API unavailable"}
-	var explained: Dictionary = _world_ext.explain_cohort_satisfaction(cohort_handle)
-	if bool(explained.get("ok", false)):
-		explained["dimension_names"] = SATISFACTION_DIMENSION_NAMES
-	return explained
-
+	return EconomyQueries.explain_cohort_satisfaction(self, cohort_handle)
 
 func cell_satisfaction_attractiveness(cell_idx: int) -> Dictionary:
-	if not _configured :
-		return {"ok": false, "reason": "satisfaction attractiveness API unavailable"}
-	var attractiveness: Dictionary = \
-		_world_ext.get_cell_satisfaction_attractiveness(cell_idx)
-	if bool(attractiveness.get("ok", false)):
-		attractiveness["dimension_names"] = SATISFACTION_DIMENSION_NAMES
-	return attractiveness
-
+	return EconomyQueries.cell_satisfaction_attractiveness(self, cell_idx)
 
 func cell_mobilization_snapshot(cell_idx: int) -> Dictionary:
-	if not _configured \
-			or not _world_ext.has_method("get_cell_mobilization_snapshot"):
-		return {"ok": false, "reason": "mobilization API unavailable"}
-	return _world_ext.get_cell_mobilization_snapshot(cell_idx)
-
+	return EconomyQueries.cell_mobilization_snapshot(self, cell_idx)
 
 func country_mobilization_summary(country_slot: int) -> Dictionary:
-	if not _configured \
-			or not _world_ext.has_method("get_country_mobilization_summary"):
-		return {"ok": false, "reason": "mobilization API unavailable"}
-	return _world_ext.get_country_mobilization_summary(country_slot)
-
+	return EconomyQueries.country_mobilization_summary(self, country_slot)
 
 func mobilization_odds(cell_idx: int, profession: int, action: int,
 		spend_bp: int = 0) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_mobilization_odds"):
-		return {"ok": false, "reason": "mobilization API unavailable"}
-	return _world_ext.get_mobilization_odds(cell_idx, profession, action,
-		spend_bp)
-
+	return EconomyQueries.mobilization_odds(self, cell_idx, profession, action, spend_bp)
 
 func resolve_player_mobilization(choice: Dictionary) -> Dictionary:
-	if not _configured or not _world_ext.has_method("resolve_player_mobilization"):
-		return {"ok": false, "code": "mobilization_unavailable"}
-	return _world_ext.resolve_player_mobilization(choice)
-
+	return EconomyQueries.resolve_player_mobilization(self, choice)
 
 func apply_mobilization_result(cell_idx: int, profession: int, action: int,
 		success: bool) -> bool:
-	if not _configured \
-			or not _world_ext.has_method("apply_mobilization_result"):
-		return false
-	return bool(_world_ext.apply_mobilization_result(cell_idx, profession,
-		action, success))
-
+	return EconomyQueries.apply_mobilization_result(self, cell_idx, profession, action, success)
 
 func trade_orders_for_cell(cell_idx: int, offset: int = 0, limit: int = 64,
 		good_index: int = -1) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "trade order API unavailable", "total": 0}
-	var page: Dictionary = _world_ext.get_trade_orders_for_cell(
-		cell_idx, offset, limit, good_index)
-	page["good_ids"] = _catalog.get("good_ids", PackedStringArray())
-	return page
+	return EconomyQueries.trade_orders_for_cell(self, cell_idx, offset, limit, good_index)
 
-
-## Optional, bounded visual observer. The native bridge never waits for a worker.
 func trade_visual_snapshot(cells: PackedInt32Array, visible: PackedByteArray,
         vision_revision: int, selected_cell: int = -1, enabled: bool = true) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "trade_visual_unavailable"}
-	return _world_ext.get_trade_visual_snapshot(cells, visible,
-		vision_revision, selected_cell, enabled)
-
+	return EconomyQueries.trade_visual_snapshot(self, cells, visible, vision_revision, selected_cell, enabled)
 
 func bake_trade_visual_paths(snapshot: Dictionary, map_width: int, hex_size: float) -> Dictionary:
-	if not _configured:
-		return {"ok": false}
-	return _world_ext.bake_trade_visual_paths(snapshot, map_width, hex_size)
-
+	return EconomyQueries.bake_trade_visual_paths(self, snapshot, map_width, hex_size)
 
 func country_trade_snapshot(country_handle: int, view: String = "summary",
 		offset: int = 0, limit: int = 32) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "country trade API unavailable",
-			"view": view, "total": 0}
-	var page: Dictionary = _world_ext.get_country_trade_snapshot(
-		country_handle, view, offset, clampi(limit, 1, 64))
-	page["good_ids"] = _catalog.get("good_ids", PackedStringArray())
-	return page
+	return EconomyQueries.country_trade_snapshot(self, country_handle, view, offset, limit)
 
-
-## 国家经济卷宗只读聚合。scope_cell < 0 为全国；filter_id 仅对 buildings 视图生效（产业部门）。
 func country_economy_overview(country_handle: int, view: String = "summary",
 		scope_cell: int = -1, filter_id: int = -1, offset: int = 0,
 		limit: int = 0) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "country economy overview API unavailable",
-			"view": view}
-	var page: Dictionary = _world_ext.get_country_economy_overview(
-		country_handle, view, scope_cell, filter_id, offset, limit)
-	if not bool(page.get("ok", false)):
-		return page
-	if page.has("profession_stable_ids"):
-		page["profession_display_names"] = EconomyFacadeDisplayScript.mapped_names(
-			page["profession_stable_ids"], _profession_display_names)
-	if page.has("building_stable_ids"):
-		page["building_display_names"] = EconomyFacadeDisplayScript.mapped_names(
-			page["building_stable_ids"], _building_display_names)
-	if page.has("good_stable_ids"):
-		page["good_display_names"] = EconomyFacadeDisplayScript.mapped_names(
-			page["good_stable_ids"], _good_display_names)
-	if page.has("need_ids"):
-		page["need_display_names"] = EconomyFacadeDisplayScript.mapped_names(page["need_ids"], _need_display_names)
-	return page
-
+	return EconomyQueries.country_economy_overview(self, country_handle, view, scope_cell, filter_id, offset, limit)
 
 func building_cell_snapshot(cell_idx: int) -> Dictionary:
-	if not _configured:
-		return {}
-	var snapshot: Dictionary = _world_ext.get_building_cell_snapshot(cell_idx)
-	if snapshot.has("building_type_ids"):
-		EconomyFacadeDisplayScript.attach_building_display_metadata(self, snapshot)
-	return snapshot
+	return EconomyQueries.building_cell_snapshot(self, cell_idx)
 
-
-## Dense catalog columns the construction workspace needs beyond the cell
-## snapshot: sector, base build time, and production maturity (the authored
-## "how advanced is this process" rank used by the 「最新」 ordering).
-## All are catalog-wide columns, so they are read once instead of per cell.
 func construction_type_columns() -> Dictionary:
-	return EconomyFacadeDisplayScript.construction_type_columns(_catalog, _good_display_names)
+	return EconomyCommands.construction_type_columns(self)
 
-
-## Sector ids in compiled column order (index == `building_economic_sectors`).
 func construction_sector_ids() -> PackedStringArray:
-	return PackedStringArray(EconomyCatalogScript.BUILDING_SECTOR_IDS)
+	return EconomyCommands.construction_sector_ids(self)
 
-
-## Every catalog entry that matches the technology gate, the sector and the
-## search needle — unpaged. The construction workspace sorts the whole set
-## before slicing a page, so the ordering is global instead of per-page.
 func construction_candidates(search: String = "",
 		technology_available: PackedByteArray = PackedByteArray(),
 		sector: int = -1) -> PackedInt32Array:
-	var ids: PackedStringArray = _catalog.get("building_type_ids", PackedStringArray())
-	var enforce_technology := technology_available.size() == ids.size()
-	var sectors: PackedInt32Array = _catalog.get(
-		"building_economic_sectors", PackedInt32Array())
-	var enforce_sector := sector >= 0 and sectors.size() == ids.size()
-	var matches := PackedInt32Array()
-	var needle := search.strip_edges().to_lower()
-	for type_id in range(ids.size()):
-		if enforce_technology and technology_available[type_id] == 0:
-			continue
-		if enforce_sector and int(sectors[type_id]) != sector:
-			continue
-		var stable_id := String(ids[type_id])
-		var display_name := String(_building_display_names.get(stable_id, stable_id))
-		if needle.is_empty() or stable_id.to_lower().contains(needle) \
-				or display_name.to_lower().contains(needle):
-			matches.append(type_id)
-	return matches
-
+	return EconomyCommands.construction_candidates(self, search, technology_available, sector)
 
 func construction_catalog(search: String = "", offset: int = 0,
 		limit: int = 32,
 		technology_available: PackedByteArray = PackedByteArray(),
 		sector: int = -1) -> Dictionary:
-	var matches := construction_candidates(search, technology_available, sector)
-	var begin := clampi(offset, 0, matches.size())
-	var end := mini(matches.size(), begin + clampi(limit, 1, 32))
-	return {"ok": true, "total": matches.size(), "offset": begin,
-		"limit": clampi(limit, 1, 32), "type_ids": matches.slice(begin, end)}
+	return EconomyCommands.construction_catalog(self, search, offset, limit, technology_available, sector)
 
-
-## Quotes an explicit type list. The caller owns filtering and paging, so the
-## workspace never has to re-derive the catalog page it just displayed.
 func construction_quotes(country_handle: int, cell_idx: int,
 		type_ids: PackedInt32Array) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "construction_quote_api_unavailable"}
-	var quotes: Dictionary = _world_ext.get_treasury_construction_quotes(
-		country_handle, cell_idx, type_ids)
-	if not bool(quotes.get("ok", false)):
-		return quotes
-	var stable_ids: PackedStringArray = _catalog.get(
-		"building_type_ids", PackedStringArray())
-	var good_ids: PackedStringArray = _catalog.get("good_ids", PackedStringArray())
-	var eligible: PackedByteArray = quotes.get("eligible", PackedByteArray())
-	var reasons: PackedStringArray = quotes.get("reason_codes", PackedStringArray())
-	var cash: PackedInt64Array = quotes.get("cash_required", PackedInt64Array())
-	var treasury_totals: PackedInt64Array = quotes.get(
-		"treasury_goods_used", PackedInt64Array())
-	var market_totals: PackedInt64Array = quotes.get(
-		"market_goods_used", PackedInt64Array())
-	var material_offsets: PackedInt32Array = quotes.get(
-		"material_offsets", PackedInt32Array())
-	var material_good_ids: PackedInt32Array = quotes.get(
-		"material_good_ids", PackedInt32Array())
-	var material_required: PackedInt64Array = quotes.get(
-		"material_required", PackedInt64Array())
-	var material_treasury: PackedInt64Array = quotes.get(
-		"material_treasury", PackedInt64Array())
-	var material_market: PackedInt64Array = quotes.get(
-		"material_market", PackedInt64Array())
-	# The quote's own prices, not a second market-snapshot read: the displayed
-	# subtotals must add up to the quoted cash even if a tick happens between.
-	var material_prices: PackedInt32Array = quotes.get(
-		"material_prices", PackedInt32Array())
-	var items := []
-	for i in range(type_ids.size()):
-		var type_id := int(type_ids[i])
-		var stable_id := String(stable_ids[type_id]) if type_id >= 0 \
-				and type_id < stable_ids.size() else ""
-		var materials := []
-		var material_begin := int(material_offsets[i]) if i < material_offsets.size() else 0
-		var material_end := int(material_offsets[i + 1]) \
-				if i + 1 < material_offsets.size() else material_begin
-		for edge in range(material_begin, material_end):
-			var good_idx := int(material_good_ids[edge])
-			var good_id := String(good_ids[good_idx]) if good_idx >= 0 \
-					and good_idx < good_ids.size() else ""
-			materials.append({"good_id": good_id,
-				"name": String(_good_display_names.get(good_id, good_id)),
-				"required": int(material_required[edge]),
-				"treasury": int(material_treasury[edge]),
-				"market": int(material_market[edge]),
-				"unit_price": int(material_prices[edge]) \
-					if edge < material_prices.size() else 0})
-		items.append({"type_id": type_id, "building_id": stable_id,
-			"name": String(_building_display_names.get(stable_id, stable_id)),
-			"eligible": i < eligible.size() and eligible[i] != 0,
-			"reason_code": String(reasons[i]) if i < reasons.size() else "command_rejected",
-			"cash_required": int(cash[i]) if i < cash.size() else 0,
-			"treasury_goods_used": int(treasury_totals[i]) if i < treasury_totals.size() else 0,
-			"market_goods_used": int(market_totals[i]) if i < market_totals.size() else 0,
-			"materials": materials})
-	return {"ok": true, "items": items,
-		"snapshot_day": int(quotes.get("snapshot_day", -1)), "nonbinding": true}
+	return EconomyCommands.construction_quotes(self, country_handle, cell_idx, type_ids)
 
-
-## 营造是一条正式经济命令。当原生端把 StageOps 作为生产写入边界时，旧批量入口
-## `submit_economy_commands` 是 fail-closed 的（`economy_legacy_ingress_disabled`），
-## 所以优先走专用入口 `queue_treasury_sponsored_build`：命令进经济属主的收件箱，
-## 在下一个 epoch 结算并照常产出营造回执。旧批量入口只留给没有该方法的旧 DLL。
 func treasury_sponsored_build(country_handle: int, cell_idx: int,
 		building_id: StringName, effective_day: int, sequence: int,
 		ownership_policy: StringName = &"treasury_sponsored_private") -> Dictionary:
-	if ownership_policy != &"treasury_sponsored_private":
-		return {"ok": false, "code": "unsupported_ownership_policy",
-			"reason": "unsupported_ownership_policy",
-			"message": _construction_result_message("unsupported_ownership_policy"),
-			"effective_day": effective_day, "sequence": sequence}
-	var type_id := building_type_id(building_id)
-	if type_id < 0:
-		print("[construction] reject: unknown building_id=%s (catalog=%d types)" % [
-			String(building_id),
-			int((_catalog.get("building_type_ids", PackedStringArray()) as PackedStringArray).size())])
-		return {"ok": false, "code": "construction_target_invalid",
-			"reason": "construction_target_invalid",
-			"message": _construction_result_message("construction_target_invalid"),
-			"effective_day": effective_day, "sequence": sequence}
-	if _configured:
-		var queued: Dictionary = _world_ext.queue_treasury_sponsored_build(
-			country_handle, cell_idx, type_id, effective_day, sequence)
-		if not bool(queued.get("ok", false)):
-			var code := String(queued.get("code", "command_rejected"))
-			queued["reason"] = code
-			queued["message"] = _construction_result_message(code)
-		print("[construction] queue cell=%d type=%d(%s) day=%d seq=%d -> ok=%s code=%s" % [
-			cell_idx, type_id, String(building_id), effective_day, sequence,
-			str(queued.get("ok", false)), str(queued.get("code", ""))])
-		return queued
-	var legacy := submit([{"opcode": Opcode.TREASURY_SPONSORED_BUILD,
-		"effective_day": effective_day, "sequence": sequence,
-		"target_handle": country_handle, "i32_0": cell_idx, "i32_1": type_id,
-		"i64_0": 1, "i64_1": OWNERSHIP_TREASURY_SPONSORED_PRIVATE}])
-	if not bool(legacy.get("ok", false)) \
-			and String(legacy.get("reason", "")) == "economy_legacy_ingress_disabled":
-		# 旧 DLL 没有专用入口，而当前生产写入边界拒绝旧批量提交。
-		legacy["code"] = "construction_ingress_unavailable"
-		legacy["message"] = "游戏组件版本过旧，营造功能不可用。请更新游戏。"
-	return legacy
+	return EconomyCommands.treasury_sponsored_build(self, country_handle, cell_idx, building_id, effective_day, sequence, ownership_policy)
 
-
-## 拆除的镜像入口：官营建筑先在经济账本里减座数，军事侧随后才读出变化。
-## 与 `treasury_sponsored_build` 同构，所以两条命令的回执形状、拒因码与
-## 「先扣后建 / 先减后记」的顺序约束完全一致。
 func treasury_sponsored_demolish(country_handle: int, cell_idx: int,
 		building_id: StringName, count: int, effective_day: int,
 		sequence: int) -> Dictionary:
-	var type_id := building_type_id(building_id)
-	if type_id < 0 or count <= 0:
-		return {"ok": false, "code": "demolish_target_invalid",
-			"reason": "demolish_target_invalid",
-			"message": _demolish_result_message("demolish_target_invalid"),
-			"effective_day": effective_day, "sequence": sequence}
-	if _configured:
-		var queued: Dictionary = _world_ext.queue_treasury_sponsored_demolish(
-			country_handle, cell_idx, type_id, count, effective_day, sequence)
-		if not bool(queued.get("ok", false)):
-			var code := String(queued.get("code", "command_rejected"))
-			queued["reason"] = code
-			queued["message"] = _demolish_result_message(code)
-		return queued
-	# 旧 DLL 没有专用入口，而当前生产写入边界拒绝旧批量提交：明确说不可用，
-	# 而不是退回到一条永远够不到官营建筑组的普通拆除。
-	return {"ok": false, "code": "demolish_ingress_unavailable",
-		"reason": "demolish_ingress_unavailable",
-		"message": "游戏组件版本过旧，拆除功能不可用。请更新游戏。",
-		"effective_day": effective_day, "sequence": sequence}
-
+	return EconomyCommands.treasury_sponsored_demolish(self, country_handle, cell_idx, building_id, count, effective_day, sequence)
 
 static func _demolish_result_message(code: String) -> String:
 	return EconomyCommandResultText._demolish_result_message(code)
 
-
 func dispatch_construction_command_receipts() -> void:
-	if not _configured:
-		return
-	var page: Dictionary = _world_ext.get_construction_command_receipts(
-		_construction_receipt_cursor, 64)
-	if bool(page.get("ok", false)):
-		emit_construction_command_receipts(page.get("receipts", []))
-
+	EconomyCommands.dispatch_construction_command_receipts(self)
 
 func emit_construction_command_receipts(receipts: Array) -> void:
-	var stable_ids: PackedStringArray = _catalog.get(
-		"building_type_ids", PackedStringArray())
-	for raw: Dictionary in receipts:
-		var receipt_id := int(raw.get("receipt_id", -1))
-		if receipt_id <= _construction_receipt_cursor:
-			continue
-		_construction_receipt_cursor = receipt_id
-		var result := raw.duplicate()
-		var type_id := int(result.get("type_id", -1))
-		result["building_id"] = String(stable_ids[type_id]) if type_id >= 0 \
-				and type_id < stable_ids.size() else ""
-		var code := String(result.get("code", "command_rejected"))
-		result["message"] = _demolish_result_message(code) \
-			if String(result.get("command", "")) == "military.state.demolish" \
-			else _construction_result_message(code)
-		print("[construction] receipt id=%s seq=%s cell=%s type=%s ok=%s code=%s settled_day=%s" % [
-			str(result.get("receipt_id", -1)), str(result.get("sequence", -1)),
-			str(result.get("cell_idx", -1)), str(result.get("type_id", -1)),
-			str(result.get("ok", false)), str(result.get("code", "")),
-			str(result.get("settled_day", -1))])
-		construction_command_settled.emit(result)
-
+	EconomyCommands.emit_construction_command_receipts(self, receipts)
 
 func get_canal_route_quote(country_handle: int, start_cell: int, end_cell: int,
 		waypoints: PackedInt32Array = PackedInt32Array()) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "code": "canal_runtime_unavailable",
-			"message": "canal_runtime_unavailable"}
-	return _world_ext.get_canal_route_quote(
-		country_handle, start_cell, end_cell, waypoints)
-
+	return EconomyCommands.get_canal_route_quote(self, country_handle, start_cell, end_cell, waypoints)
 
 func get_canal_route_quote_detail(country_handle: int,
 		quote_token: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "code": "canal_runtime_unavailable",
-			"message": "canal_runtime_unavailable"}
-	return _world_ext.get_canal_route_quote_detail(country_handle, quote_token)
-
+	return EconomyCommands.get_canal_route_quote_detail(self, country_handle, quote_token)
 
 func queue_canal_construction(country_handle: int, quote_token: int,
 		effective_day: int, sequence: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "code": "canal_runtime_unavailable",
-			"message": "canal_runtime_unavailable",
-			"effective_day": effective_day, "sequence": sequence}
-	return _world_ext.queue_canal_construction(
-		country_handle, quote_token, effective_day, sequence)
-
+	return EconomyCommands.queue_canal_construction(self, country_handle, quote_token, effective_day, sequence)
 
 func family_colonization_quotes(country_handle: int, target_cell: int,
 		family_filter: int = 0, source_filter: int = -1,
 		offset: int = 0, limit: int = 64) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "code": "family_colonization_unavailable"}
-	var page: Dictionary = _world_ext.get_family_colonization_quotes(country_handle, target_cell,
-		family_filter, source_filter, offset, limit)
-	if bool(page.get("ok", false)):
-		var names := EconomyFacadeDisplayScript.settlement_name_lookup(self)
-		var sources: PackedInt32Array = page.get("source_cells", PackedInt32Array())
-		var source_names := PackedStringArray()
-		for cell in sources:
-			var name := String(names.get(int(cell), "")).strip_edges()
-			source_names.append(name if not name.is_empty() else "聚落 %d" % (int(cell) + 1))
-		page["source_settlement_names"] = source_names
-	return page
-
+	return EconomyCommands.family_colonization_quotes(self, country_handle, target_cell, family_filter, source_filter, offset, limit)
 
 func family_colonization_quote_detail(quote_token: int,
 		population: int = -1) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "code": "family_colonization_unavailable"}
-	var detail: Dictionary = _world_ext.get_family_colonization_quote_detail(
-		quote_token, population)
-	if not bool(detail.get("ok", false)):
-		return detail
-	var stable_ids: PackedStringArray = _catalog.get(
-		"profession_ids", PackedStringArray())
-	var names := PackedStringArray()
-	var ids := PackedStringArray()
-	for profession_id in detail.get("profession_ids", PackedInt32Array()):
-		var stable_id := String(stable_ids[profession_id]) if profession_id >= 0 \
-			and profession_id < stable_ids.size() else ""
-		ids.append(stable_id)
-		names.append(String(_profession_display_names.get(stable_id, stable_id)))
-	detail["profession_stable_ids"] = ids
-	detail["profession_display_names"] = names
-	var building_ids: PackedStringArray = _catalog.get(
-		"building_type_ids", PackedStringArray())
-	var kit_names := PackedStringArray()
-	for type_id in detail.get("kit_building_ids", PackedInt32Array()):
-		kit_names.append(String(building_ids[type_id]) if type_id >= 0 \
-			and type_id < building_ids.size() else "")
-	detail["kit_building_stable_ids"] = kit_names
-	detail["kit_building_display_names"] = EconomyFacadeDisplayScript.mapped_names(kit_names, _building_display_names)
-	return detail
-
+	return EconomyCommands.family_colonization_quote_detail(self, quote_token, population)
 
 func start_family_colonization(country_handle: int, family_handle: int,
 		source_cell: int, target_cell: int, population: int, quote_token: int,
 		effective_day: int, sequence: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "code": "family_colonization_unavailable"}
-	return _world_ext.start_family_colonization(country_handle, family_handle,
-		source_cell, target_cell, population, quote_token, effective_day, sequence)
-
+	return EconomyCommands.start_family_colonization(self,
+		country_handle, family_handle, source_cell, target_cell, population, quote_token, effective_day, sequence)
 
 func cancel_family_colonization(country_handle: int, expedition_handle: int,
 		effective_day: int, sequence: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "code": "family_colonization_unavailable"}
-	return _world_ext.cancel_family_colonization(country_handle,
-		expedition_handle, effective_day, sequence)
+	return EconomyCommands.cancel_family_colonization(self, country_handle, expedition_handle, effective_day, sequence)
 
-
-## 国家购买预算（时代晋升 §2.2）。transient：读档后由玩家会话重推。
-## 原生侧只把请求放进收件箱，在下一个经济周期开始时生效。
-## era/colonization 传 -1 表示本次不改该通道的份额。
 func set_country_procurement_policy(country_handle: int, enabled: bool,
 		treasury_share_bp: int, research_share_bp: int,
 		effective_day: int, sequence: int,
 		era_share_bp: int = -1, colonization_share_bp: int = -1) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "code": "procurement_policy_unavailable"}
-	return _world_ext.set_country_procurement_policy(country_handle, enabled,
-		clampi(treasury_share_bp, 0, 10000), clampi(research_share_bp, 0, 10000),
-		effective_day, sequence,
-		-1 if era_share_bp < 0 else clampi(era_share_bp, 0, 10000),
-		-1 if colonization_share_bp < 0 else clampi(colonization_share_bp, 0, 10000))
+	return EconomyCommands.set_country_procurement_policy(self,
+		country_handle, enabled, treasury_share_bp, research_share_bp, effective_day, sequence, era_share_bp, colonization_share_bp)
 
-
-## 时代收购目标（§2.3）。active=false 清空目标（暂停）；已买入国库的物资不退回。
-## required_quantities 以 GOODS_SCALE 计。
 func set_era_procurement_target(country_handle: int, active: bool,
 		good_indices: PackedInt32Array, required_quantities: PackedInt64Array,
 		effective_day: int, sequence: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "code": "era_procurement_unavailable"}
-	return _world_ext.set_era_procurement_target(country_handle, active,
-		good_indices, required_quantities, effective_day, sequence)
+	return EconomyCommands.set_era_procurement_target(self, country_handle, active, good_indices, required_quantities, effective_day, sequence)
 
-
-## §2.4 快照：policy/预算分配/时代收购进度/trade_orders_total。
 func country_procurement_snapshot(country_handle: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "code": "procurement_snapshot_unavailable"}
-	return _world_ext.country_procurement_snapshot(country_handle)
-
+	return EconomyCommands.country_procurement_snapshot(self, country_handle)
 
 func family_expeditions(country_handle: int, offset: int = 0,
 		limit: int = 64) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "code": "family_colonization_unavailable"}
-	return _world_ext.get_family_expeditions(country_handle, offset, limit)
-
+	return EconomyCommands.family_expeditions(self, country_handle, offset, limit)
 
 func family_expedition_snapshot(country_handle: int,
 		expedition_handle: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "code": "family_colonization_unavailable"}
-	return _world_ext.get_family_expedition_snapshot(country_handle,
-		expedition_handle)
-
+	return EconomyCommands.family_expedition_snapshot(self, country_handle, expedition_handle)
 
 func dispatch_family_colonization_receipts(country_handle: int) -> void:
-	if not _configured or country_handle == 0:
-		return
-	var cursor := int(_colonization_receipt_cursors.get(country_handle, 0))
-	var page: Dictionary = _world_ext.get_family_colonization_receipts(
-		country_handle, cursor, 64)
-	if bool(page.get("ok", false)):
-		emit_family_colonization_receipts(page.get("receipts", []), country_handle)
-
+	EconomyCommands.dispatch_family_colonization_receipts(self, country_handle)
 
 func emit_family_colonization_receipts(receipts: Array, country_handle: int = 0) -> void:
-	for raw: Dictionary in receipts:
-		var country := int(raw.get("country_handle", country_handle))
-		var receipt_id := int(raw.get("receipt_id", -1))
-		if receipt_id <= int(_colonization_receipt_cursors.get(country, 0)):
-			continue
-		_colonization_receipt_cursors[country] = receipt_id
-		var result := raw.duplicate()
-		result["country_handle"] = country
-		var code := String(result.get("code", ""))
-		result["ok"] = not code.begins_with("colonization_")
-		result["message"] = _colonization_result_message(code)
-		family_colonization_settled.emit(result)
-
+	EconomyCommands.emit_family_colonization_receipts(self, receipts, country_handle)
 
 static func _colonization_result_message(code: String) -> String:
 	return EconomyCommandResultText._colonization_result_message(code)
 
-
 static func _construction_result_message(code: String) -> String:
 	return EconomyCommandResultText._construction_result_message(code)
 
-
 func family_cell_snapshot(cell_idx: int, offset: int = 0, limit: int = 64) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "family_runtime_unavailable"}
-	var snapshot: Dictionary = _world_ext.get_family_cell_snapshot(
-		cell_idx, offset, limit)
-	if bool(snapshot.get("ok", false)):
-		EconomyFacadeDisplayScript.attach_family_display_names(self, snapshot)
-	return snapshot
-
+	return EconomyQueries.family_cell_snapshot(self, cell_idx, offset, limit)
 
 func family_snapshot(family_handle: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "family_runtime_unavailable"}
-	var snapshot: Dictionary = _world_ext.get_family_snapshot(family_handle)
-	if not bool(snapshot.get("ok", false)):
-		return snapshot
-	var profession_ids: PackedInt32Array = snapshot.get(
-		"profession_ids", PackedInt32Array())
-	var profession_names := PackedStringArray()
-	var catalog_professions: PackedStringArray = _catalog.get(
-		"profession_ids", PackedStringArray())
-	for profession_id in profession_ids:
-		profession_names.append(catalog_professions[profession_id]
-			if profession_id >= 0 and profession_id < catalog_professions.size()
-			else "")
-	snapshot["profession_stable_ids"] = profession_names
-	var origin_cell := int(snapshot.get("origin_cell", -1))
-	var settlement_name := String(EconomyFacadeDisplayScript.settlement_name_lookup(self).get(origin_cell, ""))
-	snapshot["origin_settlement_name"] = settlement_name
-	var surname := String(snapshot.get("surname", ""))
-	var format := String(snapshot.get("culture_group_naming_format", "CITY_SURNAME_SUFFIX"))
-	var separator := String(snapshot.get("culture_group_separator", "-"))
-	var suffix := String(snapshot.get("culture_group_suffix", "氏"))
-	var family_name := compose_family_display_name(
-		settlement_name, surname, format, separator, suffix)
-	var collision_index := 1
-	var origin_families := family_cell_snapshot(origin_cell, 0, 256)
-	var origin_cells: PackedInt32Array = origin_families.get("origin_cells", PackedInt32Array())
-	var surnames: PackedStringArray = origin_families.get("surnames", PackedStringArray())
-	var stable_ids: PackedInt64Array = origin_families.get("stable_ids", PackedInt64Array())
-	var collisions: Array[int] = []
-	for i in range(mini(origin_cells.size(), mini(surnames.size(), stable_ids.size()))):
-		if int(origin_cells[i]) == origin_cell and String(surnames[i]) == surname:
-			collisions.append(int(stable_ids[i]))
-	collisions.sort()
-	if collisions.size() > 1:
-		collision_index = collisions.find(int(snapshot.get("stable_id", 0))) + 1
-		family_name += "（%d）" % collision_index
-	snapshot["family_name_collision_index"] = collision_index
-	snapshot["family_name"] = family_name
-	return snapshot
-
+	return EconomyQueries.family_snapshot(self, family_handle)
 
 func get_family_traits(family_handle: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "family_trait_runtime_unavailable"}
-	var snapshot: Dictionary = _world_ext.get_family_traits(family_handle)
-	if not bool(snapshot.get("ok", false)):
-		return snapshot
-	var axes: PackedInt32Array = snapshot.get(
-		"behavior_axes", PackedInt32Array())
-	var selector_ids: PackedInt32Array = snapshot.get(
-		"behavior_selector_ids", PackedInt32Array())
-	var stable_ids := PackedStringArray()
-	var display_names := PackedStringArray()
-	for index in range(mini(axes.size(), selector_ids.size())):
-		var source_ids := PackedStringArray()
-		var names: Dictionary = {}
-		match int(axes[index]):
-			0:
-				source_ids = _catalog.get("building_type_ids", PackedStringArray())
-				names = _building_display_names
-			1:
-				source_ids = _catalog.get("profession_ids", PackedStringArray())
-				names = _profession_display_names
-			2:
-				source_ids = _catalog.get("need_ids", PackedStringArray())
-				names = _need_display_names
-			3:
-				source_ids = _catalog.get("good_ids", PackedStringArray())
-				names = _good_display_names
-		var selector_id := int(selector_ids[index])
-		var stable_id := String(source_ids[selector_id]) \
-			if selector_id >= 0 and selector_id < source_ids.size() else ""
-		stable_ids.append(stable_id)
-		display_names.append(String(names.get(stable_id, stable_id)))
-	snapshot["behavior_selector_stable_ids"] = stable_ids
-	snapshot["behavior_selector_display_names"] = display_names
-	var trait_keys: PackedStringArray = snapshot.get("trait_keys", PackedStringArray())
-	snapshot["descriptions"] = EconomyFacadeDisplayScript.family_trait_description_column(self,
-		trait_keys, snapshot.get("strength_q16", PackedInt32Array()))
-	var effect_names := EconomyFacadeDisplayScript.family_trait_effect_display_names(self, trait_keys)
-	var bound_keys: PackedStringArray = snapshot.get(
-		"effect_definition_keys", PackedStringArray())
-	snapshot["bound_effect_display_names"] = EconomyFacadeDisplayScript.mapped_effect_names(
-		bound_keys, _family_effect_displays)
-	snapshot["bound_effect_descriptions"] = EconomyFacadeDisplayScript.mapped_effect_current_descriptions(self,
-		bound_keys, EconomyFacadeDisplayScript.family_max_prestige_level(self, family_handle))
-	var seen := {}
-	for name in effect_names:
-		seen[String(name)] = true
-	for name in snapshot["bound_effect_display_names"]:
-		var label := String(name).strip_edges()
-		if label.is_empty() or seen.has(label):
-			continue
-		seen[label] = true
-		effect_names.append(label)
-	snapshot["effect_display_names"] = effect_names
-	return snapshot
-
+	return EconomyQueries.get_family_traits(self, family_handle)
 
 func family_branches(family_handle: int, offset: int = 0, limit: int = 64) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "family_runtime_unavailable"}
-	var snapshot: Dictionary = _world_ext.get_family_branches(family_handle, offset, limit)
-	if not bool(snapshot.get("ok", false)):
-		return snapshot
-	var settlements := EconomyFacadeDisplayScript.settlement_name_lookup(self)
-	var cells: PackedInt32Array = snapshot.get("cell_indices", PackedInt32Array())
-	var settlement_names := PackedStringArray()
-	for cell_idx in cells:
-		settlement_names.append(String(settlements.get(int(cell_idx), "")))
-	snapshot["settlement_names"] = settlement_names
-	return snapshot
-
+	return EconomyQueries.family_branches(self, family_handle, offset, limit)
 
 func get_family_branch_effects(family_handle: int, cell_idx: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "family_trait_runtime_unavailable"}
-	var snapshot: Dictionary = _world_ext.get_family_branch_effects(
-		family_handle, cell_idx)
-	if not bool(snapshot.get("ok", false)):
-		return snapshot
-	var modifier_keys: PackedStringArray = snapshot.get(
-		"modifier_definition_keys", PackedStringArray())
-	snapshot["modifier_display_names"] = EconomyFacadeDisplayScript.mapped_effect_names(
-		modifier_keys, _family_modifier_displays)
-	snapshot["modifier_descriptions"] = EconomyFacadeDisplayScript.mapped_effect_descriptions(
-		modifier_keys, _family_modifier_displays)
-	var trigger_keys: PackedStringArray = snapshot.get(
-		"trigger_definition_keys", PackedStringArray())
-	snapshot["trigger_display_names"] = EconomyFacadeDisplayScript.mapped_effect_names(
-		trigger_keys, _family_trigger_displays)
-	snapshot["trigger_descriptions"] = EconomyFacadeDisplayScript.mapped_effect_descriptions(
-		trigger_keys, _family_trigger_displays)
-	var effect_keys: PackedStringArray = snapshot.get(
-		"effect_definition_keys", PackedStringArray())
-	snapshot["effect_display_names"] = EconomyFacadeDisplayScript.mapped_effect_names(
-		effect_keys, _family_effect_displays)
-	var prestige_level := int(snapshot.get("prestige_level", 0))
-	snapshot["effect_current_descriptions"] = EconomyFacadeDisplayScript.mapped_effect_current_descriptions(self,
-		effect_keys, prestige_level)
-	snapshot["effect_descriptions"] = snapshot["effect_current_descriptions"]
-	snapshot["effect_prestige_descriptions"] = EconomyFacadeDisplayScript.mapped_effect_prestige_descriptions(self,
-		effect_keys)
-	snapshot["settlement_name"] = String(EconomyFacadeDisplayScript.settlement_name_lookup(self).get(cell_idx, ""))
-	return snapshot
-
+	return EconomyQueries.get_family_branch_effects(self, family_handle, cell_idx)
 
 func queue_family_trait_mutation(family_handle: int, operation: Variant,
 		trait_key: StringName, strength_q16: int = 65536,
 		effective_day: int = 0, priority: int = 100,
 		sequence: int = -1) -> int:
-	if not _configured:
-		return 0
-	var opcode: int = int(operation) if typeof(operation) == TYPE_INT else {
-		"grant": 1, "remove": 2, "set_strength": 3,
-	}.get(String(operation), 0)
-	if sequence < 0:
-		_family_trait_sequence += 1
-		sequence = _family_trait_sequence
-	var result: Dictionary = _world_ext.submit_family_trait_commands({
-		"protocol_version": 1,
-		"operations": PackedInt32Array([opcode]),
-		"family_handles": PackedInt64Array([family_handle]),
-		"trait_keys": PackedStringArray([String(trait_key)]),
-		"strength_q16": PackedInt32Array([strength_q16]),
-		"effective_days": PackedInt64Array([effective_day]),
-		"priorities": PackedInt32Array([priority]),
-		"sequences": PackedInt64Array([sequence]),
-	})
-	var orders: PackedInt64Array = result.get("request_orders", PackedInt64Array())
-	return int(orders[0]) if bool(result.get("ok", false)) and not orders.is_empty() else 0
+	return EconomyQueries.queue_family_trait_mutation(self, family_handle, operation, trait_key, strength_q16, effective_day, priority, sequence)
 
-
-## Pending 1-of-3 family founding offers with player-facing card copy.
 func family_founding_offers(offset: int = 0, limit: int = 16) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "family_founding_runtime_unavailable"}
-	var result: Dictionary = _world_ext.get_family_founding_offers(offset, limit)
-	if not bool(result.get("ok", false)) or (result.get("offers", []) as Array).is_empty():
-		return result
-	for offer in result.get("offers", []):
-		decorate_family_founding_offer(offer)
-	return result
-
+	return EconomyQueries.family_founding_offers(self, offset, limit)
 
 func decorate_family_founding_offer(offer: Dictionary) -> void:
-	var settlements := EconomyFacadeDisplayScript.settlement_name_lookup(self)
-	var settlement_name := String(settlements.get(int(offer.get("cell", -1)), ""))
-	offer["settlement_name"] = settlement_name
-	var split := String(offer.get("kind", "FOUNDING")) == "SPLIT"
-	if split:
-		var parent := family_snapshot(int(offer.get("source_family_handle", 0)))
-		offer["source_family_name"] = String(parent.get("family_name", "原家族"))
-	var plan_index := 0
-	for card in offer.get("candidates", []):
-		_decorate_family_founding_card(card, settlement_name)
-		if split:
-			plan_index += 1
-			card["family_name"] = "%s · 方案%s" % [card["family_name"], ["一", "二", "三"][plan_index - 1]]
-			card["people_label"] = "分支族人"
-			card["choice_label"] = "确立此家风"
-			card["choice_tooltip"] = "按此方案独立成族；本地整支族人、产业与名人统一转入新家族。"
-
+	EconomyQueries.decorate_family_founding_offer(self, offer)
 
 func submit_family_founding_choice(offer_id: int, generation: int,
 		choice_index: int, effective_day: int, sequence: int = 0) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "family_founding_runtime_unavailable"}
-	if sequence == 0:
-		_family_founding_sequence += 1
-		sequence = _family_founding_sequence
-	return _world_ext.submit_family_founding_choice(offer_id, generation,
-		choice_index, maxi(0, effective_day), sequence)
-
+	return EconomyQueries.submit_family_founding_choice(self, offer_id, generation, choice_index, effective_day, sequence)
 
 func _decorate_family_founding_card(card: Dictionary, settlement_name: String) -> void:
-	card["family_name"] = compose_family_display_name(settlement_name,
-		String(card.get("surname", "")),
-		String(card.get("culture_group_naming_format", "CITY_SURNAME_SUFFIX")),
-		String(card.get("culture_group_separator", "-")),
-		String(card.get("culture_group_suffix", "氏")))
-	var building_id := String(card.get("building_type_id", ""))
-	card["building_display_name"] = String(
-		_building_display_names.get(building_id, building_id))
-	card["building_icon_key"] = String(_building_icon_for_type(building_id))
-	var profession_id := String(card.get("owner_profession_id", ""))
-	card["owner_profession_display_name"] = String(
-		_profession_display_names.get(profession_id, profession_id))
-	card["profession_icon_key"] = String(
-		IconCatalog.profession_semantic(profession_id) \
-		if not profession_id.is_empty() else &"population.profession.owner")
-	var trait_keys: PackedStringArray = card.get("trait_keys", PackedStringArray())
-	var strengths: PackedInt32Array = card.get("trait_strength_q16", PackedInt32Array())
-	var trait_names := PackedStringArray()
-	for trait_key in trait_keys:
-		var copy: Dictionary = _family_trait_copy.get(String(trait_key), {})
-		var display := String(copy.get("display_name", ""))
-		trait_names.append(display if not display.is_empty() else String(trait_key))
-	card["trait_display_names"] = trait_names
-	var trait_descriptions := EconomyFacadeDisplayScript.family_trait_description_column(self, trait_keys, strengths)
-	card["trait_descriptions"] = trait_descriptions
-	var trait_items: Array[Dictionary] = []
-	for index in range(trait_keys.size()):
-		var trait_key := String(trait_keys[index])
-		var copy: Dictionary = _family_trait_copy.get(trait_key, {})
-		var display_name := String(trait_names[index]) if index < trait_names.size() else trait_key
-		var description := String(trait_descriptions[index]) \
-			if index < trait_descriptions.size() else ""
-		var min_q16 := int(copy.get("strength_min_q16", 0))
-		var max_q16 := int(copy.get("strength_max_q16", 65536))
-		var strength := int(strengths[index]) if index < strengths.size() else min_q16
-		var span := max_q16 - min_q16
-		var ratio := 0.65 if span <= 0 else clampf(
-			float(strength - min_q16) / float(span), 0.0, 1.0)
-		var axis := int(copy.get("primary_axis", -1))
-		trait_items.append({
-			"key": trait_key,
-			"name": display_name,
-			"description": description,
-			"axis": axis,
-			"axis_label": FamilyBuffCopyScript.axis_short_label(axis),
-			"badges": FamilyBuffCopyScript.extract_trait_badges(description),
-			"strength_ratio": ratio,
-			"factor_percent": FamilyBuffCopyScript.trait_factor_percent(description, ratio),
-		})
-	card["trait_items"] = trait_items
-	var effect_key := String(card.get("effect_key", ""))
-	if effect_key.is_empty():
-		card["effect_display_name"] = ""
-		card["effect_description"] = ""
-		card["effect_prestige_descriptions"] = PackedStringArray()
-		card["effect_full_description"] = ""
-		return
-	var keys := PackedStringArray([effect_key])
-	card["effect_display_name"] = String(EconomyFacadeDisplayScript.mapped_effect_names(
-		keys, _family_effect_displays)[0])
-	var effect_entry: Dictionary = _family_effect_displays.get(effect_key, {})
-	var prestige_statements: PackedStringArray = effect_entry.get(
-		"prestige_descriptions", PackedStringArray())
-	card["effect_prestige_descriptions"] = prestige_statements
-	var preview := FamilyBuffCopyScript.founding_effect_preview(
-		prestige_statements, String(effect_entry.get("description", "")))
-	if preview.is_empty():
-		preview = String(EconomyFacadeDisplayScript.mapped_effect_current_descriptions(self, keys, 1)[0]).strip_edges()
-	card["effect_description"] = preview
-	card["effect_full_description"] = FamilyBuffCopyScript.join_prestige(
-		prestige_statements, preview)
-
+	EconomyQueries._decorate_family_founding_card(self, card, settlement_name)
 
 func _building_icon_for_type(type_id: String) -> StringName:
-	if type_id.is_empty():
-		return &"economy.building"
-	var type_ids: PackedStringArray = _catalog.get(
-		"building_type_ids", PackedStringArray())
-	var type_idx := type_ids.find(type_id)
-	var output_offsets: PackedInt32Array = _catalog.get(
-		"building_output_offsets", PackedInt32Array())
-	var output_good_indices: PackedInt32Array = _catalog.get(
-		"building_output_good_ids", PackedInt32Array())
-	var good_ids: PackedStringArray = _catalog.get("good_ids", PackedStringArray())
-	var kinds: PackedInt32Array = _catalog.get("building_kinds", PackedInt32Array())
-	if type_idx >= 0 and type_idx + 1 < output_offsets.size():
-		var output_pos := int(output_offsets[type_idx])
-		if output_pos < int(output_offsets[type_idx + 1]) \
-				and output_pos >= 0 and output_pos < output_good_indices.size():
-			var good_idx := int(output_good_indices[output_pos])
-			if good_idx >= 0 and good_idx < good_ids.size():
-				var kind := int(kinds[type_idx]) if type_idx < kinds.size() else 1
-				return IconCatalog.building_semantic(type_id, good_ids[good_idx], kind)
-	if type_id.contains("gathering"):
-		return &"economy.building.gathering"
-	if type_id.contains("hunting"):
-		return &"economy.building.hunting"
-	if type_id.contains("fish"):
-		return &"economy.building.fishing"
-	if type_id.contains("timber") or type_id.contains("lumber"):
-		return &"economy.building.forestry"
-	if type_id.contains("farm") or type_id.contains("pasture"):
-		return &"economy.building.farm"
-	if type_id.contains("mine") or type_id.contains("quarry"):
-		return &"economy.building.mine"
-	return &"economy.building"
-
+	return EconomyQueries._building_icon_for_type(self, type_id)
 
 func queue_family_trigger_reward(effect: Dictionary) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "economy facade is not configured"}
-	var command_key := String(effect.get("command_key", ""))
-	var opcode := 0
-	var building_type := -1
-	if command_key == "family.free_building":
-		opcode = Opcode.FAMILY_FREE_BUILDING
-		var authored := String(effect.get("definition_key", "")).strip_edges()
-		if authored.is_empty():
-			building_type = -1
-		else:
-			var building_ids: PackedStringArray = _catalog.get(
-				"building_type_ids", PackedStringArray())
-			building_type = building_ids.find(authored)
-			if building_type < 0:
-				return {"ok": false, "reason": "family_reward_building_unknown"}
-	elif command_key == "family.population_reward":
-		opcode = Opcode.FAMILY_POPULATION_REWARD
-	elif command_key == "family.absorb_anonymous":
-		opcode = Opcode.FAMILY_ABSORB_ANONYMOUS
-	elif command_key == "family.purchase_discount":
-		opcode = Opcode.FAMILY_PURCHASE_DISCOUNT
-	else:
-		return {"ok": false, "reason": "family_reward_command_unknown"}
-	return submit([{
-		"opcode": opcode,
-		"effective_day": int(effect.get("effective_day", 0)),
-		"sequence": maxi(0, int(effect.get("effect_id", 0))),
-		"target_handle": int(effect.get("target_handle", 0)),
-		"i32_0": int(effect.get("payload_i0", 0)),
-		"i32_1": building_type,
-		"i64_0": maxi(1, int(effect.get("resolved_value", 1))) \
-			if opcode != Opcode.FAMILY_PURCHASE_DISCOUNT \
-			else int(effect.get("resolved_value", 32768)),
-		"i64_1": int(effect.get("payload_i1", effect.get("effect_id", 0))),
-	}])
-
+	return EconomyQueries.queue_family_trigger_reward(self, effect)
 
 func family_industries(family_handle: int, offset: int = 0, limit: int = 64) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "family_runtime_unavailable"}
-	var snapshot: Dictionary = _world_ext.get_family_industries(
-		family_handle, offset, limit)
-	if not bool(snapshot.get("ok", false)):
-		return snapshot
-	var ids: PackedInt32Array = snapshot.get("building_type_ids", PackedInt32Array())
-	var names := PackedStringArray()
-	var catalog_ids: PackedStringArray = _catalog.get(
-		"building_type_ids", PackedStringArray())
-	for type_id in ids:
-		names.append(catalog_ids[type_id]
-			if type_id >= 0 and type_id < catalog_ids.size() else "")
-	snapshot["building_type_stable_ids"] = names
-	return snapshot
-
+	return EconomyQueries.family_industries(self, family_handle, offset, limit)
 
 func family_notable_people(family_handle: int, offset: int = 0,
 		limit: int = 64) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "notable_person_runtime_unavailable"}
-	var page: Dictionary = _world_ext.get_family_notable_people(
-		family_handle, offset, limit)
-	if not bool(page.get("ok", false)):
-		return page
-	var family: Dictionary = family_snapshot(family_handle)
-	EconomyFacadeDisplayScript.attach_notable_person_page_names(self, page, String(family.get("surname", "")))
-	return page
-
+	return EconomyQueries.family_notable_people(self, family_handle, offset, limit)
 
 func notable_person_snapshot(person_handle: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "notable_person_runtime_unavailable"}
-	var snapshot: Dictionary = _world_ext.get_notable_person_snapshot(person_handle)
-	if not bool(snapshot.get("ok", false)):
-		return snapshot
-	snapshot["full_name"] = EconomyFacadeDisplayScript.format_person_name(
-		String(snapshot.get("surname", "")),
-		String(snapshot.get("given_name", "")),
-		int(snapshot.get("name_disambiguator", 0)))
-	var profession_idx := int(snapshot.get("profession_id", -1))
-	var professions: PackedStringArray = _catalog.get(
-		"profession_ids", PackedStringArray())
-	var profession_id := professions[profession_idx] \
-		if profession_idx >= 0 and profession_idx < professions.size() else ""
-	snapshot["profession_stable_id"] = profession_id
-	snapshot["profession_display_name"] = String(
-		_profession_display_names.get(String(profession_id), String(profession_id)))
-	var building_idx := int(snapshot.get("building_type_id", -1))
-	var building_ids: PackedStringArray = _catalog.get(
-		"building_type_ids", PackedStringArray())
-	var building_id := building_ids[building_idx] \
-		if building_idx >= 0 and building_idx < building_ids.size() else ""
-	snapshot["building_type_stable_id"] = building_id
-	snapshot["building_type_display_name"] = String(
-		_building_display_names.get(String(building_id), String(building_id)))
-	return snapshot
-
+	return EconomyQueries.notable_person_snapshot(self, person_handle)
 
 func building_type_id(building_id: StringName) -> int:
 	var ids: PackedStringArray = _catalog.get("building_type_ids", PackedStringArray())
 	return ids.find(String(building_id))
 
 func building_job_spec(building_id: StringName) -> Dictionary:
-	var type_ids: PackedStringArray = _catalog.get("building_type_ids", PackedStringArray())
-	var type_id := type_ids.find(String(building_id))
-	if type_id < 0:
-		return {"ok": false, "reason": "unknown building type: %s" % String(building_id)}
-	var profession_ids: PackedStringArray = _catalog.get("profession_ids", PackedStringArray())
-	var owner_professions: PackedInt32Array = _catalog.get(
-		"building_owner_profession_ids", PackedInt32Array())
-	var owner_slots: PackedInt64Array = _catalog.get("building_owner_slots", PackedInt64Array())
-	var employee_offsets: PackedInt32Array = _catalog.get(
-		"building_employee_offsets", PackedInt32Array())
-	var employee_professions: PackedInt32Array = _catalog.get(
-		"building_employee_profession_ids", PackedInt32Array())
-	var employee_slots: PackedInt64Array = _catalog.get(
-		"building_employee_slots", PackedInt64Array())
-	if type_id >= owner_professions.size() or type_id >= owner_slots.size() or \
-			type_id + 1 >= employee_offsets.size():
-		return {"ok": false, "reason": "building job catalog shape invalid"}
-	var owner_profession_idx := int(owner_professions[type_id])
-	if owner_profession_idx < 0 or owner_profession_idx >= profession_ids.size():
-		return {"ok": false, "reason": "building owner profession invalid"}
-	var role_professions := PackedStringArray()
-	var role_slots := PackedInt64Array()
-	for role in range(employee_offsets[type_id], employee_offsets[type_id + 1]):
-		var profession_idx := int(employee_professions[role])
-		if profession_idx < 0 or profession_idx >= profession_ids.size():
-			return {"ok": false, "reason": "building employee profession invalid"}
-		role_professions.append(profession_ids[profession_idx])
-		role_slots.append(employee_slots[role])
-	return {
-		"ok": true,
-		"type_id": type_id,
-		"stable_id": String(building_id),
-		"owner_profession": profession_ids[owner_profession_idx],
-		"owner_slots": owner_slots[type_id],
-		"employee_professions": role_professions,
-		"employee_slots": role_slots,
-	}
+	return EconomyCommands.building_job_spec(self, building_id)
 
 func building_placement_spec(building_id: StringName) -> Dictionary:
-	return preload("res://scripts/economy/building_placement_catalog.gd").query(_catalog, building_id)
+	return EconomyCommands.building_placement_spec(self, building_id)
 
 func build(cell_idx: int, building_id: StringName, count: int, owner_handle: int,
 		effective_day: int, sequence: int) -> Dictionary:
-	var type_id := building_type_id(building_id)
-	if type_id < 0 or count <= 0:
-		return {"ok": false, "reason": "invalid building type or count"}
-	return submit([{
-		"opcode": Opcode.BUILD,
-		"effective_day": effective_day,
-		"sequence": sequence,
-		"target_handle": owner_handle,
-		"i32_0": cell_idx,
-		"i32_1": type_id,
-		"i64_0": count,
-		"i64_1": 0,
-	}])
+	return EconomyCommands.build(self, cell_idx, building_id, count, owner_handle, effective_day, sequence)
 
 func demolish(cell_idx: int, building_id: StringName, count: int, owner_handle: int,
 		effective_day: int, sequence: int) -> Dictionary:
-	var type_id := building_type_id(building_id)
-	if type_id < 0 or count <= 0:
-		return {"ok": false, "reason": "invalid building type or count"}
-	return submit([{
-		"opcode": Opcode.DEMOLISH,
-		"effective_day": effective_day,
-		"sequence": sequence,
-		"target_handle": owner_handle,
-		"i32_0": cell_idx,
-		"i32_1": type_id,
-		"i64_0": count,
-		"i64_1": 0,
-	}])
+	return EconomyCommands.demolish(self, cell_idx, building_id, count, owner_handle, effective_day, sequence)
 
 func report() -> Dictionary:
-	return _world_ext.get_economy_report() if _configured else {"configured": false}
-
+	return EconomySession.report(self)
 
 func start_csv_recording(config: Dictionary) -> Dictionary:
-	return _world_ext.start_economy_csv_recording(config) if _world_ext != null else {}
-
+	return EconomySession.start_csv_recording(self, config)
 
 func request_stop_csv_recording() -> Dictionary:
-	return _world_ext.request_stop_economy_csv_recording() if _world_ext != null else {}
-
+	return EconomySession.request_stop_csv_recording(self)
 
 func csv_recording_status() -> Dictionary:
-	return _world_ext.get_economy_csv_recording_status() if _world_ext != null else {}
-
+	return EconomySession.csv_recording_status(self)
 
 func begin_forensics_save(chunk_bytes: int) -> Dictionary:
-	return _world_ext.begin_economy_forensics_save(chunk_bytes) if _world_ext != null else {
-		"ok": false, "reason": "economy_provider_missing"}
-
+	return EconomySession.begin_forensics_save(self, chunk_bytes)
 
 func read_forensics_save_chunk(chunk_bytes: int) -> PackedByteArray:
-	return _world_ext.read_economy_save_chunk(chunk_bytes) if _world_ext != null else PackedByteArray()
-
+	return EconomySession.read_forensics_save_chunk(self, chunk_bytes)
 
 func end_forensics_save() -> Dictionary:
-	return _world_ext.end_economy_save() if _world_ext != null else {
-		"ok": false, "reason": "economy_provider_missing"}
+	return EconomySession.end_forensics_save(self)
 
-## Lightweight country/class satisfaction aggregate used by presentation systems.
-## This is a committed read and is intentionally separate from the full economy
-## diagnostic report, which can contain large transient counters.
 func country_class_opinion_snapshot() -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "country class opinion snapshot unavailable"}
-	return _world_ext.get_country_class_opinion_snapshot()
+	return EconomySession.country_class_opinion_snapshot(self)
 
 func native_catalog() -> Dictionary:
-	return _catalog.duplicate(false)
+	return EconomySession.native_catalog(self)
 
 func signature_id(profession_id: StringName, ethnicity_id: StringName) -> int:
-	var key := "%s|%s" % [String(profession_id), String(ethnicity_id)]
-	var keys: PackedStringArray = _catalog.get("signature_keys", PackedStringArray())
-	return keys.find(key)
+	return EconomySession.signature_id(self, profession_id, ethnicity_id)
 
 func good_ids() -> PackedStringArray:
-	return (_catalog.get("good_ids", PackedStringArray()) as PackedStringArray).duplicate()
+	return EconomySession.good_ids(self)
 
 func profession_ids() -> PackedStringArray:
-	return (_catalog.get("profession_ids", PackedStringArray()) as PackedStringArray).duplicate()
+	return EconomySession.profession_ids(self)
 
 func building_type_ids() -> PackedStringArray:
-	return (_catalog.get("building_type_ids", PackedStringArray()) as PackedStringArray).duplicate()
+	return EconomySession.building_type_ids(self)
 
-## Cold-path bootstrap view of the same compiled columns consumed by the native runtime.
-## This deliberately exposes only finance inputs; runtime authority remains in C++.
 func bootstrap_finance_columns() -> Dictionary:
-	var result := {}
-	for key in [
-		"good_ids", "good_default_price", "good_inventory_target_ratios_q16",
-		"good_merchant_buy_factor_q16", "good_monetary_issue_values",
-		"good_technology_tag_offsets", "good_technology_tags",
-		"plan_ids", "plan_need_offsets", "need_ids", "need_living_cost_weights_q16",
-		"need_stable_ids", "need_base_qty_per_person", "need_quantity_env_curve_ids",
-		"need_variant_offsets", "variant_preference_q16",
-		"variant_preference_env_curve_ids", "variant_component_offsets",
-		"component_good_ids", "component_qty_per_need", "environment_curve_signal_ids",
-		"environment_curve_values_q16", "ethnicity_need_factor_q16",
-		"signature_ethnicity_ids", "signature_plan_ids",
-	]:
-		result[key] = _catalog.get(key)
-	var ratios: PackedInt32Array = result.get(
-		"good_inventory_target_ratios_q16", PackedInt32Array())
-	var target_days := PackedInt32Array()
-	target_days.resize(ratios.size())
-	for good_idx in range(ratios.size()):
-		target_days[good_idx] = int(_profile.merchant_market_making_days_q16) * \
-			int(ratios[good_idx]) / 65536
-	result["good_target_inventory_days_q16"] = target_days
-	result["living_cost_base_plan_id"] = String(_profile.living_cost_base_plan_id)
-	return result
+	return EconomySession.bootstrap_finance_columns(self)
 
 func bootstrap_cycle_days(cohort_count: int, market_count: int = 0,
 		active_building_cell_count: int = 0, building_group_count: int = 0) -> int:
-	if _profile == null:
-		return 1
-	# Native locks N from populated work plus machine timing. This helper only
-	# reports the profile maximum (1–5). It never restores 50/334 auto cadence.
-	var maximum := clampi(int(_profile.market_max_cycle_days), 1, 5)
-	var configured := int(_profile.market_cycle_days)
-	if configured <= 0:
-		configured = maximum
-	return clampi(configured, 1, maximum)
+	return EconomySession.bootstrap_cycle_days(self, cohort_count, market_count, active_building_cell_count, building_group_count)
 
 func need_display_name(stable_id: String) -> String:
-	return EconomyFacadeDisplayScript.need_display_name(self, stable_id)
+	return EconomySession.need_display_name(self, stable_id)
 
 func building_display_name(building_index: int) -> String:
-	return EconomyFacadeDisplayScript.building_display_name(self, building_index)
+	return EconomySession.building_display_name(self, building_index)
 
-	# Modifier lines on idea cards are rendered from selector-addressable stat keys
-	# such as country.output.building.iron_tool_workshop_factor. The card formatter
-	# resolves the trailing stable id through this registry, so it always matches
-	# the name the economy UI shows instead of leaking the raw slug.
 func good_display_name(good_index: int) -> String:
-	return EconomyFacadeDisplayScript.good_display_name(self, good_index)
+	return EconomySession.good_display_name(self, good_index)
 
 func profession_display_name(profession_id: StringName) -> String:
-	return EconomyFacadeDisplayScript.profession_display_name(self, profession_id)
+	return EconomySession.profession_display_name(self, profession_id)
 
 static func compose_family_display_name(
 		settlement_name: String,
@@ -1464,10 +440,10 @@ static func compose_family_display_name(
 		settlement_name, surname, format, separator, suffix)
 
 func settlement_display_name(cell: int) -> String:
-	return EconomyFacadeDisplayScript.settlement_display_name(self, cell)
+	return EconomySession.settlement_display_name(self, cell)
 
 func _load_family_effect_displays() -> void:
-	EconomyFacadeDisplayScript.load_family_effect_displays(self)
+	EconomySession._load_family_effect_displays(self)
 
 static func _load_display_names(directory: String) -> Dictionary:
 	# [pk-export-remap] 见 economy_catalog.gd::_load_resources() 同名注释——导出
@@ -1476,164 +452,59 @@ static func _load_display_names(directory: String) -> Dictionary:
 	return EconomyFacadeDisplayScript.load_display_names(directory)
 
 func begin_save() -> Dictionary:
-	return _world_ext.begin_economy_save(_profile.save_chunk_bytes) if _configured else {"ok": false, "reason": "not configured"}
+	return EconomySession.begin_save(self)
 
 func read_save_chunk() -> PackedByteArray:
-	return _world_ext.read_economy_save_chunk(_profile.save_chunk_bytes) if _configured else PackedByteArray()
+	return EconomySession.read_save_chunk(self)
 
 func end_save() -> Dictionary:
-	return _world_ext.end_economy_save() if _configured else {"ok": false, "reason": "not configured"}
+	return EconomySession.end_save(self)
 
 func restore_bytes(bytes: PackedByteArray, _chunk_bytes: int = -1) -> Dictionary:
-	# Production restore is ECP2-only. Bare PKEC streaming is rejected here;
-	# use restore_ecp2().
-	if not _configured:
-		return {"ok": false, "reason": "not configured",
-			"restore_rejected_reason": "not configured"}
-	if bytes.is_empty():
-		return {"ok": false, "reason": "restore_requires_ecp2",
-			"restore_rejected_reason": "restore_requires_ecp2"}
-	if bytes.size() >= 4 and bytes[0] == 0x45 and bytes[1] == 0x43 \
-			and bytes[2] == 0x50 and bytes[3] == 0x32:
-		return restore_ecp2(bytes)
-	return {"ok": false, "reason": "restore_requires_ecp2",
-		"restore_rejected_reason": "restore_requires_ecp2"}
-
+	return EconomySession.restore_bytes(self, bytes, _chunk_bytes)
 
 func restore_ecp2(bytes: PackedByteArray) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "not configured",
-			"restore_rejected_reason": "not configured"}
-	var result: Dictionary = _world_ext.restore_economy_ecp2(bytes)
-	if not bool(result.get("ok", false)) and not result.has("restore_rejected_reason"):
-		result["restore_rejected_reason"] = String(result.get("reason", ""))
-	return result
-
+	return EconomySession.restore_ecp2(self, bytes)
 
 func capture_ecp2(flags: int = 0) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "not configured"}
-	return _world_ext.capture_economy_ecp2(flags)
-
+	return EconomySession.capture_ecp2(self, flags)
 
 func restore_rejected_reason() -> String:
-	if not _configured:
-		return ""
-	return String(_world_ext.get_economy_restore_rejected_reason())
-
+	return EconomySession.restore_rejected_reason(self)
 
 func event_schema() -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "economy event API unavailable"}
-	return _world_ext.get_economy_event_schema()
+	return EconomySession.event_schema(self)
 
 func set_trace_cells(cells: PackedInt32Array) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "economy event API unavailable"}
-	return _world_ext.set_economy_trace_filter({"cells": cells})
+	return EconomySession.set_trace_cells(self, cells)
 
 func set_inspector_trace_cell(cell_idx: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "economy inspector trace API unavailable"}
-	return _world_ext.set_economy_inspector_trace_cell(cell_idx)
+	return EconomySession.set_inspector_trace_cell(self, cell_idx)
 
 func poll_events(consumer_id: StringName, max_events: int = -1,
 		kind: int = 0, cell: int = -1, after_event_id: int = -1) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "economy event API unavailable", "count": 0}
-	var opts := {
-		"consumer_id": consumer_id,
-		"max_events": _profile.economy_trace_poll_max_events if max_events < 0 else max_events,
-		"kind": kind,
-		"cell": cell,
-	}
-	if after_event_id >= 0:
-		opts["after_event_id"] = after_event_id
-	return _world_ext.poll_economy_events(opts)
+	return EconomySession.poll_events(self, consumer_id, max_events, kind, cell, after_event_id)
 
 func ack_events(consumer_id: StringName, up_to_event_id: int) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "economy event API unavailable"}
-	return _world_ext.ack_economy_events(consumer_id, up_to_event_id)
+	return EconomySession.ack_events(self, consumer_id, up_to_event_id)
 
 func trace_report() -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "economy event API unavailable"}
-	return _world_ext.get_economy_trace_report()
+	return EconomySession.trace_report(self)
 
 func dispatch_committed_events(meta: Dictionary) -> Dictionary:
-	if not bool(meta.get("economy_event_batch_published", false)):
-		return {"published": false, "materialized": false, "count": 0}
-	economy_event_batch_available.emit(meta)
-	# The availability signal is the normal UI invalidation path. Do not build
-	# twenty PackedArrays for every committed day when nobody consumes the
-	# detailed batch signal. Advance this facade-owned cursor directly so a
-	# listener connected later starts at the next committed batch, matching the
-	# old eager poll+ack behavior without materializing discarded rows.
-	if economy_event_batch.get_connections().is_empty():
-		var newest_id := int(meta.get("economy_event_newest_id", 0))
-		var acknowledged := ack_events(&"economy_facade_handlers", newest_id)
-		return {
-			"published": true,
-			"materialized": false,
-			"count": 0,
-			"acked_event_id": int(acknowledged.get("acked_event_id", newest_id)),
-		}
-	var batch := poll_events(&"economy_facade_handlers")
-	if int(batch.get("count", 0)) <= 0:
-		return {"published": true, "materialized": true, "count": 0}
-	economy_event_batch.emit(batch)
-	ack_events(&"economy_facade_handlers", int(batch.get("last_event_id", 0)))
-	return {
-		"published": true,
-		"materialized": true,
-		"count": int(batch.get("count", 0)),
-	}
+	return EconomySession.dispatch_committed_events(self, meta)
 
 func begin_event_archive(chunk_bytes: int = -1) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "economy event archive API unavailable"}
-	return _world_ext.begin_economy_event_archive(
-		_profile.save_chunk_bytes if chunk_bytes < 0 else chunk_bytes)
+	return EconomySession.begin_event_archive(self, chunk_bytes)
 
 func read_event_archive_chunk(max_bytes: int = -1) -> PackedByteArray:
-	if not _configured:
-		return PackedByteArray()
-	return _world_ext.read_economy_event_archive_chunk(
-		_profile.save_chunk_bytes if max_bytes < 0 else max_bytes)
+	return EconomySession.read_event_archive_chunk(self, max_bytes)
 
 func end_event_archive() -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "economy event archive API unavailable"}
-	return _world_ext.end_economy_event_archive()
+	return EconomySession.end_event_archive(self)
 
 func write_event_archive(path: String, chunk_bytes: int = -1) -> Dictionary:
-	if not _configured:
-		return {"ok": false, "reason": "not configured"}
-	var file := FileAccess.open_compressed(
-		path, FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
-	if file == null:
-		return {"ok": false, "reason": "event archive file open failed",
-			"error": FileAccess.get_open_error()}
-	var begin := begin_event_archive(chunk_bytes)
-	if not bool(begin.get("ok", false)):
-		file.close()
-		return begin
-	var chunks := 0
-	var bytes_written := 0
-	while true:
-		var chunk := read_event_archive_chunk(chunk_bytes)
-		if chunk.is_empty():
-			break
-		file.store_buffer(chunk)
-		chunks += 1
-		bytes_written += chunk.size()
-	file.close()
-	var ended := end_event_archive()
-	ended["path"] = path
-	ended["chunks"] = chunks
-	ended["uncompressed_bytes"] = bytes_written
-	return ended
+	return EconomySession.write_event_archive(self, path, chunk_bytes)
 
 func world_ext() -> Object:
 	return _world_ext

@@ -95,3 +95,51 @@ static func _put_warmup_code(out: Dictionary, key: String, code: String) -> void
 		if String(out[existing]) == code:
 			return
 	out[key] = code
+
+
+static var _compiled_shader_variants: Dictionary = {}
+static var _shader_compile_stats: Dictionary = {}
+static var _shader_compile_reported: Dictionary = {}
+
+static func _compiled_shader(code: String, pass_tag: String = "body") -> Shader:
+	var cached := _compiled_shader_variants.get(code) as Shader
+	if cached != null:
+		return cached
+	var t0_usec := Time.get_ticks_usec()
+	var shader := Shader.new()
+	shader.code = code
+	# 运行期真实要编的那一份的指纹。和菜单期 warmup_shader 的 fp 对账，命中 = 这份
+	# 已经预热过（驱动缓存里有）；MISS = 它会在游戏里编，那就是冻结帧的根因。
+	WebTelemetry.note_variant("veg_" + pass_tag, code)
+	_record_shader_compile(pass_tag, code, float(Time.get_ticks_usec() - t0_usec) / 1000.0)
+	_compiled_shader_variants[code] = shader
+	return shader
+
+
+static func _record_shader_compile(pass_tag: String, code: String, elapsed_ms: float) -> void:
+	var key := "%s|%d|%d" % [pass_tag, code.length(), code.hash()]
+	var record: Dictionary = _shader_compile_stats.get(key, {})
+	record["s"] = pass_tag
+	record["ms"] = float(record.get("ms", 0.0)) + elapsed_ms
+	record["n"] = int(record.get("n", 0)) + 1
+	record["h"] = code.hash()
+	record["l"] = code.length()
+	# 档位/变体从代码本身读，避免上报时 _world / tier 已经变了。
+	record["near"] = "full"
+	if code.contains("#define PK_VEG_FAR_ONLY"):
+		record["near"] = "far"
+	elif code.contains("#define PK_VEG_NEAR_MIN"):
+		record["near"] = "min"
+	record["tiled"] = code.contains("#define MAP_VISUAL_TILED")
+	_shader_compile_stats[key] = record
+
+
+
+
+static func _bind_crown_art(mat: ShaderMaterial) -> void:
+	var art := ResourceArtLibrary.shared()
+	var bound := art.crown != null and art.crown_normal != null
+	mat.set_shader_parameter("crown_art_bound", bound)
+	if bound:
+		mat.set_shader_parameter("crown_art", art.crown)
+		mat.set_shader_parameter("crown_normal_art", art.crown_normal)

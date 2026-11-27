@@ -1,5 +1,6 @@
 extends "res://tests/technology/technology_procurement_runtime_test.gd"
 const SaveEvidence = preload("res://tests/runtime/intent_save_evidence.gd")
+const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 
 func _init() -> void:
 	var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
@@ -7,9 +8,10 @@ func _init() -> void:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
 	ext.create_entities(1)
 	_register_environment(ext)
+	var modifier_catalog: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
 	var country = CountryFacadeScript.new()
 	_expect("country configures", bool(country.configure(ext, 1, 9042,
-		load("res://data/country/default_country.tres"), compiled).get("ok", false)))
+		load("res://data/country/default_country.tres"), compiled, null, modifier_catalog).get("ok", false)))
 	var gathering := (compiled.technology_ids as PackedStringArray).find(
 		"tech.gathering")
 	var maize_identification := (compiled.technology_ids as PackedStringArray).find(
@@ -73,7 +75,7 @@ func _init() -> void:
 	_register_environment(restored)
 	var restored_country = CountryFacadeScript.new()
 	_expect("restore Country configured", bool(restored_country.configure(restored, 1, 9042,
-		load("res://data/country/default_country.tres"), compiled).get("ok", false)))
+		load("res://data/country/default_country.tres"), compiled, null, modifier_catalog).get("ok", false)))
 	var evidence := SaveEvidence.capture(ext, restored, [1], func() -> Dictionary: return restored.configure_economy(native_catalog, profile, 1, 9042))
 	_expect("save evidence complete", not evidence.is_empty())
 	print("RESEARCH_INTENT_RESULT=" + JSON.stringify(evidence))

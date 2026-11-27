@@ -324,11 +324,14 @@ func _check_web_min_include() -> void:
 func _check_fog_gate_contract(source: String) -> void:
 	var layer_source := FileAccess.get_file_as_string(
 		"res://scripts/rendering/weather_layer.gd").replace("\r\n", "\n")
+	var material_source := FileAccess.get_file_as_string(
+		"res://scripts/rendering/weather_layer_material_publish.gd").replace("\r\n", "\n")
 	var fog_layer_source := FileAccess.get_file_as_string(
 		"res://scripts/rendering/fog_of_war_layer.gd").replace("\r\n", "\n")
 	var fog_shader := FileAccess.get_file_as_string(
 		"res://shaders/fog_of_war.gdshader").replace("\r\n", "\n")
-	_expect(not layer_source.is_empty() and not fog_layer_source.is_empty()
+	_expect(not layer_source.is_empty() and not material_source.is_empty()
+			and not fog_layer_source.is_empty()
 			and not fog_shader.is_empty(),
 		"weather_layer / fog_of_war_layer / fog shader sources all load")
 
@@ -336,22 +339,23 @@ func _check_fog_gate_contract(source: String) -> void:
 	_expect(layer_source.contains(
 		"const FogOfWarLayerScript = preload(\"res://scripts/rendering/fog_of_war_layer.gd\")"),
 		"weather_layer reads the fog gate params from fog_of_war_layer.gd (the single source)")
-	_expect(not layer_source.contains("FOG_FIELD_BAND_DEFAULT"),
+	_expect(not layer_source.contains("FOG_FIELD_BAND_DEFAULT")
+		and not material_source.contains("FOG_FIELD_BAND_DEFAULT"),
 		"the duplicated FOG_FIELD_BAND_DEFAULT constant is really gone from weather_layer")
 	_expect(layer_source.contains(
 		"var _fog_field_band: float = FogOfWarLayerScript.FOG_FIELD_BAND"),
 		"the band member is initialised from the source of truth (no 0.6 literal)")
-	_expect(layer_source.contains(
-		"set_shader_parameter(\"fog_warp_freq\", FogOfWarLayerScript.FOG_WARP_FREQ)")
-		and layer_source.contains(
-		"set_shader_parameter(\"fog_warp_amp\", FogOfWarLayerScript.FOG_WARP_AMP)"),
+	_expect(material_source.contains(
+		"set_shader_parameter(\"fog_warp_freq\", WeatherLayer.FogOfWarLayerScript.FOG_WARP_FREQ)")
+		and material_source.contains(
+		"set_shader_parameter(\"fog_warp_amp\", WeatherLayer.FogOfWarLayerScript.FOG_WARP_AMP)"),
 		"both fog warp uniforms are pushed straight from FogOfWarLayer constants")
 
 	# 逐行：凡是提到这三个参数的**代码行**，值必须来自真源（或由真源初始化的成员）。
 	# 这条能真的失败 —— 把 push 改回 0.0042 / 0.55 会在这里被点名。
 	var offenders: Array = []
 	var param_lines := 0
-	for raw_line in _non_comment_lines(layer_source):
+	for raw_line in _non_comment_lines(layer_source + "\n" + material_source):
 		var text := String(raw_line)
 		if not (text.contains("fog_field_band") or text.contains("fog_warp_freq")
 				or text.contains("fog_warp_amp")):
@@ -516,6 +520,8 @@ func _is_strictly_increasing(values: Array) -> bool:
 func _check_weather_layer_switch() -> void:
 	var layer_source := FileAccess.get_file_as_string(
 		"res://scripts/rendering/weather_layer.gd").replace("\r\n", "\n")
+	var material_source := FileAccess.get_file_as_string(
+		"res://scripts/rendering/weather_layer_material_publish.gd").replace("\r\n", "\n")
 	# 开关的项目设置键：与地形**不同**的键（独立开关，方案 §4）。
 	_expect(WeatherLayerScript.CELL_FIELD_SETTING
 		== "project_keynes/rendering/map_tiles/weather_cell_field_enabled",
@@ -530,7 +536,7 @@ func _check_weather_layer_switch() -> void:
 	for needle in ["set_shader_parameter(\"hex_size\"", "set_shader_parameter(\"map_dims\"",
 			"set_shader_parameter(\"cell_table\"", "set_shader_parameter(\"cell_table_size\"",
 			"set_shader_parameter(\"cell_table_bound\""]:
-		_expect(layer_source.contains(String(needle)),
+		_expect(material_source.contains(String(needle)),
 			"weather_layer pushes `%s`" % needle)
 
 	# [2026-11-18] 出货默认**开**。本组验的是「开 / 关两态的前缀与重建」，

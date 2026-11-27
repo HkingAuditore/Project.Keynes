@@ -37,6 +37,7 @@ func _check(label: String, condition: bool) -> void:
 
 func _init() -> void:
 	var host := FileAccess.get_file_as_string("res://scripts/game/world_runtime_host.gd")
+	host += "\n" + FileAccess.get_file_as_string("res://scripts/game/world_runtime_adapters.gd")
 	var lifecycle := FileAccess.get_file_as_string("res://scripts/game/world_runtime_lifecycle.gd")
 	for method in Reference.HOST_METHODS:
 		_check("host keeps " + method, host.contains(method))

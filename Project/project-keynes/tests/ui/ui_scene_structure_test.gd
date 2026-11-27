@@ -8,17 +8,36 @@ const CONTROL_TYPES := ["Control", "PanelContainer", "VBoxContainer", "HBoxConta
 	"TextureRect", "ColorRect", "ProgressBar", "LineEdit", "TextEdit",
 	"OptionButton", "CheckBox", "CheckButton", "HSlider", "VSlider", "SpinBox",
 	"TabContainer", "CenterContainer", "AspectRatioContainer", "RichTextLabel"]
-# These screens intentionally materialize bounded, data-shaped rows at runtime:
-# expedition entries and the optional .pkmap path field. The ideology deck
-# materializes one papercut card per known idea (bounded by the 30-card pool)
-# plus transient FX sprites. All other player UI scripts remain covered by the
-# static-scene rule.
+# These screens intentionally materialize bounded, data-shaped rows at runtime.
 const SCRIPT_EXCLUSIONS := ["debug_console.gd", "info_panel_controller.gd",
-	"perf_mini_hud.gd", "perf_recorder.gd", "tile_data_recorder.gd",
-	"colonization_planner_panel.gd", "world_setup.gd",
+	"perf_mini_hud.gd", "perf_recorder.gd", "tile_data_recorder.gd", "world_setup.gd",
 	"ideology_art.gd", "ideology_card.gd", "ideology_point_scroll.gd",
-	"ideology_slot_niche.gd", "ideology_workspace.gd",
-	"ideology_workspace_presentation.gd"]
+	"ideology_slot_niche.gd"]
+
+# The existing colonization rows and ideology controls retained their constructor
+# counts when the workspaces were split. Guard the new paths by type and count.
+const RUNTIME_CONTROL_LIMITS := {
+	"res://scripts/ui/components/colonization_map_workflow.gd": {"Label": 1},
+	"res://scripts/ui/components/colonization_planner_lists.gd": {"Label": 1},
+	"res://scripts/ui/components/ideology_collection_card.gd": {
+		"Control": 1, "VBoxContainer": 2, "HBoxContainer": 3, "MarginContainer": 2,
+		"TextureRect": 1,
+	},
+	"res://scripts/ui/components/ideology_slot_chrome.gd": {
+		"HBoxContainer": 1, "TextureRect": 1, "ColorRect": 1,
+	},
+	"res://scripts/ui/components/ideology_workspace.gd": {"PanelContainer": 1},
+	"res://scripts/ui/components/ideology_workspace_collection.gd": {"Button": 2},
+	"res://scripts/ui/components/ideology_workspace_controls.gd": {
+		"Control": 1, "VBoxContainer": 2, "HBoxContainer": 1, "Button": 1,
+		"ColorRect": 1, "CenterContainer": 1,
+	},
+	"res://scripts/ui/components/ideology_workspace_layout.gd": {
+		"Control": 3, "PanelContainer": 6, "VBoxContainer": 7, "HBoxContainer": 3,
+		"MarginContainer": 4, "Button": 2, "TextureRect": 1, "ColorRect": 1,
+		"CenterContainer": 1,
+	},
+}
 
 var _failures := PackedStringArray()
 
@@ -518,10 +537,12 @@ func _check_no_runtime_control_new() -> void:
 		if SCRIPT_EXCLUSIONS.has(path.get_file()):
 			continue
 		var source := FileAccess.get_file_as_string(path)
+		var limits: Dictionary = RUNTIME_CONTROL_LIMITS.get(path, {})
 		for type_name in CONTROL_TYPES:
 			var constructor := RegEx.create_from_string("\\b%s\\s*\\.\\s*new\\s*\\(" % type_name)
-			_expect("%s does not construct %s at runtime" % [path, type_name],
-				constructor.search(source) == null)
+			var allowed: int = limits.get(type_name, 0)
+			_expect("%s uses at most %d runtime %s constructors" % [path, allowed, type_name],
+				constructor.search_all(source).size() <= allowed)
 
 
 func _collect_scripts(path: String, output: PackedStringArray) -> void:

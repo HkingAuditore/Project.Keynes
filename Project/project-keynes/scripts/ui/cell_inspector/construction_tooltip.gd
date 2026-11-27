@@ -9,10 +9,10 @@ static func _construction_tooltip(host, entry: Dictionary, item: Dictionary, mat
 		reason_text: String) -> String:
 	var h = host
 	var lines = PackedStringArray()
-	var job_text = host._construction_job_text(job_spec)
+	var job_text = host._Construction_delegate._construction_job_text(host, job_spec)
 	if not job_text.is_empty():
 		lines.append("岗位：%s" % job_text)
-	var inputs = host._construction_recipe_side(
+	var inputs = host._Construction_delegate._construction_recipe_side(host,
 		host._construction_input_recipe_rows(placement, unlocked_goods))
 	if not inputs.is_empty():
 		lines.append("投入：%s" % inputs)
@@ -30,7 +30,7 @@ static func _construction_tooltip(host, entry: Dictionary, item: Dictionary, mat
 			else "%s %s/日" % [resource_name, quantity])
 	if not resources.is_empty():
 		lines.append("自然资源：%s" % "、".join(resources))
-	var outputs = host._construction_recipe_side(
+	var outputs = host._Construction_delegate._construction_recipe_side(host,
 		h._construction_recipe_rows(placement, "output_good_ids",
 			"output_quantities", "产出"))
 	if not outputs.is_empty():

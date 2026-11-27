@@ -17,10 +17,10 @@ static func setup_cooperative(host, map: MapData, world: WorldData, bounds: Rect
 	# _ready/_ensure_resources 在 world/tiles 就绪前会编出 legacy 变体；setup 才是
 	# 第一次拿到 visual_tiles 的入口，必须按实际 tiled 状态重建 shader，不能只 sync。
 	var probe_start = Time.get_ticks_usec()
-	host._ensure_shader_matches_tiles()
+	host.Material_inputs._ensure_shader_matches_tiles(host)
 	print("[shrub-load] shader %.1fms" % [float(Time.get_ticks_usec()-probe_start)/1000.0])
 	# 首次绘制编译成本（与 setup() 同一个上报口，按变体去重）。
-	host._report_veg_shader_cost()
+	host.Diagnostics._report_veg_shader_cost(host)
 	probe_start = Time.get_ticks_usec()
 	if host._defer_initial_rebuild and host._chunked_multimesh_enabled:
 		host.clear()
@@ -68,7 +68,7 @@ static func _rebuild_instances_cooperative(host) -> void:
 	var cell_suitabilities = PackedFloat32Array()
 	cell_suitabilities.resize(cells.size())
 	var total_attempts: int = 0
-	var max_per_cell: int = maxi(1, host._max_per_cell())
+	var max_per_cell: int = maxi(1, host.ShrubScatter._max_per_cell(host))
 	for order in range(cells.size()):
 		if Time.get_ticks_usec()-slice_start >= UITokens.LOADING_MAIN_SLICE_USEC:
 			await host.get_tree().process_frame
@@ -77,14 +77,14 @@ static func _rebuild_instances_cooperative(host) -> void:
 		if cell == null:
 			continue
 		var idx = host._cell_index(cell, order)
-		var key = host._cell_hash_key(cell, order)
-		var state = host._sample_cell_state(idx, cell)
-		var suitability = host._cell_suitability(cell, idx, key, state)
+		var key = host.ShrubScatter._cell_hash_key(host, cell, order)
+		var state = host.ShrubScatter._sample_cell_state(host, idx, cell)
+		var suitability = host.ShrubScatter._cell_suitability(host, cell, idx, key, state)
 		if suitability <= 0.0:
 			continue
 		cell_states[order] = state
 		cell_suitabilities[order] = suitability
-		var quota = host._cell_quota(suitability, max_per_cell)
+		var quota = host.ShrubScatter._cell_quota(host, suitability, max_per_cell)
 		var attempts: int = int(quota.x)
 		cell_attempts[order] = attempts
 		cell_accepts[order] = quota.y
@@ -102,7 +102,7 @@ static func _rebuild_instances_cooperative(host) -> void:
 		if host._last_scatter_path.is_empty():
 			host._last_scatter_path = "gdext"
 		host._last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-		host._rebuild_cell_instance_lookup()
+		host.Chunk_refresh._rebuild_cell_instance_lookup(host)
 		return
 	host._last_scatter_path = "gdscript"
 
@@ -114,19 +114,19 @@ static func _rebuild_instances_cooperative(host) -> void:
 		if cell == null:
 			continue
 		var idx = host._cell_index(cell, order)
-		var key = host._cell_hash_key(cell, order)
+		var key = host.ShrubScatter._cell_hash_key(host, cell, order)
 		var suitability = cell_suitabilities[order]
 		if suitability <= 0.0:
 			continue
 		var state: Dictionary = cell_states[order]
 		var accept_p = cell_accepts[order]
 		for attempt in range(cell_attempts[order]):
-			host._try_append_instance(cell, idx, key, attempt, suitability, accept_p, state)
+			host.ShrubScatter._try_append_instance(host, cell, idx, key, attempt, suitability, accept_p, state)
 
-	host._apply_instance_cap()
-	host._reorder_generated_instances_for_lod()
+	host.ShrubScatter._apply_instance_cap(host)
+	host.Chunk_refresh._reorder_generated_instances_for_lod(host)
 	host._instance_count = host._instance_cell_indices.size()
-	host._rebuild_cell_instance_lookup()
+	host.Chunk_refresh._rebuild_cell_instance_lookup(host)
 	if host._instance_count <= 0:
 		host._last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 		host._last_rebuild_reason = "no_instances"
@@ -136,18 +136,18 @@ static func _rebuild_instances_cooperative(host) -> void:
 	host._multimesh.transform_format = MultiMesh.TRANSFORM_2D
 	host._multimesh.use_colors = true
 	host._multimesh.use_custom_data = true
-	host._multimesh.mesh = host._cached_detail_mesh()
+	host._multimesh.mesh = host.ShrubScatter._cached_detail_mesh(host)
 	host._multimesh.instance_count = host._instance_count
-	host._multimesh.visible_instance_count = host._lod_visible_count(host._instance_count, host._far_instance_count)
+	host._multimesh.visible_instance_count = host.Chunk_budget._lod_visible_count(host, host._instance_count, host._far_instance_count)
 	host._mmi.multimesh = host._multimesh
 
 	for i in range(host._instance_count):
-		var xf = host._instance_transform(i)
+		var xf = host.ShrubScatter._instance_transform(host, i)
 		host._multimesh.set_instance_transform_2d(i, xf)
 		var idx = host._instance_cell_indices[i]
-		var state = host._sample_cell_state(idx, host._instance_cells[i])
-		host._multimesh.set_instance_color(i, host._base_color_for_state(state, host._instance_variants[i]))
-		var uv = host._world_uv(host._instance_positions[i])
+		var state = host.ShrubScatter._sample_cell_state(host, idx, host._instance_cells[i])
+		host._multimesh.set_instance_color(i, host.ShrubScatter._base_color_for_state(host, state, host._instance_variants[i]))
+		var uv = host.Diagnostics._world_uv(host, host._instance_positions[i])
 		host._multimesh.set_instance_custom_data(i, Color(
 			uv.x,
 			uv.y,
@@ -156,7 +156,7 @@ static func _rebuild_instances_cooperative(host) -> void:
 		))
 	host.visible = cfg.enabled and not host._camera_lod_hidden and host._instance_count > 0
 	host._sync_single_wrap_nodes()
-	host._sync_shadow_layer(true)
+	host.Chunk_nodes._sync_shadow_layer(host, true)
 	host._last_rebuild_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 	host._last_candidate_count = host._instance_scores.size()
 
@@ -223,14 +223,14 @@ static func _rebuild_via_native_cooperative(host,
 		var state: Dictionary = cell_states[order]
 		if not (state is Dictionary):
 			continue
-		if host._scatter_presence(state) <= 0.02:
+		if host.ShrubScatter._scatter_presence(host, state) <= 0.02:
 			continue
 		var veg = int(state.get("vegetation", VegetationType.VEG.NONE))
 		var lf = int(state.get("landform", LandformType.LF.PLAIN))
 		var cover = int(state.get("cover", CoverType.CV.NONE))
 		var center = host._cell_center(cell, idx)
-		var base = host._base_color_for_vegetation(veg)
-		keys.append(host._cell_hash_key(cell, order))
+		var base = host.ShrubScatter._base_color_for_vegetation(host, veg)
+		keys.append(host.ShrubScatter._cell_hash_key(host, cell, order))
 		native_cell_indices.append(idx)
 		cx.append(center.x)
 		cy.append(center.y)
@@ -238,7 +238,7 @@ static func _rebuild_via_native_cooperative(host,
 		att.append(cell_attempts[order])
 		accp.append(cell_accepts[order])
 		vit.append(clampf(float(state.get("vitality", 0.7)), 0.0, 1.0))
-		sized.append(host._vegetation_weight(veg) * host._landform_weight(lf) * host._cover_weight(cover))
+		sized.append(host.ShrubScatter._vegetation_weight(host, veg) * host.ShrubScatter._landform_weight(host, lf) * host.ShrubScatter._cover_weight(host, cover))
 		col_r.append(base.r)
 		col_g.append(base.g)
 		col_b.append(base.b)
@@ -263,10 +263,10 @@ static func _rebuild_via_native_cooperative(host,
 		"flow_w": int(host._world.derived_size.x) if host._world != null else 0,
 		"flow_h": int(host._world.derived_size.y) if host._world != null else 0,
 		"river_clear_threshold": cfg.river_clear_threshold,
-		"spawn_domain": host._spawn_domain(),
-		"rotation_mode": host._rotation_mode(),
-		"random_rotation_strength": host._random_rotation_strength(),
-		"upright_jitter_radians": deg_to_rad(host._upright_jitter_degrees()),
+		"spawn_domain": host.ShrubScatter._spawn_domain(host),
+		"rotation_mode": host.ShrubScatter._rotation_mode(host),
+		"random_rotation_strength": host.ShrubScatter._random_rotation_strength(host),
+		"upright_jitter_radians": deg_to_rad(host.ShrubScatter._upright_jitter_degrees(host)),
 		"spawn_radius_factor": host._effective_spawn_radius_factor(),
 		"world_noise_warp_strength": cfg.world_noise_warp_strength,
 		"patch_frequency": cfg.patch_frequency,
@@ -281,7 +281,7 @@ static func _rebuild_via_native_cooperative(host,
 		"size_scale": host._quality_size_scale(),
 		"vitality_dead_threshold": cfg.vitality_dead_threshold,
 		"vitality_dieback_noise_strength": cfg.vitality_dieback_noise_strength,
-		"instance_cap": host._instance_cap(),
+		"instance_cap": host.ShrubScatter._instance_cap(host),
 		"keys": keys,
 		"cell_indices": native_cell_indices,
 		"center_x": cx,
@@ -317,7 +317,7 @@ static func _rebuild_via_native_cooperative(host,
 	if cell_indices.size() < inst:
 		host._last_rebuild_reason = "native_missing_cell_indices"
 		return false
-	var lod_payload = host._lod_reorder_native_payload(buffer, cell_indices, inst)
+	var lod_payload = host.Chunk_refresh._lod_reorder_native_payload(host, buffer, cell_indices, inst)
 	buffer = lod_payload.get("buffer", PackedFloat32Array())
 	cell_indices = lod_payload.get("cell_indices", PackedInt32Array())
 	inst = int(lod_payload.get("instance_count", 0))
@@ -338,14 +338,14 @@ static func _rebuild_via_native_cooperative(host,
 	host._multimesh.transform_format = MultiMesh.TRANSFORM_2D
 	host._multimesh.use_colors = true
 	host._multimesh.use_custom_data = true
-	host._multimesh.mesh = host._cached_detail_mesh()
+	host._multimesh.mesh = host.ShrubScatter._cached_detail_mesh(host)
 	host._multimesh.instance_count = inst
 	host._multimesh.buffer = buffer
-	host._multimesh.visible_instance_count = host._lod_visible_count(inst, host._far_instance_count)
+	host._multimesh.visible_instance_count = host.Chunk_budget._lod_visible_count(host, inst, host._far_instance_count)
 	host._mmi.multimesh = host._multimesh
 	host.visible = cfg.enabled and not host._camera_lod_hidden and inst > 0
 	host._sync_single_wrap_nodes()
-	host._sync_shadow_layer(true)
+	host.Chunk_nodes._sync_shadow_layer(host, true)
 	return true
 
 
@@ -355,7 +355,3 @@ static func _rebuild_via_native_cooperative(host,
 # 旧实现是 attempts = ceil(max_per_cell * suit) 再对每次投放以 suit 为概率接受，
 # 期望株数正比于 suitability² 而且丢掉了 max_per_cell 这一档，中低适宜度的格子
 # 因此变成纯抽签（河边季雨林的单格期望株数只有 0.05）。
-
-
-
-

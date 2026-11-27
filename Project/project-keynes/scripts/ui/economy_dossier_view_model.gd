@@ -1,6 +1,12 @@
 extends RefCounted
 class_name EconomyDossierViewModel
 
+const DossierMarkets = preload("res://scripts/ui/economy_dossier_markets.gd")
+
+const DossierStrata = preload("res://scripts/ui/economy_dossier_strata.gd")
+
+const DossierCashflow = preload("res://scripts/ui/economy_dossier_cashflow.gd")
+
 ## 国民经济卷宗的展示模型。只读消费 EconomyFacade.country_economy_overview
 ## 与国家壳模型（国库、财政、贸易摘要），把原生列式结果整理成各章所需的
 ## 行与图表数据。卡点归类是纯展示启发式，结果不回写任何模拟状态。
@@ -422,262 +428,52 @@ func per_capita_model() -> Dictionary:
 ## 回退到当天/最近一次结算，避免用单点伪造整月均值。
 ## 数据只来自 shell 模型里的财政快照与国库日序列，不额外发起原生查询。
 func cashflow_model(window_days: int = DEFAULT_CASHFLOW_WINDOW_DAYS) -> Dictionary:
-	var history = _model.get("fiscal_history", null)
-	var fiscal: Dictionary = _model.get("fiscal", {})
-	if history is EconomyFiscalHistory:
-		return cashflow_from_history(history, fiscal, window_days)
-	return build_cashflow(fiscal)
+	return DossierCashflow.cashflow_model(self, window_days)
 
 
 static func cashflow_from_history(history: EconomyFiscalHistory, fiscal: Dictionary,
 		window_days: int = DEFAULT_CASHFLOW_WINDOW_DAYS) -> Dictionary:
-	var rolling := history.rolling_snapshot(window_days)
-	var flow: Dictionary
-	if bool(rolling.get("ok", false)):
-		flow = build_rolling_cashflow(rolling)
-	else:
-		flow = build_cashflow(history.display_snapshot(fiscal))
-	flow["history_available"] = history.size() > 0 or history.latest_cash_day() >= 0
-	flow["can_roll"] = history.cash_size() >= 2
-	flow["income_series"] = _series_money(history.income_series())
-	flow["expense_series"] = _series_money(history.expense_series())
-	return flow
+	return DossierCashflow.cashflow_from_history(history, fiscal, window_days)
 
 
-## 把窗口内去重后的结算事件折算成日均，再用国库现金首尾差补齐未细分项目。
-## `rolling` 来自 `EconomyFiscalHistory.rolling_snapshot()`，金额仍是原生
-## 1/10000 货币单位。
 static func build_rolling_cashflow(rolling: Dictionary) -> Dictionary:
-	var days := maxi(1, int(rolling.get("covered_days", 1)))
-	var daily := {
-		"ok": true,
-		"has_settlement": true,
-		"sample_day": int(rolling.get("sample_day", -1)),
-		"tax_kinds": rolling.get("tax_kinds", PackedStringArray()),
-		"tax_base": _average_values(rolling.get("tax_base", PackedInt64Array()), days),
-		"collected": _average_values(rolling.get("collected", PackedInt64Array()), days),
-		"subsidy_requested": _average_values(
-			rolling.get("subsidy_requested", PackedInt64Array()), days),
-		"subsidy_paid": _average_values(
-			rolling.get("subsidy_paid", PackedInt64Array()), days),
-		"non_tax_outflow_kinds": rolling.get(
-			"non_tax_outflow_kinds", PackedStringArray()),
-		"non_tax_outflow": _average_values(
-			rolling.get("non_tax_outflow", PackedInt64Array()), days),
-	}
-	var flow := build_cashflow(daily)
-	if not bool(flow.get("ok", false)):
-		flow["history_available"] = true
-		return flow
-	var other_change := float(rolling.get("unclassified_change", 0)) / float(days)
-	if absf(other_change) > 0.000001:
-		if other_change > 0.0:
-			var income_segment: Dictionary = _flow_segments([{
-				"label": OTHER_TREASURY_CHANGE_LABEL,
-				"value": other_change,
-			}], UITokens.DOSSIER_BRASS)[0]
-			(flow["income_segments"] as Array).append(income_segment)
-			flow["income_total"] = float(flow.get("income_total", 0.0)) \
-				+ other_change / MONEY_SCALE
-			(flow["detail_rows"] as Array).append(
-				_other_treasury_change_row(other_change, true))
-		else:
-			var expense_segment: Dictionary = _flow_segments([{
-				"label": OTHER_TREASURY_CHANGE_LABEL,
-				"value": -other_change,
-			}], UITokens.DOSSIER_OXBLOOD)[0]
-			(flow["expense_segments"] as Array).append(expense_segment)
-			flow["expense_total"] = float(flow.get("expense_total", 0.0)) \
-				+ (-other_change) / MONEY_SCALE
-			(flow["detail_rows"] as Array).append(
-				_other_treasury_change_row(-other_change, false))
-	var income := float(flow.get("income_total", 0.0))
-	var expense := float(flow.get("expense_total", 0.0))
-	var net := income - expense
-	var window := int(rolling.get("window_days", days))
-	var covered := int(rolling.get("covered_days", days))
-	var partial := covered < window
-	var label := "近 %d 日 · 日均" % window
-	flow["rolling"] = true
-	flow["window_days"] = window
-	flow["covered_days"] = covered
-	flow["event_days"] = int(rolling.get("event_days", 0))
-	flow["is_partial"] = partial
-	flow["window_label"] = label
-	flow["window_text"] = label + (" · 实际 %d 日" % covered if partial else "")
-	flow["coverage_text"] = "实际 %d 日" % covered if partial else ""
-	flow["cash_change"] = float(rolling.get("cash_change", 0)) / MONEY_SCALE
-	flow["classified_net"] = float(rolling.get("classified_net", 0)) / MONEY_SCALE
-	flow["other_change"] = other_change / MONEY_SCALE
-	flow["income_text"] = _money_text(income * MONEY_SCALE)
-	flow["expense_text"] = _money_text(expense * MONEY_SCALE)
-	flow["net"] = net
-	flow["net_text"] = ("+" if net >= 0.0 else "−") \
-		+ _money_text(absf(net) * MONEY_SCALE)
-	flow["net_positive"] = net >= 0.0
-	flow["day_text"] = String(flow.get("window_text", label))
-	flow["series_is_settlement"] = true
-	return flow
+	return DossierCashflow.build_rolling_cashflow(rolling)
 
 
 static func _series_money(values: PackedFloat32Array) -> PackedFloat32Array:
-	var out := PackedFloat32Array()
-	out.resize(values.size())
-	for index in range(values.size()):
-		out[index] = values[index] / MONEY_SCALE
-	return out
+	return DossierCashflow._series_money(values)
 
 
 static func _average_values(values, days: int) -> PackedFloat64Array:
-	var divisor := maxf(1.0, float(days))
-	var out := PackedFloat64Array()
-	if values == null:
-		return out
-	out.resize(values.size())
-	for index in range(values.size()):
-		out[index] = float(values[index]) / divisor
-	return out
+	return DossierCashflow._average_values(values, days)
 
 
 static func _other_treasury_change_row(amount: float, positive: bool) -> Dictionary:
-	var money := _cashflow_cell(amount, UITokens.DOSSIER_BRASS if positive \
-		else UITokens.DOSSIER_OXBLOOD)
-	return {
-		"id": EconomyFiscalHistory.OTHER_TREASURY_CHANGE_ID,
-		"cells": {
-			"name": {"text": OTHER_TREASURY_CHANGE_LABEL},
-			"base": _cashflow_cell(0.0),
-			"collected": money if positive else _cashflow_cell(0.0),
-			"requested": _cashflow_cell(0.0),
-			"paid": _cashflow_cell(0.0) if positive else money,
-		},
-	}
+	return DossierCashflow._other_treasury_change_row(amount, positive)
 
 
-## 财政快照 → 两侧堆叠段、逐税种明细行与当日合计。
-## 堆叠段只放非零项（零税率税种不该占一段），明细表则五个税种全列。
-## 支出一侧除五类税种的负税率补贴外，还有一条非税支出「科研采购」：国库把
-## 现金付给本地商人换取科技值，钱确实离开了国库，所以必须进支出侧与净额，
-## 否则国库现金在掉、账面净额却是零（`fiscal.research_purchase_cash`）。
 static func build_cashflow(fiscal: Dictionary) -> Dictionary:
-	var empty := {"ok": false, "income_total": 0.0, "expense_total": 0.0, "net": 0.0,
-		"income_text": "0", "expense_text": "0", "net_text": "0",
-		"net_positive": true, "day_text": "", "detail_rows": [],
-		"income_segments": [], "expense_segments": [],
-		"income_series": PackedFloat32Array(), "expense_series": PackedFloat32Array()}
-	if not bool(fiscal.get("ok", false)) or fiscal.is_empty():
-		empty["reason"] = _reason(fiscal)
-		return empty
-	var kind_ids = fiscal.get("tax_kinds", PackedStringArray())
-	var collected = fiscal.get("collected", PackedInt64Array())
-	var paid = fiscal.get("subsidy_paid", PackedInt64Array())
-	var bases = fiscal.get("tax_base", PackedInt64Array())
-	var requested = fiscal.get("subsidy_requested", PackedInt64Array())
-	var non_tax_ids = fiscal.get("non_tax_outflow_kinds", PackedStringArray())
-	var non_tax_values = fiscal.get("non_tax_outflow", PackedInt64Array())
-	var inflow_raw: Array = []
-	var outflow_raw: Array = []
-	var rows: Array = []
-	var income_total := 0.0
-	var expense_total := 0.0
-	for index in range(CASHFLOW_KINDS.size()):
-		var meta := _cashflow_meta(kind_ids, index)
-		var inflow := maxf(0.0, _at(collected, index))
-		var outflow := maxf(0.0, _at(paid, index))
-		income_total += inflow
-		expense_total += outflow
-		if inflow > 0.0:
-			inflow_raw.append({"label": String(meta.name), "value": inflow})
-		if outflow > 0.0:
-			outflow_raw.append({"label": String(meta.subsidy), "value": outflow})
-		rows.append({"id": String(meta.id), "cells": {
-			"name": {"text": String(meta.name)},
-			"base": _cashflow_cell(_at(bases, index)),
-			"collected": _cashflow_cell(inflow, UITokens.DOSSIER_VERDIGRIS),
-			"requested": _cashflow_cell(_at(requested, index)),
-			"paid": _cashflow_cell(outflow, UITokens.DOSSIER_OXBLOOD),
-		}})
-	# 非税支出与税种补贴并列进入支出侧：钱都是国库掏的，只是没有税种凭证。
-	# 非税行只在真的发生时才出现——五个税种即使为零也常列（行是账簿），
-	# 但这几项不是税种，零值写一行只会让人以为漏了一笔税。
-	for index in range(maxi(non_tax_ids.size(), non_tax_values.size())):
-		var amount := maxf(0.0, _at(non_tax_values, index))
-		if amount <= 0.0:
-			continue
-		var label := _non_tax_outflow_label(non_tax_ids, index)
-		expense_total += amount
-		outflow_raw.append({"label": label, "value": amount})
-		rows.append({"id": _non_tax_outflow_id(non_tax_ids, index), "cells": {
-			"name": {"text": label},
-			"base": _cashflow_cell(0.0),
-			"collected": _cashflow_cell(0.0),
-			"requested": _cashflow_cell(0.0),
-			"paid": _cashflow_cell(amount, UITokens.DOSSIER_OXBLOOD),
-		}})
-	var net := income_total - expense_total
-	var day := int(fiscal.get("sample_day", -1))
-	return {
-		"ok": true,
-		"income_total": income_total / MONEY_SCALE,
-		"expense_total": expense_total / MONEY_SCALE,
-		"net": net / MONEY_SCALE,
-		"income_text": _money_text(income_total),
-		"expense_text": _money_text(expense_total),
-		"net_text": ("+" if net >= 0.0 else "−") + _money_text(absf(net)),
-		"net_positive": net >= 0.0,
-		"day_text": ("%s · 上次结算" % WorldClock.date_text_for_day(day)
-			if bool(fiscal.get("carried_forward", false)) else WorldClock.date_text_for_day(day)) if day >= 0 else "",
-		"detail_rows": rows,
-		"income_segments": _flow_segments(inflow_raw, UITokens.DOSSIER_VERDIGRIS),
-		"expense_segments": _flow_segments(outflow_raw, UITokens.DOSSIER_OXBLOOD),
-	}
+	return DossierCashflow.build_cashflow(fiscal)
 
 
-## 占比堆叠段：按金额降序，越靠前颜色越深，所以段的顺序本身就是排名。
 static func _flow_segments(raw: Array, base: Color) -> Array:
-	raw.sort_custom(func(a, b): return float(a.value) > float(b.value))
-	var segments: Array = []
-	for index in range(raw.size()):
-		var value := float(raw[index].value)
-		segments.append({"label": String(raw[index].label), "value": value / MONEY_SCALE,
-			"text": _money_text(value),
-			"color": base.lerp(UITokens.DOSSIER_PAPER, minf(0.13 * float(index), 0.5))})
-	return segments
+	return DossierCashflow._flow_segments(raw, base)
 
 
-## 明细表的零值写成短横线：一整列 0 会盖过真正有数的那一格。
 static func _cashflow_cell(raw: float, color: Color = UITokens.DOSSIER_INK) -> Dictionary:
-	if raw <= 0.0:
-		return {"text": "—", "value": 0.0, "color": UITokens.DOSSIER_INK_MUTED}
-	return {"text": _money_text(raw), "value": raw / MONEY_SCALE, "color": color,
-		"strong": color != UITokens.DOSSIER_INK}
+	return DossierCashflow._cashflow_cell(raw, color)
 
 
 static func _cashflow_meta(kind_ids, index: int) -> Dictionary:
-	if index < kind_ids.size():
-		var kind := String(kind_ids[index])
-		for meta in CASHFLOW_KINDS:
-			if String(meta.id) == kind:
-				return meta
-	return CASHFLOW_KINDS[index] if index < CASHFLOW_KINDS.size() else CASHFLOW_KINDS[0]
+	return DossierCashflow._cashflow_meta(kind_ids, index)
 
 
-## 非税支出的稳定 id：快照自带 kinds 时按 id 对齐，缺失时用序号兜底，
-## 这样明细行的 id 在原生新增条目后仍然稳定。
 static func _non_tax_outflow_id(kind_ids, index: int) -> String:
-	if index >= 0 and index < kind_ids.size():
-		var kind := String(kind_ids[index])
-		if not kind.is_empty():
-			return kind
-	return "non_tax_%d" % index
+	return DossierCashflow._non_tax_outflow_id(kind_ids, index)
 
 
 static func _non_tax_outflow_label(kind_ids, index: int) -> String:
-	var id := _non_tax_outflow_id(kind_ids, index)
-	for meta in NON_TAX_OUTFLOW_KINDS:
-		if String(meta.id) == id:
-			return String(meta.label)
-	return NON_TAX_OUTFLOW_FALLBACK_LABEL
+	return DossierCashflow._non_tax_outflow_label(kind_ids, index)
 
 
 static func sector_rows(summary: Dictionary) -> Array:
@@ -810,674 +606,78 @@ static func classify_bottlenecks(summary: Dictionary, investment: Dictionary,
 
 ## 把职业行按展示阶层合并；满意度与 8 维按人口加权，最差需求按人口累加。
 static func aggregate_strata(professions: Dictionary, table: SocialStrataTable) -> Array:
-	if table == null or not bool(professions.get("ok", false)):
-		return []
-	var count := table.stratum_count()
-	var dim_count := int(professions.get("satisfaction_dimension_count", SATISFACTION_DIMENSIONS.size()))
-	var need_count := int(professions.get("need_count", 0))
-	var rows: Array = []
-	for index in range(count):
-		var entry := table.stratum(index)
-		var dims := PackedFloat32Array()
-		dims.resize(dim_count)
-		var dims_population := PackedFloat32Array()
-		dims_population.resize(dim_count)
-		rows.append({"index": index, "id": String(entry.get("id", "")),
-			"name": String(entry.get("name", "")), "icon": StringName(entry.get("icon", "")),
-			"color": entry.get("color", UITokens.FAMILY_BRASS), "population": 0.0,
-			"cohort_count": 0, "funds": 0.0, "income_per_day": 0.0, "expense_per_day": 0.0,
-			"tax_per_day": 0.0, "subsidy_per_day": 0.0, "in_kind_per_day": 0.0,
-			"employed": 0.0, "unemployed": 0.0, "satisfaction": 0.0, "survival": 0.0,
-			"living": 0.0, "living_name": "",
-			"dims": dims, "dims_population": dims_population, "professions": [], "need_population": {}})
-	var stable_ids = professions.get("profession_stable_ids", PackedStringArray())
-	var names = professions.get("profession_display_names", stable_ids)
-	var population = professions.get("population", PackedInt64Array())
-	var satisfaction = professions.get("satisfaction_q16", PackedInt32Array())
-	var survival = professions.get("survival_satisfaction_q16", PackedInt32Array())
-	var living = professions.get("living_standard_level_q16", PackedInt32Array())
-	var dims_flat = professions.get("satisfaction_dims_q16", PackedInt32Array())
-	var dims_people = professions.get("satisfaction_dims_population", PackedInt64Array())
-	var worst = professions.get("worst_need_population", PackedInt64Array())
-	var need_names = professions.get("need_display_names", professions.get("need_ids", PackedStringArray()))
-	for row in range(stable_ids.size()):
-		var stable_id := String(stable_ids[row])
-		var index := table.stratum_index_for(stable_id)
-		if index < 0 or index >= rows.size():
-			continue
-		var bucket: Dictionary = rows[index]
-		var people := _at(population, row)
-		bucket.population += people
-		bucket.cohort_count += int(_at(professions.get("cohort_count", []), row))
-		bucket.funds += _at(professions.get("funds", []), row)
-		bucket.income_per_day += _at(professions.get("income_per_day", []), row)
-		bucket.expense_per_day += _at(professions.get("expense_per_day", []), row)
-		bucket.tax_per_day += _at(professions.get("tax_per_day", []), row)
-		bucket.subsidy_per_day += _at(professions.get("subsidy_per_day", []), row)
-		bucket.in_kind_per_day += _at(professions.get("in_kind_income_per_day", []), row)
-		bucket.employed += _at(professions.get("owner_employed", []), row) \
-			+ _at(professions.get("employee_employed", []), row)
-		bucket.unemployed += _at(professions.get("unemployed", []), row)
-		bucket.satisfaction += _at(satisfaction, row) * people
-		bucket.survival += _at(survival, row) * people
-		bucket.living += _at(living, row) * people
-		var dims: PackedFloat32Array = bucket.dims
-		for d in range(dim_count):
-			var value := _at(dims_flat, row * dim_count + d)
-			if value >= 0.0:
-				var applicable_people := _at(dims_people, row * dim_count + d) if row * dim_count + d < dims_people.size() else people
-				dims[d] += value * applicable_people
-				bucket.dims_population[d] += applicable_people
-		bucket.dims = dims
-		var needs: Dictionary = bucket.need_population
-		for n in range(need_count):
-			var affected := _at(worst, row * need_count + n)
-			if affected > 0.0:
-				needs[n] = float(needs.get(n, 0.0)) + affected
-		var per_capita := _per_capita(_at(professions.get("income_per_day", []), row), people)
-		(bucket.professions as Array).append({"id": stable_id,
-			"name": String(names[row]) if row < names.size() else stable_id,
-			"population": people, "satisfaction": _at(satisfaction, row) / Q16,
-			"income_per_capita": per_capita / MONEY_SCALE})
-	var total_population := 0.0
-	for bucket in rows:
-		total_population += float(bucket.population)
-	for bucket in rows:
-		var people := float(bucket.population)
-		bucket.share = people / total_population if total_population > 0.0 else 0.0
-		if people > 0.0:
-			bucket.satisfaction = float(bucket.satisfaction) / people / Q16
-			bucket.survival = float(bucket.survival) / people / Q16
-			var dims: PackedFloat32Array = bucket.dims
-			for d in range(dims.size()):
-				dims[d] = dims[d] / float(bucket.dims_population[d]) / Q16 if bucket.dims_population[d] > 0.0 else -1.0
-			bucket.dims = dims
-		bucket.income_per_capita = _per_capita(float(bucket.income_per_day), people) / MONEY_SCALE
-		bucket.expense_per_capita = _per_capita(float(bucket.expense_per_day), people) / MONEY_SCALE
-		bucket.funds_per_capita = _per_capita(float(bucket.funds), people) / MONEY_SCALE
-		bucket.living = float(bucket.living) / people / Q16 if people > 0.0 else 0.0
-		bucket.living_name = living_name(float(bucket.living)) if people > 0.0 else ""
-		# 详情里的职业条按「本阶层内占比」画：分母是阶层人口而不是全国人口，
-		# 这一列要回答的是「这个阶层里谁占大头」。
-		for profession in bucket.professions:
-			profession["share"] = float(profession.population) / people if people > 0.0 else 0.0
-		(bucket.professions as Array).sort_custom(
-			func(a, b): return float(a.population) > float(b.population))
-		var needs: Array = []
-		var need_map: Dictionary = bucket.need_population
-		for n in need_map:
-			needs.append({"index": int(n), "name": String(need_names[int(n)])
-				if int(n) < need_names.size() else "需求 %d" % int(n),
-				"population": float(need_map[n]),
-				"share": float(need_map[n]) / people if people > 0.0 else 0.0})
-		needs.sort_custom(func(a, b): return float(a.population) > float(b.population))
-		bucket.worst_needs = needs.slice(0, 4)
-		bucket.erase("need_population")
-	return rows
+	return DossierStrata.aggregate_strata(professions, table)
 
 
-## 生活档名称：原生给的是 Q16 的 0..6 连续档位，这里只做台阶命名。
 static func living_name(level: float) -> String:
-	if is_nan(level) or level < 0.0:
-		return ""
-	return LIVING_STANDARD_NAMES[clampi(roundi(level), 0, LIVING_STANDARD_NAMES.size() - 1)]
+	return DossierStrata.living_name(level)
 
 
-## 职业视角：原生 professions 视图逐职业一行，不做任何阶层合并。
-## 原生只发布「有 cohort 的职业」，所以这里天然没有零人口行；按人口降序排，
-## 与阶层表的默认「人口占比」排序同向，切视角时第一行还是同一批人。
-## 每个职业行仍带着它所属的阶层 id / 名称 / 颜色，用来回答「这个职业算什么阶层」。
 static func profession_rows(professions: Dictionary, table: SocialStrataTable) -> Array:
-	if table == null or not bool(professions.get("ok", false)):
-		return []
-	var dim_count := int(professions.get("satisfaction_dimension_count",
-		SATISFACTION_DIMENSIONS.size()))
-	var need_count := int(professions.get("need_count", 0))
-	var stable_ids = professions.get("profession_stable_ids", PackedStringArray())
-	var names = professions.get("profession_display_names", stable_ids)
-	var population = professions.get("population", PackedInt64Array())
-	var satisfaction = professions.get("satisfaction_q16", PackedInt32Array())
-	var survival = professions.get("survival_satisfaction_q16", PackedInt32Array())
-	var living = professions.get("living_standard_level_q16", PackedInt32Array())
-	var dims_flat = professions.get("satisfaction_dims_q16", PackedInt32Array())
-	var dims_people = professions.get("satisfaction_dims_population", PackedInt64Array())
-	var worst = professions.get("worst_need_population", PackedInt64Array())
-	var need_names = professions.get("need_display_names",
-		professions.get("need_ids", PackedStringArray()))
-	var rows: Array = []
-	var total_population := 0.0
-	for row in range(stable_ids.size()):
-		var people := _at(population, row)
-		if people <= 0.0:
-			continue
-		var stable_id := String(stable_ids[row])
-		var index := table.stratum_index_for(stable_id)
-		var entry := table.stratum(index)
-		var dims := PackedFloat32Array()
-		dims.resize(dim_count)
-		var dims_population := PackedFloat32Array()
-		dims_population.resize(dim_count)
-		for d in range(dim_count):
-			var value := _at(dims_flat, row * dim_count + d)
-			dims[d] = value / Q16 if value >= 0.0 else -1.0
-			dims_population[d] = _at(dims_people, row * dim_count + d)
-		var needs: Array = []
-		for n in range(need_count):
-			var affected := _at(worst, row * need_count + n)
-			if affected <= 0.0:
-				continue
-			needs.append({"index": n,
-				"name": String(need_names[n]) if n < need_names.size() else "需求 %d" % n,
-				"population": affected, "share": affected / people})
-		needs.sort_custom(func(a, b): return float(a.population) > float(b.population))
-		total_population += people
-		rows.append({
-			"id": stable_id, "index": index,
-			"name": String(names[row]) if row < names.size() else stable_id,
-			"icon": IconCatalog.profession_semantic(stable_id),
-			"color": entry.get("color", UITokens.FAMILY_BRASS),
-			"stratum_id": String(entry.get("id", "")),
-			"stratum_name": String(entry.get("name", "")),
-			"population": people,
-			"cohort_count": int(_at(professions.get("cohort_count", []), row)),
-			"cell_count": int(_at(professions.get("cell_count", []), row)),
-			"funds": _at(professions.get("funds", []), row),
-			"funds_per_capita": _per_capita(_at(professions.get("funds", []), row), people) / MONEY_SCALE,
-			"income_per_capita": _per_capita(_at(professions.get("income_per_day", []), row), people) / MONEY_SCALE,
-			"expense_per_capita": _per_capita(_at(professions.get("expense_per_day", []), row), people) / MONEY_SCALE,
-			"tax_per_capita": _per_capita(_at(professions.get("tax_per_day", []), row), people) / MONEY_SCALE,
-			"employed": _at(professions.get("owner_employed", []), row)
-				+ _at(professions.get("employee_employed", []), row),
-			"unemployed": _at(professions.get("unemployed", []), row),
-			"satisfaction": _at(satisfaction, row) / Q16,
-			"survival": _at(survival, row) / Q16,
-			"living": _at(living, row) / Q16,
-			"living_name": living_name(_at(living, row) / Q16),
-			"dims": dims, "dims_population": dims_population,
-			"worst_needs": needs.slice(0, 4),
-			"professions": [],
-		})
-	for entry in rows:
-		entry["share"] = float(entry.population) / total_population \
-			if total_population > 0.0 else 0.0
-	rows.sort_custom(func(a, b): return float(a.population) > float(b.population))
-	return rows
+	return DossierStrata.profession_rows(professions, table)
 
 
-## 全国 8 维基线：按「该维适用人口」加权，不适用（-1）的维度不进分母。
 static func national_dims(rows: Array) -> PackedFloat32Array:
-	var national := PackedFloat32Array()
-	national.resize(SATISFACTION_DIMENSIONS.size())
-	var weight := PackedFloat32Array()
-	weight.resize(national.size())
-	for row in rows:
-		if float(row.population) <= 0.0:
-			continue
-		for d in range(national.size()):
-			if float(row.dims[d]) >= 0.0:
-				var applicable := float(row.dims_population[d])
-				national[d] += float(row.dims[d]) * applicable
-				weight[d] += applicable
-	for d in range(national.size()):
-		national[d] = national[d] / weight[d] if weight[d] > 0.0 else -1.0
-	return national
+	return DossierStrata.national_dims(rows)
 
 
-## 阶层 / 职业两个视角共用一次查询与一份 8 维基线，页面上切视角不会换口径。
 func strata_model(selected_index: int = -1, mode: String = "stratum",
 		selected_profession: String = "") -> Dictionary:
-	var professions := query("professions")
-	if not bool(professions.get("ok", false)):
-		return {"ok": false, "reason": _reason(professions)}
-	var rows := aggregate_strata(professions, _strata)
-	var profession_list := profession_rows(professions, _strata)
-	var national := national_dims(rows)
-	var model := {"ok": true, "mode": mode, "rows": rows, "professions": profession_list,
-		"selected": {}, "selected_index": -1, "selected_id": "",
-		"national_dims": national}
-	if mode == "profession":
-		var picked := _pick_profession(profession_list, selected_profession)
-		if picked.is_empty():
-			return model
-		var detail: Dictionary = (picked as Dictionary).duplicate(true)
-		detail["cities"] = _cities_for(-1, String(detail.id))
-		# 同阶层职业：职业视角里的「同业对照」，选中的那一行由页面高亮。
-		var stratum_index := int(detail.index)
-		detail["professions"] = rows[stratum_index].professions \
-			if stratum_index >= 0 and stratum_index < rows.size() else []
-		if _history != null and scope_cell < 0:
-			detail["satisfaction_trend"] = _history.profession_series(
-				String(detail.id), "satisfaction")
-			detail["income_trend"] = _history.profession_series(
-				String(detail.id), "income_per_capita")
-		model["selected"] = detail
-		model["selected_id"] = String(detail.id)
-		model["selected_index"] = stratum_index
-		return model
-	var populated: Array = rows.filter(func(r): return float(r.population) > 0.0)
-	if populated.is_empty():
-		return model
-	var index := selected_index
-	if index < 0 or index >= rows.size() or float(rows[index].population) <= 0.0:
-		index = int(populated[0].index)
-	var selected: Dictionary = rows[index]
-	selected["cities"] = _cities_for(index, "")
-	if _history != null and scope_cell < 0:
-		selected["satisfaction_trend"] = _history.stratum_series(index, "satisfaction")
-		selected["income_trend"] = _history.stratum_series(index, "income_per_capita")
-	model["selected"] = selected
-	model["selected_index"] = index
-	model["selected_id"] = String(selected.id)
-	return model
+	return DossierStrata.strata_model(self, selected_index, mode, selected_profession)
 
 
 static func _pick_profession(rows: Array, wanted: String) -> Dictionary:
-	if rows.is_empty():
-		return {}
-	if not wanted.is_empty():
-		for row in rows:
-			if String(row.id) == wanted:
-				return row
-	return rows[0]
+	return DossierStrata._pick_profession(rows, wanted)
 
 
-## 地域分布：stratum_index >= 0 时按阶层归并，否则只看 profession_id 这一个职业。
-## 两者读同一份按格职业 CSR（settlements 视图），所以阶层分布加起来就是职业分布。
 func _cities_for(stratum_index: int, profession_id: String) -> Array:
-	var page := query("settlements")
-	if not bool(page.get("ok", false)) or _strata == null:
-		return []
-	var professions := PackedStringArray()
-	if _facade != null and _facade.has_method("profession_ids"):
-		professions = _facade.profession_ids()
-	var profession_match := -1
-	if not profession_id.is_empty():
-		profession_match = professions.find(profession_id)
-		if profession_match < 0:
-			return []
-	var cells = page.get("cell_indices", PackedInt32Array())
-	var names = page.get("settlement_names", PackedStringArray())
-	var offsets = page.get("profession_offsets", PackedInt32Array())
-	var profession_index = page.get("profession_indices", PackedInt32Array())
-	var profession_population = page.get("profession_population", PackedInt64Array())
-	var profession_satisfaction = page.get("profession_satisfaction_q16", PackedInt32Array())
-	var rows: Array = []
-	for row in range(cells.size()):
-		if row + 1 >= offsets.size():
-			break
-		var people := 0.0
-		var weighted := 0.0
-		for k in range(int(offsets[row]), int(offsets[row + 1])):
-			var p := int(profession_index[k])
-			if profession_match >= 0:
-				if p != profession_match:
-					continue
-			elif p < 0 or p >= professions.size() \
-					or _strata.stratum_index_for(String(professions[p])) != stratum_index:
-				continue
-			var count := _at(profession_population, k)
-			people += count
-			weighted += _at(profession_satisfaction, k) * count
-		if people > 0.0:
-			var name := String(names[row]) if row < names.size() else ""
-			rows.append({"cell": int(cells[row]),
-				"name": name if not name.is_empty() else "村落 #%d" % int(cells[row]),
-				"population": people, "satisfaction": weighted / people / Q16})
-	rows.sort_custom(func(a, b): return float(a.population) > float(b.population))
-	return rows.slice(0, 6)
+	return DossierStrata._cities_for(self, stratum_index, profession_id)
 
 
 # ── 产业建筑 ────────────────────────────────────────────────────────────
 
 func industry_model(sector_filter: int) -> Dictionary:
-	var page := query("buildings", sector_filter)
-	if not bool(page.get("ok", false)):
-		return {"ok": false, "reason": _reason(page)}
-	var rows: Array = []
-	var names = page.get("building_display_names", page.get("building_stable_ids", PackedStringArray()))
-	var sectors = page.get("economic_sectors", PackedInt32Array())
-	var reason_count := int(page.get("rejection_reason_count", REJECTION_CATEGORY.size()))
-	var rejections = page.get("rejection_units", PackedInt64Array())
-	for row in range((page.get("type_indices", PackedInt32Array())).size()):
-		var revenue := _at(page.get("revenue_per_day", []), row)
-		var input_cost := _at(page.get("input_cost_per_day", []), row)
-		var wages_paid := _at(page.get("wages_paid_per_day", []), row)
-		var wages_due := _at(page.get("wages_due_per_day", []), row)
-		var maintenance := _at(page.get("maintenance_per_day", []), row)
-		var tax := _at(page.get("business_tax_per_day", []), row)
-		var support := _at(page.get("producer_support_per_day", []), row)
-		var profit := revenue + support - input_cost - wages_paid - maintenance - tax
-		var required := _at(page.get("jobs_required", []), row)
-		var filled := _at(page.get("jobs_filled", []), row)
-		var output := _at(page.get("output_per_day", []), row)
-		var top_reason := -1
-		var top_count := 0.0
-		for reason in range(mini(reason_count, REJECTION_CATEGORY.size())):
-			if REJECTION_CATEGORY[reason].is_empty():
-				continue
-			var count := _at(rejections, row * reason_count + reason)
-			if count > top_count:
-				top_count = count
-				top_reason = reason
-		var sector := int(_at(sectors, row))
-		rows.append({
-			"id": int(_at(page.get("type_indices", []), row)),
-			"name": String(names[row]) if row < names.size() else "",
-			"sector": sector,
-			"sector_name": String(SECTORS[sector].name) if sector >= 0 and sector < SECTORS.size() else "",
-			"color": SECTORS[sector].color if sector >= 0 and sector < SECTORS.size() else UITokens.FAMILY_BRASS,
-			"units": _at(page.get("units", []), row),
-			"suspended": _at(page.get("suspended_units", []), row),
-			"cells": int(_at(page.get("cell_count", []), row)),
-			"utilization": _at(page.get("utilization_q16", []), row) / Q16,
-			"revenue": revenue / MONEY_SCALE,
-			"input_cost": input_cost / MONEY_SCALE,
-			"wages": wages_paid / MONEY_SCALE,
-			"maintenance": (maintenance + tax) / MONEY_SCALE,
-			"support": support / MONEY_SCALE,
-			"profit": profit / MONEY_SCALE,
-			"margin": clampf(profit / revenue, -1.0, 1.0) if revenue > 0.0 else (-1.0 if profit < 0.0 else 0.0),
-			"fill_rate": filled / required if required > 0.0 else 1.0,
-			"jobs_required": required,
-			"arrears_rate": maxf(0.0, wages_due - wages_paid) / wages_due if wages_due > 0.0 else 0.0,
-			"discard_rate": _at(page.get("discarded_per_day", []), row) / output if output > 0.0 else 0.0,
-			"pending": _at(page.get("pending_units", []), row),
-			"blocker": REJECTION_LABELS[top_reason] if top_reason >= 0 else "",
-			"blocker_category": REJECTION_CATEGORY[top_reason] if top_reason >= 0 else "",
-		})
-	return {"ok": true, "rows": rows, "total": int(page.get("total", rows.size())),
-		"sectors": sector_rows(query("summary"))}
+	return DossierMarkets.industry_model(self, sector_filter)
 
-
-# ── 投资风向 ────────────────────────────────────────────────────────────
 
 func investment_model() -> Dictionary:
-	var page := query("investment")
-	if not bool(page.get("ok", false)):
-		return {"ok": false, "reason": _reason(page)}
-	var reason_count := int(page.get("rejection_reason_count", REJECTION_CATEGORY.size()))
-	var histogram = page.get("rejection_units", PackedInt64Array())
-	var sector_pending = page.get("sector_pending_units", PackedInt64Array())
-	var sector_rejections = page.get("sector_rejection_units", PackedInt64Array())
-	var flow_segments: Array = []
-	for sector in SECTORS:
-		flow_segments.append({"label": sector.name, "value": _at(sector_pending, int(sector.id)),
-			"color": sector.color, "text": "%d" % int(_at(sector_pending, int(sector.id)))})
-	var categories: Array = []
-	for category in BOTTLENECK_ORDER:
-		var reasons: Array = []
-		var total := 0.0
-		var by_sector := PackedFloat32Array()
-		by_sector.resize(SECTORS.size())
-		for reason in range(mini(reason_count, REJECTION_CATEGORY.size())):
-			if REJECTION_CATEGORY[reason] != category:
-				continue
-			var count := _at(histogram, reason)
-			total += count
-			for sector in range(SECTORS.size()):
-				by_sector[sector] += _at(sector_rejections, sector * reason_count + reason)
-			if count > 0.0:
-				reasons.append({"reason": reason, "label": REJECTION_LABELS[reason], "count": count})
-		reasons.sort_custom(func(a, b): return float(a.count) > float(b.count))
-		var meta: Dictionary = BOTTLENECK_META[category]
-		categories.append({"id": category, "label": meta.label, "icon": meta.icon,
-			"total": total, "reasons": reasons, "by_sector": by_sector, "advice": meta.advice})
-	categories.sort_custom(func(a, b): return float(a.total) > float(b.total))
-	var pending_rows: Array = []
-	var types = page.get("pending_type_indices", PackedInt32Array())
-	var day := int(page.get("current_day", 0))
-	for row in range(types.size()):
-		var type_index := int(types[row])
-		pending_rows.append({"id": type_index,
-			"name": String(_facade.building_display_name(type_index)) if _facade != null else str(type_index),
-			"units": _at(page.get("pending_units", []), row),
-			"groups": int(_at(page.get("pending_groups", []), row)),
-			"days_left": maxi(0, int(_at(page.get("pending_first_ready_day", []), row)) - day)})
-	pending_rows.sort_custom(func(a, b): return float(a.units) > float(b.units))
-	return {"ok": true, "flow": flow_segments,
-		"pending_total": int(page.get("pending_total_units", 0)),
-		"categories": categories, "pending": pending_rows,
-		"sufficient_units": _at(histogram, REJECTION_SUFFICIENT),
-		"pressure": demand_pressure(query("goods"), 6)}
+	return DossierMarkets.investment_model(self)
 
 
-## 需求压力：短缺 × 需求量 越高，越可能吸引投资。
 static func demand_pressure(goods: Dictionary, limit: int) -> Array:
-	if not bool(goods.get("ok", false)):
-		return []
-	var rows: Array = []
-	var names = goods.get("good_display_names", goods.get("good_stable_ids", PackedStringArray()))
-	var demand = goods.get("demand_ema", PackedInt64Array())
-	var supply = goods.get("offered_supply_ema", PackedInt64Array())
-	var shortages = goods.get("shortage_q16", PackedInt32Array())
-	var price = goods.get("price", PackedInt64Array())
-	var anchor = goods.get("cost_anchor_price", PackedInt64Array())
-	for row in range(names.size()):
-		var wanted := _at(demand, row)
-		if wanted <= 0.0:
-			continue
-		var shortage := _at(shortages, row) / Q16
-		var cover := _at(supply, row) / wanted
-		var price_index := _at(price, row) / _at(anchor, row) if _at(anchor, row) > 0.0 else 1.0
-		var pressure := clampf(shortage * 0.6 + clampf(1.0 - cover, 0.0, 1.0) * 0.4, 0.0, 1.0)
-		if pressure <= 0.05:
-			continue
-		rows.append({"row": row, "name": String(names[row]), "pressure": pressure,
-			"cover": cover, "price_index": price_index, "shortage": shortage})
-	rows.sort_custom(func(a, b): return float(a.pressure) > float(b.pressure))
-	return rows.slice(0, limit)
+	return DossierMarkets.demand_pressure(goods, limit)
 
-
-# ── 物资市场 ────────────────────────────────────────────────────────────
 
 func market_model(group_filter: String) -> Dictionary:
-	var page := query("goods")
-	if not bool(page.get("ok", false)):
-		return {"ok": false, "reason": _reason(page)}
-	var scale := maxf(1.0, float(page.get("goods_scale", 1)))
-	var stable_ids = page.get("good_stable_ids", PackedStringArray())
-	var names = page.get("good_display_names", stable_ids)
-	var cells: Array = []
-	var groups := {}
-	for row in range(stable_ids.size()):
-		var stable_id := String(stable_ids[row])
-		var group := good_group(stable_id)
-		if not group_filter.is_empty() and group != group_filter:
-			continue
-		var demand := _at(page.get("demand_ema", []), row)
-		var supply := _at(page.get("offered_supply_ema", []), row)
-		var withdrawal := _at(page.get("realized_withdrawal_ema", []), row)
-		var stock := _at(page.get("stock", []), row)
-		var shortage := _at(page.get("shortage_q16", []), row) / Q16
-		var anchor := _at(page.get("cost_anchor_price", []), row)
-		var price := _at(page.get("price", []), row)
-		var cover := supply / demand if demand > 0.0 else (2.0 if supply > 0.0 else 1.0)
-		# 热度：短缺为正（暗红），过剩为负（铜绿）。过剩用库存可用天数衡量。
-		var days_of_stock := stock / maxf(withdrawal, demand) if maxf(withdrawal, demand) > 0.0 else 999.0
-		var traded := demand > 0.0 or supply > 0.0 or withdrawal > 0.0
-		var surplus := clampf((days_of_stock - 30.0) / 120.0, 0.0, 1.0) \
-			if shortage < 0.02 and traded else 0.0
-		var heat := shortage if shortage >= 0.02 else -surplus
-		cells.append({"id": stable_id, "row": row, "name": String(names[row]), "group": group,
-			"heat": clampf(heat, -1.0, 1.0), "shortage": shortage,
-			"price_index": price / anchor if anchor > 0.0 else 1.0,
-			"price": price / MONEY_SCALE, "demand": demand / scale, "supply": supply / scale,
-			"stock": stock / scale, "days_of_stock": days_of_stock,
-			"import": _at(page.get("trade_import_ema", []), row) / scale,
-			"export": _at(page.get("trade_export_ema", []), row) / scale,
-			"shortage_cells": int(_at(page.get("shortage_cell_count", []), row)),
-			"market_cells": int(_at(page.get("market_cell_count", []), row))})
-		groups[group] = int(groups.get(group, 0)) + 1
-	var group_rows: Array = []
-	for group in GOOD_GROUPS:
-		if groups.has(group.id):
-			group_rows.append({"id": group.id, "name": group.name, "count": groups[group.id]})
-	return {"ok": true, "cells": cells, "groups": group_rows}
+	return DossierMarkets.market_model(self, group_filter)
 
 
 static func good_group(stable_id: String) -> String:
-	if _good_group_cache.has(stable_id):
-		return _good_group_cache[stable_id]
-	var group := "consumer"
-	var profile = GoodProfileRegistry.profile_by_id(stable_id)
-	if profile != null:
-		for tag in profile.technology_tags:
-			var matched := _group_for_tag(String(tag))
-			if not matched.is_empty():
-				group = matched
-				break
-	_good_group_cache[stable_id] = group
-	return group
+	return DossierMarkets.good_group(stable_id)
 
 
 static func _group_for_tag(tag: String) -> String:
-	for entry in GOOD_GROUPS:
-		if (entry.tags as Array).has(tag):
-			return String(entry.id)
-	return ""
+	return DossierMarkets._group_for_tag(tag)
 
-
-# ── 贸易 ────────────────────────────────────────────────────────────────
 
 func trade_model() -> Dictionary:
-	var summary: Dictionary = _model.get("trade_summary", {})
-	if _facade == null or not _facade.has_method("country_trade_snapshot"):
-		return {"ok": false, "reason": "国家贸易查询暂不可用"}
-	var key := "trade|goods"
-	var goods: Dictionary = _memo.get(key, {})
-	if goods.is_empty():
-		goods = _facade.country_trade_snapshot(_country_handle, "goods", 0, 64)
-		_memo[key] = goods
-	var partners: Dictionary = _memo.get("trade|partners", {})
-	if partners.is_empty():
-		partners = _facade.country_trade_snapshot(_country_handle, "partners", 0, 16)
-		_memo["trade|partners"] = partners
-	var rows: Array = []
-	if bool(goods.get("ok", false)):
-		var indices = goods.get("goods", PackedInt32Array())
-		for row in range(indices.size()):
-			var good := int(indices[row])
-			var import_value := _at(goods.get("import_base", []), row)
-			var export_value := _at(goods.get("export_base", []), row)
-			rows.append({"id": good, "name": String(_facade.good_display_name(good)),
-				"import": import_value / MONEY_SCALE, "export": export_value / MONEY_SCALE,
-				"net": (export_value - import_value) / MONEY_SCALE,
-				"import_qty": _at(goods.get("import_quantity", []), row),
-				"export_qty": _at(goods.get("export_quantity", []), row),
-				"tariff": (_at(goods.get("import_tariff", []), row)
-					+ _at(goods.get("export_tariff", []), row)) / MONEY_SCALE,
-				"cumulative_import": _at(goods.get("cumulative_import_base", []), row) / MONEY_SCALE,
-				"cumulative_export": _at(goods.get("cumulative_export_base", []), row) / MONEY_SCALE})
-	var partner_rows: Array = []
-	if bool(partners.get("ok", false)):
-		var slots = partners.get("partners", PackedInt32Array())
-		for row in range(slots.size()):
-			var handle := int(_at(partners.get("partner_handles", []), row))
-			var import_value := _at(partners.get("import_base", []), row)
-			var export_value := _at(partners.get("export_base", []), row)
-			partner_rows.append({"id": handle, "name": _partner_name(handle, int(slots[row])),
-				"import": import_value / MONEY_SCALE, "export": export_value / MONEY_SCALE,
-				"orders": int(_at(partners.get("order_count", []), row))})
-	return {"ok": bool(summary.get("ok", false)) or bool(goods.get("ok", false)),
-		"reason": String(summary.get("reason", goods.get("reason", ""))),
-		"imports": float(summary.get("previous_import_base", 0)) / MONEY_SCALE,
-		"exports": float(summary.get("previous_export_base", 0)) / MONEY_SCALE,
-		"tariff": float(summary.get("previous_tariff_net_income", 0)) / MONEY_SCALE,
-		"cumulative_imports": float(summary.get("cumulative_import_base", 0)) / MONEY_SCALE,
-		"cumulative_exports": float(summary.get("cumulative_export_base", 0)) / MONEY_SCALE,
-		"goods": rows, "partners": partner_rows}
+	return DossierMarkets.trade_model(self)
 
 
 func _partner_name(handle: int, slot: int) -> String:
-	var facade = _model.get("country_facade", null)
-	if facade != null and handle > 0 and facade.has_method("snapshot"):
-		var snapshot: Dictionary = facade.snapshot(handle)
-		var name := String(snapshot.get("country_name", snapshot.get("display_name", "")))
-		if bool(snapshot.get("ok", false)) and not name.is_empty():
-			return name
-	return "国家 %d" % slot
+	return DossierMarkets._partner_name(self, handle, slot)
 
-
-# ── 城市 ────────────────────────────────────────────────────────────────
 
 func cities_model() -> Dictionary:
-	var page := query("settlements", -1, 0, 0, -1)
-	if not bool(page.get("ok", false)):
-		return {"ok": false, "reason": _reason(page)}
-	var cells = page.get("cell_indices", PackedInt32Array())
-	var names = page.get("settlement_names", PackedStringArray())
-	var named = page.get("name_active", PackedByteArray())
-	var good_names: PackedStringArray = page.get("good_ids", PackedStringArray())
-	var tiers: PackedStringArray = page.get("prosperity_names", PackedStringArray())
-	var rows: Array = []
-	var villages := {"id": -2, "cell": -1, "name": "其余村落", "village": true, "count": 0,
-		"population": 0.0, "income": 0.0, "satisfaction_weight": 0.0,
-		"survival_weight": 0.0, "jobs_required": 0.0,
-		"jobs_filled": 0.0, "units": 0.0, "suspended": 0.0, "profit": 0.0, "unemployed": 0.0}
-	for row in range(cells.size()):
-		var people := _at(page.get("population", []), row)
-		var satisfaction := _at(page.get("satisfaction_q16", []), row) / Q16
-		var required := _at(page.get("jobs_required", []), row)
-		var filled := _at(page.get("jobs_filled", []), row)
-		var income := _at(page.get("income_per_day", []), row) / MONEY_SCALE
-		var profit := _at(page.get("profit_per_day", []), row) / MONEY_SCALE
-		if row >= named.size() or int(named[row]) == 0:
-			villages.count += 1
-			villages.population += people
-			villages.income += income
-			villages.satisfaction_weight += satisfaction * people
-			villages.survival_weight += _at(
-				page.get("survival_satisfaction_q16", []), row) / Q16 * people
-			villages.jobs_required += required
-			villages.jobs_filled += filled
-			villages.units += _at(page.get("building_units", []), row)
-			villages.suspended += _at(page.get("building_suspended_units", []), row)
-			villages.profit += profit
-			villages.unemployed += _at(page.get("unemployed", []), row)
-			continue
-		var worst_good := int(_at(page.get("worst_shortage_good", []), row))
-		rows.append({"id": int(cells[row]), "cell": int(cells[row]), "name": String(names[row]),
-			"village": false, "tier": tiers[row] if row < tiers.size() else "",
-			"population": people, "income": income,
-			"income_per_capita": income / people if people > 0.0 else 0.0,
-			"satisfaction": satisfaction, "survival": _at(page.get("survival_satisfaction_q16", []), row) / Q16,
-			"fill_rate": filled / required if required > 0.0 else 1.0,
-			"unemployment": _at(page.get("unemployed", []), row) / people if people > 0.0 else 0.0,
-			"units": _at(page.get("building_units", []), row),
-			"suspended": _at(page.get("building_suspended_units", []), row),
-			"profit": profit,
-			"shortage": _at(page.get("worst_shortage_q16", []), row) / Q16,
-			"shortage_good": _good_name_from(good_names, worst_good),
-			"state_day": int(_at(page.get("state_day", []), row))})
-	if int(villages.count) > 0:
-		var people := float(villages.population)
-		villages["income_per_capita"] = float(villages.income) / people if people > 0.0 else 0.0
-		villages["satisfaction"] = float(villages.satisfaction_weight) / people if people > 0.0 else 0.0
-		villages["survival"] = float(villages.survival_weight) / people if people > 0.0 else 0.0
-		villages["fill_rate"] = float(villages.jobs_filled) / float(villages.jobs_required) \
-			if float(villages.jobs_required) > 0.0 else 1.0
-		villages["unemployment"] = float(villages.unemployed) / people if people > 0.0 else 0.0
-		villages["shortage"] = 0.0
-		villages["shortage_good"] = ""
-		villages["tier"] = "%d 处" % int(villages.count)
-		rows.append(villages)
-	return {"ok": true, "rows": rows, "total": int(page.get("total", cells.size()))}
+	return DossierMarkets.cities_model(self)
 
 
 func _good_name_from(stable_ids: PackedStringArray, index: int) -> String:
-	if _facade != null and index >= 0:
-		return String(_facade.good_display_name(index))
-	return String(stable_ids[index]) if index >= 0 and index < stable_ids.size() else ""
+	return DossierMarkets._good_name_from(self, stable_ids, index)
 
 
 func _settlement_name(cell: int) -> String:
-	var page := query("settlements", -1, 0, 0, -1)
-	var cells = page.get("cell_indices", PackedInt32Array())
-	var names = page.get("settlement_names", PackedStringArray())
-	for row in range(cells.size()):
-		if int(cells[row]) == cell and row < names.size() and not String(names[row]).is_empty():
-			return String(names[row])
-	return "村落 #%d" % cell
+	return DossierMarkets._settlement_name(self, cell)
 
 
 # ── 格式化 ──────────────────────────────────────────────────────────────

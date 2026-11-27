@@ -1,6 +1,10 @@
 class_name CellInspectorViewModel
 extends RefCounted
 
+const LiveProjection = preload("res://scripts/ui/cell_inspector_live_projection.gd")
+
+const TaxProjection = preload("res://scripts/ui/cell_inspector_tax.gd")
+
 const MaintenancePresentation = preload("res://scripts/ui/military_maintenance_presentation.gd")
 
 const ConstructionFoldState = preload("res://scripts/ui/cell_inspector/construction_fold_state.gd")
@@ -226,9 +230,9 @@ func observe_temperature(cell: HexCell, day_idx: int = -1) -> void:
 	if cell == null or _map == null:
 		return
 	var idx := int(cell.index)
-	_record_temperature_sample(
+	_Geography_delegate._record_temperature_sample(self,
 		idx,
-		day_idx if day_idx >= 0 else _current_sample_day(),
+		day_idx if day_idx >= 0 else _Geography_delegate._current_sample_day(self),
 		_temp(cell, idx)
 	)
 
@@ -246,134 +250,19 @@ func set_inspector_trace_cell(cell_idx: int) -> void:
 ## 需要在场才看得到的实时情报。页签不在列表里，build_tab_category 就永远不会
 ## 被请求，被过滤掉的那几次经济查询也就一并省掉了。
 func build(cell: HexCell) -> Dictionary:
-	if cell == null or _map == null:
-		return {}
-	var idx := int(cell.index)
-	var fog := VisionSolver.displayed_fog_state(_map, idx)
-	if fog in [VisionSolver.FOG_UNAVAILABLE, VisionSolver.FOG_UNEXPLORED]:
-		return _Geography.drawn_cell_summary(cell, fog == VisionSolver.FOG_UNEXPLORED)
-	var intel_visible := fog == VisionSolver.FOG_VISIBLE
-	var off := HexUtils.cube_to_offset(cell.q, cell.r)
-	var terrain_v := _terrain(cell, idx)
-	var landform_v := _landform(cell, idx)
-	var vegetation_v := _vegetation(cell, idx)
-	var cover_v := _cover(cell, idx)
-	var temp := _temp(cell, idx)
-	_record_temperature_sample(idx, _current_sample_day(), temp)
-	var moist := _moisture(cell, idx)
-	var base_moist := _base_moisture(cell, idx)
-	var elev := _elevation(cell, idx)
-	var wf := _weather_field(cell, idx)
-	var vitality := _vitality(cell, landform_v)
-	var snow := _snow_cover(cell, idx)
-	var is_water := LandformType.is_water(landform_v)
-	var passable_land := TerrainType.is_passable_land(terrain_v)
-	var population_summary := _population_summary(idx) if intel_visible else {}
-	var country_summary := _country_summary(idx) if intel_visible else {}
-	var habitability := _habitability_score(temp, moist, vitality, elev, passable_land, is_water)
-	var tabs := [{"id": "geography", "label": "地理", "icon": "geo"}]
-	if intel_visible:
-		tabs.append_array([
-			# 民情并入人口页：阶层行自带组织阶段，进入示威 / 叛乱时页首警示。
-			{"id": "population", "label": "人口", "icon": "population.crowd"},
-			{"id": "families", "label": "家族", "icon": "family.house"},
-			{"id": "market", "label": "市场", "icon": "resource"},
-			{"id": "buildings", "label": "建筑", "icon": "building"},
-		])
-		# 军事页签只在有军事绑定、且这是陆地格时出现：水域永远不会归属任何国家。
-		if not LandformType.is_water(_landform(cell, idx)) and _military_facade() != null:
-			tabs.append({"id": "military", "label": "军事", "icon": "country.military"})
-	var geography_category := _geography_information_category(cell, idx, terrain_v,
-		landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
-		wf, snow, vitality, passable_land, is_water)
-	if intel_visible:
-		_append_resources_to_geography(geography_category, idx, is_water)
-	return {
-		"cell_index": idx,
-		"header": _build_header(off, terrain_v, landform_v, country_summary,
-			population_summary, intel_visible, _has_river(cell, idx)),
-		"kpis": _kpis(intel_visible, temp, moist, habitability, is_water,
-			population_summary, country_summary, idx),
-		"colonization_action": _colonization_action(
-			idx, intel_visible, passable_land, is_water, country_summary),
-		"tabs": tabs,
-		"categories": {
-			"geography": geography_category,
-		},
-	}
+	return LiveProjection.build(self, cell)
 
 
 func _build_unexplored_model(cell: HexCell) -> Dictionary:
-	return _Geography.drawn_cell_summary(cell, true)
+	return LiveProjection._build_unexplored_model(self, cell)
 
 
 func drawn_cell_summary(cell: HexCell) -> Dictionary:
-	return _Geography.drawn_cell_summary(cell,
-		VisionSolver.displayed_fog_state(_map, int(cell.index)) == VisionSolver.FOG_UNEXPLORED)
+	return LiveProjection.drawn_cell_summary(self, cell)
 
 
 func live_patch_revision(cell: HexCell, current_tab: String) -> Dictionary:
-	if cell == null or _map == null:
-		return {}
-	var idx := int(cell.index)
-	var tab_id := current_tab if current_tab != "" else "geography"
-	var fog := VisionSolver.displayed_fog_state(_map, idx)
-	var intel_visible := fog == VisionSolver.FOG_VISIBLE
-	var population_summary := _population_summary(idx) if intel_visible else {}
-	var country_summary := _country_summary(idx) if intel_visible else {}
-	var tax_policy_version := _cell_tax_policy_version(idx) \
-		if intel_visible and tab_id in ["population", "market", "buildings"] else -1
-	# fog 参与哈希：视野状态一变，页签集合也变，面板必须整体重建而不是打补丁。
-	var common_state := [
-		fog,
-		idx,
-		_terrain(cell, idx),
-		_landform(cell, idx),
-		_temp(cell, idx),
-		_moisture(cell, idx),
-		_elevation(cell, idx),
-		_vitality(cell, _landform(cell, idx)),
-		bool(population_summary.get("ok", false)),
-		int(population_summary.get("population", 0)),
-		int(population_summary.get("cohort_count", 0)),
-		int(population_summary.get("funds", 0)),
-		int(population_summary.get("epoch_income", 0)),
-		int(population_summary.get("epoch_expense", 0)),
-		int(population_summary.get("state_day", -1)),
-		int(population_summary.get("satisfaction_q16", 0)),
-		# 页头「满意度」读的是格级综合值：它变了而生存没变时也必须打补丁。
-		int(roundf(_cell_composite_satisfaction(idx) * 1000.0)) if intel_visible else -1,
-		int(population_summary.get("job_capacity", 0)),
-		int(population_summary.get("jobs_filled", 0)),
-		int(population_summary.get("employed_population", 0)),
-		int(population_summary.get("unemployed_population", 0)),
-		int(population_summary.get("carrying_k_eff", 0)),
-		int(population_summary.get("food_access_q16", 0)),
-		int(population_summary.get("prosperity_generation", 0)),
-		int(population_summary.get("name_roll_generation", 0)),
-		String(population_summary.get("settlement_name", "")),
-		String(country_summary.get("country_name", "")),
-		int(country_summary.get("cash", 0)),
-		int(country_summary.get("nonzero_good_count", 0)),
-		int(country_summary.get("technology_count", 0)),
-	]
-	return {
-		"tab_id": tab_id,
-		"selection_context": "%d/%d/%d" % [
-			fog,
-			1 if bool(country_summary.get("owned", false)) else 0,
-			int(country_summary.get("country_handle", -1)),
-		],
-		"tabs_signature": "geography|population|families|market|buildings" \
-			if intel_visible else "geography",
-		"common_hash": hash(common_state),
-		"category_generation": int(population_summary.get(
-			"settlement_generation", -1)) if tab_id == "population" \
-			else tax_policy_version \
-			if tab_id == "market" or tab_id == "buildings" else -1,
-		"tax_policy_version": tax_policy_version,
-		"population_summary": population_summary,
-	}
+	return LiveProjection.live_patch_revision(self, cell, current_tab)
 
 
 func build_live_patch(
@@ -383,148 +272,15 @@ func build_live_patch(
 		population_summary_override: Dictionary = {},
 		include_details: bool = true
 ) -> Dictionary:
-	if cell == null or _map == null:
-		return {}
-	var idx := int(cell.index)
-	var fog := VisionSolver.displayed_fog_state(_map, idx)
-	if fog in [VisionSolver.FOG_UNAVAILABLE, VisionSolver.FOG_UNEXPLORED]:
-		return _Geography.drawn_cell_summary(cell, fog == VisionSolver.FOG_UNEXPLORED)
-	var intel_visible := fog == VisionSolver.FOG_VISIBLE
-	var off := HexUtils.cube_to_offset(cell.q, cell.r)
-	var terrain_v := _terrain(cell, idx)
-	var landform_v := _landform(cell, idx)
-	var vegetation_v := _vegetation(cell, idx)
-	var cover_v := _cover(cell, idx)
-	var temp := _temp(cell, idx)
-	_record_temperature_sample(idx, _current_sample_day(), temp)
-	var moist := _moisture(cell, idx)
-	var base_moist := _base_moisture(cell, idx)
-	var elev := _elevation(cell, idx)
-	var wf := _weather_field(cell, idx)
-	var vitality := _vitality(cell, landform_v)
-	var snow := _snow_cover(cell, idx)
-	var is_water := LandformType.is_water(landform_v)
-	var passable_land := TerrainType.is_passable_land(terrain_v)
-	var habitability := _habitability_score(temp, moist, vitality, elev, passable_land, is_water)
-	var tab_id := current_tab if current_tab != "" else "geography"
-	if not intel_visible:
-		tab_id = "geography"
-	var population_summary: Dictionary
-	var country_summary := _country_summary(idx) if intel_visible else {}
-	var category: Dictionary
-	if not intel_visible:
-		if include_category:
-			category = _geography_information_category(cell, idx, terrain_v,
-				landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
-				wf, snow, vitality, passable_land, is_water)
-	elif tab_id == "population":
-		if include_category:
-			# 列表 live patch 不拉需求预览和市场价；对象详情仍走完整 snapshot。
-			population_summary = _population_snapshot(idx, include_details)
-			var market := _market_snapshot(idx) if include_details else {}
-			category = _population_category(population_summary, market, idx)
-			category = _decorate_category_with_tax(idx, tab_id, category)
-			if bool(category.get("data_pending", false)):
-				population_summary = _population_summary(idx)
-		else:
-			population_summary = population_summary_override if not \
-				population_summary_override.is_empty() else _population_summary(idx)
-	else:
-		population_summary = _population_summary(idx)
-		if include_category:
-			category = _geography_information_category(cell, idx, terrain_v,
-				landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
-				wf, snow, vitality, passable_land, is_water) if tab_id == "geography" \
-				else build_tab_category(cell, tab_id)
-			if tab_id == "geography":
-				_append_resources_to_geography(category, idx, is_water)
-	if include_category and category.is_empty():
-		tab_id = "geography"
-		category = _geography_information_category(cell, idx, terrain_v,
-			landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
-			wf, snow, vitality, passable_land, is_water)
-		if intel_visible:
-			_append_resources_to_geography(category, idx, is_water)
-	var patch := {
-		"header": _build_header(off, terrain_v, landform_v, country_summary,
-			population_summary, intel_visible, _has_river(cell, idx)),
-		"kpis": _kpis(intel_visible, temp, moist, habitability, is_water,
-			population_summary, country_summary, idx),
-		"tab_id": tab_id,
-	}
-	if include_category:
-		patch["category"] = category
-	return patch
+	return LiveProjection.build_live_patch(self, cell, current_tab, include_category, population_summary_override, include_details)
 
 
 func build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
-	if cell == null or _map == null:
-		return {}
-	var idx := int(cell.index)
-	var fog := VisionSolver.displayed_fog_state(_map, idx)
-	if fog <= VisionSolver.FOG_UNEXPLORED or (fog != VisionSolver.FOG_VISIBLE and tab_id != "geography"):
-		_category_cache.clear()
-		return {}
-	if idx != _category_cache_cell:
-		_category_cache_cell = idx
-		_category_cache.clear()
-	var category := _build_tab_category(cell, tab_id)
-	if bool(category.get("data_pending", false)):
-		var cached: Dictionary = _category_cache.get(tab_id, {})
-		if not cached.is_empty():
-			category = cached.duplicate(true)
-			category["data_pending"] = true
-	elif not category.is_empty():
-		_category_cache[tab_id] = category.duplicate(true)
-	return category
+	return LiveProjection.build_tab_category(self, cell, tab_id)
 
 
 func _build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
-	if cell == null or _map == null:
-		return {}
-	var idx := int(cell.index)
-	# 兜底：页签栏本来就不会给出被门控掉的页签，但延迟请求可能跨越一次视野变化。
-	var fog := VisionSolver.displayed_fog_state(_map, idx)
-	if fog <= VisionSolver.FOG_UNEXPLORED or (fog != VisionSolver.FOG_VISIBLE and tab_id != "geography"):
-		return {}
-	match tab_id:
-		"population":
-			return _decorate_category_with_tax(idx, tab_id,
-				_population_category(_population_snapshot(idx), _market_snapshot(idx), idx))
-		"families":
-			return _family_category(_family_cell_snapshot(idx))
-		"market":
-			return _decorate_category_with_tax(idx, tab_id,
-				_market_category(_market_snapshot(idx)))
-		"buildings":
-			return _decorate_category_with_tax(idx, tab_id,
-				_building_category(_building_snapshot(idx), idx))
-		"natural_resources":
-			var visibility := _resource_visibility_context(idx)
-			return _resources_category(_resource_state(
-				idx, LandformType.is_water(_landform(cell, idx)), visibility),
-				visibility)
-		"military":
-			return _military_category(idx)
-		"geography":
-			var terrain_v := _terrain(cell, idx)
-			var landform_v := _landform(cell, idx)
-			var vegetation_v := _vegetation(cell, idx)
-			var cover_v := _cover(cell, idx)
-			var temp := _temp(cell, idx)
-			var moist := _moisture(cell, idx)
-			var base_moist := _base_moisture(cell, idx)
-			var elev := _elevation(cell, idx)
-			var is_water := LandformType.is_water(landform_v)
-			var category := _geography_information_category(
-				cell, idx, terrain_v, landform_v, vegetation_v, cover_v, elev,
-				temp, moist, base_moist, _weather_field(cell, idx),
-				_snow_cover(cell, idx), _vitality(cell, landform_v),
-				TerrainType.is_passable_land(terrain_v), is_water)
-			if VisionSolver.displayed_fog_state(_map, idx) == VisionSolver.FOG_VISIBLE:
-				_append_resources_to_geography(category, idx, is_water)
-			return category
-	return {}
+	return LiveProjection._build_tab_category(self, cell, tab_id)
 
 
 ## 对象详情工作区：按请求重建对应页签 category 并取出目标行，附地块坐标与
@@ -570,9 +326,6 @@ static func _family_text_key(value: Variant) -> String:
 static func _parse_leading_float(text: Variant, fallback: float = 0.0) -> float:
 	return _ObjectDossiers._parse_leading_float(text, fallback)
 
-static func _detail_row_value_map(detail_rows: Array) -> Dictionary:
-	return _ObjectDossiers._detail_row_value_map(detail_rows)
-
 static func good_dossier_model(row: Dictionary) -> Dictionary:
 	return _ObjectDossiers.good_dossier_model(row)
 
@@ -588,75 +341,12 @@ func _military_facade():
 func _military_category(cell_idx: int) -> Dictionary:
 	return _Military_delegate._military_category(self, cell_idx)
 
-func _military_cell_model(facade, snapshot: Dictionary, country: Dictionary,
-		cell_idx: int) -> Dictionary:
-	return _Military_delegate._military_cell_model(self, facade, snapshot, country, cell_idx)
-
-func _military_maintenance_rows(facade, cell_idx: int) -> Dictionary:
-	return _Military_delegate._military_maintenance_rows(self, facade, cell_idx)
-
 func _military_barracks_count(snapshot: Dictionary) -> int:
 	return _Military_delegate._military_barracks_count(self, snapshot)
-
-func _military_training_speed(catalog_rows: Array, college_tier: int) -> float:
-	return _Military_delegate._military_training_speed(self, catalog_rows, college_tier)
-
-func _military_can_build(snapshot: Dictionary, country: Dictionary) -> bool:
-	return _Military_delegate._military_can_build(self, snapshot, country)
-
-func _military_troop_rows(snapshot: Dictionary) -> Array:
-	return _Military_delegate._military_troop_rows(self, snapshot)
-
-func _military_training_rows(snapshot: Dictionary, units: Dictionary) -> Array:
-	return _Military_delegate._military_training_rows(self, snapshot, units)
-
-func _state_building_entry(role_def: Dictionary, snapshot: Dictionary,
-		catalog_rows: Array, researched: PackedStringArray, gate_known: bool,
-		can_build: bool, facade = null, cell_idx: int = -1,
-		maintenance_by_index: Dictionary = {}, market_stock: Dictionary = {}) -> Dictionary:
-	return _Military_delegate._state_building_entry(self, role_def, snapshot, catalog_rows, researched, gate_known, can_build, facade, cell_idx, maintenance_by_index, market_stock)
-
-func _state_building_cost(facade, building_index: int,
-		building_row: Dictionary, cash_available: int, cell_idx: int,
-		treasury_cache: Dictionary = {}, market_cache: Dictionary = {},
-		standing_row: Dictionary = {}, held_count: int = 0) -> Dictionary:
-	return _Military_delegate._state_building_cost(self, facade, building_index, building_row, cash_available, cell_idx, treasury_cache, market_cache, standing_row, held_count)
-
-func _state_building_economy_quote(facade, building_index: int,
-		building_row: Dictionary, country_handle: int, cell_idx: int,
-		_cash_available: int, standing_row: Dictionary = {},
-		held_count: int = 0) -> Dictionary:
-	return _Military_delegate._state_building_economy_quote(self, facade, building_index, building_row, country_handle, cell_idx, _cash_available, standing_row, held_count)
-
-
-
-
-func _empty_state_building_cost() -> Dictionary:
-	return _Military_delegate._empty_state_building_cost(self)
-
-
-
-func _treasury_good_stock() -> Dictionary:
-	return _Military_delegate._treasury_good_stock(self)
 
 func _country_cash() -> int:
 	return _Military_delegate._country_cash(self)
 
-
-
-func _state_building_pending(catalog_rows: Array, snapshot: Dictionary,
-		role: int) -> Dictionary:
-	return _Military_delegate._state_building_pending(self, catalog_rows, snapshot, role)
-
-func _state_building_unlocked(row: Dictionary, researched: PackedStringArray,
-		gate_known: bool) -> bool:
-	return _Military_delegate._state_building_unlocked(self, row, researched, gate_known)
-
-
-
-func _state_building_effect(role_id: String, row: Dictionary,
-		disrepair: bool) -> String:
-	return _Military_delegate._state_building_effect(self, role_id, row, disrepair)
 
 
 func _technology_display_name(tech_id: String) -> String:
@@ -682,9 +372,6 @@ func _build_header(
 ) -> Dictionary:
 	return _Overview_delegate._build_header(self, off, terrain_v, landform_v, country_summary, population_summary, intel_visible, _has_river)
 
-func _ownership_text(country_summary: Dictionary, intel_visible: bool) -> String:
-	return _Overview_delegate._ownership_text(self, country_summary, intel_visible)
-
 func _kpis(
 	intel_visible: bool,
 	temp: float,
@@ -699,12 +386,6 @@ func _kpis(
 
 func _gdp_kpi(cell_idx: int) -> Dictionary:
 	return _Overview_delegate._gdp_kpi(self, cell_idx)
-
-func _cell_composite_satisfaction(cell_idx: int) -> float:
-	return _Overview_delegate._cell_composite_satisfaction(self, cell_idx)
-
-func _primary_resource_kpi(cell_idx: int, is_water: bool) -> Dictionary:
-	return _Overview_delegate._primary_resource_kpi(self, cell_idx, is_water)
 
 func _overview_category(cell: HexCell, idx: int, cover_v: int) -> Dictionary:
 	return _Overview_delegate._overview_category(self, cell, idx, cover_v)
@@ -728,14 +409,6 @@ func _geography_information_category(
 ) -> Dictionary:
 	return _Overview_delegate._geography_information_category(self, cell, idx, terrain_v, landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist, wf, snow, vitality, passable_land, is_water)
 
-func _append_resources_to_geography(category: Dictionary, idx: int,
-		is_water: bool) -> void:
-	return _Overview_delegate._append_resources_to_geography(self, category, idx, is_water)
-
-func _append_bio_facts_to_geography(category: Dictionary, idx: int,
-		visibility: Dictionary = {}) -> void:
-	return _Overview_delegate._append_bio_facts_to_geography(self, category, idx, visibility)
-
 ## 悬停与地理档案共用占据位、名称和科技识别规则。
 func local_species_badges(idx: int, technology_ids: PackedStringArray) -> Array:
 	return _cell_bio_badges(idx, {
@@ -746,50 +419,17 @@ func local_species_badges(idx: int, technology_ids: PackedStringArray) -> Array:
 func _cell_bio_badges(idx: int, visibility: Dictionary = {}) -> Array:
 	return _Overview_delegate._cell_bio_badges(self, idx, visibility)
 
-func _ensure_research_signal_catalog() -> Dictionary:
-	return _Overview_delegate._ensure_research_signal_catalog(self)
-
-func _ensure_technology_catalog() -> Dictionary:
-	return _Overview_delegate._ensure_technology_catalog(self)
-
-func _rows_from_category(category: Dictionary, rows_key: String) -> Array:
-	return _Overview_delegate._rows_from_category(self, category, rows_key)
-
 func _geography_category(cell: HexCell, idx: int, terrain_v: int, elev: float, passable_land: bool) -> Dictionary:
 	return _Overview_delegate._geography_category(self, cell, idx, terrain_v, elev, passable_land)
 
-func _passage_text(passable_land: bool, passable_sea: bool, terrain_v: int) -> String:
-	return _Overview_delegate._passage_text(self, passable_land, passable_sea, terrain_v)
-
-func _climate_category(cell: HexCell, idx: int, temp: float, moist: float, base_moist: float, wf: Dictionary) -> Dictionary:
-	return _Overview_delegate._climate_category(self, cell, idx, temp, moist, base_moist, wf)
-
-func _hydrology_category(_cell: HexCell, _idx: int, _wf: Dictionary, snow: float, is_water: bool) -> Dictionary:
-	return _Overview_delegate._hydrology_category(self, _cell, _idx, _wf, snow, is_water)
-
-func _ecology_category(cell: HexCell, idx: int, vegetation_v: int, vitality: float) -> Dictionary:
-	return _Overview_delegate._ecology_category(self, cell, idx, vegetation_v, vitality)
-
 func _resources_category(resource_state: Array, visibility: Dictionary = {}) -> Dictionary:
 	return _Overview_delegate._resources_category(self, resource_state, visibility)
-
-func _history_category(cell: HexCell) -> Dictionary:
-	return _Overview_delegate._history_category(self, cell)
 
 static func _snapshot_pending(snapshot: Dictionary) -> bool:
 	return _Overview._snapshot_pending(snapshot)
 
 static func _pending_category() -> Dictionary:
 	return _Overview._pending_category()
-
-func _population_snapshot(cell_idx: int, include_details: bool = true) -> Dictionary:
-	return _Overview_delegate._population_snapshot(self, cell_idx, include_details)
-
-func _population_summary(cell_idx: int) -> Dictionary:
-	return _Overview_delegate._population_summary(self, cell_idx)
-
-func _country_summary(cell_idx: int) -> Dictionary:
-	return _Overview_delegate._country_summary(self, cell_idx)
 
 func population_summary(cell_idx: int) -> Dictionary:
 	return _Overview_delegate.population_summary(self, cell_idx)
@@ -800,23 +440,8 @@ func country_summary(cell_idx: int) -> Dictionary:
 func sample_day() -> int:
 	return _Overview_delegate.sample_day(self)
 
-func _market_snapshot(cell_idx: int) -> Dictionary:
-	return _Overview_delegate._market_snapshot(self, cell_idx)
-
-func _building_snapshot(cell_idx: int) -> Dictionary:
-	return _Overview_delegate._building_snapshot(self, cell_idx)
-
-func _family_cell_snapshot(cell_idx: int) -> Dictionary:
-	return _Overview_delegate._family_cell_snapshot(self, cell_idx)
-
 func _family_category(snapshot: Dictionary) -> Dictionary:
 	return _Overview_delegate._family_category(self, snapshot)
-
-func _family_detail_fields(snapshot: Dictionary) -> Dictionary:
-	return _Overview_delegate._family_detail_fields(self, snapshot)
-
-func _family_trait_rows(snapshot: Dictionary) -> Array:
-	return _Overview_delegate._family_trait_rows(self, snapshot)
 
 func _family_behavior_rows(snapshot: Dictionary, cell_idx: int = -1) -> Array:
 	return _Overview_delegate._family_behavior_rows(self, snapshot, cell_idx)
@@ -825,38 +450,15 @@ static func family_behavior_rows_for_cell(snapshot: Dictionary, facade,
 		cell_idx: int) -> Array:
 	return _Overview.family_behavior_rows_for_cell(snapshot, facade, cell_idx)
 
-static func _family_behavior_rows_for_visibility(snapshot: Dictionary,
-		visibility: Dictionary) -> Array:
-	return _Overview._family_behavior_rows_for_visibility(snapshot, visibility)
-
 static func _family_behavior_icon(axis: int, stable_id: String, name_text: String = "") -> StringName:
 	return _Overview._family_behavior_icon(axis, stable_id, name_text)
 
 func _family_behavior_visibility(cell_idx: int) -> Dictionary:
 	return _Overview_delegate._family_behavior_visibility(self, cell_idx)
 
-static func _family_behavior_visibility_for_cell(facade, cell_idx: int) -> Dictionary:
-	return _Overview._family_behavior_visibility_for_cell(facade, cell_idx)
-
-static func _family_behavior_visible_professions(buildings: Dictionary,
-		population: Dictionary) -> Dictionary:
-	return _Overview._family_behavior_visible_professions(buildings, population)
-
-static func _add_profession_id(target: Dictionary, catalog: PackedStringArray,
-		dense_id: int) -> void:
-	return _Overview._add_profession_id(target, catalog, dense_id)
-
-static func _family_behavior_visible_needs(catalog: Dictionary,
-		market_good_ids: PackedStringArray,
-		good_available: PackedByteArray) -> Dictionary:
-	return _Overview._family_behavior_visible_needs(catalog, market_good_ids, good_available)
-
 static func _family_behavior_selector_visible(axis: int, stable_id: String,
 		visibility: Dictionary) -> bool:
 	return _Overview._family_behavior_selector_visible(axis, stable_id, visibility)
-
-func _family_branch_rows(snapshot: Dictionary) -> Array:
-	return _Overview_delegate._family_branch_rows(self, snapshot)
 
 func _family_bound_effect_rows(snapshot: Dictionary) -> Array:
 	return _Overview_delegate._family_bound_effect_rows(self, snapshot)
@@ -873,39 +475,9 @@ static func _prestige_text(level: int) -> String:
 static func _q16_percent_text(value: int) -> String:
 	return _Overview._q16_percent_text(value)
 
-func _family_notable_person_rows(facade, family_handle: int) -> Array:
-	return _Overview_delegate._family_notable_person_rows(self, facade, family_handle)
-
-func _gdp_metrics(cell_idx: int) -> Array:
-	return _PopulationMarket_delegate._gdp_metrics(self, cell_idx)
-
 func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {},
 		cell_idx: int = -1) -> Dictionary:
 	return _PopulationMarket_delegate._population_category(self, snapshot, market_snapshot, cell_idx)
-
-func _group_demand_rows_by_usage(rows: Array) -> Array:
-	return _PopulationMarket_delegate._group_demand_rows_by_usage(self, rows)
-
-func _ensure_detail_history_cell(cell_idx: int) -> void:
-	return _PopulationMarket_delegate._ensure_detail_history_cell(self, cell_idx)
-
-func _append_history_sample(bucket: Dictionary, key: String, value: float) -> PackedFloat32Array:
-	return _PopulationMarket_delegate._append_history_sample(self, bucket, key, value)
-
-static func _series_lookback_delta(series: PackedFloat32Array) -> float:
-	return _PopulationMarket._series_lookback_delta(series)
-
-func _record_cohort_history(cohort_key: String, sat: float, net_val: float,
-		income_val: float, wealth_val: float) -> void:
-	return _PopulationMarket_delegate._record_cohort_history(self, cohort_key, sat, net_val, income_val, wealth_val)
-
-func _record_good_history(good_id: String, price_val: float, price_index: float,
-		stock_units: float, shortage_ratio: float) -> void:
-	return _PopulationMarket_delegate._record_good_history(self, good_id, price_val, price_index, stock_units, shortage_ratio)
-
-func _record_building_history(building_key: String, profit_val: float,
-		utilization_ratio: float) -> void:
-	return _PopulationMarket_delegate._record_building_history(self, building_key, profit_val, utilization_ratio)
 
 func _compute_cell_avg_satisfaction_dims(populations: PackedInt64Array,
 		dims: PackedInt32Array, dimension_count: int) -> PackedFloat32Array:
@@ -924,21 +496,12 @@ func _living_standard_icon(level: int) -> String:
 func _living_standard_accent(level: int) -> Color:
 	return _PopulationMarket_delegate._living_standard_accent(self, level)
 
-func _satisfaction_dimension_name(dimension: int) -> String:
-	return _PopulationMarket_delegate._satisfaction_dimension_name(self, dimension)
-
 func _satisfaction_dimension_rows(dims: PackedInt32Array, dimension_count: int,
 		cohort_idx: int, worst_dimension: int) -> Array:
 	return _PopulationMarket_delegate._satisfaction_dimension_rows(self, dims, dimension_count, cohort_idx, worst_dimension)
 
 func _satisfaction_accent(value: float) -> Color:
 	return _PopulationMarket_delegate._satisfaction_accent(self, value)
-
-func _demand_good_metadata(snapshot: Dictionary, cohort_idx: int) -> Dictionary:
-	return _PopulationMarket_delegate._demand_good_metadata(self, snapshot, cohort_idx)
-
-func _need_display_name(stable_id: String) -> String:
-	return _PopulationMarket_delegate._need_display_name(self, stable_id)
 
 func _market_category(snapshot: Dictionary) -> Dictionary:
 	return _PopulationMarket_delegate._market_category(self, snapshot)
@@ -948,46 +511,8 @@ func trade_orders_model(cell_idx: int, good_id: String, offset: int = 0,
 		sample_day: int = -1) -> Dictionary:
 	return _PopulationMarket_delegate.trade_orders_model(self, cell_idx, good_id, offset, limit, generation, sample_day)
 
-func _trade_order_page_key(cell_idx: int, good_index: int, generation: int,
-		offset: int, limit: int) -> String:
-	return _PopulationMarket_delegate._trade_order_page_key(self, cell_idx, good_index, generation, offset, limit)
-
-func _query_trade_order_page(facade, cell_idx: int, good_index: int,
-		offset: int, limit: int) -> Dictionary:
-	return _PopulationMarket_delegate._query_trade_order_page(self, facade, cell_idx, good_index, offset, limit)
-
-func _trade_order_good_index(facade, good_id: String) -> int:
-	return _PopulationMarket_delegate._trade_order_good_index(self, facade, good_id)
-
 func _economy_facade():
 	return _PopulationMarket_delegate._economy_facade(self)
-
-func _trade_orders_failure(text: String, reason: String) -> Dictionary:
-	return _PopulationMarket_delegate._trade_orders_failure(self, text, reason)
-
-func _trade_orders_pending_model(page: Dictionary, offset: int, limit: int,
-		sample_day: int, generation: int) -> Dictionary:
-	return _PopulationMarket_delegate._trade_orders_pending_model(self, page, offset, limit, sample_day, generation)
-
-static func _trim_dictionary(cache: Dictionary, limit: int) -> void:
-	return _PopulationMarket._trim_dictionary(cache, limit)
-
-func _build_trade_orders_model(page: Dictionary,
-		sample_day: int, generation: int) -> Dictionary:
-	return _PopulationMarket_delegate._build_trade_orders_model(self, page, sample_day, generation)
-
-func _trade_counterpart_name(cell_idx: int) -> String:
-	return _PopulationMarket_delegate._trade_counterpart_name(self, cell_idx)
-
-func _trade_counterpart_coord(cell_idx: int) -> String:
-	return _PopulationMarket_delegate._trade_counterpart_coord(self, cell_idx)
-
-func _trade_order_tooltip(order_id: int, direction: int, counterpart_name: String,
-		counterpart_visible: bool, quantity: int, source_price: int,
-		destination_price: int, base_value: int, escrow: int, capacity: int,
-		departure: int, arrival: int, remaining: int, delivered: int,
-		flags: int) -> String:
-	return _PopulationMarket_delegate._trade_order_tooltip(self, order_id, direction, counterpart_name, counterpart_visible, quantity, source_price, destination_price, base_value, escrow, capacity, departure, arrival, remaining, delivered, flags)
 
 func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 	return _Construction_delegate._building_category(self, snapshot, cell_idx)
@@ -1000,76 +525,9 @@ func build_construction_model(cell_idx: int, sector_id: String = "",
 		offset: int = 0) -> Dictionary:
 	return _Construction_delegate.build_construction_model(self, cell_idx, sector_id, search, sort_id, offset)
 
-## Capability is published by Country and copied into cell_summary. UI treats
-## the value as a read-only hint only; PlayerController and Economy apply the
-## same gate again at their command boundaries.
 func _country_allows_treasury_construction(summary: Dictionary) -> bool:
-	var politics: Variant = summary.get("politics", {})
-	if politics is Dictionary:
-		if politics.has("can_treasury_construction"):
-			return bool(politics.get("can_treasury_construction", false))
-		if politics.has("capability_bits"):
-			return (int(politics.get("capability_bits", 0)) & 1) != 0
-	if summary.has("can_treasury_construction"):
-		return bool(summary.get("can_treasury_construction", false))
-	if summary.has("capability_bits"):
-		return (int(summary.get("capability_bits", 0)) & 1) != 0
-	return false
+	return _Construction.country_allows_treasury_construction(summary)
 
-
-func _construction_header(cell_idx: int) -> Dictionary:
-	return _Construction_delegate._construction_header(self, cell_idx)
-
-func _construction_catalog_count(snapshot: Dictionary) -> int:
-	return _Construction_delegate._construction_catalog_count(self, snapshot)
-
-func _construction_military_count() -> int:
-	return _Construction_delegate._construction_military_count(self)
-
-func _construction_military_rows(cell_idx: int, search: String) -> Array:
-	return _Construction_delegate._construction_military_rows(self, cell_idx, search)
-
-func _construction_military_occupied(catalog_rows: Array, snapshot: Dictionary) -> Dictionary:
-	return _Construction_delegate._construction_military_occupied(self, catalog_rows, snapshot)
-
-func _construction_military_row(facade, index: int, row: Dictionary,
-		snapshot: Dictionary, researched: PackedStringArray, gate_known: bool,
-		can_build: bool, cash: int, cell_idx: int, occupied: Dictionary,
-		treasury_stock: Dictionary, market_stock: Dictionary) -> Dictionary:
-	return _Construction_delegate._construction_military_row(self, facade, index, row, snapshot, researched, gate_known, can_build, cash, cell_idx, occupied, treasury_stock, market_stock)
-
-func _construction_military_block_text(snapshot: Dictionary) -> String:
-	return _Construction_delegate._construction_military_block_text(self, snapshot)
-
-func _state_building_pending_by_index(snapshot: Dictionary, index: int) -> int:
-	return _Construction_delegate._state_building_pending_by_index(self, snapshot, index)
-
-func _construction_military_page(model: Dictionary, rows: Array,
-		sort: String, requested_offset: int) -> Dictionary:
-	return _Construction_delegate._construction_military_page(self, model, rows, sort, requested_offset)
-
-static func _construction_military_before(a: Dictionary, b: Dictionary,
-		sort: String) -> bool:
-	return _Construction._construction_military_before(a, b, sort)
-
-func _construction_building_snapshot(cell_idx: int) -> Dictionary:
-	return _Construction_delegate._construction_building_snapshot(self, cell_idx)
-
-func _construction_sector_name(sector_ids: PackedStringArray, sector_index: int) -> String:
-	return _Construction_delegate._construction_sector_name(self, sector_ids, sector_index)
-
-func _construction_sort_entries(selected: String) -> Array:
-	return _Construction_delegate._construction_sort_entries(self, selected)
-
-func _construction_sector_entries(sector_ids: PackedStringArray,
-		counts: Dictionary, selected: String) -> Array:
-	return _Construction_delegate._construction_sector_entries(self, sector_ids, counts, selected)
-
-func _construction_page_label(offset: int, count: int, total: int) -> String:
-	return _Construction_delegate._construction_page_label(self, offset, count, total)
-
-func _construction_local_stock(market: Dictionary) -> Dictionary:
-	return _Construction_delegate._construction_local_stock(self, market)
 
 var _construction_folds = ConstructionFoldState.new()
 
@@ -1082,54 +540,34 @@ func toggle_construction_fold(action: Dictionary) -> bool:
 	return _construction_folds.toggle(action)
 
 
-func _construction_entries(candidates: PackedInt32Array, quotes: Dictionary,
-		snapshot: Dictionary, market: Dictionary, durations: PackedInt32Array,
-		maturity_ranks: PackedInt32Array) -> Array:
-	return _Construction_delegate._construction_entries(self, candidates, quotes, snapshot, market, durations, maturity_ranks)
-
-static func _construction_entry_before(a: Dictionary, b: Dictionary,
-		sort: String) -> bool:
-	return _Construction._construction_entry_before(a, b, sort)
-
-func _construction_daily_score(type_id: int, snapshot: Dictionary,
-		prices: Dictionary) -> int:
-	return _Construction_delegate._construction_daily_score(self, type_id, snapshot, prices)
-
-func _construction_flow_value(snapshot: Dictionary, type_id: int, kind: String,
-		good_ids: PackedStringArray, prices: Dictionary) -> int:
-	return _Construction_delegate._construction_flow_value(self, snapshot, type_id, kind, good_ids, prices)
-
-func _construction_price_by_good(market: Dictionary) -> Dictionary:
-	return _Construction_delegate._construction_price_by_good(self, market)
-
 func _construction_page_rows(entries: Array, quotes: Dictionary,
 		snapshot: Dictionary, economy, market: Dictionary,
 		maturity_names: PackedStringArray) -> Array:
 	return _Construction_delegate._construction_page_rows(self, entries, quotes, snapshot, economy, market, maturity_names)
 
+func _construction_local_stock(market: Dictionary) -> Dictionary:
+	return _Construction_delegate._construction_local_stock(self, market)
+
+func _unlocked_good_ids(snapshot: Dictionary) -> Dictionary:
+	return _Construction_delegate._unlocked_good_ids(self, snapshot)
+
+func _construction_reason_text(code: String, materials: Array, local_stock: Dictionary) -> String:
+	return _Construction_delegate._construction_reason_text(self, code, materials, local_stock)
+
+func _construction_material_status_rows(materials: Array, local_stock: Dictionary) -> Array:
+	return _Construction_delegate._construction_material_status_rows(self, materials, local_stock)
+
 func _construction_materials_text(materials: Array) -> String:
 	return _Construction_delegate._construction_materials_text(self, materials)
 
-func _construction_material_status_rows(materials: Array,
-		local_stock: Dictionary) -> Array:
-	return _Construction_delegate._construction_material_status_rows(
-		self, materials, local_stock)
-
-func _construction_reason_text(code: String, materials: Array,
-		local_stock: Dictionary) -> String:
-	return _Construction_delegate._construction_reason_text(self, code, materials, local_stock)
-
 func _construction_tooltip(entry: Dictionary, item: Dictionary, materials: Array,
 		local_stock: Dictionary, placement: Dictionary, job_spec: Dictionary,
-		unlocked_goods: Dictionary, days: int, maturity: String,
-		reason_text: String) -> String:
-	return _Construction_delegate._construction_tooltip(self, entry, item, materials, local_stock, placement, job_spec, unlocked_goods, days, maturity, reason_text)
+		unlocked_goods: Dictionary, days: int, maturity: String, reason_text: String) -> String:
+	return _Construction_delegate._construction_tooltip(self, entry, item, materials, local_stock,
+		placement, job_spec, unlocked_goods, days, maturity, reason_text)
 
-func _construction_job_text(job_spec: Dictionary) -> String:
-	return _Construction_delegate._construction_job_text(self, job_spec)
-
-func _construction_recipe_side(rows: Array) -> String:
-	return _Construction_delegate._construction_recipe_side(self, rows)
+func _format_input_candidate_label(good_id: String, efficiency_q16: int) -> String:
+	return _Construction_delegate._format_input_candidate_label(self, good_id, efficiency_q16)
 
 func _goods_scaled(value: int) -> String:
 	return _Construction_delegate._goods_scaled(self, value)
@@ -1146,52 +584,11 @@ func _construction_input_candidate_label(placement: Dictionary, input_idx: int,
 		unlocked_goods: Dictionary) -> String:
 	return _Construction_delegate._construction_input_candidate_label(self, placement, input_idx, unlocked_goods)
 
-func _unlocked_good_ids(snapshot: Dictionary) -> Dictionary:
-	return _Construction_delegate._unlocked_good_ids(self, snapshot)
-
 func _construction_profession_name(profession_id: String) -> String:
 	return _Construction_delegate._construction_profession_name(self, profession_id)
 
-func _append_recipe_rows(rows: Array, snapshot: Dictionary, type_idx: int, kind: String,
-		actual_total: int, building_count: int, period_days: int, group_idx: int = -1) -> void:
-	return _Construction_delegate._append_recipe_rows(self, rows, snapshot, type_idx, kind, actual_total, building_count, period_days, group_idx)
-
-func _selected_input_short_label(snapshot: Dictionary, input_idx: int, local_input_idx: int,
-		group_idx: int, fallback_id: String) -> String:
-	return _Construction_delegate._selected_input_short_label(self, snapshot, input_idx, local_input_idx, group_idx, fallback_id)
-
-func _input_candidate_label(snapshot: Dictionary, input_idx: int, local_input_idx: int,
-		group_idx: int, fallback_id: String) -> String:
-	return _Construction_delegate._input_candidate_label(self, snapshot, input_idx, local_input_idx, group_idx, fallback_id)
-
-func _append_resource_recipe_rows(rows: Array, snapshot: Dictionary, type_idx: int,
-		actual_total: int, building_count: int, period_days: int) -> void:
-	return _Construction_delegate._append_resource_recipe_rows(self, rows, snapshot, type_idx, actual_total, building_count, period_days)
-
-func _append_resource_generation_rows(rows: Array, snapshot: Dictionary, type_idx: int,
-		actual_total: int, building_count: int, period_days: int) -> void:
-	return _Construction_delegate._append_resource_generation_rows(self, rows, snapshot, type_idx, actual_total, building_count, period_days)
-
-func _building_resource_depleted(snapshot: Dictionary, type_idx: int) -> bool:
-	return _Construction_delegate._building_resource_depleted(self, snapshot, type_idx)
-
-func _resource_effective_text(snapshot: Dictionary, resource_idx: int, access_mode: int = 0) -> String:
-	return _Construction_delegate._resource_effective_text(self, snapshot, resource_idx, access_mode)
-
-func _append_construction_rows(rows: Array, snapshot: Dictionary, type_ids: PackedStringArray, type_names: PackedStringArray) -> void:
-	return _Construction_delegate._append_construction_rows(self, rows, snapshot, type_ids, type_names)
-
 func _building_icon(type_id: String, snapshot: Dictionary = {}, type_idx: int = -1) -> StringName:
 	return _Construction_delegate._building_icon(self, type_id, snapshot, type_idx)
-
-func _owner_profession_name(snapshot: Dictionary, signature_idx: int) -> String:
-	return _Construction_delegate._owner_profession_name(self, snapshot, signature_idx)
-
-func _profession_name(snapshot: Dictionary, profession_idx: int) -> String:
-	return _Construction_delegate._profession_name(self, snapshot, profession_idx)
-
-func _format_input_candidate_label(good_id: String, efficiency_q16: int) -> String:
-	return _Construction_delegate._format_input_candidate_label(self, good_id, efficiency_q16)
 
 func _good_display_name(stable_id: String) -> String:
 	return _Construction_delegate._good_display_name(self, stable_id)
@@ -1199,38 +596,11 @@ func _good_display_name(stable_id: String) -> String:
 func _resource_display_name(stable_id: String) -> String:
 	return _Construction_delegate._resource_display_name(self, stable_id)
 
-func _fill_percent(filled: int, required: int) -> float:
-	return _Construction_delegate._fill_percent(self, filled, required)
-
-func _actual_daily_rate(actual_total: int, building_count: int, period_days: int) -> String:
-	return _Construction_delegate._actual_daily_rate(self, actual_total, building_count, period_days)
-
 func _sum_i64(values: PackedInt64Array) -> int:
 	return _Construction_delegate._sum_i64(self, values)
 
 func _money_text(subunits: int) -> String:
 	return _Construction_delegate._money_text(self, subunits)
-
-func _goods_unit_text(subunits: int) -> String:
-	return _Construction_delegate._goods_unit_text(self, subunits)
-
-func _packed_i64_at(values: PackedInt64Array, index: int) -> int:
-	return _Construction_delegate._packed_i64_at(self, values, index)
-
-func _market_trade_enabled(enabled: PackedByteArray, index: int) -> bool:
-	return _Construction_delegate._market_trade_enabled(self, enabled, index)
-
-func _trade_arrival_days(next_arrival_day: int, sample_day: int) -> int:
-	return _Construction_delegate._trade_arrival_days(self, next_arrival_day, sample_day)
-
-func _market_trade_insight_text(in_transit_kinds: int, arrival_days: int) -> String:
-	return _Construction_delegate._market_trade_insight_text(self, in_transit_kinds, arrival_days)
-
-func _cashflow_source_name(source_id: String, income: bool) -> String:
-	return _Construction_delegate._cashflow_source_name(self, source_id, income)
-
-func _has_cashflow_row(rows: Array, source_id: String) -> bool:
-	return _Construction_delegate._has_cashflow_row(self, rows, source_id)
 
 func _weather_field(cell: HexCell, idx: int) -> Dictionary:
 	return _Geography_delegate._weather_field(self, cell, idx)
@@ -1238,14 +608,8 @@ func _weather_field(cell: HexCell, idx: int) -> Dictionary:
 func _resource_visibility_context(cell_idx: int) -> Dictionary:
 	return _Geography_delegate._resource_visibility_context(self, cell_idx)
 
-func _completed_technology_ids(country_facade, handle: int) -> Dictionary:
-	return _Geography_delegate._completed_technology_ids(self, country_facade, handle)
-
 func player_technology_ids() -> PackedStringArray:
 	return _Geography_delegate.player_technology_ids(self)
-
-func _extractable_resource_ids(snapshot: Dictionary) -> Dictionary:
-	return _Geography_delegate._extractable_resource_ids(self, snapshot)
 
 func _resource_state(idx: int, is_water: bool, visibility: Dictionary = {}) -> Array:
 	return _Geography_delegate._resource_state(self, idx, is_water, visibility)
@@ -1253,26 +617,8 @@ func _resource_state(idx: int, is_water: bool, visibility: Dictionary = {}) -> A
 func _resource_reserve(profile, idx: int) -> float:
 	return _Geography_delegate._resource_reserve(self, profile, idx)
 
-func _resource_reference_reserve(profile: ResourceProfile) -> float:
-	return _Geography_delegate._resource_reference_reserve(self, profile)
-
-func _habitability_score(temp: float, moist: float, vitality: float, elev: float, passable_land: bool, is_water: bool) -> float:
-	return _Geography_delegate._habitability_score(self, temp, moist, vitality, elev, passable_land, is_water)
-
-func _score_caption(v: float) -> String:
-	return _Geography_delegate._score_caption(self, v)
-
-func _score_color(v: float) -> Color:
-	return _Geography_delegate._score_color(self, v)
-
-func _terrain(cell: HexCell, idx: int) -> int:
-	return _Geography_delegate._terrain(self, cell, idx)
-
 func _landform(cell: HexCell, idx: int) -> int:
 	return _Geography_delegate._landform(self, cell, idx)
-
-func _vegetation(cell: HexCell, idx: int) -> int:
-	return _Geography_delegate._vegetation(self, cell, idx)
 
 func _cover(cell: HexCell, idx: int) -> int:
 	return _Geography_delegate._cover(self, cell, idx)
@@ -1280,59 +626,11 @@ func _cover(cell: HexCell, idx: int) -> int:
 func _temp(cell: HexCell, idx: int) -> float:
 	return _Geography_delegate._temp(self, cell, idx)
 
-func _moisture(cell: HexCell, idx: int) -> float:
-	return _Geography_delegate._moisture(self, cell, idx)
-
-func _base_moisture(cell: HexCell, idx: int) -> float:
-	return _Geography_delegate._base_moisture(self, cell, idx)
-
 func _elevation(cell: HexCell, idx: int) -> float:
 	return _Geography_delegate._elevation(self, cell, idx)
 
-func _snow_cover(cell: HexCell, idx: int) -> float:
-	return _Geography_delegate._snow_cover(self, cell, idx)
-
-func _vitality(cell: HexCell, landform_v: int) -> float:
-	return _Geography_delegate._vitality(self, cell, landform_v)
-
-func _weather_intensity(cell: HexCell, idx: int) -> float:
-	return _Geography_delegate._weather_intensity(self, cell, idx)
-
-func _weather_name(cell: HexCell, idx: int) -> String:
-	return _Geography_delegate._weather_name(self, cell, idx)
-
 func _has_river(cell: HexCell, idx: int) -> bool:
 	return _Geography_delegate._has_river(self, cell, idx)
-
-func _ocean_current(cell: HexCell, idx: int) -> Vector2:
-	return _Geography_delegate._ocean_current(self, cell, idx)
-
-func _wind_vector(cell: HexCell, idx: int) -> Vector2:
-	return _Geography_delegate._wind_vector(self, cell, idx)
-
-func _wind_speed(cell: HexCell, idx: int) -> float:
-	return _Geography_delegate._wind_speed(self, cell, idx)
-
-func _upwelling(cell: HexCell, idx: int) -> float:
-	return _Geography_delegate._upwelling(self, cell, idx)
-
-func _adapter_float(method: String, idx: int, fallback: float) -> float:
-	return _Geography_delegate._adapter_float(self, method, idx, fallback)
-
-func _history_values(cell: HexCell) -> Array:
-	return _Geography_delegate._history_values(self, cell)
-
-func _temperature_chart(chart_id: String, title: String, idx: int, current_temp: float) -> Dictionary:
-	return _Geography_delegate._temperature_chart(self, chart_id, title, idx, current_temp)
-
-func _temperature_memory(idx: int, current_temp: float) -> Array:
-	return _Geography_delegate._temperature_memory(self, idx, current_temp)
-
-func _record_temperature_sample(idx: int, day_idx: int, value: float) -> void:
-	return _Geography_delegate._record_temperature_sample(self, idx, day_idx, value)
-
-func _current_sample_day() -> int:
-	return _Geography_delegate._current_sample_day(self)
 
 func _daily_delta_text(v: float) -> String:
 	return _Geography_delegate._daily_delta_text(self, v)
@@ -1340,38 +638,11 @@ func _daily_delta_text(v: float) -> String:
 func _sample_daily_delta(cache: Dictionary, key: String, value: float, day: int) -> float:
 	return _Geography_delegate._sample_daily_delta(self, cache, key, value, day)
 
-func _relative_sea_level_text(elev: float, sea: float) -> String:
-	return _Geography_delegate._relative_sea_level_text(self, elev, sea)
-
-func _resource_index_text(v: float) -> String:
-	return _Geography_delegate._resource_index_text(self, v)
-
-func _intensity_text(v: float) -> String:
-	return _Geography_delegate._intensity_text(self, v)
-
-func _cloud_band(v: float) -> String:
-	return _Geography_delegate._cloud_band(self, v)
-
-func _precip_band(v: float) -> String:
-	return _Geography_delegate._precip_band(self, v)
-
-func _cover_intensity_band(v: float) -> String:
-	return _Geography_delegate._cover_intensity_band(self, v)
-
-func _stress_band(v: float) -> String:
-	return _Geography_delegate._stress_band(self, v)
-
 static func resource_density_level(v: float) -> int:
 	return _Geography.resource_density_level(v)
 
 static func resource_density_band(v: float) -> String:
 	return _Geography.resource_density_band(v)
-
-func _history_badges(cell: HexCell) -> Array:
-	return _Geography_delegate._history_badges(self, cell)
-
-func _densify_series(source: Array, target_count: int) -> Array:
-	return _Geography_delegate._densify_series(self, source, target_count)
 
 func _dir_degrees_text(v: Vector2) -> String:
 	return _Geography_delegate._dir_degrees_text(self, v)
@@ -1410,117 +681,11 @@ func _decorate_category_with_tax(
 		tab_id: String,
 		category: Dictionary
 ) -> Dictionary:
-	var tab_contract: Dictionary = {
-		"population": {"row_key": "cohort_rows", "object_kind": "cohort",
-			"tax_kinds": ["income"]},
-		"market": {"row_key": "market_rows", "object_kind": "good",
-			"tax_kinds": ["consumption", "import", "export"]},
-		"buildings": {"row_key": "building_rows", "object_kind": "building",
-			"tax_kinds": ["business"]},
-	}.get(tab_id, {})
-	if tab_contract.is_empty():
-		return category
-	var context := _tax_context_for_cell(cell_idx, tab_contract.get("tax_kinds", []))
-	category["tax_context"] = context
-	if not bool(context.get("available", false)):
-		return category
-	var policy: Dictionary = context.get("policy", {})
-	var row_key := String(tab_contract.get("row_key", ""))
-	var object_kind := String(tab_contract.get("object_kind", ""))
-	var rows: Array = category.get(row_key, [])
-	for row_value in rows:
-		var row: Dictionary = row_value
-		var item_id := _object_tax_item_id(object_kind, row)
-		row["tax_lanes"] = _tax_lanes_from_policy(
-			policy, object_kind, item_id, bool(context.get("editable", false)))
-	# The raw snapshot is only an internal construction aid. Components consume the
-	# bounded lane dictionaries and must never retain the facade snapshot itself.
-	context.erase("policy")
-	category["tax_context"] = context
-	return category
+	return TaxProjection._decorate_category_with_tax(self, cell_idx, tab_id, category)
 
 
 func _tax_context_for_cell(cell_idx: int, kinds: Array) -> Dictionary:
-	# default_lanes 是地块税种默认，供人口/市场/建筑页渲染；对象详情只用 row.tax_lanes。
-	var country := _country_summary(cell_idx)
-	if not bool(country.get("ok", false)) or not bool(country.get("owned", false)):
-		return {"available": false, "editable": false,
-			"reason": "", "cell": cell_idx,
-			"default_lanes": []}
-	var facade = _generator.get_country_facade() if _generator != null \
-		and _generator.has_method("get_country_facade") else null
-	if facade == null or not facade.has_method("cell_tax_policy_snapshot"):
-		return {"available": false, "editable": false,
-			"reason": "税收政策暂不可用", "cell": cell_idx,
-			"default_lanes": []}
-	var policy: Dictionary = facade.cell_tax_policy_snapshot(cell_idx)
-	if not bool(policy.get("ok", false)):
-		return {"available": false, "editable": false,
-			"reason": String(policy.get("reason", "税收政策暂不可用")),
-			"cell": cell_idx, "default_lanes": []}
-	var owner_handle := int(policy.get(
-		"country_handle", country.get("country_handle", 0)))
-	var editable := owner_handle == _player_country_handle()
-	var defaults: Array = []
-	var reset_targets: Array = []
-	var country_defaults := _tax_basis_points_array(policy,
-		"country_default_rates_basis_points", "country_default_rates")
-	var local_defaults := _tax_basis_points_array(policy,
-		"local_default_rates_basis_points", "local_default_rates")
-	var local_flags: PackedByteArray = policy.get(
-		"has_local_default", PackedByteArray())
-	var country_modes: PackedInt32Array = policy.get(
-		"country_default_assessment_modes", PackedInt32Array())
-	var local_modes: PackedInt32Array = policy.get(
-		"local_default_assessment_modes", PackedInt32Array())
-	for kind_value in kinds:
-		var kind := String(kind_value)
-		var kind_id := int(TAX_KIND_IDS.get(kind, -1))
-		if kind_id < 0:
-			continue
-		var inherited := int(country_defaults[kind_id]) \
-			if kind_id < country_defaults.size() else 0
-		var inherited_mode := int(country_modes[kind_id]) \
-			if kind_id < country_modes.size() else 0
-		var overridden := kind_id < local_flags.size() and local_flags[kind_id] != 0
-		var rate := int(local_defaults[kind_id]) \
-			if overridden and kind_id < local_defaults.size() else inherited
-		var mode := int(local_modes[kind_id]) \
-			if overridden and kind_id < local_modes.size() else inherited_mode
-		defaults.append({
-			"scope": "default", "kind": kind,
-			"kind_label": String(TAX_DEFAULT_LABELS.get(kind,
-				TAX_KIND_LABELS.get(kind, kind))),
-			"accent": TAX_KIND_ACCENTS.get(kind, UITokens.ACCENT),
-			"item_id": "", "base": rate, "effective": rate,
-			"mode": mode, "effective_mode": mode,
-			"default_rate": inherited, "default_mode": inherited_mode,
-			"has_override": overridden,
-			"editable": editable,
-		})
-		if overridden:
-			reset_targets.append({"scope": "default", "kind": kind, "item_id": ""})
-		# 从政策快照取全部覆盖，包含当前名录中未出现的职业、物资和建筑。
-		var group: Dictionary = policy.get(kind, {})
-		var item_ids: PackedStringArray = group.get("item_ids", PackedStringArray())
-		var item_flags: PackedByteArray = group.get("has_local_item", PackedByteArray())
-		for item_index in range(mini(item_ids.size(), item_flags.size())):
-			if item_flags[item_index] != 0:
-				reset_targets.append({"scope": "item", "kind": kind,
-					"item_id": String(item_ids[item_index])})
-	return {
-		"available": true,
-		"editable": editable,
-		"country_name": String(country.get("country_name", "")),
-		"country_handle": owner_handle,
-		"cell": cell_idx,
-		"current_day": int(facade.report().get("last_committed_day", -1)) \
-			if facade.has_method("report") else -1,
-		"policy_version": int(policy.get("policy_version", -1)),
-		"default_lanes": defaults,
-		"reset_targets": reset_targets,
-		"policy": policy,
-	}
+	return TaxProjection._tax_context_for_cell(self, cell_idx, kinds)
 
 
 func _tax_lanes_from_policy(
@@ -1529,47 +694,7 @@ func _tax_lanes_from_policy(
 		item_id: String,
 		editable: bool
 ) -> Array:
-	return _ObjectDossiers._tax_lanes_from_policy(self, policy, object_kind, item_id, editable)
-
-
-func _tax_basis_points_array(policy: Dictionary, preferred_key: String,
-		legacy_key: String) -> PackedInt32Array:
-	var preferred: PackedInt32Array = policy.get(preferred_key, PackedInt32Array())
-	if not preferred.is_empty():
-		return preferred
-	var legacy: PackedInt32Array = policy.get(legacy_key, PackedInt32Array())
-	var converted := PackedInt32Array()
-	converted.resize(legacy.size())
-	for i in legacy.size():
-		converted[i] = int(legacy[i]) * 100
-	return converted
-
-
-func _tax_group_basis_points(group: Dictionary, key: String,
-		fallback: PackedInt32Array = PackedInt32Array()) -> PackedInt32Array:
-	var preferred: PackedInt32Array = group.get(
-		"%s_basis_points" % key, PackedInt32Array())
-	if not preferred.is_empty():
-		return preferred
-	var legacy: PackedInt32Array = group.get(key, fallback)
-	if legacy.is_empty():
-		return fallback
-	var converted := PackedInt32Array()
-	converted.resize(legacy.size())
-	for i in legacy.size():
-		converted[i] = int(legacy[i]) * 100
-	return converted
-
-
-func _object_tax_item_id(kind: String, row: Dictionary) -> String:
-	match kind:
-		"cohort":
-			return String(row.get("profession_id", ""))
-		"building":
-			return String(row.get("building_type_id", ""))
-		"good":
-			return String(row.get("good_id", ""))
-	return ""
+	return TaxProjection._tax_lanes_from_policy(self, policy, object_kind, item_id, editable)
 
 
 # 弹窗标题永远是用户可读名：行内 name 缺失或退化为原始 stable id 时，
@@ -1579,7 +704,7 @@ func _object_display_name(kind: String, row: Dictionary, cell_idx: int) -> Strin
 	if kind == "cohort":
 		var profession_id := String(row.get("profession_id", ""))
 		if name.is_empty() or name == profession_id:
-			var localized := _profession_name_for_id(_population_snapshot(cell_idx), profession_id)
+			var localized := _profession_name_for_id(_Overview_delegate._population_snapshot(self, cell_idx), profession_id)
 			if not localized.is_empty():
 				name = localized
 	if name.is_empty():
@@ -1603,7 +728,7 @@ func _cell_tax_policy_version(cell_idx: int) -> int:
 
 
 func _cell_tax_category(cell_idx: int) -> Dictionary:
-	var country := _country_summary(cell_idx)
+	var country := _Overview_delegate._country_summary(self, cell_idx)
 	if not bool(country.get("ok", false)) or not bool(country.get("owned", false)):
 		return {}
 	var facade = _generator.get_country_facade() if _generator != null \
@@ -1645,7 +770,7 @@ func _player_country_handle() -> int:
 		var start_report: Dictionary = _generator.gameplay_start_report()
 		var start_cell := int(start_report.get("cell", -1))
 		if bool(start_report.get("ok", false)) and start_cell >= 0:
-			var summary := _country_summary(start_cell)
+			var summary := _Overview_delegate._country_summary(self, start_cell)
 			if bool(summary.get("ok", false)) and bool(summary.get("owned", false)):
 				_player_country_handle_cache = int(summary.get("country_handle", -1))
 				_player_country_resolved = true

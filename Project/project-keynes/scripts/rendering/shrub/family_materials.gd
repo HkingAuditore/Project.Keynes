@@ -27,7 +27,7 @@ static func detail_style_shading(host) -> Dictionary:
 
 	var cfg = host._profile()
 	var arch = host._detail_kind()
-	var is_deco = host._is_decoration_archetype(arch)
+	var is_deco = host.ShrubScatter._is_decoration_archetype(host, arch)
 	var phenology_response = 1.0
 	var phenology_color_dominance = 0.68
 	var albedo_light_floor = 0.44
@@ -73,7 +73,7 @@ static func detail_style_shading(host) -> Dictionary:
 		"phenology_response": phenology_response,
 		"phenology_color_dominance": phenology_color_dominance,
 		"albedo_light_floor": albedo_light_floor,
-		"aquatic_response": 1.0 if host._spawn_domain() == host.SPAWN_WATER else 0.0,
+		"aquatic_response": 1.0 if host.ShrubScatter._spawn_domain(host) == host.SPAWN_WATER else 0.0,
 		"bloom_strength": bloom,
 		"snow_burial": 0.0 if is_deco else snow_burial_strength,
 		"snow_size_floor": snow_size_floor,
@@ -129,7 +129,7 @@ static func set_family_batch_suppressed(host, suppressed: bool) -> void:
 		_set_family_source_node_attached(host, raw_node as MultiMeshInstance2D, not suppressed)
 	_set_family_source_node_attached(host, host._mmi, not suppressed)
 	_set_family_source_node_attached(host, host._shadow_mmi, not suppressed)
-	host._refresh_chunk_visibility()
+	host.Chunk_nodes._refresh_chunk_visibility(host)
 	if suppressed:
 		if host._mmi != null:
 			host._mmi.visible = false
@@ -146,7 +146,7 @@ static func set_family_batch_suppressed(host, suppressed: bool) -> void:
 				if node != null and is_instance_valid(node):
 					node.visible = false
 	else:
-		host._refresh_chunk_visibility()
+		host.Chunk_nodes._refresh_chunk_visibility(host)
 
 
 
@@ -200,13 +200,13 @@ static func detail_family_chunk_ids(host) -> Array:
 
 static func detail_family_mesh(host) -> ArrayMesh:
 
-	return host._cached_detail_mesh()
+	return host.ShrubScatter._cached_detail_mesh(host)
 
 
 
 static func detail_family_quality(host) -> int:
 
-	return host._active_quality_tier()
+	return host.ShrubScatter._active_quality_tier(host)
 
 
 
@@ -214,7 +214,7 @@ static func detail_family_mesh_for_quality(host, quality: int) -> ArrayMesh:
 
 	var previous_quality = host._visual_quality
 	host._visual_quality = clampi(quality, 0, 2)
-	var mesh = host._build_shrub_mesh()
+	var mesh = host.ShrubScatter._build_shrub_mesh(host)
 	host._visual_quality = previous_quality
 	return mesh
 
@@ -233,7 +233,7 @@ static func detail_family_material(host, style_lut: Texture2D) -> ShaderMaterial
 	if host._world != null and host._world.enum_lut_tex != null:
 		out.set_shader_parameter("enum_lut", host._world.enum_lut_tex)
 	_track_family_material(host, out)
-	host._push_cloud_shadow_uniforms_to(out)
+	host.Material_inputs._push_cloud_shadow_uniforms_to(host, out)
 	return out
 
 
@@ -327,7 +327,7 @@ static func detail_family_shadow_material(host, style_lut: Texture2D = null) -> 
 		out.shader = detail_family_shader(host, true)
 		out.set_shader_parameter("detail_style_lut", style_lut)
 		out.set_shader_parameter("detail_style_lut_size", Vector2(16.0, 32.0))
-	host._push_cloud_shadow_uniforms_to(out)
+	host.Material_inputs._push_cloud_shadow_uniforms_to(host, out)
 	return out
 
 
@@ -342,7 +342,7 @@ static func detail_family_shadow_mesh(host) -> ArrayMesh:
 
 static func detail_family_casts_shadow(host) -> bool:
 
-	return host._shadow_resources_enabled()
+	return host.Chunk_nodes._shadow_resources_enabled(host)
 
 
 
@@ -356,15 +356,12 @@ static func detail_change_affects_profile(host,
 	if (axis_mask & 0x80) != 0:
 		return true
 	if (axis_mask & 0x01) != 0 \
-			and (host._vegetation_weight(old_veg) > 0.0 or host._vegetation_weight(new_veg) > 0.0):
+			and (host.ShrubScatter._vegetation_weight(host, old_veg) > 0.0 or host.ShrubScatter._vegetation_weight(host, new_veg) > 0.0):
 		return true
 	if (axis_mask & 0x02) != 0 \
-			and (host._landform_weight(old_lf) > 0.0 or host._landform_weight(new_lf) > 0.0):
+			and (host.ShrubScatter._landform_weight(host, old_lf) > 0.0 or host.ShrubScatter._landform_weight(host, new_lf) > 0.0):
 		return true
 	if (axis_mask & 0x04) != 0 \
-			and (host._cover_weight(old_cover) > 0.0 or host._cover_weight(new_cover) > 0.0):
+			and (host.ShrubScatter._cover_weight(host, old_cover) > 0.0 or host.ShrubScatter._cover_weight(host, new_cover) > 0.0):
 		return true
 	return false
-
-
-

@@ -7,27 +7,32 @@
   "Project/project-keynes/scripts/country/map_country_initializer.gd": {
     "economy": 1
   },
-  "Project/project-keynes/scripts/economy/economy_facade.gd": {
+  "Project/project-keynes/scripts/economy/economy_facade_queries.gd": {
     "visual": 1
   },
-  "Project/project-keynes/scripts/game/game_save_coordinator.gd": {
-    "country": 2,
-    "economy": 1,
-    "effect": 1,
+  "Project/project-keynes/scripts/game/inline_economy_pulse.gd": {
+    "country": 3,
+    "economy": 3,
     "ideology": 1
   },
   "Project/project-keynes/scripts/game/map_runtime_bridge.gd": {
     "climate": 2,
-    "country": 3,
-    "economy": 3,
     "effect": 7,
     "events": 4,
-    "ideology": 3,
+    "ideology": 2,
     "modifier": 3,
     "trigger": 2
   },
+  "Project/project-keynes/scripts/game/save_boundary_checks.gd": {
+    "country": 2,
+    "effect": 1,
+    "ideology": 1
+  },
   "Project/project-keynes/scripts/game/save_modules/country_state.gd": {
     "country": 1
+  },
+  "Project/project-keynes/scripts/game/save_state_sections.gd": {
+    "economy": 1
   },
   "Project/project-keynes/scripts/game/world_runtime_presentation.gd": {
     "country": 1,
@@ -43,7 +48,7 @@
   "Project/project-keynes/scripts/geography/map_generation/native_generation_bridge.gd": {
     "core": 2
   },
-  "Project/project-keynes/scripts/geography/map_generation/terrain_gen.gd": {
+  "Project/project-keynes/scripts/geography/map_generation/terrain_bio_publication.gd": {
     "climate": 6,
     "core": 2
   },
@@ -67,14 +72,17 @@
   "Project/project-keynes/scripts/rendering/bakers/climate_baker.gd": {
     "core": 2
   },
+  "Project/project-keynes/scripts/rendering/bakers/daily_wind_field_baker.gd": {
+    "core": 6
+  },
   "Project/project-keynes/scripts/rendering/bakers/ocean_current_baker.gd": {
     "core": 1
   },
-  "Project/project-keynes/scripts/rendering/bakers/physical_circulation_baker.gd": {
-    "core": 6
-  },
   "Project/project-keynes/scripts/rendering/bakers/physical_solve_baker.gd": {
-    "core": 8
+    "core": 4
+  },
+  "Project/project-keynes/scripts/rendering/bakers/physical_solve_step.gd": {
+    "core": 4
   },
   "Project/project-keynes/scripts/rendering/building_visual_intel_cache.gd": {
     "economy": 1

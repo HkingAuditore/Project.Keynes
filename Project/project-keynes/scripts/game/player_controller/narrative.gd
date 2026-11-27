@@ -96,7 +96,7 @@ func _sync_era_music(host, force_population_sync: bool = false) -> void:
 		audio.set_era(era_index)
 	var era_changed := era_index >= 0 and era_index != prev_era
 	if (force_population_sync or era_changed) and host._camera != null:
-		host._sync_camera_zoom_audio(force_population_sync and prev_era < 0)
+		host.AudioPresentation._sync_camera_zoom_audio(host, force_population_sync and prev_era < 0)
 	if host._economy_facade != null and host._economy_facade.has_method("country_economy_overview") \
 			and audio.has_method("update_active_suite_population_count"):
 		var now_ms := Time.get_ticks_msec()

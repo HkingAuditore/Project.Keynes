@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Check source line counts against review thresholds.
 
-New files must stay within their threshold. Files in the baseline must stay
-at or below their recorded count.
+All measured files must have fewer than 800 physical lines. Orchestrators have
+a lower default threshold, and existing baseline entries cap growth.
 Physical lines include comments and blanks. --write-baseline only lowers or
 drops existing entries and saves any tightening before reporting growth and new
 oversized files as errors.
@@ -15,9 +15,11 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+MAX_SOURCE_LINES = 799
+ORCHESTRATOR_LIMIT = 600
 GROWTH_ALLOWANCE = 0
 # Explicit ownership, not a loose filename heuristic. New orchestrators must
-# be registered here; ordinary leaf files use the language threshold.
+# be registered here and meet their lower threshold.
 ORCHESTRATORS = {
     "Project/project-keynes/scripts/game/world_runtime_host.gd",
     "Project/project-keynes/scripts/game/game_save_coordinator.gd",
@@ -41,7 +43,7 @@ def measure(root: Path) -> dict[str, dict[str, int]]:
                 or ".generated." in path.name or path.stem.endswith("_generated")):
             continue
         name = relative.as_posix()
-        limit = 600 if name in ORCHESTRATORS else (800 if path.suffix == ".gd" else 2000)
+        limit = ORCHESTRATOR_LIMIT if name in ORCHESTRATORS else MAX_SOURCE_LINES
         lines = len(path.read_text(encoding="utf-8").splitlines())
         result[name] = {"lines": lines, "limit": limit}
     return result
@@ -52,7 +54,7 @@ def violations(current: dict, baseline: dict) -> list[str]:
     for name, entry in current.items():
         allowed = entry["limit"]
         if name in baseline:
-            allowed = baseline[name]["lines"] + GROWTH_ALLOWANCE
+            allowed = min(MAX_SOURCE_LINES, baseline[name]["lines"] + GROWTH_ALLOWANCE)
         if entry["lines"] > allowed:
             errors.append(f"{name}: {entry['lines']} lines > {allowed} (threshold {entry['limit']})")
     return errors
@@ -76,7 +78,8 @@ def main() -> int:
             f"{name} grew {baseline[name]['lines']} -> {entry['lines']} lines (threshold {entry['limit']}); "
             "split it before adding more, see docs/architecture/development-guide.md"
         )
-        growth_is_error = args.write_baseline or entry["lines"] > baseline[name]["lines"] + GROWTH_ALLOWANCE
+        allowed = min(MAX_SOURCE_LINES, baseline[name]["lines"] + GROWTH_ALLOWANCE)
+        growth_is_error = args.write_baseline or entry["lines"] > allowed
         if not growth_is_error:
             print(f"warning: {message}")
             warnings += 1
@@ -92,8 +95,9 @@ def main() -> int:
             entry = current.get(name)
             if entry is None or entry["lines"] <= entry["limit"]:
                 continue
-            if entry["lines"] < previous["lines"]:
-                candidate[name] = entry
+            lines = min(entry["lines"], previous["lines"], MAX_SOURCE_LINES)
+            if lines < previous["lines"]:
+                candidate[name] = {"lines": lines, "limit": entry["limit"]}
                 lowered += 1
             else:
                 candidate[name] = previous
@@ -105,15 +109,16 @@ def main() -> int:
 
         errors = []
         for name, entry in current.items():
-            if name not in baseline and entry["lines"] > entry["limit"]:
+            if name in baseline:
+                allowed = min(MAX_SOURCE_LINES, baseline[name]["lines"])
+                if entry["lines"] > allowed:
+                    errors.append(
+                        f"{name}: {entry['lines']} lines > {allowed} (baseline); "
+                        "cannot raise the baseline"
+                    )
+            elif entry["lines"] > entry["limit"]:
                 errors.append(
-                    f"{name}: {entry['lines']} lines > {entry['limit']} (threshold); "
-                    "split the file or register it in ORCHESTRATORS only if it is an orchestrator"
-                )
-            elif name in baseline and entry["lines"] > baseline[name]["lines"]:
-                errors.append(
-                    f"{name}: {entry['lines']} lines > {baseline[name]['lines']} (baseline); "
-                    "cannot raise the baseline"
+                    f"{name}: {entry['lines']} lines > {entry['limit']} (threshold); split the file"
                 )
     else:
         errors = violations(current, baseline)

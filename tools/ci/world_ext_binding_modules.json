@@ -40,6 +40,7 @@
       "world_ext_country.cpp",
       "world_ext_country_commands.cpp",
       "world_ext_country_ai.cpp",
+      "world_ext_country_ai_self_test.cpp",
       "world_ext_annual.cpp"
     ],
     "military": [
@@ -79,16 +80,19 @@
       "world_ext_building_visual.cpp",
       "world_ext_trade_visual.cpp",
       "world_ext_detail.cpp",
+      "world_ext_detail_delta.cpp",
       "world_ext_vision.cpp"
     ],
     "demo": [
-      "world_ext_demo.cpp"
+      "world_ext_demo.cpp",
+      "world_ext_demo_benchmarks.cpp",
+      "world_ext_demo_csv.cpp"
     ]
   },
   "script_dirs": {
-    "core": ["scripts/data_core", "scripts/ecs", "scripts/simulation", "scripts/game", "scripts/geography/hex_cell.gd"],
+    "core": ["scripts/data_core", "scripts/ecs", "scripts/simulation", "scripts/game", "scripts/geography/hex_cell.gd", "scripts/geography/hex_cell_runtime_columns.gd"],
     "runtime": ["scripts/game", "scripts/simulation", "scripts/bootstrap"],
-    "climate": ["scripts/weather", "scripts/simulation", "scripts/rendering/map_baker.gd", "scripts/rendering/bakers/physical_solve_baker.gd", "scripts/rendering/bakers/physical_circulation_baker.gd"],
+    "climate": ["scripts/weather", "scripts/simulation", "scripts/rendering/map_baker.gd", "scripts/rendering/bakers/physical_solve_baker.gd", "scripts/rendering/bakers/physical_circulation_baker.gd", "scripts/rendering/bakers/physical_solve_step.gd", "scripts/rendering/bakers/daily_wind_field_baker.gd"],
     "economy": ["scripts/economy", "scripts/family", "scripts/simulation/systems/economy_daily_system.gd"],
     "country": ["scripts/country", "scripts/annual"],
     "military": ["scripts/military"],
@@ -97,9 +101,9 @@
     "ideology": ["scripts/ideology", "scripts/simulation/systems/ideology_runtime_system.gd"],
     "trigger": ["scripts/trigger", "scripts/simulation/systems/trigger_daily_system.gd"],
     "events": ["scripts/narrative", "scripts/data_core/gameplay_event_bus.gd", "scripts/simulation/systems/gameplay_effect_system.gd"],
-    "generation": ["scripts/geography", "scripts/rendering/map_baker.gd", "scripts/rendering/bakers", "scripts/simulation/economy/map_resource_initializer.gd", "scripts/simulation/climate/mapgen_climate_passes_a.gd"],
+    "generation": ["scripts/geography", "scripts/rendering/map_baker.gd", "scripts/rendering/bakers", "scripts/simulation/economy/map_resource_initializer.gd", "scripts/simulation/economy/map_resource_deposits.gd", "scripts/simulation/climate/mapgen_climate_passes_a.gd"],
     "bake_encoders": ["scripts/rendering/bakers", "scripts/rendering/renderer_terrain_horizon.gd"],
-    "visual": ["scripts/rendering", "scripts/simulation/systems/dynamic_visual_atlas_upload_system.gd"],
+    "visual": ["scripts/rendering", "scripts/simulation/systems/dynamic_visual_atlas_upload_system.gd", "scripts/simulation/systems/dynamic_atlas_native_commit.gd", "scripts/simulation/systems/dynamic_atlas_stride.gd"],
     "demo": ["scripts/ui/tile_data_recorder.gd"]
   },
   "test_only": [

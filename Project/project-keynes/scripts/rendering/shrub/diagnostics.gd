@@ -32,7 +32,7 @@ static func get_scatter_diagnostics(host) -> Dictionary:
 		"chunk_size_cells": host._chunk_size_cells,
 		"missing_slots": host._last_incremental_missing_slots,
 		"dropped_instances": host._last_incremental_dropped_instances,
-		"spawn_domain": host._spawn_domain(),
+		"spawn_domain": host.ShrubScatter._spawn_domain(host),
 		"detail_kind": host._detail_kind(),
 		"render_family": host.detail_render_family(),
 		"camera_view_initialized": host._camera_view_initialized,
@@ -42,7 +42,7 @@ static func get_scatter_diagnostics(host) -> Dictionary:
 		"lod_far_visible_fraction": host._lod_far_visible_fraction,
 		"lod_far_instance_count": host._far_instance_count,
 		"lod_zoom_t": host._lod_zoom_t,
-		"lod_effective_visible_fraction": host._effective_visible_instance_fraction(),
+		"lod_effective_visible_fraction": host.Chunk_budget._effective_visible_instance_fraction(host),
 		"seamless_spawn_radius": host._effective_spawn_radius_factor(),
 	}
 
@@ -106,7 +106,7 @@ static func detail_visibility_probe(host) -> Dictionary:
 		"chunk_visible_sum": visible_sum,
 		"chunk_inst_sum": inst_sum,
 		"origin_samples": origin_samples,
-		"spawn_domain": host._spawn_domain(),
+		"spawn_domain": host.ShrubScatter._spawn_domain(host),
 		"cid_probe": _cid_probe(host, origin_samples),
 		# [DEBUG-TEMP] chunk 材质 shader 变体 / 纹理绑定核查：duplicate(true) 深拷贝的
 		# chunk 材质在 _refresh_shader_variants 后可能滞留旧 shader 变体或缺纹理绑定。
@@ -365,18 +365,18 @@ static func _hash2i(host, x: int, y: int, salt: int) -> float:
 
 static func _report_veg_shader_cost(host) -> void:
 
-	if host._shader_compile_stats.is_empty():
+	if host.VegetationShaderVariants._shader_compile_stats.is_empty():
 		return
 	if not WebTelemetry.enabled():
 		return
 	var share_layers = _shader_share_layer_count(host)
-	var keys: Array = host._shader_compile_stats.keys()
+	var keys: Array = host.VegetationShaderVariants._shader_compile_stats.keys()
 	keys.sort()
 	for key in keys:
-		if host._shader_compile_reported.has(key):
+		if host.VegetationShaderVariants._shader_compile_reported.has(key):
 			continue
-		host._shader_compile_reported[key] = true
-		var record: Dictionary = host._shader_compile_stats[key]
+		host.VegetationShaderVariants._shader_compile_reported[key] = true
+		var record: Dictionary = host.VegetationShaderVariants._shader_compile_stats[key]
 		WebTelemetry.emit("veg_shader", {
 			"s": String(record.get("s", "body")),
 			"ms": snappedf(float(record.get("ms", 0.0)), 0.01),

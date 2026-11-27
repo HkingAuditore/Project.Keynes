@@ -1,15 +1,35 @@
 extends "res://tests/runtime/background_daily_self_sufficiency_test.gd"
 
 class CapacityHost extends WorldRuntimeHost:
+	const SWEEP_CELLS := 24
+	const PLAIN_VIEW_COST := 10
+
 	var synthetic_observations := 0
 	func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 		var map := current_map()
-		var player_slot := int(map.country_slot_arr[_resolve_player_start_cell()])
+		var start := _resolve_player_start_cell()
+		var player_slot := int(map.country_slot_arr[start])
+		# Keep the stress sweep independent of the generated relief at the spawn.
+		# Flat plains supply four rings. Use 24 remote cells to retain the
+		# original workload within the receipt pages this test reads.
+		var heights := PackedByteArray()
+		heights.resize(map.cell_count())
+		heights.fill(0)
+		var blocks := PackedByteArray()
+		blocks.resize(map.cell_count())
+		blocks.fill(PLAIN_VIEW_COST)
+		_world_data.cell_view_height = heights
+		_world_data.cell_view_block = blocks
+		var visible: PackedByteArray = VisionSolver.compute_visible_for_sources(
+			map, _world_data, PackedInt32Array([start])).get("visible", PackedByteArray())
 		var count: int = ResearchSignalCatalog.compile_native_catalog().research_signal_ids.size()
 		var offsets := PackedInt32Array([0])
 		var signals := PackedInt32Array()
+		var remote_cells := 0
 		for cell in map.cell_count():
-			if int(map.country_slot_arr[cell]) != player_slot:
+			if (remote_cells < SWEEP_CELLS and cell < visible.size() and visible[cell] != 0
+					and int(map.country_slot_arr[cell]) != player_slot):
+				remote_cells += 1
 				for signal_id in count:
 					signals.append(signal_id)
 			offsets.append(signals.size())

@@ -86,7 +86,7 @@ func prepare_era_session(host, save_service: Node) -> Dictionary:
 		return {"ok": false, "code": bound.get("reason", "era_reward_player_bind_failed")}
 	var regimes: Array = country.political_regime_catalog_view().get("definitions", [])
 	var loading: bool = host._runtime_host.is_loading_session()
-	var sequence: int = 0 if loading else host._allocate_command_sequence()
+	var sequence: int = 0 if loading else host._progression_component._allocate_command_sequence(host)
 	if not host._era_advancement.bind(country, generator.get_economy_facade(), handle, regimes, sequence):
 		return {"ok": false, "code": "era_advancement_bind_failed"}
 	var saved: Dictionary = save_service.pending_era_advancement() if loading and save_service != null else {}
@@ -98,7 +98,7 @@ func connect_era_advancement_view(host) -> void:
 		host._era_advancement.changed.connect(host._on_era_advancement_changed)
 	if not host._era_advancement.era_advanced.is_connected(host._on_era_advancement_advanced):
 		host._era_advancement.era_advanced.connect(host._on_era_advancement_advanced)
-	host._refresh_era_advancement(true)
+	host._progression_component._refresh_era_advancement(host, true)
 
 
 
@@ -260,8 +260,8 @@ func restore_view_state(host, map, state: Dictionary) -> void:
 			host.clear_selection()
 	host._sync_era_reward_offer()
 	host._sync_family_founding_offer()
-	host._sync_ideology_draw()
-	host._sync_era_music(true)
+	host._progression_component._sync_ideology_draw(host)
+	host.AudioPresentation._sync_era_music(host, true)
 	host._annual_report_flow.try_present()
 	host._narrative_flow.try_present()
 

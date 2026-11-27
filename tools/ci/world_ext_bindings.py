@@ -20,6 +20,7 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
+from cpp_source import read_cpp_source
 
 ROOT = Path(__file__).resolve().parents[2]
 TABLE = "tools/ci/world_ext_binding_modules.json"
@@ -87,11 +88,11 @@ def definition_files(root: Path, members: set[str]) -> dict[str, str]:
     for path in sorted((root / SRC).glob("world_ext*.cpp")):
         if path.name.startswith("world_ext_bind_"):
             continue
-        text = path.read_text(encoding="utf-8")
+        text = strip_comments(read_cpp_source(path))
         for m in re.finditer(r"^[^\n&;]*?\bDCWorldExt::(\w+)\s*\(", text, re.MULTILINE):
             if m.group(1) in members:
                 where.setdefault(m.group(1), path.name)
-    header = (root / SRC / "world_ext.h").read_text(encoding="utf-8")
+    header = strip_comments(read_cpp_source(root / SRC / "world_ext.h"))
     for name in members - where.keys():
         if re.search(rf"\b{name}\s*\([^;{{]*\)\s*(?:const\s*)?(?:noexcept\s*)?\{{", header):
             where[name] = "world_ext.h"

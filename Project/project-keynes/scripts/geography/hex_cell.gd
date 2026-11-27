@@ -27,6 +27,8 @@
 
 class_name HexCell
 
+const RuntimeColumns = preload("res://scripts/geography/hex_cell_runtime_columns.gd")
+
 # --- Cube 坐标 ---
 var q: int = 0
 var r: int = 0
@@ -235,19 +237,10 @@ var elevation: float = 0.0        # 归一化高度 [0, 1]，用于生成时的�
 var _moisture_backing: float = 0.5
 var moisture: float = 0.5:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_MOISTURE]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_MOISTURE], index)
-				return _world.read_f32(cid, index)
-		return _moisture_backing
+		return RuntimeColumns.read_f32(self, _CID_MOISTURE, _moisture_backing, false)
 	set(v):
 		_moisture_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_MOISTURE]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_MOISTURE, v)
 # Phase 13：标记初始 elevation pass 阶段被强制下沉的"湖泊种子"，让 pit-fill 跳过这些 cell
 var is_lake_seed: bool = false
 # Phase 14：火山地标 flag（不参与 terrain 枚举，但 shader 端额外加红光烟柱）
@@ -285,179 +278,80 @@ var current_state: Dictionary = {}
 var _weather_field_initialized_backing: bool = false
 var weather_field_initialized: bool = false:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_FIELD_INIT]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_u8(_cid_array_ext[_CID_WEATHER_FIELD_INIT], index) > 0
-				return _world.read_u8(cid, index) > 0
-		return _weather_field_initialized_backing
+		return RuntimeColumns.read_u8(self, _CID_WEATHER_FIELD_INIT, 1 if _weather_field_initialized_backing else 0, false) > 0
 	set(v):
 		_weather_field_initialized_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_FIELD_INIT]
-			if cid >= 0:
-				_world.write_u8(cid, index, 1 if v else 0)
+		RuntimeColumns.write_u8(self, _CID_WEATHER_FIELD_INIT, 1 if v else 0)
 var _weather_type_backing: int = 0
 var weather_type: int = 0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_TYPE]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_u8(_cid_array_ext[_CID_WEATHER_TYPE], index)
-				return _world.read_u8(cid, index)
-		return _weather_type_backing
+		return RuntimeColumns.read_u8(self, _CID_WEATHER_TYPE, _weather_type_backing, false)
 	set(v):
 		_weather_type_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_TYPE]
-			if cid >= 0:
-				_world.write_u8(cid, index, v)
+		RuntimeColumns.write_u8(self, _CID_WEATHER_TYPE, v)
 var _weather_prev_type_backing: int = 0
 var weather_prev_type: int = 0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_PREV_TYPE]
-			if cid >= 0:
-				if _world_ext != null and _cid_array_ext[_CID_WEATHER_PREV_TYPE] >= 0:
-					return _world_ext.read_u8(_cid_array_ext[_CID_WEATHER_PREV_TYPE], index)
-				return _world.read_u8(cid, index)
-		return _weather_prev_type_backing
+		return RuntimeColumns.read_u8(self, _CID_WEATHER_PREV_TYPE, _weather_prev_type_backing, true)
 	set(v):
 		_weather_prev_type_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_PREV_TYPE]
-			if cid >= 0:
-				_world.write_u8(cid, index, v)
+		RuntimeColumns.write_u8(self, _CID_WEATHER_PREV_TYPE, v)
 var _weather_target_type_backing: int = 0
 var weather_target_type: int = 0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_TARGET_TYPE]
-			if cid >= 0:
-				if _world_ext != null and _cid_array_ext[_CID_WEATHER_TARGET_TYPE] >= 0:
-					return _world_ext.read_u8(_cid_array_ext[_CID_WEATHER_TARGET_TYPE], index)
-				return _world.read_u8(cid, index)
-		return _weather_target_type_backing
+		return RuntimeColumns.read_u8(self, _CID_WEATHER_TARGET_TYPE, _weather_target_type_backing, true)
 	set(v):
 		_weather_target_type_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_TARGET_TYPE]
-			if cid >= 0:
-				_world.write_u8(cid, index, v)
+		RuntimeColumns.write_u8(self, _CID_WEATHER_TARGET_TYPE, v)
 var _weather_transition_alpha_backing: float = 1.0
 var weather_transition_alpha: float = 1.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_TRANS_ALPHA]
-			if cid >= 0:
-				if _world_ext != null and _cid_array_ext[_CID_WEATHER_TRANS_ALPHA] >= 0:
-					return _world_ext.read_f32(_cid_array_ext[_CID_WEATHER_TRANS_ALPHA], index)
-				return _world.read_f32(cid, index)
-		return _weather_transition_alpha_backing
+		return RuntimeColumns.read_f32(self, _CID_WEATHER_TRANS_ALPHA, _weather_transition_alpha_backing, true)
 	set(v):
 		_weather_transition_alpha_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_TRANS_ALPHA]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_WEATHER_TRANS_ALPHA, v)
 var _weather_intensity_backing: float = 0.0
 var weather_intensity: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_INTENSITY]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_WEATHER_INTENSITY], index)
-				return _world.read_f32(cid, index)
-		return _weather_intensity_backing
+		return RuntimeColumns.read_f32(self, _CID_WEATHER_INTENSITY, _weather_intensity_backing, false)
 	set(v):
 		_weather_intensity_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_INTENSITY]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_WEATHER_INTENSITY, v)
 var _weather_cloud_backing: float = 0.0
 var weather_cloud: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_CLOUD]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_WEATHER_CLOUD], index)
-				return _world.read_f32(cid, index)
-		return _weather_cloud_backing
+		return RuntimeColumns.read_f32(self, _CID_WEATHER_CLOUD, _weather_cloud_backing, false)
 	set(v):
 		_weather_cloud_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_CLOUD]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_WEATHER_CLOUD, v)
 var _weather_precip_backing: float = 0.0
 var weather_precip: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_PRECIP]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_WEATHER_PRECIP], index)
-				return _world.read_f32(cid, index)
-		return _weather_precip_backing
+		return RuntimeColumns.read_f32(self, _CID_WEATHER_PRECIP, _weather_precip_backing, false)
 	set(v):
 		_weather_precip_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_PRECIP]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_WEATHER_PRECIP, v)
 var _weather_vapor_backing: float = 0.0
 var weather_vapor: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_VAPOR]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_WEATHER_VAPOR], index)
-				return _world.read_f32(cid, index)
-		return _weather_vapor_backing
+		return RuntimeColumns.read_f32(self, _CID_WEATHER_VAPOR, _weather_vapor_backing, false)
 	set(v):
 		_weather_vapor_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_VAPOR]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_WEATHER_VAPOR, v)
 var _weather_instability_backing: float = 0.0
 var weather_instability: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_INSTABILITY]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_WEATHER_INSTABILITY], index)
-				return _world.read_f32(cid, index)
-		return _weather_instability_backing
+		return RuntimeColumns.read_f32(self, _CID_WEATHER_INSTABILITY, _weather_instability_backing, false)
 	set(v):
 		_weather_instability_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_INSTABILITY]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_WEATHER_INSTABILITY, v)
 var _weather_convergence_backing: float = 0.0
 var weather_convergence: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_CONVERGENCE]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_WEATHER_CONVERGENCE], index)
-				return _world.read_f32(cid, index)
-		return _weather_convergence_backing
+		return RuntimeColumns.read_f32(self, _CID_WEATHER_CONVERGENCE, _weather_convergence_backing, false)
 	set(v):
 		_weather_convergence_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WEATHER_CONVERGENCE]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_WEATHER_CONVERGENCE, v)
 
 # Fast-tick perf opt (C)：fast-tick 热路径高频读写字段升级为强类型成员，
 # 避免 current_state 字典的 hash 查找 + Variant 装箱开销。
@@ -467,35 +361,17 @@ var weather_convergence: float = 0.0:
 var _temperature_backing: float = 0.0
 var temperature: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_TEMP]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_TEMP], index)
-				return _world.read_f32(cid, index)
-		return _temperature_backing
+		return RuntimeColumns.read_f32(self, _CID_TEMP, _temperature_backing, false)
 	set(v):
 		_temperature_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_TEMP]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_TEMP, v)
 var _snow_cover_backing: float = 0.0
 var snow_cover: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_SNOW_COVER]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_SNOW_COVER], index)
-				return _world.read_f32(cid, index)
-		return _snow_cover_backing
+		return RuntimeColumns.read_f32(self, _CID_SNOW_COVER, _snow_cover_backing, false)
 	set(v):
 		_snow_cover_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_SNOW_COVER]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_SNOW_COVER, v)
 # Phase 3c：积雪累积。
 # accumulated_snow_days：BLIZZARD 命中天数计数器（>=0）。每个有效降雪日 +1，
 #   温度高于 0.30（约 -2°C）时反向衰减（实际 -1）。
@@ -510,103 +386,49 @@ var pre_snow_cover: int = -1
 var _temp_baseline_backing: float = 0.0
 var temp_baseline: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_TEMP_BASELINE]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_TEMP_BASELINE], index)
-				return _world.read_f32(cid, index)
-		return _temp_baseline_backing
+		return RuntimeColumns.read_f32(self, _CID_TEMP_BASELINE, _temp_baseline_backing, false)
 	set(v):
 		_temp_baseline_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_TEMP_BASELINE]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_TEMP_BASELINE, v)
 var _temp_season_offset_backing: float = 0.0
 var temp_season_offset: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_TEMP_SEASON_OFFSET]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_TEMP_SEASON_OFFSET], index)
-				return _world.read_f32(cid, index)
-		return _temp_season_offset_backing
+		return RuntimeColumns.read_f32(self, _CID_TEMP_SEASON_OFFSET, _temp_season_offset_backing, false)
 	set(v):
 		_temp_season_offset_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_TEMP_SEASON_OFFSET]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_TEMP_SEASON_OFFSET, v)
 # 30/365 日滑动均值 + 偏离（Emergent Climate Coupling EMA）
 var _temp_30d_mean_backing: float = 0.0
 var temp_30d_mean: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_TEMP_30D]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_TEMP_30D], index)
-				return _world.read_f32(cid, index)
-		return _temp_30d_mean_backing
+		return RuntimeColumns.read_f32(self, _CID_TEMP_30D, _temp_30d_mean_backing, false)
 	set(v):
 		_temp_30d_mean_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_TEMP_30D]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_TEMP_30D, v)
 var _temp_365d_mean_backing: float = 0.0
 var temp_365d_mean: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_TEMP_365D]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_TEMP_365D], index)
-				return _world.read_f32(cid, index)
-		return _temp_365d_mean_backing
+		return RuntimeColumns.read_f32(self, _CID_TEMP_365D, _temp_365d_mean_backing, false)
 	set(v):
 		_temp_365d_mean_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_TEMP_365D]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_TEMP_365D, v)
 var _temp_dev_from_annual_backing: float = 0.0
 var temp_dev_from_annual: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_TEMP_ANOMALY]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_TEMP_ANOMALY], index)
-				return _world.read_f32(cid, index)
-		return _temp_dev_from_annual_backing
+		return RuntimeColumns.read_f32(self, _CID_TEMP_ANOMALY, _temp_dev_from_annual_backing, false)
 	set(v):
 		_temp_dev_from_annual_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_TEMP_ANOMALY]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_TEMP_ANOMALY, v)
 # Fast-tick perf opt (C)：EMA 首次初始化标志。旧版本用 -1.0 哨兵加字典查找
 # 判断"是否首次"；升级为强类型 float 后 0.0 是合法气候值无法再作哨兵，
 # 改用独立 bool。首次 refresh_climate_daily 写入后置 true。
 var __ema_initialized_backing: bool = false
 var _ema_initialized: bool = false:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_EMA_INITIALIZED]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_u8(_cid_array_ext[_CID_EMA_INITIALIZED], index) > 0
-				return _world.read_u8(cid, index) > 0
-		return __ema_initialized_backing
+		return RuntimeColumns.read_u8(self, _CID_EMA_INITIALIZED, 1 if __ema_initialized_backing else 0, false) > 0
 	set(v):
 		__ema_initialized_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_EMA_INITIALIZED]
-			if cid >= 0:
-				_world.write_u8(cid, index, 1 if v else 0)
+		RuntimeColumns.write_u8(self, _CID_EMA_INITIALIZED, 1 if v else 0)
 
 # 过去若干季的生态快照，由开局和发布帧提供。
 # 长度固定 HISTORY_LEN = 8（≈ 2 年）。生命周期：每季 push 当前 terrain。
@@ -629,51 +451,24 @@ var _veg_history_idx: int = 0
 var _vegetation_vitality_backing: float = 0.7
 var vegetation_vitality: float = 0.7:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VEG_VITALITY]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_VITALITY], index)
-				return _world.read_f32(cid, index)
-		return _vegetation_vitality_backing
+		return RuntimeColumns.read_f32(self, _CID_VEG_VITALITY, _vegetation_vitality_backing, false)
 	set(v):
 		_vegetation_vitality_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VEG_VITALITY]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_VEG_VITALITY, v)
 var __vitality_low_streak_backing: int = 0
 var _vitality_low_streak: int = 0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VITALITY_LOW_STREAK]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_i32(_cid_array_ext[_CID_VITALITY_LOW_STREAK], index)
-				return _world.read_i32(cid, index)
-		return __vitality_low_streak_backing
+		return RuntimeColumns.read_i32(self, _CID_VITALITY_LOW_STREAK, __vitality_low_streak_backing, false)
 	set(v):
 		__vitality_low_streak_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VITALITY_LOW_STREAK]
-			if cid >= 0:
-				_world.write_i32(cid, index, v)
+		RuntimeColumns.write_i32(self, _CID_VITALITY_LOW_STREAK, v)
 var __vitality_high_streak_backing: int = 0
 var _vitality_high_streak: int = 0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VITALITY_HIGH_STREAK]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_i32(_cid_array_ext[_CID_VITALITY_HIGH_STREAK], index)
-				return _world.read_i32(cid, index)
-		return __vitality_high_streak_backing
+		return RuntimeColumns.read_i32(self, _CID_VITALITY_HIGH_STREAK, __vitality_high_streak_backing, false)
 	set(v):
 		__vitality_high_streak_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VITALITY_HIGH_STREAK]
-			if cid >= 0:
-				_world.write_i32(cid, index, v)
+		RuntimeColumns.write_i32(self, _CID_VITALITY_HIGH_STREAK, v)
 
 func push_biome_history(biome: int) -> void:
 	if biome_history.size() < HISTORY_LEN:
@@ -773,19 +568,10 @@ var wind_vector: Vector2 = Vector2.ZERO:
 var _upwelling_strength_backing: float = 0.0
 var upwelling_strength: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_UPWELLING_STRENGTH]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_UPWELLING_STRENGTH], index)
-				return _world.read_f32(cid, index)
-		return _upwelling_strength_backing
+		return RuntimeColumns.read_f32(self, _CID_UPWELLING_STRENGTH, _upwelling_strength_backing, false)
 	set(v):
 		_upwelling_strength_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_UPWELLING_STRENGTH]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_UPWELLING_STRENGTH, v)
 
 # --- Physical Wind & Ocean Circulation（物理化大气/海洋环流；hex 域求解） ─────
 # 本块字段由 MapBaker 物理化求解器在每轮洋流烘焙时写入，仅当
@@ -799,38 +585,20 @@ var upwelling_strength: float = 0.0:
 var _slp_backing: float = 0.0
 var slp: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_SLP]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_SLP], index)
-				return _world.read_f32(cid, index)
-		return _slp_backing
+		return RuntimeColumns.read_f32(self, _CID_SLP, _slp_backing, false)
 	set(v):
 		_slp_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_SLP]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_SLP, v)
 # wind_speed：物理化风速（相对量级）。与 wind_vector 配对：
 #   wind_vector 单位向量给方向，wind_speed 给强度。weather_system advection
 #   与 ψ 求解的风应力 τ ≈ wind_speed² × wind_vector 都需要它。
 var _wind_speed_backing: float = 0.0
 var wind_speed: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WIND_SPEED]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_WIND_SPEED], index)
-				return _world.read_f32(cid, index)
-		return _wind_speed_backing
+		return RuntimeColumns.read_f32(self, _CID_WIND_SPEED, _wind_speed_backing, false)
 	set(v):
 		_wind_speed_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_WIND_SPEED]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_WIND_SPEED, v)
 # wind_stress_curl：风应力旋度 curl(τ)。海盆 ψ 求解的源项；overlay 调试可视化用。
 #   仅水域 cell 有意义，陆地维持 0。
 var wind_stress_curl: float = 0.0
@@ -855,10 +623,7 @@ var temperature_transport_anomaly: float = 0.0:
 		return _temperature_transport_anomaly_backing
 	set(v):
 		_temperature_transport_anomaly_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_TEMP_TRANSPORT_ANOM]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_TEMP_TRANSPORT_ANOM, v)
 
 # air_mass_temp_anomaly：
 #   由风温耦合系统写入的"气团输运带来的温度偏差"，
@@ -870,19 +635,10 @@ var temperature_transport_anomaly: float = 0.0:
 var _air_mass_temp_anomaly_backing: float = 0.0
 var air_mass_temp_anomaly: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_AIR_MASS_TEMP_ANOM]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_AIR_MASS_TEMP_ANOM], index)
-				return _world.read_f32(cid, index)
-		return _air_mass_temp_anomaly_backing
+		return RuntimeColumns.read_f32(self, _CID_AIR_MASS_TEMP_ANOM, _air_mass_temp_anomaly_backing, false)
 	set(v):
 		_air_mass_temp_anomaly_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_AIR_MASS_TEMP_ANOM]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_AIR_MASS_TEMP_ANOM, v)
 
 # --- Emergent Climate Coupling 字段（Phase E） ────────────────────────
 # sea_ice_fraction ∈ [0, 1]：水体 cell 的当前海冰覆盖度（半快半慢量）。
@@ -893,19 +649,10 @@ var air_mass_temp_anomaly: float = 0.0:
 var _sea_ice_fraction_backing: float = 0.0
 var sea_ice_fraction: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_SEA_ICE_FRAC]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_SEA_ICE_FRAC], index)
-				return _world.read_f32(cid, index)
-		return _sea_ice_fraction_backing
+		return RuntimeColumns.read_f32(self, _CID_SEA_ICE_FRAC, _sea_ice_fraction_backing, false)
 	set(v):
 		_sea_ice_fraction_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_SEA_ICE_FRAC]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_SEA_ICE_FRAC, v)
 
 # soil_moisture / vegetation_growth_pressure：天气 → 慢层反馈缓冲字段。
 #   由 _apply_weather_to_map_feedback_pass 在每日末以**很小权重**（≤ 0.5%）
@@ -916,99 +663,45 @@ var sea_ice_fraction: float = 0.0:
 var _soil_moisture_backing: float = 0.0
 var soil_moisture: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_SOIL_MOISTURE]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_SOIL_MOISTURE], index)
-				return _world.read_f32(cid, index)
-		return _soil_moisture_backing
+		return RuntimeColumns.read_f32(self, _CID_SOIL_MOISTURE, _soil_moisture_backing, false)
 	set(v):
 		_soil_moisture_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_SOIL_MOISTURE]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_SOIL_MOISTURE, v)
 var _vegetation_growth_pressure_backing: float = 0.0
 var vegetation_growth_pressure: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VEG_GROWTH_PRESSURE]
-			if cid >= 0:
-				if _world_ext != null:
-					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_GROWTH_PRESSURE], index)
-				return _world.read_f32(cid, index)
-		return _vegetation_growth_pressure_backing
+		return RuntimeColumns.read_f32(self, _CID_VEG_GROWTH_PRESSURE, _vegetation_growth_pressure_backing, false)
 	set(v):
 		_vegetation_growth_pressure_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VEG_GROWTH_PRESSURE]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_VEG_GROWTH_PRESSURE, v)
 var _vegetation_heat_stress_backing: float = 0.0
 var vegetation_heat_stress: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VEG_HEAT_STRESS]
-			if cid >= 0:
-				if _world_ext != null and _cid_array_ext[_CID_VEG_HEAT_STRESS] >= 0:
-					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_HEAT_STRESS], index)
-				return _world.read_f32(cid, index)
-		return _vegetation_heat_stress_backing
+		return RuntimeColumns.read_f32(self, _CID_VEG_HEAT_STRESS, _vegetation_heat_stress_backing, true)
 	set(v):
 		_vegetation_heat_stress_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VEG_HEAT_STRESS]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_VEG_HEAT_STRESS, v)
 var _vegetation_drought_stress_backing: float = 0.0
 var vegetation_drought_stress: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VEG_DROUGHT_STRESS]
-			if cid >= 0:
-				if _world_ext != null and _cid_array_ext[_CID_VEG_DROUGHT_STRESS] >= 0:
-					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_DROUGHT_STRESS], index)
-				return _world.read_f32(cid, index)
-		return _vegetation_drought_stress_backing
+		return RuntimeColumns.read_f32(self, _CID_VEG_DROUGHT_STRESS, _vegetation_drought_stress_backing, true)
 	set(v):
 		_vegetation_drought_stress_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VEG_DROUGHT_STRESS]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_VEG_DROUGHT_STRESS, v)
 var _vegetation_cold_stress_backing: float = 0.0
 var vegetation_cold_stress: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VEG_COLD_STRESS]
-			if cid >= 0:
-				if _world_ext != null and _cid_array_ext[_CID_VEG_COLD_STRESS] >= 0:
-					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_COLD_STRESS], index)
-				return _world.read_f32(cid, index)
-		return _vegetation_cold_stress_backing
+		return RuntimeColumns.read_f32(self, _CID_VEG_COLD_STRESS, _vegetation_cold_stress_backing, true)
 	set(v):
 		_vegetation_cold_stress_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VEG_COLD_STRESS]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_VEG_COLD_STRESS, v)
 var _vegetation_regen_score_backing: float = 0.0
 var vegetation_regen_score: float = 0.0:
 	get:
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VEG_REGEN_SCORE]
-			if cid >= 0:
-				if _world_ext != null and _cid_array_ext[_CID_VEG_REGEN_SCORE] >= 0:
-					return _world_ext.read_f32(_cid_array_ext[_CID_VEG_REGEN_SCORE], index)
-				return _world.read_f32(cid, index)
-		return _vegetation_regen_score_backing
+		return RuntimeColumns.read_f32(self, _CID_VEG_REGEN_SCORE, _vegetation_regen_score_backing, true)
 	set(v):
 		_vegetation_regen_score_backing = v
-		if _facade_enabled:
-			var cid: int = _cid_array[_CID_VEG_REGEN_SCORE]
-			if cid >= 0:
-				_world.write_f32(cid, index, v)
+		RuntimeColumns.write_f32(self, _CID_VEG_REGEN_SCORE, v)
 
 # temperature_breakdown：调试用的温度分解字典（仅在选中地块面板查看时填充）。
 #   key ∈ {baseline, season, albedo, coastal, landform}，值单位与 temperature 一致。

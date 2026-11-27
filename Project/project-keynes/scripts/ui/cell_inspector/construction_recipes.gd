@@ -171,10 +171,10 @@ static func _append_recipe_rows(host, rows: Array, snapshot: Dictionary, type_id
 		var stable_id = String(good_ids[good_idx]) if good_idx >= 0 and good_idx < good_ids.size() else "unknown"
 		var quantity = int(quantities[cursor]) if cursor < quantities.size() else 0
 		var actual = int(float(actual_total) * float(quantity) / float(recipe_total)) if recipe_total > 0 else 0
-		var good_label = host._input_candidate_label(
+		var good_label = host._Construction_delegate._input_candidate_label(host,
 			snapshot, cursor, cursor - begin, group_idx, stable_id) \
 			if kind == "input" else h._good_display_name(stable_id)
-		var short_good = host._selected_input_short_label(
+		var short_good = host._Construction_delegate._selected_input_short_label(host,
 			snapshot, cursor, cursor - begin, group_idx, stable_id) \
 			if kind == "input" else h._good_display_name(stable_id)
 		rows.append({
@@ -185,7 +185,7 @@ static func _append_recipe_rows(host, rows: Array, snapshot: Dictionary, type_id
 			"optional_input": kind == "input" and cursor < required.size()
 				and required[cursor] > 0 and required[cursor] < 65536,
 			"daily_per_building_float": float(actual) / 1000.0 / float(divisor),
-			"value": h._actual_daily_rate(actual, building_count, period_days),
+			"value": h._Construction_delegate._actual_daily_rate(h, actual, building_count, period_days),
 			"detail": "基础产量 %s 单位/栋/日" % h._goods_scaled(quantity) if kind == "output" and quantity > 0 else "",
 			"icon": IconCatalog.good_semantic(stable_id),
 			"accent": UITokens.RESOURCE,
@@ -241,7 +241,7 @@ static func _input_candidate_label(host, snapshot: Dictionary, input_idx: int, l
 		if good_idx < 0 or good_idx >= good_ids.size():
 			continue
 		var efficiency = int(efficiencies[candidate_idx]) if candidate_idx < efficiencies.size() else 65536
-		labels.append(host._format_input_candidate_label(String(good_ids[good_idx]), efficiency))
+		labels.append(host._Construction_delegate._format_input_candidate_label(host, String(good_ids[good_idx]), efficiency))
 	var candidate_label = " / ".join(labels) \
 		if not labels.is_empty() else host._good_display_name(fallback_id)
 	var selected_offsets: PackedInt32Array = snapshot.get(
@@ -288,7 +288,7 @@ static func _append_resource_recipe_rows(host, rows: Array, snapshot: Dictionary
 		var access_label = "邻域 · " if access_mode == 1 else ""
 		var row_name = "自然资源 · %s%s" % [access_label, h._resource_display_name(stable_id)]
 		var row_value = "需 %s 单位/栋" % h._goods_scaled(quantity) if mode == 1 \
-			else h._actual_daily_rate(actual, building_count, period_days)
+			else h._Construction_delegate._actual_daily_rate(h, actual, building_count, period_days)
 		var resource_name: String = h._resource_display_name(stable_id)
 		var short_name := "%s%s %s" % [access_label, "承载" if mode == 1 else "开采", resource_name]
 		var reserve := nearby_reserve if access_mode == 1 else local_reserve
@@ -323,7 +323,7 @@ static func _append_resource_generation_rows(host, rows: Array, snapshot: Dictio
 		var actual = int(float(actual_total) * float(quantity) / float(recipe_total)) if recipe_total > 0 else 0
 		rows.append({"id": "natural_generation_%d" % cursor,
 			"name": "培育 · %s" % h._resource_display_name(stable_id),
-			"value": "%s · 待资源到位" % h._actual_daily_rate(actual, building_count, period_days),
+			"value": "%s · 待资源到位" % h._Construction_delegate._actual_daily_rate(h, actual, building_count, period_days),
 			"icon": IconCatalog.resource_semantic(stable_id),
 			"accent": UITokens.GOOD})
 
@@ -396,9 +396,9 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 		"building_technology_available", PackedByteArray())
 	var owner_slots: PackedInt64Array = snapshot.get("building_owner_slots", PackedInt64Array())
 	var period_days = maxi(1, int(snapshot.get("period_days", 1)))
-	var bld_sample_day = int(snapshot.get("sample_day", h._current_sample_day()))
+	var bld_sample_day = int(snapshot.get("sample_day", h._Geography_delegate._current_sample_day(h)))
 	if cell_idx >= 0:
-		host._ensure_detail_history_cell(cell_idx)
+		host._PopulationMarket_delegate._ensure_detail_history_cell(host, cell_idx)
 	var should_sample_bld = cell_idx >= 0 and bld_sample_day >= 0 \
 		and bld_sample_day != host._detail_history_building_day
 	if should_sample_bld:
@@ -449,7 +449,7 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 		var owner_icon := IconCatalog.profession_semantic(profession_ids[owner_profession]) \
 			if owner_profession >= 0 and owner_profession < profession_ids.size() else &"family.metric.wealth"
 		var job_rows = [
-			{"id": "owner_job", "name": "业主 · %s" % h._owner_profession_name(snapshot, signature), "icon": owner_icon,
+			{"id": "owner_job", "name": "业主 · %s" % h._Construction_delegate._owner_profession_name(h, snapshot, signature), "icon": owner_icon,
 				"value": owner_job_value, "ratio": float(owner_actual) / float(owner_required) if owner_required > 0 else 0.0},
 		]
 		if role_offsets.size() == group_types.size() + 1:
@@ -462,28 +462,28 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 				var profession := role_professions[role] if role < role_professions.size() else -1
 				job_rows.append({
 					"id": "job_%d" % role,
-					"name": "雇员 · %s" % h._profession_name(snapshot, profession),
+					"name": "雇员 · %s" % h._Construction_delegate._profession_name(h, snapshot, profession),
 					"icon": IconCatalog.profession_semantic(profession_ids[profession]) \
 						if profession >= 0 and profession < profession_ids.size() else &"population.profession.worker",
 					"value": role_value,
 					"ratio": float(filled) / float(required) if required > 0 else 0.0,
 				})
 		var production_rows = []
-		h._append_recipe_rows(production_rows, snapshot, type_idx, "input",
+		h._Construction_delegate._append_recipe_rows(h, production_rows, snapshot, type_idx, "input",
 			int(last_input[i]) if i < last_input.size() else 0, count, period_days, i)
-		host._append_resource_generation_rows(production_rows, snapshot, type_idx,
+		host._Construction_delegate._append_resource_generation_rows(host, production_rows, snapshot, type_idx,
 			int(last_resource_generated[i]) if i < last_resource_generated.size() else 0,
 			count, period_days)
-		host._append_resource_recipe_rows(production_rows, snapshot, type_idx,
+		host._Construction_delegate._append_resource_recipe_rows(host, production_rows, snapshot, type_idx,
 			int(last_resource[i]) if i < last_resource.size() else 0, count, period_days)
 		var resource_net = (int(last_resource_generated[i]) if i < last_resource_generated.size() else 0) \
 			- (int(last_resource[i]) if i < last_resource.size() else 0)
 		if resource_net != 0:
 			production_rows.append({"id": "resource_net", "name": "自然资源净额",
-				"value": h._actual_daily_rate(resource_net, count, period_days),
+				"value": h._Construction_delegate._actual_daily_rate(h, resource_net, count, period_days),
 				"icon": "eco", "accent": UITokens.GOOD if resource_net > 0 else UITokens.WARN})
 		var output_row_begin = production_rows.size()
-		h._append_recipe_rows(production_rows, snapshot, type_idx, "output",
+		h._Construction_delegate._append_recipe_rows(h, production_rows, snapshot, type_idx, "output",
 			int(last_output[i]) if i < last_output.size() else 0, count, period_days)
 		var has_outputs = production_rows.size() != output_row_begin
 		var has_climate_profile = type_idx >= 0 \
@@ -507,7 +507,7 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 			var lost_output = int(climate_lost_output[i]) \
 				if i < climate_lost_output.size() else 0
 			if lost_output > 0:
-				climate_lost_daily_text = host._actual_daily_rate(lost_output, count, period_days)
+				climate_lost_daily_text = host._Construction_delegate._actual_daily_rate(host, lost_output, count, period_days)
 				production_rows.append({"id": "climate_lost_output", "name": "气候减产",
 					"value": climate_lost_daily_text,
 					"icon": "warning", "accent": UITokens.WARN})
@@ -587,7 +587,7 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 			state_accent = UITokens.RISK
 			show_state_summary = true
 		elif i < capacity_q16.size() and int(capacity_q16[i]) == 0 \
-				and host._building_resource_depleted(snapshot, type_idx):
+				and host._Construction_delegate._building_resource_depleted(host, snapshot, type_idx):
 			state_label = "资源短缺"
 			state_detail = "本地资源不足，无法生产。"
 			state_accent = UITokens.WARN
@@ -626,7 +626,7 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 			finance.warning = "停产中 · 利润率取自上一经营期"
 		var bld_hist_key = "%d|%d" % [type_idx, int(owner_signatures[i]) if i < owner_signatures.size() else i]
 		if should_sample_bld:
-			host._record_building_history(bld_hist_key, float(profit) / 10000.0,
+			host._PopulationMarket_delegate._record_building_history(host, bld_hist_key, float(profit) / 10000.0,
 				clampf(actual_percent / 100.0, 0.0, 1.0))
 		var bld_hist: Dictionary = host._building_history.get(bld_hist_key, {})
 		var profit_series: PackedFloat32Array = bld_hist.get("profit", PackedFloat32Array())
@@ -637,7 +637,7 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 			"building_type_id": building_id,
 			"count": "%d" % count,
 			"count_raw": count,
-			"owner": "业主 · %s" % h._owner_profession_name(snapshot, int(owner_signatures[i]) if i < owner_signatures.size() else -1),
+			"owner": "业主 · %s" % h._Construction_delegate._owner_profession_name(h, snapshot, int(owner_signatures[i]) if i < owner_signatures.size() else -1),
 			"status": state_label,
 			"staffing_actual_raw": staffing_actual,
 			"staffing_required_raw": staffing_required,
@@ -656,9 +656,9 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 			"profit_float": float(profit) / 10000.0,
 			"profit_label": headline_profit_label,
 			"profit_spark": profit_series,
-			"profit_delta": h._series_lookback_delta(profit_series),
+			"profit_delta": CellInspectorViewModel._PopulationMarket._series_lookback_delta(profit_series),
 			"utilization_spark": util_series,
-			"utilization_delta": h._series_lookback_delta(util_series),
+			"utilization_delta": CellInspectorViewModel._PopulationMarket._series_lookback_delta(util_series),
 			"accent": state_accent if show_state_summary else (UITokens.GOOD if profit > 0 else (UITokens.RISK if profit < 0 else UITokens.TEXT_MUTED)),
 			"icon": h._building_icon(building_id, snapshot, type_idx), "job_rows": job_rows,
 			"production_rows": production_rows, "finance": finance, "visible": true,
@@ -667,7 +667,7 @@ static func _building_category(host, snapshot: Dictionary, cell_idx: int = -1) -
 		total_profit += profit
 		if show_state_summary:
 			halted_groups += 1
-	host._append_construction_rows(rows, snapshot, type_ids, type_names)
+	host._Construction_delegate._append_construction_rows(host, rows, snapshot, type_ids, type_names)
 	var total_count = h._sum_i64(snapshot.get("building_counts_by_type", PackedInt64Array()))
 	var metrics = [{"id": "building_total", "title": "建筑总数", "value": "%s 栋" % UITokens.format_compact_number_cn(float(total_count), 1), "subtitle": "%d 处停产" % halted_groups if halted_groups > 0 else "", "accent": UITokens.RISK if halted_groups > 0 else UITokens.ACCENT, "icon": "building"}]
 	if group_types.size() > 0:

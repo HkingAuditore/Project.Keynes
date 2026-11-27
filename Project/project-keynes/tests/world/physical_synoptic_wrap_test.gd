@@ -3,9 +3,17 @@ extends SceneTree
 # Headless:
 #   godot --headless --path . --script res://tests/world/physical_synoptic_wrap_test.gd
 
-const CPP_PATH := "../../gdext/src/world_ext_physical.cpp"
+const CPP_PATHS := [
+	"../../gdext/src/world_ext_physical.cpp",
+	"../../gdext/src/world_ext_physical_section_wind_solver.inc",
+	"../../gdext/src/world_ext_physical_section_sea_level_pressure.inc",
+	"../../gdext/src/world_ext_physical_section_stream_function.inc",
+]
 const SHARED_PHYSICS_PATH := "../../gdext/src/runtime_climate_physics.cpp"
-const BAKER_PATH := "res://scripts/rendering/bakers/physical_circulation_baker.gd"
+const BAKER_PATHS := [
+	"res://scripts/rendering/bakers/physical_circulation_baker.gd",
+	"res://scripts/rendering/bakers/daily_wind_field_baker.gd",
+]
 const FALLBACK_PATH := "res://scripts/rendering/physical_circulation_solver.gd"
 
 var _checks := 0
@@ -13,9 +21,9 @@ var _failures := 0
 
 
 func _init() -> void:
-	var cpp := FileAccess.get_file_as_string(CPP_PATH)
+	var cpp := _read_sources(CPP_PATHS)
 	var shared_physics := FileAccess.get_file_as_string(SHARED_PHYSICS_PATH)
-	var baker := FileAccess.get_file_as_string(BAKER_PATH)
+	var baker := _read_sources(BAKER_PATHS)
 	var fallback := FileAccess.get_file_as_string(FALLBACK_PATH)
 	_expect(not cpp.is_empty(), "physical C++ source is readable")
 	_expect(cpp.contains("physical_wrap01(double world_x"), "native passes share positive periodic longitude")
@@ -37,6 +45,16 @@ func _init() -> void:
 
 	print("physical_synoptic_wrap_test: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
+
+
+func _read_sources(paths: Array) -> String:
+	var sources := PackedStringArray()
+	for path: String in paths:
+		var source := FileAccess.get_file_as_string(path)
+		if source.is_empty():
+			return ""
+		sources.append(source)
+	return "\n".join(sources)
 
 
 func _check_periodic_formula(seed: int, day: int) -> void:

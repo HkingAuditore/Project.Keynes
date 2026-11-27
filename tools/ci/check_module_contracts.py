@@ -5,6 +5,7 @@ import argparse
 import json
 import re
 from check_cpp_deps import code_only
+from cpp_source import read_cpp_source
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = 'tools/ci/runtime_module_contracts.json'
 HEADER = 'gdext/src/runtime_module_contracts.h'
@@ -22,7 +23,7 @@ def freeze_read_violations(root):
         # full repository is still required to contain every production file.
         if not path.exists():
             continue
-        code = code_only(path.read_text(encoding='utf-8'))
+        code = code_only(read_cpp_source(path))
         token = 'freeze_reads.register_read'
         if token not in code or f'RuntimeDomainId::{module.upper()}' not in code:
             errors.append(f'{module} missing frozen input registration')
@@ -74,10 +75,10 @@ def violations(root, data):
         m = modules[edge['module']]
         if edge['owner'] not in [v.strip() for v in m['reads'].split(',')]:
             errors.append(edge['module']+' undeclared read of '+edge['owner'])
-        if not re.search(r'\b'+edge['call']+r'\s*\(', code_only((root/edge['source']).read_text(encoding='utf-8'))):
+        if not re.search(r'\b'+edge['call']+r'\s*\(', code_only(read_cpp_source(root / edge['source']))):
             errors.append('declared read missing: '+edge['source']+' '+edge['call'])
     for source, allowed in by_source.items():
-        code = code_only((root/source).read_text(encoding='utf-8'))
+        code = code_only(read_cpp_source(root / source))
         for call in apis - allowed:
             if re.search(r'\b'+call+r'\s*\(', code): errors.append(source+' unregistered read '+call)
     return errors

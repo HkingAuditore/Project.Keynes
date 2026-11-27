@@ -182,7 +182,7 @@
     {
       "module": "family_metrics",
       "owner": "economy",
-      "source": "gdext/src/economy_runtime_family_effect_inputs.cpp",
+      "source": "gdext/src/economy_runtime_family_effect_inputs_metrics.cpp",
       "call": "copy_lineage_opinion_view"
     }
   ],

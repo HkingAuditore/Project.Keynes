@@ -23,21 +23,32 @@ func _run() -> void:
 	var generator_src: String = _read_source("res://scripts/geography/map_generator.gd")
 	var bundle_src: String = _read_source(
 			"res://scripts/simulation/climate/native_daily_bundle_builder.gd")
+	var pass_inputs_src: String = _read_source(
+			"res://scripts/simulation/climate/native_daily_pass_inputs.gd")
+	var sea_ice_src: String = _read_source("res://scripts/simulation/climate/sea_ice_stage_machine.gd")
+	var season_coordinator_src: String = _read_source(
+			"res://scripts/simulation/climate/season_refresh_coordinator.gd")
 	var publish_src: String = _read_source(
 			"res://scripts/simulation/climate/native_daily_publish.gd")
 	# The native daily bundle and publish bodies live in their climate collaborators;
 	# keep this source contract pointed at the implementation after the split.
 	var climate_modules_src: String = bundle_src + "\n" + publish_src
 	var climate_src: String = _read_source("res://../../gdext/src/world_ext_climate.cpp")
-	var transp_src: String = _read_source("res://../../gdext/src/runtime_climate_passes.cpp")
-	var weather_src: String = _read_source("res://../../gdext/src/world_ext_weather.cpp")
+	var transp_src: String = _read_source(
+			"res://../../gdext/src/runtime_climate_passes_surface_kernels.cpp")
+	var weather_bridge_src: String = _read_source(
+			"res://../../gdext/src/world_ext_climate_records.cpp")
+	var weather_writeback_src: String = _read_source(
+			"res://../../gdext/src/runtime_climate_passes_weather_writeback.cpp")
 	var season_src: String = _read_source("res://../../gdext/src/world_ext_season_refresh.cpp")
 
 	_expect("world_ext_daily_sim.cpp readable", not daily_src.is_empty())
 	_expect("system_schedule.cpp readable", not schedule_src.is_empty())
 	_expect("map_generator.gd readable", not generator_src.is_empty())
 	_expect("world_ext_climate.cpp readable", not climate_src.is_empty())
-	_expect("world_ext_weather.cpp readable", not weather_src.is_empty())
+	_expect("world_ext_climate_records.cpp readable", not weather_bridge_src.is_empty())
+	_expect("runtime_climate_passes_weather_writeback.cpp readable",
+		not weather_writeback_src.is_empty())
 	_expect("world_ext_season_refresh.cpp readable", not season_src.is_empty())
 	if _failures > 0:
 		_finish()
@@ -177,23 +188,25 @@ func _run() -> void:
 			"breakdown[\"pass_a_deferred_publish_slots\"] = published",
 		]))
 	_expect("sun-driven and baseline-driven knobs read the live slot, not the MapData mirror",
-		_contains_in_order(climate_modules_src, [
-			"func _native_daily_live_f32(",
-			"func _native_daily_live_u8(",
-		]) and climate_modules_src.contains(
-			"_native_daily_live_f32(\"cell_temp_baseline\", map.temp_baseline_arr, n)"
-		) and climate_modules_src.contains(
-			"_native_daily_live_u8(\"cell_ema_initialized\", map.ema_initialized_arr, n)"
-		) and (climate_modules_src.contains(
+		_contains_in_order(pass_inputs_src, [
+			"static func _native_daily_live_f32(",
+			"snapshot_f32(sid)",
+			"static func _native_daily_live_u8(",
+			"snapshot_u8(sid)",
+		]) and pass_inputs_src.contains(
+			"_native_daily_live_f32(context, \"cell_temp_baseline\", map.temp_baseline_arr, n)"
+		) and pass_inputs_src.contains(
+			"_native_daily_live_u8(context, \"cell_ema_initialized\", map.ema_initialized_arr, n)"
+		) and sea_ice_src.contains(
 			"_native_daily_live_f32(\"cell_insolation_now\", map.insolation_now_arr, n_cells)"
-		) or generator_src.contains(
-			"_get_native_daily_bundle_builder()._native_daily_live_f32(\"cell_insolation_now\"")))
+		))
 	_expect("transpiration subtracts donor outflow before neighbor distribution",
 		transp_src.contains("D[i] += self_share - transported") and
 		transp_src.contains("transported / float(valid_land_neighbors)"))
 	_expect("weather direct moisture writes are gated",
-		weather_src.contains("weather_direct_moisture_enabled") and
-		weather_src.contains("direct_moisture_enabled"))
+		weather_bridge_src.contains('knobs.get("weather_direct_moisture_enabled", false)') and
+		weather_bridge_src.contains("wdk.direct_moisture_enabled = direct_moisture_enabled") and
+		weather_writeback_src.contains("if (direct_moisture_enabled)"))
 
 	var season_stage8: String = _section(season_src,
 			"// 历史上的 stage 8 = sync_current_state",
@@ -205,7 +218,7 @@ func _run() -> void:
 		not season_stage8.contains("TEMP[i] = temp_now") and
 		not season_stage8.contains("_flush_slot_to_map(sid_temp)"))
 	_expect("season B+ skips vegetation rewrite under vegetation_dynamics owner",
-		generator_src.contains("skip_vegetation_rewrite") and
+		season_coordinator_src.contains('"skip_vegetation_rewrite": true') and
 		season_src.contains("skip_vegetation_rewrite"))
 	_expect("ACTIVE native daily uses keyed slot refresh",
 		(climate_modules_src.contains("refresh_slot_keys") or generator_src.contains("refresh_slot_keys")) and
@@ -221,7 +234,23 @@ func _read_source(path: String) -> String:
 	var file := FileAccess.open(global_path, FileAccess.READ)
 	if file == null:
 		return ""
-	return file.get_as_text()
+	var source: String = file.get_as_text()
+	if not global_path.ends_with(".cpp"):
+		return source
+	var fragments := RegEx.new()
+	var stem: String = global_path.get_file().get_basename()
+	fragments.compile('(?m)^[ \t]*#[ \t]*include[ \t]*"(' + stem + '_[a-z0-9_]+\\.inc)"[ \t]*$')
+	var matches: Array[RegExMatch] = fragments.search_all(source)
+	for i in range(matches.size() - 1, -1, -1):
+		var match_line: RegExMatch = matches[i]
+		var fragment_path: String = global_path.get_base_dir().path_join(match_line.get_string(1))
+		if not FileAccess.file_exists(fragment_path):
+			push_error("Missing native source fragment: " + fragment_path)
+			return ""
+		var fragment: String = FileAccess.get_file_as_string(fragment_path)
+		source = (source.substr(0, match_line.get_start()) + fragment
+				+ source.substr(match_line.get_end()))
+	return source
 
 
 func _section(source: String, start_marker: String, end_marker: String) -> String:

@@ -45,8 +45,7 @@ var _failures := PackedStringArray()
 
 
 func _init() -> void:
-	# 只有被当作主循环启动时（`-s`）才跑测试；截图 QA 会把本脚本当 fixture 容器
-	# 实例化，那时主循环是别人的，不能在这里再起一套断言与 quit()。
+	# 只有作为主循环启动时（`-s`）才运行断言和退出。
 	if not _runs_as_main_loop():
 		return
 	call_deferred("_run")
@@ -58,7 +57,7 @@ func _runs_as_main_loop() -> bool:
 
 
 ## 给渲染验收用的公开入口：同一份 fixture，避免两组截图口径漂移。
-func fixture_model(player_soldiers: int = 1200) -> Dictionary:
+static func fixture_model(player_soldiers: int = 1200) -> Dictionary:
 	return _fixture_model(player_soldiers)
 
 
@@ -324,7 +323,7 @@ func _check_declare_blocked_by_soldiers() -> void:
 
 # ── fixture ──────────────────────────────────────────────────────────────
 
-func _fixture_model(player_soldiers: int = 1200) -> Dictionary:
+static func _fixture_model(player_soldiers: int = 1200) -> Dictionary:
 	var map := FakeMap.new()
 	var country := FakeCountryFacade.new()
 	var military := FakeMilitaryFacade.new()

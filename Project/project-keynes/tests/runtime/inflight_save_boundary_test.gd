@@ -2,6 +2,7 @@ extends SceneTree
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const CountryFacadeScript = preload("res://scripts/country/country_facade.gd")
+const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 
 var _checks := 0
 var _failures := 0
@@ -43,8 +44,10 @@ func _run() -> void:
 		"treasury_good_indices": PackedInt32Array([compiled.good_ids.find("grain")]),
 		"treasury_quantities": PackedInt64Array([50]),
 	}
+	# The default political regimes reference modifier definitions.
+	var modifiers: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
 	var configured := country.configure(ext, 1, 620260909,
-		load("res://data/country/default_country.tres"), compiled)
+		load("res://data/country/default_country.tres"), compiled, null, modifiers)
 	_expect("country configures", bool(configured.get("ok", false)))
 	if not bool(configured.get("ok", false)):
 		return

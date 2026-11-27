@@ -1,5 +1,7 @@
 extends "res://scripts/simulation/generator_context.gd"
 class_name DCTerrainGenerator
+const TerrainBioPublication = preload("res://scripts/geography/map_generation/terrain_bio_publication.gd")
+const TerrainClassification = preload("res://scripts/geography/map_generation/terrain_classification.gd")
 const BioSummary = preload("res://scripts/geography/map_generation/bio_occupancy_summary.gd")
 const BioOccupancyGuaranteeScript = preload("res://scripts/geography/map_generation/bio_occupancy_guarantee.gd")
 
@@ -343,19 +345,11 @@ func _init_noise(seed_val: int) -> void:
 # CPU/GPU/C++ SAME_SOURCE：三路径一致。
 
 func _alt_penalty_height(height_norm: float) -> float:
-	var h: float = clampf(height_norm, 0.0, 1.0)
-	var lin: float = h * _generator.ALT_PEN_LINEAR
-	var hi: float = smoothstep(_generator.ALT_PEN_HIGH_LO, _generator.ALT_PEN_HIGH_HI, h) * _generator.ALT_PEN_HIGH_AMP
-	return lin + hi
+	return TerrainClassification._alt_penalty_height(self, height_norm)
 
 
 func _alt_penalty(elevation: float, sea_level: float = -1.0) -> float:
-	var sea: float = sea_level
-	if sea < 0.0 and _generator._last_cfg != null:
-		sea = float(_generator._last_cfg.sea_level)
-	if sea >= 0.0:
-		return _generator._alt_penalty_height(_generator._temperature_height_for_penalty(elevation, sea))
-	return _generator._alt_penalty_height(elevation)
+	return TerrainClassification._alt_penalty(self, elevation, sea_level)
 
 # 雪盖派生：与 shader compute_snow_factor 同公式（去掉 fbm jitter，CPU 端用确定性版本）。
 # 2026-05-19：把雪线从"高山地形开关"改回连续海拔/温度权重。
@@ -370,77 +364,11 @@ func _alt_penalty(elevation: float, sea_level: float = -1.0) -> float:
 #   - 本文件 fast-path 复刻：行 ~5781（_apply_climate_daily_pass_fast 内）
 
 func _derived_snow_cover(temp_now: float, land_h: float, terrain: int, cover: int) -> float:
-	# 2026-05-19 Plan-C 二次调参（日志诊断后）：
-	# 现象：season_temp_amp=0.32 + 雪线带 [0.30, 0.48] 宽度仅 0.18 → 季节振幅(0.64)
-	# 是过渡带 3.6 倍 → 单 cell 只在春秋很短的窗口里看到"半雪"，其余时间全有/全无。
-	# 修复：把雪线带拉宽到 [0.20, 0.60]（0.40），中纬冬季满白、春秋稳定过渡、
-	#       夏季中高纬挂薄雪、赤道全年无雪。amount 上提 0.55→0.70 强化对比。
-	var snow_cover: float = 0.0
-	if terrain == TerrainType.TERRAIN.SNOW:
-		snow_cover = (1.0 - smoothstep(0.22, 0.62, temp_now)) * 0.80
-	var cold_snow: float = (1.0 - smoothstep(0.20, 0.60, temp_now)) * 0.70
-	var altitude_w: float = smoothstep(0.22, 0.90, land_h)
-	var alpine_temp_w: float = 1.0 - smoothstep(0.20, 0.85, temp_now)
-	var alpine_snow: float = altitude_w * alpine_temp_w * 0.92
-	snow_cover = max(snow_cover, max(cold_snow, alpine_snow))
-	if cover == CoverType.CV.GLACIER and snow_cover < 0.80:
-		snow_cover = 0.80
-	return snow_cover
+	return TerrainClassification._derived_snow_cover(self, temp_now, land_h, terrain, cover)
 
 
 func _bootstrap_sea_ice_fraction(map: MapData, cfg: MapConfig) -> void:
-	# generate() 里的一次性初始化：为每个海洋 cell 按年基线温度给出 sea_ice_fraction 平衡值。
-	# 目的：让 refresh_climate_daily 首次运行前就有合理的初值，而不是全 0（否则高纬该冻的地方
-	# 需要几十天才爬到 ice_terrain_threshold，视觉上出现"开局一片无冰"的假象）。
-	# 不使用固定 summer/winter 相位；季节性由后续 daily temperature pass 连续注入。
-	#
-	# 平衡值取法（与 _apply_sea_ice_daily_pass 的阈值语义一致）：
-	#   temp < form_threshold  →  fraction = smoothstep 向 1 走
-	#   temp > melt_threshold  →  fraction = 0
-	#   之间                   →  线性过渡
-	# 然后再按 sea_ice_terrain_threshold 翻转 terrain。
-	var cp = _generator._c()
-	if cp == null:
-		return
-	var t_form: float = float(cp.sea_ice_form_threshold)
-	var t_melt: float = float(cp.sea_ice_melt_threshold)
-	var thr_terrain: float = float(cp.sea_ice_terrain_threshold)
-	var solar_gate_enabled: bool = _generator._sea_ice_solar_gate_enabled(cp)
-	var freeze_insol_low: float = float(cp.sea_ice_freeze_insol_low)
-	var freeze_insol_high: float = float(cp.sea_ice_freeze_insol_high)
-	for cell: HexCell in map.all_cells():
-		if not _generator._is_water(cell.terrain):
-			cell.sea_ice_fraction = 0.0
-			continue
-		if cell.terrain == TerrainType.TERRAIN.LAKE:
-			cell.sea_ice_fraction = 0.0
-			continue
-		var ny: float = _generator._cube_row_norm(cell, cfg)
-		var temp_year: float = _generator._compute_temperature(ny, cell.elevation)
-		var temp_ref: float = clampf(temp_year, 0.0, 1.0)
-		var polar_w: float = absf(ny * 2.0 - 1.0)
-		var frac: float = 0.0
-		if temp_ref < t_form:
-			# 冷：按离阈距离给个饱和度
-			frac = clampf((t_form - temp_ref) / maxf(t_form, 0.001), 0.0, 1.0)
-			# 用更宽的 smoothstep，避免接近阈值的低浓度冰在开局就变成满冰带。
-			frac = smoothstep(0.10, 0.85, frac)
-		elif temp_ref > t_melt:
-			frac = 0.0
-		else:
-			# 迟滞带：线性从 form→melt 对应 1→0
-			var span: float = maxf(t_melt - t_form, 0.001)
-			frac = clampf((t_melt - temp_ref) / span, 0.0, 1.0) * 0.35
-		if solar_gate_enabled:
-			var annual_insol: float = _generator._insolation_annual_mean(ny)
-			frac *= _generator._sea_ice_freeze_gate(annual_insol, freeze_insol_low, freeze_insol_high)
-		var stable_polar_pack: bool = polar_w >= 0.78 and temp_ref < t_form * 0.85
-		if not stable_polar_pack and frac >= thr_terrain:
-			frac = maxf(0.0, thr_terrain - 0.08)
-		cell.sea_ice_fraction = frac
-		# 生成期只把稳定极地多年冰落成 terrain；过渡冰由 daily pass 自行生长/消退。
-		if stable_polar_pack and frac >= thr_terrain and cell.terrain != TerrainType.TERRAIN.SEA_ICE:
-			_generator._set_cell_runtime_terrain(map, cell, TerrainType.TERRAIN.SEA_ICE)
+	TerrainClassification._bootstrap_sea_ice_fraction(self, map, cfg)
 
 
 # ─── 地形决策（v8 阈值定调） ────────────────────────────────────────────
@@ -453,98 +381,7 @@ func _bootstrap_sea_ice_fraction(map: MapData, cfg: MapConfig) -> void:
 
 
 func _decide_terrain(elevation: float, temperature: float, moisture: float, cfg: MapConfig, permanent_only: bool = false) -> TerrainType.TERRAIN:
-	if elevation < cfg.sea_level - 0.06:
-		return TerrainType.TERRAIN.OCEAN
-	if elevation < cfg.sea_level:
-		return TerrainType.TERRAIN.COAST
-
-	var land_height: float = (elevation - cfg.sea_level) / (1.0 - cfg.sea_level)
-
-	# ─── 海拔/极地优先（不论温度湿度）───────────────────────────────────
-	# v10.6：三档 SNOW 判定
-	# 2026-05-18 雪线修正 #2：alt_penalty 加深后温度被多扣 ~0.24，
-	# 中纬丘陵 (land_h≈0.4~0.5) 大量误判 COLD_SNOW。阈值跟着抬：
-	#   COLD_SNOW_LINE 0.40→0.55（只允许中山以上冷雪）
-	#   cold-snow 温度门槛 0.13→0.08（更冷才换 SNOW）
-	#   极地低温门槛 0.06→0.03（低海拔不被 alt_pen 误伤）
-	#
-	# 2026-05-18 雪线修正 #3 / 季节性高山雪：
-	# permanent_only=true 仅在 bake 阶段（snapshot_base_state 之前）使用，
-	# 用更严苛阈值决定哪些 cell 被永久锁死为 SNOW（base_terrain=SNOW，
-	# refresh_seasonal/refresh_climate_daily 会跳过 _decide_terrain 永久维持）。
-	# 其它 fast-tick 路径仍传 false，温度（含 season_offset）正常驱动雪/岩切换。
-	#
-	# 调参目标：
-	#   - 赤道高山顶不再只凭高度永久雪；由雪盖曲线决定季节性退缩。
-	#   - 中纬高山（land_h≈0.55~0.82, 年均温<0.08）→ bake 进 MOUNTAIN，
-	#     fast tick 冬季 temp_now<0.08 时翻 SNOW，夏季回 MOUNTAIN
-	#   - 极地低海拔（temp<0.03）→ bake 进 TUNDRA/PLAIN，季节性翻雪
-	var snow_line: float = 0.85 if permanent_only else 0.82
-	var snow_line_temp: float = 0.26 if permanent_only else 0.34
-	var cold_snow_line: float = 0.70 if permanent_only else 0.55
-	var cold_snow_temp: float = 0.05 if permanent_only else 0.08
-	# 极地永久雪：bake 时关闭（温度<0 等价于不触发），fast-tick 仍按 0.03 兜底。
-	var polar_temp: float = -1.0 if permanent_only else 0.03
-	if land_height > snow_line and temperature < snow_line_temp:
-		return TerrainType.TERRAIN.SNOW
-	if land_height > cold_snow_line and temperature < cold_snow_temp:
-		return TerrainType.TERRAIN.SNOW
-	if temperature < polar_temp:
-		return TerrainType.TERRAIN.SNOW
-	var mountain_line: float = 0.72 if permanent_only else 0.70
-	if land_height > mountain_line:
-		return TerrainType.TERRAIN.MOUNTAIN
-	if temperature < 0.20:
-		return TerrainType.TERRAIN.TUNDRA
-
-	# [climate-zone-fix P1] 与 C++ pk_decide_terrain_ex 同源：湿端阈值按世界湿度天花板
-	# 旧单一"热带(>0.55)"拆成真热带与亚热带/暖温带；连续雨林只占湿尾。
-	# (0.55–0.66)，让 FOREST 地形在亚热带可达，修复 SUBTROPICAL_FOREST 死分支。
-	# [zonal-envelope 2026-08-01] 与 C++ 完全重新同步（此前 GDScript 已漂移：温带 FOREST
-	# 真热带门为 0.80（≈33°回归线外缘），温带 FOREST 湿门 0.42、
-	# 温带 GRASSLAND 0.28，并保留凉带 STEPPE/TUNDRA 限制。
-	if temperature > 0.80:                         # 真热带（赤道带，0–33°）
-		if moisture > 0.64:
-			return TerrainType.TERRAIN.JUNGLE     # 连续湿润热带森林（C++ 同步）
-		if moisture > 0.32:
-			return TerrainType.TERRAIN.SAVANNA    # 稀树草原
-		# [zonal-envelope 二轮] 热带草系干端 0.20→0.24，干端转真荒漠（C++ 同步）。
-		if moisture > 0.24:
-			return TerrainType.TERRAIN.STEPPE
-		return TerrainType.TERRAIN.DESERT         # 热带沙漠
-
-	if temperature > 0.55:                         # 亚热带 / 暖温带（33–51°，湿端→亚热带常绿林）
-		if moisture > 0.40:
-			return TerrainType.TERRAIN.FOREST     # → _derive_vegetation 派生 SUBTROPICAL_FOREST（0.36→0.40）
-		if moisture > 0.24:
-			return TerrainType.TERRAIN.GRASSLAND
-		if moisture > 0.16:
-			return TerrainType.TERRAIN.STEPPE
-		return TerrainType.TERRAIN.DESERT
-
-	if temperature > 0.38:                         # 温带（51–62°）
-		if moisture > 0.42:
-			return TerrainType.TERRAIN.FOREST     # 温带阔叶林（配合风暴路径湿带）
-		if moisture > 0.28:
-			return TerrainType.TERRAIN.GRASSLAND  # 温带草地（0.32→0.28 收窄草原漏斗）
-		if moisture > 0.16:
-			return TerrainType.TERRAIN.STEPPE
-		return TerrainType.TERRAIN.DESERT
-
-	# 凉温带 / 北方带（0.20–0.38，62–77°）
-	if moisture > 0.45:
-		return TerrainType.TERRAIN.TAIGA
-	# [water-tuning 2026-06-26] STEPPE 限暖凉温带（t>0.30），更冷回落针叶林/苔原/寒漠
-	if temperature > 0.30:
-		if moisture > 0.22:
-			return TerrainType.TERRAIN.STEPPE
-		return TerrainType.TERRAIN.COLD_DESERT
-	# 冷凉温带 / 亚极地（0.20–0.30）
-	if moisture > 0.28:
-		return TerrainType.TERRAIN.TAIGA
-	if moisture > 0.16:
-		return TerrainType.TERRAIN.TUNDRA
-	return TerrainType.TERRAIN.COLD_DESERT
+	return TerrainClassification._decide_terrain(self, elevation, temperature, moisture, cfg, permanent_only)
 
 # ─── Milestone 1：三轴派生（landform / vegetation / cover） ──────────────────
 #
@@ -566,280 +403,31 @@ func _decide_terrain(elevation: float, temperature: float, moisture: float, cfg:
 
 
 func _derive_landform(cell: HexCell, cfg: MapConfig) -> int:
-	# 火山地标优先（has_volcano flag 在生成中后期由 _apply_volcano_pass 写入）
-	if cell.has_volcano:
-		return LandformType.LF.VOLCANO
-	# 水体走 cell.terrain，因为 LAKE / OCEAN / COAST 由水体连通分量算法决定，
-	# 不是简单的"低于海平面"
-	var t: int = int(cell.terrain)
-	if t == TerrainType.TERRAIN.LAKE:
-		return LandformType.LF.LAKE
-	# OCEAN / COAST / REEF / KELP / SEA_ICE 都是海洋系；按海拔分深 / 中 / 浅
-	var marine: bool = (t == TerrainType.TERRAIN.OCEAN \
-			or t == TerrainType.TERRAIN.COAST \
-			or t == TerrainType.TERRAIN.REEF \
-			or t == TerrainType.TERRAIN.KELP \
-			or t == TerrainType.TERRAIN.SEA_ICE)
-	if marine:
-		var sea: float = cfg.sea_level
-		if cell.elevation < sea * 0.55:
-			return LandformType.LF.DEEP_OCEAN
-		if cell.elevation < sea * 0.92:
-			return LandformType.LF.OCEAN
-		return LandformType.LF.COAST
-	# 特殊永久地标
-	if t == TerrainType.TERRAIN.DELTA:
-		return LandformType.LF.DELTA
-	if t == TerrainType.TERRAIN.BADLANDS:
-		return LandformType.LF.BADLANDS
-	if t == TerrainType.TERRAIN.SALT_FLAT:
-		return LandformType.LF.SALT_FLAT
-	if t == TerrainType.TERRAIN.FLOODPLAIN:
-		return LandformType.LF.PLAIN
-	if t == TerrainType.TERRAIN.MESA:
-		return LandformType.LF.PLATEAU
-	# 陆地：按 land_h 分段（与原 _decide_terrain 阈值一致）
-	var land_h: float = (cell.elevation - cfg.sea_level) / maxf(1.0 - cfg.sea_level, 0.001)
-	if land_h > 0.92:
-		return LandformType.LF.PEAK
-	if land_h > 0.70:
-		return LandformType.LF.MOUNTAIN
-	if land_h > 0.22:
-		return LandformType.LF.HILL
-	if land_h > 0.05:
-		return LandformType.LF.LOWLAND
-	return LandformType.LF.PLAIN
+	return TerrainClassification._derive_landform(self, cell, cfg)
 
 # 给定 (terrain, landform, temperature, moisture)，输出真正的植被身份。
 # 关键：当 terrain == HILL / MOUNTAIN 时，不再"植被=丘陵"，而是按 (temp, moist)
 # 在 Whittaker 风格的二维空间里选择具体植被（含 ALPINE_* 高山特殊分类）。
 
 func _derive_vegetation(cell: HexCell, landform: int, temperature: float) -> int:
-	var t: int = int(cell.terrain)
-	# 海水 / 湖水 / 海冰：水面无陆生植被
-	if t == TerrainType.TERRAIN.OCEAN \
-			or t == TerrainType.TERRAIN.LAKE or t == TerrainType.TERRAIN.SEA_ICE:
-		return VegetationType.VEG.NONE
-	# COAST：暖凉浅海软底育海草床(SEAGRASS)，过冷/过热裸沙底为 NONE。
-	# [zonal-envelope] 上缘 0.74→0.82：真热带边界收窄到 0.80 后热带浅海也允许海草床。
-	if t == TerrainType.TERRAIN.COAST:
-		if temperature > 0.42 and temperature < 0.82:
-			return VegetationType.VEG.SEAGRASS
-		return VegetationType.VEG.NONE
-	# 海洋特殊植被
-	if t == TerrainType.TERRAIN.REEF:
-		return VegetationType.VEG.CORAL_REEF
-	if t == TerrainType.TERRAIN.KELP:
-		return VegetationType.VEG.KELP_FOREST
-	# 永久冰川 / 雪面：植被几乎不存在
-	if t == TerrainType.TERRAIN.GLACIER:
-		return VegetationType.VEG.NONE
-	if t == TerrainType.TERRAIN.SNOW:
-		# 雪面下面如果是高山地形，植被身份是"高山苔原"被雪覆盖（cover 单独标 SNOW）
-		if landform == LandformType.LF.HILL or landform == LandformType.LF.MOUNTAIN:
-			return VegetationType.VEG.ALPINE_TUNDRA
-		if landform == LandformType.LF.PEAK:
-			return VegetationType.VEG.NONE
-		return VegetationType.VEG.POLAR_DESERT
-	# 高山判定（HILL/MOUNTAIN/PEAK）：植被走"高山植被"分支
-	var is_alpine: bool = (landform == LandformType.LF.MOUNTAIN \
-			or landform == LandformType.LF.PEAK)
-	# PEAK 几乎无植被
-	if landform == LandformType.LF.PEAK:
-		return VegetationType.VEG.NONE
-	# 永久地标植被映射
-	if t == TerrainType.TERRAIN.DELTA:
-		return VegetationType.VEG.MARSH if temperature < 0.55 else VegetationType.VEG.MANGROVE
-	if t == TerrainType.TERRAIN.OASIS:
-		return VegetationType.VEG.OASIS_VEG
-	if t == TerrainType.TERRAIN.SALT_FLAT:
-		return VegetationType.VEG.NONE
-	if t == TerrainType.TERRAIN.BADLANDS:
-		return VegetationType.VEG.DESERT_SCRUB
-	# ── terrain-overhaul 新增地形 → 植被映射（与 C++ pk_derive_vegetation 同源）──
-	if t == TerrainType.TERRAIN.COLD_DESERT:
-		return VegetationType.VEG.XERIC_DESERT if cell.moisture < 0.08 else VegetationType.VEG.DESERT_SCRUB
-	if t == TerrainType.TERRAIN.CHAPARRAL:
-		return VegetationType.VEG.MEDITERRANEAN_SHRUB
-	if t == TerrainType.TERRAIN.MOOR:
-		return VegetationType.VEG.PEAT_BOG
-	if t == TerrainType.TERRAIN.FLOODPLAIN:
-		if temperature > 0.55:
-			return VegetationType.VEG.MONSOON_FOREST if cell.moisture > 0.60 else VegetationType.VEG.SAVANNA
-		return VegetationType.VEG.MARSH if cell.moisture > 0.70 else VegetationType.VEG.TEMPERATE_GRASSLAND
-	if t == TerrainType.TERRAIN.MESA:
-		return VegetationType.VEG.DESERT_SCRUB
-	if t == TerrainType.TERRAIN.SWAMP:
-		# 冷区沼泽积累泥炭 → PEAT_BOG，否则常规沼泽。
-		return VegetationType.VEG.PEAT_BOG if temperature < 0.34 else VegetationType.VEG.SWAMP
-	if t == TerrainType.TERRAIN.MANGROVE:
-		return VegetationType.VEG.MANGROVE
-	if t == TerrainType.TERRAIN.SHRUBLAND:
-		return VegetationType.VEG.MEDITERRANEAN_SHRUB
-	# 寒带 / 苔原 / 北方
-	if t == TerrainType.TERRAIN.TUNDRA:
-		if is_alpine:
-			return VegetationType.VEG.ALPINE_TUNDRA
-		return VegetationType.VEG.TUNDRA
-	if t == TerrainType.TERRAIN.TAIGA:
-		if is_alpine:
-			return VegetationType.VEG.TEMPERATE_CONIFER
-		return VegetationType.VEG.TAIGA
-	# 山地无明确植被身份 → 走 Whittaker 决策（HILL 也走这里以避免"植被=丘陵"）
-	if t == TerrainType.TERRAIN.HILL or t == TerrainType.TERRAIN.MOUNTAIN \
-			or t == TerrainType.TERRAIN.PLAIN:
-		return _generator._whittaker_vegetation(temperature, cell.moisture, landform)
-	# Phase 10 Whittaker 命中：FOREST/JUNGLE/SAVANNA/GRASSLAND/STEPPE/DESERT
-	var is_hilly: bool = (landform == LandformType.LF.HILL)
-	match t:
-		TerrainType.TERRAIN.FOREST:
-			if is_alpine:
-				return VegetationType.VEG.TEMPERATE_CONIFER
-			# 暖湿丘陵迎风坡 → 云雾林（[climate-zone-fix P1] 湿门 0.70→0.52 适配湿度天花板）
-			if is_hilly and temperature > 0.50 and cell.moisture > 0.52:
-				return VegetationType.VEG.CLOUD_FOREST
-			# [climate-zone-fix P1] temp>0.55→SUBTROPICAL_FOREST 现可达(亚热带 0.55–0.66 带 FOREST 地形)
-			if temperature > 0.55:
-				return VegetationType.VEG.SUBTROPICAL_FOREST
-			return VegetationType.VEG.TEMPERATE_DECIDUOUS
-		TerrainType.TERRAIN.JUNGLE:
-			# 热带高地云雾林 → 极湿雨林 → 季风半落叶 → 季雨林
-			# 连续雨林只占湿尾，季风林承接中间湿度带。
-			if (is_alpine or is_hilly) and cell.moisture > 0.60:
-				return VegetationType.VEG.CLOUD_FOREST
-			if cell.moisture > 0.66:
-				return VegetationType.VEG.TROPICAL_RAINFOREST
-			if cell.moisture > 0.50:
-				return VegetationType.VEG.MONSOON_FOREST
-			return VegetationType.VEG.TROPICAL_DRY_FOREST
-		TerrainType.TERRAIN.SAVANNA:
-			if is_alpine:
-				return VegetationType.VEG.ALPINE_MEADOW if cell.moisture > 0.45 else VegetationType.VEG.BOREAL_SHRUB
-			# Keep SAVANNA's wet edge aligned with _decide_terrain's JUNGLE boundary.
-			# SAVANNA 湿端季风林门与 JUNGLE 0.64 边界同步（C++ 同步）。
-			return VegetationType.VEG.MONSOON_FOREST if cell.moisture > 0.64 else VegetationType.VEG.SAVANNA
-		TerrainType.TERRAIN.GRASSLAND:
-			if is_alpine:
-				return VegetationType.VEG.ALPINE_MEADOW
-			return VegetationType.VEG.TEMPERATE_GRASSLAND
-		TerrainType.TERRAIN.STEPPE:
-			if is_alpine:
-				if temperature < 0.28:
-					return VegetationType.VEG.ALPINE_TUNDRA
-				return VegetationType.VEG.ALPINE_MEADOW if cell.moisture > 0.32 else VegetationType.VEG.BOREAL_SHRUB
-			return VegetationType.VEG.TEMPERATE_STEPPE
-		TerrainType.TERRAIN.DESERT:
-			# 极旱 → XERIC_DESERT；普通 → DESERT_SCRUB
-			if cell.moisture < 0.10:
-				return VegetationType.VEG.XERIC_DESERT
-			return VegetationType.VEG.DESERT_SCRUB
-		_:
-			return _generator._whittaker_vegetation(temperature, cell.moisture, landform)
+	return TerrainClassification._derive_vegetation(self, cell, landform, temperature)
 
 # Whittaker 风格的(temperature, moisture)→vegetation 决策
 # 用于 _derive_vegetation 内部"无明确植被身份的 terrain"（HILL/PLAIN/MOUNTAIN）
 
 func _whittaker_vegetation(temperature: float, moisture: float, landform: int) -> int:
-	var is_alpine: bool = (landform == LandformType.LF.MOUNTAIN \
-			or landform == LandformType.LF.PEAK)
-	var is_hilly: bool = (landform == LandformType.LF.HILL)
-	# 寒带
-	if temperature < 0.06:
-		return VegetationType.VEG.POLAR_DESERT
-	if temperature < 0.20:
-		if is_alpine:
-			return VegetationType.VEG.ALPINE_TUNDRA
-		return VegetationType.VEG.TUNDRA
-	# 凉温带
-	if temperature < 0.40:
-		if moisture > 0.40:
-			if is_alpine:
-				return VegetationType.VEG.TEMPERATE_CONIFER
-			return VegetationType.VEG.TAIGA
-		if moisture > 0.20:
-			return VegetationType.VEG.BOREAL_SHRUB
-		return VegetationType.VEG.ALPINE_TUNDRA if is_alpine else VegetationType.VEG.TEMPERATE_STEPPE
-	# 暖温带
-	if temperature < 0.55:
-		# 温带森林湿门 0.42 / 草门 0.26，与 C++ pk_whittaker_vegetation 同步。
-		if moisture > 0.42:
-			if is_alpine:
-				return VegetationType.VEG.TEMPERATE_CONIFER
-			if is_hilly:
-				return VegetationType.VEG.TEMPERATE_DECIDUOUS
-			return VegetationType.VEG.TEMPERATE_DECIDUOUS
-		if moisture > 0.26:
-			if is_alpine:
-				return VegetationType.VEG.ALPINE_MEADOW
-			return VegetationType.VEG.TEMPERATE_GRASSLAND
-		return VegetationType.VEG.BOREAL_SHRUB if is_alpine else VegetationType.VEG.TEMPERATE_STEPPE
-	# [climate-zone-fix P1] 亚热带拆出 SUBTROPICAL_FOREST；真热带湿端阈值下移适配天花板。
-	# [zonal-envelope] 亚热带上缘 0.66→0.80（≈33°），SUBTROP 湿门 0.36→0.40，与 C++ 同步。
-	if temperature < 0.80:           # 亚热带（33–51°）
-		if moisture > 0.40:
-			return VegetationType.VEG.SUBTROPICAL_FOREST
-		if moisture > 0.22:
-			return VegetationType.VEG.TEMPERATE_GRASSLAND
-		if moisture < 0.12:
-			return VegetationType.VEG.DESERT_SCRUB   # 副热带旱坡
-		return VegetationType.VEG.TEMPERATE_STEPPE
-	# 真热带（0–33°）
-	# 连续雨林湿门 0.64，与 JUNGLE 地形边界对齐（C++ 同步）。
-	if moisture > 0.64:
-		return VegetationType.VEG.TROPICAL_RAINFOREST
-	if moisture > 0.42:
-		return VegetationType.VEG.MONSOON_FOREST
-	if moisture > 0.34:
-		return VegetationType.VEG.TROPICAL_DRY_FOREST
-	# [zonal-envelope 二轮] SAVANNA 下限 0.20→0.24（C++ 同步）。
-	if moisture > 0.24:
-		return VegetationType.VEG.SAVANNA
-	if moisture < 0.10:
-		return VegetationType.VEG.XERIC_DESERT
-	return VegetationType.VEG.DESERT_SCRUB
+	return TerrainClassification._whittaker_vegetation(self, temperature, moisture, landform)
 
 # 覆盖物（cover）派生：永久冰 → GLACIER / 海冰 → SEA_ICE / 季节雪盖 → SNOW
 # 苔原下层默认 PERMAFROST（永久冻土）
 
 func _derive_cover(cell: HexCell, snow_cover: float) -> int:
-	var t: int = int(cell.terrain)
-	if t == TerrainType.TERRAIN.GLACIER:
-		return CoverType.CV.GLACIER
-	if t == TerrainType.TERRAIN.SEA_ICE:
-		return CoverType.CV.SEA_ICE
-	if t == TerrainType.TERRAIN.SNOW:
-		return CoverType.CV.SNOW
-	# 季节性雪盖（陆地，由 refresh_seasonal 算出 snow_cover ∈ [0, 1]）
-	if snow_cover > 0.5 and not _generator._is_water(t):
-		return CoverType.CV.SNOW
-	# 苔原默认下层永冻土（这是地理事实，不是季节性）
-	if t == TerrainType.TERRAIN.TUNDRA:
-		return CoverType.CV.PERMAFROST
-	return CoverType.CV.NONE
+	return TerrainClassification._derive_cover(self, cell, snow_cover)
 
 # 单 cell 同步三轴。生成期间用 snow_cover=0（默认夏季）；refresh_seasonal 内传当季 snow_cover。
 
 func _sync_axes_for_cell(cell: HexCell, cfg: MapConfig, snow_cover: float, temperature_override: float = -1.0) -> void:
-	var landform = _generator._derive_landform(cell, cfg)
-	var prev_landform: int = int(cell.landform)
-	if not _generator._is_water(cell.terrain) and (
-			prev_landform == LandformType.LF.PEAK
-			or prev_landform == LandformType.LF.VOLCANO
-			or prev_landform == LandformType.LF.PLATEAU
-			or prev_landform == LandformType.LF.RIFT_VALLEY
-			or prev_landform == LandformType.LF.CANYON):
-		landform = prev_landform
-	var ny: float = _generator._cube_row_norm(cell, cfg)
-	var temp: float = temperature_override if temperature_override >= 0.0 else _generator._compute_temperature(ny, cell.elevation)
-	cell.landform = landform
-	# 保留合理的演替滞后；明显跨生态带的残留则在 terrain 重分类后立即纠正。
-	var needs_reconcile := VegetationType.needs_biome_reconciliation(
-		int(cell.terrain), int(cell.vegetation))
-	if _generator._is_water(cell.terrain) \
-			or int(cell.vegetation) == int(VegetationType.VEG.NONE) \
-			or needs_reconcile:
-		cell.vegetation = _generator._derive_vegetation(cell, landform, temp)
-	cell.cover = _generator._derive_cover(cell, snow_cover)
+	TerrainClassification._sync_axes_for_cell(self, cell, cfg, snow_cover, temperature_override)
 
 # 全图同步（生成结束后调用一次，snow_cover=0）
 
@@ -1125,225 +713,27 @@ func _append_natural_resource_research_signals(map: MapData) -> void:
 
 
 func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
-	var build_started_usec := Time.get_ticks_usec()
-	if map_ref == null:
-		return {"ok": false, "reason": "map_missing"}
-	var n := map_ref.cell_count()
-	var map_id := int(map_ref.get_instance_id())
-	var cache_hit = _generator._bio_occupancy_knob_cache_version == _generator._BIO_OCCUPANCY_KNOB_CACHE_VERSION \
-			and _generator._bio_occupancy_knob_cache_map_id == map_id \
-			and _generator._bio_occupancy_knob_cache_n == n \
-			and not _generator._bio_occupancy_knob_cache.is_empty()
-	if not cache_hit:
-		var catalog: Dictionary = _generator.ResearchSignalCatalogScript.compile_native_catalog()
-		if not bool(catalog.get("ok", false)):
-			return {"ok": false, "reason": String(catalog.get("reason", "catalog"))}
-		var carrier_ids: PackedStringArray = catalog.get(
-			"research_bio_carrier_ids", PackedStringArray())
-		var carrier_alts: PackedStringArray = catalog.get(
-			"research_bio_carrier_alt_ids", PackedStringArray())
-		var unique_ids: Array[String] = []
-		var index_of := {}
-		for raw_id in carrier_ids:
-			var id := String(raw_id)
-			if id.is_empty() or index_of.has(id):
-				continue
-			index_of[id] = unique_ids.size()
-			unique_ids.append(id)
-		for raw_id in carrier_alts:
-			var id := String(raw_id)
-			if id.is_empty() or index_of.has(id):
-				continue
-			index_of[id] = unique_ids.size()
-			unique_ids.append(id)
-		var primary := PackedInt32Array()
-		var alt := PackedInt32Array()
-		var carrier_slot_names := PackedStringArray()
-		for raw_id in unique_ids:
-			var slot_name := ""
-			for profile in ResourceProfileRegistry.ordered():
-				if String(profile.id) == String(raw_id):
-					slot_name = ResourceProfileRegistry.reserve_cpp_name(profile)
-					break
-			carrier_slot_names.append(slot_name)
-		primary.resize(carrier_ids.size())
-		alt.resize(carrier_alts.size())
-		for i in range(carrier_ids.size()):
-			var id := String(carrier_ids[i])
-			primary[i] = int(index_of.get(id, -1)) if not id.is_empty() else -1
-		for i in range(carrier_alts.size()):
-			var id := String(carrier_alts[i])
-			alt[i] = int(index_of.get(id, -1)) if not id.is_empty() else -1
-		_generator._bio_occupancy_knob_cache = {
-			"ok": true,
-			"cell_count": n,
-			"width": map_ref.width,
-			"height": map_ref.height,
-			"seed": _generator._last_seed,
-			"neighbor_indices": map_ref.neighbor_indices_packed(),
-			"species_signal_ids": catalog.get("research_bio_signal_ids", PackedInt32Array()),
-			"species_occupancy_bits": catalog.get("research_bio_occupancy_bits", PackedInt32Array()),
-			"species_carrier_index": primary,
-			"species_carrier_alt_index": alt,
-			"species_temp_lo": catalog.get("research_bio_temp_lo", PackedFloat32Array()),
-			"species_temp_hi": catalog.get("research_bio_temp_hi", PackedFloat32Array()),
-			"species_moist_lo": catalog.get("research_bio_moist_lo", PackedFloat32Array()),
-			"species_moist_hi": catalog.get("research_bio_moist_hi", PackedFloat32Array()),
-			"species_elev_lo": catalog.get("research_bio_elev_lo", PackedFloat32Array()),
-			"species_elev_hi": catalog.get("research_bio_elev_hi", PackedFloat32Array()),
-			"species_veg_mask0": catalog.get("research_bio_veg_mask0", PackedInt32Array()),
-			"species_veg_mask1": catalog.get("research_bio_veg_mask1", PackedInt32Array()),
-			"species_flags": catalog.get("research_bio_flags", PackedInt32Array()),
-			"species_max_cost": catalog.get("research_bio_max_cost", PackedInt32Array()),
-			"species_fill_keep": catalog.get("research_bio_fill_keep", PackedFloat32Array()),
-			"species_origin_policy": catalog.get("research_bio_origin_policy", PackedInt32Array()),
-			"species_guild": catalog.get("research_bio_guild", PackedInt32Array()),
-			"species_habitat_class": catalog.get("research_bio_habitat_class", PackedInt32Array()),
-			"carrier_ids": carrier_ids,
-			"carrier_alts": carrier_alts,
-			"carrier_unique_ids": unique_ids,
-			"carrier_slot_names": carrier_slot_names,
-		}
-		_generator._bio_occupancy_knob_cache_map_id = map_id
-		_generator._bio_occupancy_knob_cache_n = n
-		_generator._bio_occupancy_knob_cache_version = _generator._BIO_OCCUPANCY_KNOB_CACHE_VERSION
-		# 保底残存格可能落在目录气候带外：把地图本地气候边界写回，persist 才不会次日剔除。
-		BioOccupancyGuaranteeScript.realize_bounds(_generator._bio_occupancy_knob_cache, map_ref)
-	var static_knobs: Dictionary = _generator._bio_occupancy_knob_cache
-	if _generator._bio_occupancy_native_configured_map_id != map_id \
-			and _generator._data_core_world_ext != null :
-		var configured: Dictionary = _generator._data_core_world_ext.configure_bio_occupancy(static_knobs)
-		if bool(configured.get("ok", false)):
-			_generator._bio_occupancy_native_configured_map_id = map_id
-	var empty := PackedFloat32Array()
-	empty.resize(n)
-	var columns: Array = []
-	var unique_ids: Array = static_knobs.get("carrier_unique_ids", [])
-	for raw_id in unique_ids:
-		columns.append(_generator._bio_reserve_column(map_ref, String(raw_id), n, empty))
-	var temperature: PackedFloat32Array = map_ref.temp_30d_arr
-	if temperature.size() != n:
-		temperature = map_ref.temp_arr
-	var out: Dictionary = static_knobs.duplicate(false)
-	out.merge({
-		"cell_count": n,
-		"is_water": map_ref.is_water_arr,
-		"vegetation": map_ref.vegetation_arr,
-		"landform": map_ref.landform_arr,
-		"has_river": map_ref.has_river_arr,
-		"temperature": temperature,
-		"moisture": map_ref.moisture_arr,
-		"elevation": map_ref.elevation_arr,
-		"carrier_reserves": columns,
-		"_knob_cache_hit": cache_hit,
-		"_knob_cache_build_ms": (Time.get_ticks_usec() - build_started_usec) / 1000.0,
-	})
-	return out
+	return TerrainBioPublication._bio_occupancy_base_knobs(self, map_ref)
 
 
 
 func _bio_occupancy_daily_knobs(map_ref: MapData) -> Dictionary:
-	if map_ref == null:
-		return {"ok": false, "reason": "map_missing"}
-	var map_id := int(map_ref.get_instance_id())
-	if _generator._bio_occupancy_native_configured_map_id != map_id:
-		var configured_knobs = _generator._bio_occupancy_base_knobs(map_ref)
-		if not bool(configured_knobs.get("ok", false)):
-			return configured_knobs
-		if _generator._bio_occupancy_native_configured_map_id != map_id:
-			# Native slots may be unavailable in a focused test harness. Preserve
-			# the PackedArray A/B path instead of changing gameplay semantics.
-			return configured_knobs
-	return {
-		"ok": true,
-		"cell_count": map_ref.cell_count(),
-		"seed": _generator._last_seed,
-		"use_configured_slots": true,
-		"_knob_cache_hit": true,
-		"_knob_cache_build_ms": 0.0,
-	}
+	return TerrainBioPublication._bio_occupancy_daily_knobs(self, map_ref)
 
 
 
 func _bio_reserve_column(map_ref: MapData, resource_id: String, n: int,
 		empty: PackedFloat32Array) -> PackedFloat32Array:
-	for profile in ResourceProfileRegistry.ordered():
-		if String(profile.id) != resource_id:
-			continue
-		var field := ResourceProfileRegistry.reserve_map_field(profile)
-		if field.is_empty():
-			break
-		var values: PackedFloat32Array = map_ref.get(field)
-		if values.size() == n:
-			return values
-		break
-	return empty
+	return TerrainBioPublication._bio_reserve_column(self, map_ref, resource_id, n, empty)
 
 
 
 func _publish_bio_occupancy_to_runtime(map_ref: MapData) -> void:
-	if map_ref == null:
-		return
-	var pairs := [
-		[&"cell.bio_occupancy_bits", map_ref.bio_occupancy_bits_arr],
-		[&"cell.landmass_id", map_ref.landmass_id_arr],
-		[&"cell.province_id", map_ref.province_id_arr],
-	]
-	for pair in pairs:
-		var component: StringName = pair[0]
-		var values: PackedInt32Array = pair[1]
-		if _generator._data_core_world != null and _generator._data_core_world.has_method("component_id") \
-				and _generator._data_core_world.has_method("write_i32_range"):
-			var cid := int(_generator._data_core_world.component_id(component))
-			if cid >= 0:
-				_generator._data_core_world.write_i32_range(cid, 0, values)
-	if _generator._data_core_world_ext != null:
-		_generator._data_core_world_ext.refresh_slots_from_map_keys(PackedStringArray([
-			"cell_bio_occupancy_bits", "cell_landmass_id", "cell_province_id"]))
-	map_ref.publish_resource_visual_inputs(MapData.RESOURCE_VISUAL_BANDS)
+	TerrainBioPublication._publish_bio_occupancy_to_runtime(self, map_ref)
 
 
 func _seed_bio_occupancy(map_ref: MapData) -> void:
-	if map_ref == null or _generator._data_core_world_ext == null:
-		push_error("[bio-occupancy] native province/seed pass unavailable")
-		return
-	var knobs = _generator._bio_occupancy_base_knobs(map_ref)
-	if not bool(knobs.get("ok", false)):
-		push_error("[bio-occupancy] species knobs failed: %s" % String(knobs.get("reason", "unknown")))
-		return
-	var province_res: Dictionary = {}
-	var seed_res: Dictionary = {}
-	seed_res = _generator._data_core_world_ext.run_bio_bootstrap_pass(knobs)
-	if not bool(seed_res.get("ok", false)):
-		push_error("[bio-occupancy] bootstrap pass failed: %s" % String(
-			seed_res.get("reason", "unknown")))
-		return
-	province_res = seed_res
-	var n := map_ref.cell_count()
-	var landmass: PackedInt32Array = province_res.get("landmass_ids", PackedInt32Array())
-	var provinces: PackedInt32Array = province_res.get("province_ids", PackedInt32Array())
-	if landmass.size() != n or provinces.size() != n:
-		push_error("[bio-occupancy] province output shape invalid")
-		return
-	map_ref.landmass_id_arr = landmass
-	map_ref.province_id_arr = provinces
-	knobs["province_ids"] = provinces
-	knobs["landmass_ids"] = landmass
-	if seed_res.is_empty():
-		seed_res = _generator._data_core_world_ext.run_bio_seed_pass(knobs)
-		if not bool(seed_res.get("ok", false)):
-			push_error("[bio-occupancy] seed pass failed: %s" % String(
-				seed_res.get("reason", "unknown")))
-			return
-	var occupancy: PackedInt32Array = seed_res.get("occupancy_bits", PackedInt32Array())
-	if occupancy.size() != n:
-		push_error("[bio-occupancy] occupancy output shape invalid")
-		return
-	map_ref.bio_occupancy_bits_arr = occupancy
-	_generator._publish_bio_occupancy_to_runtime(map_ref)
-	_generator._log_bio_occupancy_seed(knobs, seed_res, int(province_res.get("landmass_count", 0)),
-		int(province_res.get("province_count", 0)))
-	BioOccupancyGuaranteeScript.ensure_after_boot(_generator, map_ref, seed_res)
+	TerrainBioPublication._seed_bio_occupancy(self, map_ref)
 
 
 ## 生态播种诊断的「表头 + 每物种」段；两条路径（整段 native / 逐段 GDScript）
@@ -1351,56 +741,19 @@ func _seed_bio_occupancy(map_ref: MapData) -> void:
 
 func _log_bio_occupancy_seed_summary(knobs: Dictionary, seed_res: Dictionary,
 		landmass_count: int, province_count: int) -> void:
-	var catalog: Dictionary = _generator.ResearchSignalCatalogScript.compile_native_catalog()
-	var ids: PackedStringArray = catalog.get("research_signal_ids", PackedStringArray())
-	var signal_ids: PackedInt32Array = knobs.get("species_signal_ids", PackedInt32Array())
-	var envelope: PackedInt32Array = seed_res.get("envelope_cell_counts", PackedInt32Array())
-	var origin_envelope: PackedInt32Array = seed_res.get("origin_envelope_cell_counts", PackedInt32Array())
-	var occupied: PackedInt32Array = seed_res.get("occupied_cell_counts", PackedInt32Array())
-	var origins: PackedInt32Array = seed_res.get("origin_landmass_ids", PackedInt32Array())
-	var seeded: PackedInt32Array = seed_res.get("seeded_landmass_counts", PackedInt32Array())
-	var hearths: PackedInt32Array = seed_res.get("hearth_cell_counts", PackedInt32Array())
-	print("[bio-occupancy] seed landmasses=%d provinces=%d species=%d secondary_hearths=%d" % [
-		landmass_count, province_count, signal_ids.size(),
-		int(seed_res.get("secondary_hearth_count", 0))])
-	for i in range(signal_ids.size()):
-		var sid := int(signal_ids[i])
-		var signal_name := String(ids[sid]) if sid >= 0 and sid < ids.size() else "?"
-		var env_n := int(envelope[i]) if i < envelope.size() else 0
-		var origin_n := int(origin_envelope[i]) if i < origin_envelope.size() else 0
-		var occ_n := int(occupied[i]) if i < occupied.size() else 0
-		var origin_id := int(origins[i]) if i < origins.size() else 0
-		var seeded_n := int(seeded[i]) if i < seeded.size() else 0
-		var hearth_n := int(hearths[i]) if i < hearths.size() else occ_n
-		var fill_ratio := (float(occ_n) / float(origin_n)) if origin_n > 0 else 0.0
-		print("[bio-occupancy]   %s envelope=%d hearth=%d seeded_landmasses=%d primary_landmass=%d primary_envelope=%d occupied=%d occupied/envelope=%.2f" % [
-			signal_name, env_n, hearth_n, seeded_n, origin_id, origin_n, occ_n, fill_ratio])
+	TerrainBioPublication._log_bio_occupancy_seed_summary(self, knobs, seed_res, landmass_count, province_count)
 
 
 
 func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_count: int,
 		province_count: int) -> void:
-	BioOccupancyGuaranteeScript.log_seed(knobs, seed_res, landmass_count, province_count,
-		_generator)
+	TerrainBioPublication._log_bio_occupancy_seed(self, knobs, seed_res, landmass_count, province_count)
 
 
 ## 融合 pass 返回的 landmass 摘要直接打印（聚合在 C++ 里做完）。
 
 func _log_bio_occupancy_seed_native(report: Dictionary, knobs: Dictionary) -> void:
-	_generator._log_bio_occupancy_seed_summary(knobs, report,
-		int(report.get("bio_log_landmass_count", 0)),
-		int(report.get("bio_log_province_count", 0)))
-	var landmass_ids: PackedInt32Array = report.get(
-		"bio_log_landmass_ids", PackedInt32Array())
-	var classes: PackedStringArray = report.get(
-		"bio_log_classes", PackedStringArray())
-	var foods: PackedStringArray = report.get(
-		"bio_log_foods", PackedStringArray())
-	if classes.size() != landmass_ids.size() or foods.size() != landmass_ids.size():
-		return
-	for i in range(landmass_ids.size()):
-		print("[bio-occupancy]   landmass %d classes=%s foods=%s" % [
-			int(landmass_ids[i]), String(classes[i]), String(foods[i])])
+	TerrainBioPublication._log_bio_occupancy_seed_native(self, report, knobs)
 
 
 ## `_log_bio_occupancy_seed()` 的 landmass 聚合段（旧链路 / A/B 探针参考实现）。
@@ -1411,74 +764,13 @@ func _bio_landmass_summary_gdscript(occupancy: PackedInt32Array,
 		landmass: PackedInt32Array, knobs: Dictionary,
 		out_landmass: PackedInt32Array, out_classes: PackedStringArray,
 		out_foods: PackedStringArray) -> void:
-	BioSummary.summarize(_generator, occupancy, landmass, knobs,
-		out_landmass, out_classes, out_foods)
+	TerrainBioPublication._bio_landmass_summary_gdscript(self, occupancy, landmass, knobs, out_landmass, out_classes, out_foods)
 
 
 func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false,
 		day_index: int = 0, slice_enabled: bool = false,
 		bio_slice_cells: int = 2048) -> Dictionary:
-	if map_ref == null or _generator._data_core_world_ext == null :
-		return {"ok": false, "path": "skip", "reason": "native_unavailable"}
-	var knobs = _generator._bio_occupancy_daily_knobs(map_ref)
-	if not bool(knobs.get("ok", false)):
-		return knobs
-	if not bool(knobs.get("use_configured_slots", false)):
-		knobs["province_ids"] = map_ref.province_id_arr
-		knobs["occupancy_bits"] = map_ref.bio_occupancy_bits_arr
-	knobs["run_diffusion"] = run_diffusion
-	knobs["day_index"] = day_index
-	knobs["slice_enabled"] = slice_enabled
-	var observation_handle: int = _generator._resolve_bio_observation_country_handle()
-	if observation_handle != 0:
-		knobs["observation_country_handle"] = observation_handle
-		knobs["observation_effective_day"] = day_index + 1
-	# Keep phase boundaries (persistence/diffusion/merge/publish) preemptible
-	# while using a fixed deterministic range per call. The round is frozen by
-	# WorldClock until the final publish, so no partial occupancy is visible.
-	if slice_enabled:
-		knobs["bio_slice_cells"] = clampi(bio_slice_cells, 2048, 32768)
-	# The first sliced call captures the full input snapshot.  Subsequent fixed
-	# cursor calls reuse native staging and must not refresh/copy MapData again.
-	if not _generator._bio_occupancy_slice_inflight:
-		var refresh_keys := PackedStringArray([
-			"cell_bio_occupancy_bits",
-			"cell_province_id",
-			"cell_temp_30d",
-			"cell_moisture",
-			"cell_landform",
-			"cell_vegetation",
-		])
-		for slot_name in _generator._bio_occupancy_knob_cache.get(
-				"carrier_slot_names", PackedStringArray()):
-			if not refresh_keys.has(slot_name):
-				refresh_keys.append(slot_name)
-		_generator._data_core_world_ext.refresh_slots_from_map_keys(refresh_keys)
-	var res: Dictionary = _generator._data_core_world_ext.run_bio_occupancy_slice(knobs) \
-			if slice_enabled else _generator._data_core_world_ext.run_bio_occupancy_pass(knobs)
-	res["bio_knob_cache_hit"] = bool(knobs.get("_knob_cache_hit", false))
-	res["bio_knob_cache_build_ms"] = float(knobs.get("_knob_cache_build_ms", 0.0))
-	if not bool(res.get("ok", false)) and slice_enabled:
-		# A failed slice never publishes partial staging.  Retry the legacy pass
-		# with the same knobs so feature-flag rollback remains lossless.
-		var fallback_res: Dictionary = _generator._data_core_world_ext.run_bio_occupancy_pass(knobs)
-		fallback_res["path"] = "gdext_one_shot_fallback"
-		fallback_res["bio_slice_fallback_reason"] = str(res.get("reason", "slice_failed"))
-		fallback_res["fallback_reason"] = str(res.get("reason", "slice_failed"))
-		fallback_res["fail_stage"] = str(res.get("fail_stage", "bio_occupancy_slice"))
-		res = fallback_res
-		_generator._bio_occupancy_slice_inflight = false
-	if bool(res.get("ok", false)):
-		var slice_done := bool(res.get("done", true))
-		_generator._bio_occupancy_slice_inflight = slice_enabled and not slice_done
-		if not slice_done:
-			return res
-		var occupancy: PackedInt32Array = res.get("occupancy_bits", PackedInt32Array())
-		if occupancy.size() == map_ref.cell_count():
-			map_ref.bio_occupancy_bits_arr = occupancy
-			_generator._publish_bio_occupancy_to_runtime(map_ref)
-			res["published_to_slot"] = true
-	return res
+	return TerrainBioPublication.run_bio_occupancy_pass_native(self, map_ref, run_diffusion, day_index, slice_enabled, bio_slice_cells)
 
 # Phase 14：永久性地标 — 一旦设定不被季节 / biome 重决策覆盖。
 # terrain-overhaul：CHAPARRAL/MOOR/FLOODPLAIN/MESA 为特征 pass 专属地形（分类器无法

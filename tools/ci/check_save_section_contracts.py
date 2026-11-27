@@ -7,6 +7,7 @@ and the declared restore DAG. It does not pretend to prove C++ alias analysis.
 from __future__ import annotations
 import argparse, json
 from pathlib import Path
+from cpp_source import read_cpp_source
 
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = Path("tools/ci/cpp_save_section_contracts.json")
@@ -35,7 +36,7 @@ def violations(root: Path) -> list[str]:
         if not source.exists():
             errors.append(f"missing save owner source {row['source']}")
             continue
-        text = source.read_text()
+        text = read_cpp_source(source)
         for token in row.get("tokens", []):
             if token not in text:
                 errors.append(f"{row['domain']} missing version/reject evidence: {token}")

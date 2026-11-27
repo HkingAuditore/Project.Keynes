@@ -30,10 +30,10 @@ static func setup(host, map: MapData, world: WorldData, bounds: Rect2, hex_size:
 	# _ready/_ensure_resources 在 world/tiles 就绪前会编出 legacy 变体；setup 才是
 	# 第一次拿到 visual_tiles 的入口，必须按实际 tiled 状态重建 shader，不能只 sync。
 	var probe_start = Time.get_ticks_usec()
-	host._ensure_shader_matches_tiles()
+	host.Material_inputs._ensure_shader_matches_tiles(host)
 	print("[shrub-load] shader %.1fms" % [float(Time.get_ticks_usec()-probe_start)/1000.0])
 	# 首次绘制编译成本：此刻同级的 ShrubLayer 都已建好，能拿到真实的"共享层数"。
-	host._report_veg_shader_cost()
+	host.Diagnostics._report_veg_shader_cost(host)
 	probe_start = Time.get_ticks_usec()
 	if host._defer_initial_rebuild and host._chunked_multimesh_enabled:
 		clear(host, )
@@ -78,14 +78,14 @@ static func clear(host) -> void:
 	if host._shadow_mmi != null:
 		host._shadow_mmi.visible = false
 	host._sync_single_wrap_nodes()
-	host._sync_single_shadow_wrap_nodes()
+	host.Chunk_nodes._sync_single_shadow_wrap_nodes(host)
 	host.visible = false
 
 
 
 static func family_lod_fraction(host, zoom_value: float) -> float:
 	var base: float = host._family_lod_fraction_base(zoom_value)
-	var detail: int = host._active_quality_tier() if host._density_detail < 0 else host._density_detail
+	var detail: int = host.ShrubScatter._active_quality_tier(host) if host._density_detail < 0 else host._density_detail
 	# Keep dense canopy, brush and hardscape continuous when looking over the map.
 	# Ground and aquatic cover use their original zoom curves.
 	if detail >= 2 and host.detail_render_family() in [2, 3, 4]:
@@ -122,7 +122,7 @@ static func set_camera_zoom(host, value: float) -> void:
 	host._active_instance_count_valid = false
 	host.apply_visible_instance_fraction(host._shadow_fraction)
 	# Shadows fade with zoom instead of switching off at one threshold.
-	host._push_shadow_strength()
+	host.Chunk_nodes._push_shadow_strength(host)
 
 
 
@@ -130,6 +130,3 @@ static func set_lod_debug_view(host, enabled: bool) -> void:
 
 	if host._material != null:
 		host._material.set_shader_parameter("lod_debug_view", enabled)
-
-
-

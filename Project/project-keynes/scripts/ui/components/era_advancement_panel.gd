@@ -1,6 +1,8 @@
 extends Control
 class_name EraAdvancementPanel
 
+const AdvancementDrawing = preload("res://scripts/ui/components/era_advancement_drawing.gd")
+
 ## 纸徽速览：左栏国家概况，右栏时代晋升；固定高度自绘，无页签、无滚动。
 ## 超长文字截断加「…」，全文进分区提示（region_tooltip_canvas.gd）。
 
@@ -687,248 +689,36 @@ func _chip(rect: Rect2, icon: StringName, label: String, negative: bool, tooltip
 
 
 func _draw_advancement(x: float, w: float) -> void:
-	var m := _model
-	var strong := UITokens.dossier_font("sans_strong")
-	var sans := UITokens.dossier_font("sans")
-	var display := UITokens.dossier_font("serif")
-	_text(Vector2(x, KICKER_Y), "时代晋升", strong, SIZE_BODY, UITokens.DOSSIER_OXBLOOD, w - 70.0)
-	if not bool(m.get("ok", false)):
-		_text(Vector2(x, TITLE_Y), "数据暂不可用", display, SIZE_TITLE, UITokens.DOSSIER_INK_MUTED, w)
-		return
-	var status := String(m.get("status", ""))
-	var current: Dictionary = m.get("current", {})
-	var next: Dictionary = m.get("next", {})
-	var chip_w := _draw_status_chip(x + w, status)
-	var era_line := String(current.get("name", "")) if next.is_empty() \
-		else "%s → %s" % [String(current.get("name", "")), String(next.get("name", ""))]
-	_text(Vector2(x, TITLE_Y), era_line, display, SIZE_TITLE, UITokens.DOSSIER_INK, w - chip_w - 12.0)
-	if status == "max":
-		_draw_max(x, w)
-		return
-	_draw_band(x, w, status)
-	_draw_conditions(x, w)
-	_draw_costs(x, w)
-	_draw_buffs(x, w, _buff_head_y(), "晋升后获得")
-	var rule_y: float = _rows.rule_y
-	_canvas.draw_line(Vector2(x, rule_y), Vector2(x + w, rule_y), Color(UITokens.DOSSIER_RULE, 0.75), 1.0)
-	var hint := action_hint()
-	if not hint.is_empty():
-		var hint_right := _action.position.x - HINT_GAP if _action.visible else x + w
-		if _reward_link != null and _reward_link.visible:
-			hint_right = minf(hint_right, _reward_link.position.x - 10.0)
-		# 文字视觉中心（基线上方 ascent/2）对齐按钮中心。
-		var centre: float = float(_rows.action_top) + ACTION_H * 0.5
-		var baseline := centre + sans.get_ascent(SIZE_MINOR) * 0.5 - 1.0
-		_text(Vector2(x, baseline), hint, sans, SIZE_MINOR,
-			UITokens.DOSSIER_OXBLOOD if not _error.is_empty() else UITokens.DOSSIER_INK_MUTED,
-			maxf(0.0, hint_right - x), HORIZONTAL_ALIGNMENT_LEFT, hint)
+	AdvancementDrawing._draw_advancement(self, x, w)
 
 
 func _status_colour(status: String) -> Color:
-	match status:
-		"ready", "completing", "max": return UITokens.DOSSIER_VERDIGRIS
-		"locked": return UITokens.DOSSIER_OXBLOOD
-	return UITokens.DOSSIER_INK_SOFT
+	return AdvancementDrawing._status_colour(self, status)
 
 
-## 状态签右对齐在时代行基线上，返回其宽度。
 func _draw_status_chip(right: float, status: String) -> float:
-	var sans := UITokens.dossier_font("sans_strong")
-	var text := String(_model.get("status_chip", ""))
-	if text.is_empty():
-		return 0.0
-	var colour := _status_colour(status)
-	var text_w := sans.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, SIZE_MINOR).x
-	var rect := Rect2(right - text_w - 18.0, TITLE_Y - 18.0, text_w + 18.0, 24.0)
-	_chip_style.bg_color = Color(colour, 0.08)
-	_chip_style.border_color = Color(colour, 0.55)
-	_canvas.draw_style_box(_chip_style, rect)
-	_canvas.draw_string(sans, Vector2(rect.position.x + 9.0, TITLE_Y - 1.0), text,
-		HORIZONTAL_ALIGNMENT_LEFT, -1.0, SIZE_MINOR, colour)
-	_drawn.append(text)
-	return rect.size.x
+	return AdvancementDrawing._draw_status_chip(self, right, status)
 
 
 func _draw_band(x: float, w: float, status: String) -> void:
-	var current: Dictionary = _model.get("current", {})
-	var next: Dictionary = _model.get("next", {})
-	var progress := clampf(_shown_progress, 0.0, 1.0)
-	var filling := status in ["purchasing", "paused", "completing"]
-	var ring_ink := Color(UITokens.DOSSIER_INK_SOFT, 0.5)
-	var accent := UITokens.DOSSIER_BRASS if status != "paused" else UITokens.DOSSIER_UMBER
-	# 一组居中的「旧徽 → 双刻箭 → 主徽」。主徽是视觉重心，进度用它的手绘笔锋弧表达；
-	# 中间不再画横贯整行的进度轨。
-	var old_side := OLD_EMBLEM
-	var new_side := NEW_EMBLEM
-	var chevron_w := 22.0
-	var gap := 14.0
-	var group := old_side + gap + chevron_w + gap + new_side
-	var left := x + maxf(0.0, (w - group) * 0.5)
-	var old_center := Vector2(left + old_side * 0.5, BAND_CENTER)
-	var new_center := Vector2(left + group - new_side * 0.5, BAND_CENTER)
-	_canvas.draw_arc(old_center, old_side * 0.5 + 4.0, 0.0, TAU, 64, ring_ink, 1.5, true)
-	var old_icon := _era_texture(String(current.get("id", "")))
-	if old_icon != null:
-		_canvas.draw_texture_rect(old_icon, Rect2(old_center - Vector2.ONE * old_side * 0.5,
-			Vector2.ONE * old_side), false, Color(1, 1, 1, 0.86))
-	# 双刻箭：两枚手刻的三角刻痕，代替一条长直线。
-	var chev_x := left + old_side + gap
-	for i in range(2):
-		var cx := chev_x + float(i) * 9.0
-		var ink := Color(UITokens.DOSSIER_INK_SOFT, 0.5 - float(i) * 0.14)
-		_canvas.draw_colored_polygon(PackedVector2Array([
-			Vector2(cx, BAND_CENTER - 7.0),
-			Vector2(cx + 8.0, BAND_CENTER),
-			Vector2(cx, BAND_CENTER + 7.0),
-			Vector2(cx + 3.2, BAND_CENTER)]), ink)
-	# 主徽底环：淡墨细圈，让笔锋弧有落笔的位置。
-	_canvas.draw_arc(new_center, RING_RADIUS, 0.0, TAU, 96, Color(UITokens.DOSSIER_INK_SOFT, 0.16), 4.0, true)
-	if filling and progress > 0.0:
-		_draw_brush_ring(new_center, RING_RADIUS, progress, accent)
-	var new_icon := _era_texture(String(next.get("id", "")))
-	if new_icon != null:
-		var tint := Color.WHITE if status != "locked" else Color(0.82, 0.78, 0.72, 0.9)
-		_canvas.draw_texture_rect(new_icon, Rect2(new_center - Vector2.ONE * new_side * 0.5,
-			Vector2.ONE * new_side), false, tint)
+	AdvancementDrawing._draw_band(self, x, w, status)
 
 
-## 手绘笔锋弧：由粗到细分段铺，末端收成尖锋，读起来像蘸墨画的一圈，而不是仪表刻度。
 func _draw_brush_ring(centre: Vector2, radius: float, ratio: float, colour: Color) -> void:
-	var steps := maxi(24, int(96.0 * ratio))
-	var start := -PI * 0.5
-	var sweep := TAU * clampf(ratio, 0.0, 1.0)
-	for i in range(steps):
-		var t0 := float(i) / float(steps)
-		var t1 := float(i + 1) / float(steps)
-		var width := lerpf(5.2, 2.2, t0)
-		var alpha := lerpf(0.95, 0.55, t0)
-		_canvas.draw_arc(centre, radius, start + sweep * t0, start + sweep * t1, 6,
-			Color(colour, alpha), width, true)
-	# 起笔一点、收笔尖锋：避免圆弧两端是生硬的平口。
-	var head := start
-	_canvas.draw_circle(centre + Vector2(cos(head), sin(head)) * radius, 3.4,
-		Color(colour, 0.95), true, -1.0, true)
-	var tail := start + sweep
-	var tip := centre + Vector2(cos(tail), sin(tail)) * radius
-	var tangent := Vector2(-sin(tail), cos(tail))
-	var normal := Vector2(cos(tail), sin(tail))
-	_canvas.draw_colored_polygon(PackedVector2Array([
-		tip + normal * 2.4,
-		tip - normal * 2.4,
-		tip + tangent * 5.0]), Color(colour, 0.75))
+	AdvancementDrawing._draw_brush_ring(self, centre, radius, ratio, colour)
 
 
 func _draw_conditions(x: float, w: float) -> void:
-	var m := _model
-	var strong := UITokens.dossier_font("sans_strong")
-	var sans := UITokens.dossier_font("sans")
-	var numeral := UITokens.dossier_font("numeral")
-	var rows: Array = m.get("conditions", [])
-	var tile_w := floorf((w - COND_GAP) * 0.5)
-	for i in range(mini(rows.size(), 4)):
-		var row: Dictionary = rows[i]
-		var met := bool(row.get("met", false))
-		var rect := Rect2(x + float(i % 2) * (tile_w + COND_GAP),
-			COND_TOP + float(i / 2) * (COND_H + COND_GAP), tile_w, COND_H)
-		_chip_style.bg_color = UITokens.DOSSIER_PAPER_SHADE
-		_chip_style.border_color = Color(UITokens.DOSSIER_VERDIGRIS, 0.5) if met \
-			else Color(UITokens.DOSSIER_RULE, 0.5)
-		_canvas.draw_style_box(_chip_style, rect)
-		var baseline := rect.position.y + 22.0
-		IconCatalog.draw_icon(_canvas, &"control.checkbox_checked" if met else &"control.checkbox_unchecked",
-			Rect2(rect.position.x + 7.0, rect.position.y + 9.0, 16.0, 16.0), 1.0 if met else 0.7)
-		# 条件行不再挂装饰图标：勾选框 + 名称 + 数值已经够读，多一个图标只会把名称挤成省略号。
-		var value := String(row.get("value_text", row.get("text", "")))
-		var value_w := numeral.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1.0, SIZE_MINOR).x
-		var colour := UITokens.DOSSIER_VERDIGRIS if met else UITokens.DOSSIER_INK
-		var label := String(row.get("label", ""))
-		_text(Vector2(rect.position.x + 30.0, baseline), label, strong if met else sans, SIZE_MINOR, colour,
-			rect.size.x - 30.0 - value_w - 12.0)
-		_text(Vector2(rect.end.x - value_w - 8.0, baseline), value, numeral, SIZE_MINOR, colour, value_w + 1.0)
-		# 勾选框已经表达满足与否，不再用 tooltip 复述「已满足 / 未满足」。
-		var tip := String(row.get("tooltip", ""))
-		if not tip.is_empty():
-			_region(rect, tip)
+	AdvancementDrawing._draw_conditions(self, x, w)
 
 
 func _draw_costs(x: float, w: float) -> void:
-	var m := _model
-	var strong := UITokens.dossier_font("sans_strong")
-	var sans := UITokens.dossier_font("sans")
-	var numeral := UITokens.dossier_font("numeral")
-	var costs: Array = m.get("costs", [])
-	if costs.is_empty():
-		return
-	_text(Vector2(x, COST_HEAD_Y), "晋升物资", strong, SIZE_BODY, UITokens.DOSSIER_INK, w)
-	var overflow := costs.size() > MAX_COST_CHIPS
-	var shown := MAX_COST_CHIPS - 1 if overflow else costs.size()
-	# 签宽按实际签数均分：固定 4 等分时中文名（如「采集植物食物」）会被截断。
-	var slots := MAX_COST_CHIPS if overflow else maxi(1, costs.size())
-	var chip_w := floorf((w - 6.0 * float(slots - 1)) / float(slots))
-	for i in range(shown):
-		var row: Dictionary = costs[i]
-		var rect := Rect2(x + float(i) * (chip_w + 6.0), COST_TOP, chip_w, COST_H)
-		var done := bool(row.get("done", false))
-		_chip_style.bg_color = UITokens.DOSSIER_PAPER_SHADE
-		_chip_style.border_color = Color(UITokens.DOSSIER_VERDIGRIS, 0.5) if done \
-			else Color(UITokens.DOSSIER_RULE, 0.5)
-		_canvas.draw_style_box(_chip_style, rect)
-		IconCatalog.draw_icon(_canvas, StringName(row.get("icon", &"system.unknown")),
-			Rect2(rect.position.x + 5.0, rect.position.y + 9.0, 22.0, 22.0))
-		var good_name := String(row.get("name", ""))
-		var value := String(row.get("value_text", ""))
-		var tx := rect.position.x + 31.0
-		var inner := rect.end.x - 6.0 - tx
-		_text(Vector2(tx, rect.position.y + 17.0), good_name, sans, SIZE_MINOR, UITokens.DOSSIER_INK,
-			inner, HORIZONTAL_ALIGNMENT_LEFT,
-			"%s：国库 %s / 需求 %s" % [good_name, String(row.get("stock_text", "0")),
-				String(row.get("required_text", "0"))])
-		_text(Vector2(tx, rect.position.y + 30.0), value, numeral, SIZE_MINOR,
-			UITokens.DOSSIER_VERDIGRIS if done else UITokens.DOSSIER_INK, inner, HORIZONTAL_ALIGNMENT_RIGHT)
-		var bar := Rect2(rect.position.x + 5.0, rect.end.y - 4.0, chip_w - 10.0, 2.0)
-		_canvas.draw_rect(bar, UITokens.DOSSIER_TRACK)
-		_canvas.draw_rect(Rect2(bar.position, Vector2(bar.size.x * float(row.get("ratio", 0.0)), bar.size.y)),
-			UITokens.DOSSIER_VERDIGRIS if done else UITokens.DOSSIER_BRASS)
-		_region(rect, "%s：国库 %s / 需求 %s" % [good_name, String(row.get("stock_text", "0")),
-			String(row.get("required_text", "0"))])
-	if overflow:
-		var rect := Rect2(x + float(shown) * (chip_w + 6.0), COST_TOP, chip_w, COST_H)
-		_chip_style.bg_color = UITokens.DOSSIER_PAPER_SHADE
-		_chip_style.border_color = Color(UITokens.DOSSIER_RULE, 0.5)
-		_canvas.draw_style_box(_chip_style, rect)
-		var lines := PackedStringArray()
-		for i in range(shown, costs.size()):
-			var row: Dictionary = costs[i]
-			lines.append("%s：%s" % [String(row.get("name", "")), String(row.get("value_text", ""))])
-		_text(Vector2(rect.position.x, rect.position.y + 26.0), "+%d 种" % (costs.size() - shown), sans,
-			SIZE_BODY, UITokens.DOSSIER_INK_SOFT, chip_w, HORIZONTAL_ALIGNMENT_CENTER)
-		_region(rect, "\n".join(lines))
+	AdvancementDrawing._draw_costs(self, x, w)
 
 
-
-## 加成逐条全列：≤4 条单列，否则两列（超出两列容量时三列），每条截断后全文进提示。
 func _draw_buffs(x: float, w: float, head_y: float, heading: String) -> void:
-	var sans := UITokens.dossier_font("sans")
-	var buffs: PackedStringArray = _model.get("buffs", PackedStringArray())
-	if buffs.is_empty():
-		return
-	_text(Vector2(x, head_y), heading, sans, SIZE_MINOR, UITokens.DOSSIER_BRASS.darkened(0.25), w)
-	var columns := 1 if buffs.size() <= 4 else (2 if buffs.size() <= 2 * BUFF_MAX_ROWS else 3)
-	var rows := int(ceil(float(buffs.size()) / float(columns)))
-	var col_w := floorf((w - 12.0 * float(columns - 1)) / float(columns))
-	for i in range(buffs.size()):
-		var col := i / rows
-		var row := i % rows
-		var pos := Vector2(x + float(col) * (col_w + 12.0), head_y + 22.0 + float(row) * BUFF_LINE)
-		_text(pos, "· " + String(buffs[i]), sans, SIZE_MINOR, UITokens.DOSSIER_INK, col_w,
-			HORIZONTAL_ALIGNMENT_LEFT, String(buffs[i]))
+	AdvancementDrawing._draw_buffs(self, x, w, head_y, heading)
 
 
 func _draw_max(x: float, w: float) -> void:
-	var current: Dictionary = _model.get("current", {})
-	var side := 120.0
-	var icon := _era_texture(String(current.get("id", "")))
-	if icon != null:
-		_canvas.draw_texture_rect(icon, Rect2(Vector2(x + (w - side) * 0.5, BAND_CENTER - 44.0),
-			Vector2.ONE * side), false)
-	_draw_buffs(x, w, COST_HEAD_Y - 40.0, "已获得的时代加成")
+	AdvancementDrawing._draw_max(self, x, w)

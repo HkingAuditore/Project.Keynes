@@ -3,6 +3,7 @@
 import argparse, json, re
 from pathlib import Path
 from check_cpp_deps import code_only
+from cpp_source import read_cpp_source
 ROOT=Path(__file__).resolve().parents[2]
 REGISTRY="tools/ci/resolve_apply_contracts.json"
 def body(source, signature):
@@ -19,18 +20,18 @@ def access_set(code):
     return sorted(set(re.findall(r"\b_[a-zA-Z]\w*", code)))
 
 def stage_writes(root):
-    source=(root/'gdext/src/native_simulation_host.cpp').read_text()
+    source=read_cpp_source(root/'gdext/src/native_simulation_host.cpp')
     return dict(re.findall(r'\{"(\w+)", RuntimeDomainId::\w+, &NativeSimulationHost::\w+,\s*"[^"]*", "([^"]*)", false,',source))
 
 def soft_reasons(root, row):
-    source=(root/row['source']).read_text()
+    source=read_cpp_source(root/row['source'])
     match=re.search(r'const bool '+row['condition']+r'\s*=([\s\S]*?);',source)
     return re.findall(r'"([^"]+)"',match[1]) if match else None
 
 def queue_surfaces(root):
     rows=[]
     for path in sorted((root/'gdext/src').glob('*.cpp')):
-        for match in re.finditer(r'^\s*(?:bool|void|Dictionary)\s+(\w+::(?:queue_command|submit_\w*command|enqueue_\w+))\s*\(', code_only(path.read_text()), re.M):
+        for match in re.finditer(r'^\s*(?:bool|void|Dictionary)\s+(\w+::(?:queue_command|submit_\w*command|enqueue_\w+))\s*\(', code_only(read_cpp_source(path)), re.M):
             rows.append(path.relative_to(root).as_posix()+'|'+match[1])
     return rows
 
@@ -44,13 +45,13 @@ def violations(root, data):
         if soft_reasons(root,row)!=row['reasons']:
             errors.append('unregistered soft-completion reason '+row['source'])
     for row in data['resolve']:
-        path=root/row['source']; code=body(path.read_text(),row['function']) if path.exists() else None
+        path=root/row['source']; code=body(read_cpp_source(path),row['function']) if path.exists() else None
         if code is None: errors.append('missing Resolve surface '+row['source']); continue
         if row['entry'] not in code: errors.append('Resolve admission bypass '+row['source'])
         for forbidden in row['bypass']:
             if re.search(forbidden,code): errors.append('raw queue bypass '+row['source'])
     for row in data['apply']:
-        path=root/row['source']; code=body(path.read_text(),row['function']) if path.exists() else None
+        path=root/row['source']; code=body(read_cpp_source(path),row['function']) if path.exists() else None
         if code is None: errors.append('missing Apply surface '+row['source']); continue
         for member in set(access_set(code))-set(row['allowed_members']):
             errors.append('Apply outside declared set '+row['source']+': '+member)

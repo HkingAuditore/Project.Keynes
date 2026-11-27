@@ -121,13 +121,15 @@ func _init() -> void:
 		"canyon material is masked by continuous geometry")
 	_expect(not biome_detail_source.contains("vec3 shade = col * vec3(0.68, 0.64, 0.64)"),
 		"canyon no longer darkens the entire categorical cell")
-	var renderer_source := FileAccess.get_file_as_string(
-		"res://scripts/rendering/hex_renderer.gd")
+	var renderer_settings_source := FileAccess.get_file_as_string(
+		"res://scripts/rendering/renderer_scene_settings.gd")
 	var renderer_material_source := FileAccess.get_file_as_string(
 		"res://scripts/rendering/renderer_material_publish.gd")
 	var renderer_shader_source := FileAccess.get_file_as_string(
 		"res://scripts/rendering/renderer_shader_water.gd")
-	# 注意：hex_renderer.gd 是 CRLF，而 FileAccess.get_file_as_string() 保留 \r，
+	var renderer_variant_source := FileAccess.get_file_as_string(
+		"res://scripts/rendering/renderer_shader_variants.gd")
+	# 注意：渲染设置脚本可能是 CRLF，而 FileAccess.get_file_as_string() 保留 \r，
 	# 所以跨行 needle 在 LF 写法下永远不匹配（本断言曾因此长期 FAIL）。只匹配单行。
 	_expect(renderer_material_source.contains(
 		"sm.set_shader_parameter(\"visual_reference_resolution\","),
@@ -333,7 +335,7 @@ func _init() -> void:
 			+ " (their bytes come from web_warmup_program_prefixes only)")
 	_expect(not WebShaderWarmup.TIER_PREFIX.contains("PK_WEB_WORLD_MIN"),
 		"TIER_PREFIX stays world-min free (weather_overlay shares it)")
-	_expect(renderer_shader_source.contains("const QUALITY_PREFIX_LOW"),
+	_expect(renderer_variant_source.contains("const QUALITY_PREFIX_LOW"),
 		"LOW tier prefix is the shared QUALITY_PREFIX_LOW constant")
 	_expect(source.contains("#include \"res://shaders/include/common_noise.gdshaderinc\""),
 		"world_map keeps the shared noise include in every variant")
@@ -510,11 +512,12 @@ func _init() -> void:
 	_expect(not _shaders_entry_for("res://shaders/world_water_web.gdshader").has("prefix"),
 		"the warmup list keeps no stale water-pass prefix constant"
 			+ " (bytes come from web_warmup_program_prefixes)")
-	_expect(renderer_shader_source.contains("static func _water_pass_active(host)")
-		and renderer_shader_source.contains("if OS.has_feature(\"web\")"),
+	_expect(renderer_variant_source.contains("static func _water_pass_active(host)")
+		and renderer_variant_source.contains("if OS.has_feature(\"web\")"),
 		"water pass creation is gated on the web platform")
-	_expect(not renderer_shader_source.contains(
-		"preload(\"res://shaders/world_water_web.gdshader\")"),
+	var water_shader_preload := "preload(\"res://shaders/world_water_web.gdshader\")"
+	_expect(not renderer_shader_source.contains(water_shader_preload)
+		and not renderer_variant_source.contains(water_shader_preload),
 		"water shader is loaded lazily, never preloaded on desktop")
 	var draw_order := HexRenderer.new()
 	draw_order._world_quad = MeshInstance2D.new()
@@ -547,7 +550,8 @@ func _init() -> void:
 	# [2026-11-18] 出货默认**开**：project.godot 里显式写了 true，代码 fallback 也是 true。
 	_expect(HexRenderer.cell_field_setting_enabled(),
 		"PK_CELL_FIELD ships enabled by default (project setting + code fallback both true)")
-	_expect(renderer_shader_source.count("#define PK_CELL_FIELD") == 1,
+	_expect(renderer_shader_source.count("#define PK_CELL_FIELD")
+		+ renderer_variant_source.count("#define PK_CELL_FIELD") == 1,
 		"the define literal exists exactly once in the renderer module")
 	# ② 前缀字节身份。假 host 只提供 RendererShaderWater 真正读到的字段（桌面 / 非 tiled /
 	# 拆分开 / quality 0 ⇒ 云影走 composite），所以下面两条字面量就是**改动前**这条路径
@@ -848,34 +852,36 @@ func _init() -> void:
 	_expect(HexRenderer.cell_field_setting_enabled(),
 		"the project setting is back to the shipped default (enabled) after the matrix")
 	# 既有结构不变量（与 W6 无关，保留）：两条 PC-HIGH 分支必须调同一个判定口。
-	_expect(renderer_shader_source.contains(
+	_expect(renderer_variant_source.contains(
 			"+ WORLD_MAP_WEB_HIGH_PREFIX + high_cell_field + shader.code")
-		and renderer_shader_source.contains(
+		and renderer_variant_source.contains(
 			"return prefix + WATER_WEB_HIGH_PREFIX + _cell_field_prefix(host)"),
 		"both PC-HIGH branches still consult the same predicate (no half-defined program)")
 	# 关 = 空串这条不变量只能有一个实现口：_cell_field_prefix() 的三元式。
-	_expect(renderer_shader_source.contains(
+	_expect(renderer_variant_source.contains(
 			"return CELL_FIELD_DEFINE if _cell_field_active(host) else \"\""),
 		"the off path is literally the empty string (no bytes prepended when disabled)")
 	# 判定口仍然把「同一个平台谓词」交给变体准入（W6 之后那两个参数被忽略，但调用形状
 	# 必须还在：它是"哪套变体允许带宏"的唯一出口，将来再加排除不会分叉）。
-	_expect(renderer_shader_source.contains("if DCFeatureFlags.is_compatibility_renderer():")
-		and renderer_shader_source.contains(
+	_expect(renderer_variant_source.contains("if DCFeatureFlags.is_compatibility_renderer():")
+		and renderer_variant_source.contains(
 			"DCFeatureFlags.is_compatibility_renderer(), _world_map_web_min_active(host)"),
 		"the gate keeps a single exit that receives the same platform predicates as before")
 	# 六个 debug 视图 id 的注册点（方案 §5 P1 的完成判据：4 个对照视图 + 2 个回读视图）。
-	_expect(renderer_source.contains("@export_range(0, 23, 1) var terrain_surface_debug_view"),
+	_expect(renderer_settings_source.contains("@export_range(0, 23, 1) var terrain_surface_debug_view"),
 		"debug-view export range covers the six cell-field views (18..23)")
-	_expect(renderer_source.contains("clampi(value, 0, 23)"),
+	_expect(renderer_settings_source.contains("clampi(value, 0, 23)"),
 		"debug-view clamp matches the export range (else 22..23 would snap to 17)")
-	var gm_source := FileAccess.get_file_as_string(
+	var gm_capabilities := FileAccess.get_file_as_string(
 		"res://scripts/game/world_runtime_gm_adapter_part1.gd").replace("\r\n", "\n")
+	var gm_toggles := FileAccess.get_file_as_string(
+		"res://scripts/game/world_runtime_gm_toggles.gd").replace("\r\n", "\n")
 	for gm_pair in [["dom", 18], ["weights", 19], ["gap", 20], ["warp", 21],
 			["dom_encode", 22], ["band", 23]]:
 		var gm_toggle := "diagnostics.cell_field_%s_view" % String(gm_pair[0])
-		_expect(gm_source.count(gm_toggle) >= 3,
+		_expect(gm_capabilities.count(gm_toggle) + gm_toggles.count(gm_toggle) >= 3,
 			"GM panel registers %s in capabilities + get + set" % gm_toggle)
-		_expect(gm_source.contains("terrain_surface_debug_view = %d if enabled else 0"
+		_expect(gm_toggles.contains("terrain_surface_debug_view = %d if enabled else 0"
 				% int(gm_pair[1])),
 			"GM setter maps %s to debug view %d" % [gm_toggle, int(gm_pair[1])])
 	# ① 五套前缀下都要编得出来（与临时探针 _tmp_cell_field_parse_probe.gd 同一口径）。
@@ -1180,13 +1186,13 @@ func _init() -> void:
 			+ " the core declares zero uniform (include=%s core_uniform=%d)"
 				% [str(field_code_only.contains(core_include_line)), core_uniform_hits])
 	# 最后一个不需要 GPU 的帧不变量：**像素中心的 +0.5 约定**必须三处一致 ——
-	#   C++ 烘焙 world_ext_bake.cpp:1501/1505
+	#   C++ 烘焙 world_ext_bake_section_terrain_index.inc
 	#   `origin_x + (double(x) + 0.5) * step_x`；
 	#   GPU 探针 `origin + (pixel + 0.5) * WORLD_PER_PIXEL`（Camera2D 对中 ⇒ 像素中心）。
 	# 这条比"grep 一个 +0.5"严格：两侧都是完整表达式，任一侧改成 (pixel) 或
 	# (pixel + 1) 都会失败。
 	var cpp_bake_source := FileAccess.get_file_as_string(
-		"../../gdext/src/world_ext_bake.cpp").replace("\r\n", "\n")
+		"../../gdext/src/world_ext_bake_section_terrain_index.inc").replace("\r\n", "\n")
 	_expect(cpp_bake_source.contains(
 			"const double wy_base = origin_y + (double(y) + 0.5) * step_y;")
 		and cpp_bake_source.contains(

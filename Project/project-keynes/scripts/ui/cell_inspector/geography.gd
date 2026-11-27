@@ -143,16 +143,16 @@ func _resource_visibility_context(host, cell_idx: int) -> Dictionary:
 		return context
 	# 检查器是玩家视角：迷雾已经挡住未探索格，认矿用观察者已掌握科技，
 	# 不能用地块所有者（无主地没有科技）的空集合把真实储量显示成「未配置」。
-	var viewer = host._completed_technology_ids(country_facade, host._player_country_handle())
+	var viewer = host._Geography_delegate._completed_technology_ids(host, country_facade, host._player_country_handle())
 	if not bool(viewer.get("ok", false)) and bool(summary.get("owned", false)):
-		viewer = host._completed_technology_ids(
+		viewer = host._Geography_delegate._completed_technology_ids(host,
 			country_facade, int(summary.get("country_handle", -1)))
 	if bool(viewer.get("ok", false)):
 		context.enforce_discovery = true
 		context.technology_ids = viewer.get("technology_ids", PackedStringArray())
 	elif not bool(summary.get("owned", false)):
 		context.enforce_discovery = true
-	var extractable = host._extractable_resource_ids(host._building_snapshot(cell_idx))
+	var extractable = host._Geography_delegate._extractable_resource_ids(host, host._Overview_delegate._building_snapshot(host, cell_idx))
 	if bool(extractable.get("ok", false)):
 		context.enforce_extraction = true
 		context.extractable_resource_ids = extractable.ids
@@ -178,7 +178,7 @@ func _completed_technology_ids(host, country_facade, handle: int) -> Dictionary:
 
 func player_technology_ids(host, ) -> PackedStringArray:
 	var h = host
-	var day = host._current_sample_day()
+	var day = host._Geography_delegate._current_sample_day(host)
 	if day == host._technology_day:
 		return host._technology_ids_cache
 	host._technology_day = day
@@ -186,7 +186,7 @@ func player_technology_ids(host, ) -> PackedStringArray:
 	host._technology_ids_resolved = false
 	if h._generator == null or not h._generator.has_method("get_country_facade"):
 		return host._technology_ids_cache
-	var viewer = host._completed_technology_ids(
+	var viewer = host._Geography_delegate._completed_technology_ids(host,
 		host._generator.get_country_facade(), host._player_country_handle())
 	if bool(viewer.get("ok", false)):
 		h._technology_ids_cache = viewer.get("technology_ids", PackedStringArray())
@@ -239,7 +239,7 @@ func _resource_state(host, idx: int, is_water: bool, visibility: Dictionary = {}
 	var habitat_mask = 1 if not is_water else 0
 	if host._map != null and idx >= 0 and idx < host._map.resource_habitat_mask_arr.size():
 		habitat_mask = int(host._map.resource_habitat_mask_arr[idx])
-	var sample_day = host._current_sample_day()
+	var sample_day = host._Geography_delegate._current_sample_day(host)
 	for p in ResourceProfileRegistry.ordered():
 		if enforce_discovery and not ResourceProfileRegistry.discovery_visible(p, technology_ids):
 			continue
@@ -247,7 +247,7 @@ func _resource_state(host, idx: int, is_water: bool, visibility: Dictionary = {}
 		var name_cn: String = String(p.display_name) if String(p.display_name) != "" else String(p.id)
 		var available = ResourceProfileRegistry.habitat_available(p, habitat_mask)
 		var extractable = not enforce_extraction or extractable_resource_ids.has(StringName(p.id))
-		var reference_reserve = host._resource_reference_reserve(p)
+		var reference_reserve = host._Geography_delegate._resource_reference_reserve(host, p)
 		var reserve = 0.0
 		var delta = 0.0
 		if not available:
@@ -404,7 +404,7 @@ func _weather_name(host, cell: HexCell, idx: int) -> String:
 	var h = host
 	var has_wf: bool = host._view_adapter.get_weather_field_init(idx) if host._view_adapter != null else bool(cell.weather_field_initialized)
 	var wt: int = (host._view_adapter.get_weather_type(idx) if host._view_adapter != null else int(cell.weather_type)) if has_wf else WeatherType.WT.CLEAR
-	var wi: float = host._weather_intensity(cell, idx) if has_wf else 0.0
+	var wi: float = host._Geography_delegate._weather_intensity(host, cell, idx) if has_wf else 0.0
 	if wt == WeatherType.WT.CLEAR or wi <= 0.05:
 		return "晴朗"
 	return WeatherType.name_cn(wt)
@@ -433,7 +433,7 @@ func _wind_speed(host, cell: HexCell, idx: int) -> float:
 	var h = host
 	var speed: float = host._view_adapter.get_wind_speed(idx) if host._view_adapter != null else float(cell.wind_speed)
 	if speed <= 0.0001:
-		speed = host._wind_vector(cell, idx).length()
+		speed = host._Geography_delegate._wind_vector(host, cell, idx).length()
 	return speed
 
 
@@ -461,7 +461,7 @@ func _history_values(host, cell: HexCell) -> Array:
 	if values.size() < 2:
 		values.append(float(cell.vegetation))
 		values.append(float(cell.vegetation))
-	return host._densify_series(values, 9)
+	return host._Geography_delegate._densify_series(host, values, 9)
 
 
 
@@ -470,7 +470,7 @@ func _temperature_chart(host, chart_id: String, title: String, idx: int, current
 	return {
 		"id": chart_id,
 		"title": title,
-		"values": h._temperature_memory(idx, current_temp),
+		"values": h._Geography_delegate._temperature_memory(h, idx, current_temp),
 		"accent": UITokens.CLIMATE,
 		"min_value": 0.0,
 		"max_value": 1.0,

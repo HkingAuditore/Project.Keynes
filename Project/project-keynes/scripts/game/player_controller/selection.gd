@@ -21,7 +21,7 @@ func highlight_cells(host, cells: PackedInt32Array, frame: bool = true) -> int:
 	if cells.is_empty():
 		host._cell_highlight_set.clear()
 		return 0
-	var centers = host._cell_centers(cells)
+	var centers = host._selection_component._cell_centers(host, cells)
 	host._cell_highlight_set.set_cells(centers,
 		host._runtime_host.hex_size if host._runtime_host != null else 22.0,
 		host._runtime_host.map_wrap_period_x() if host._runtime_host != null else 0.0)
@@ -52,12 +52,12 @@ func set_peace_highlight_sets(host, candidate_set, draft_set) -> void:
 
 
 func highlight_peace_candidates(host, cells: PackedInt32Array) -> void:
-	host._paint_peace_set(host._peace_candidate_set, cells)
+	host._selection_component._paint_peace_set(host, host._peace_candidate_set, cells)
 
 
 
 func highlight_peace_draft(host, cells: PackedInt32Array) -> void:
-	host._paint_peace_set(host._peace_draft_set, cells)
+	host._selection_component._paint_peace_set(host, host._peace_draft_set, cells)
 
 
 
@@ -75,7 +75,7 @@ func _paint_peace_set(host, node, cells: PackedInt32Array) -> void:
 	if cells.is_empty():
 		node.clear()
 		return
-	var centers = host._cell_centers(cells)
+	var centers = host._selection_component._cell_centers(host, cells)
 	node.set_cells(centers,
 		host._runtime_host.hex_size if host._runtime_host != null else 22.0,
 		host._runtime_host.map_wrap_period_x() if host._runtime_host != null else 0.0)
@@ -98,14 +98,14 @@ func focus_map_cell(host, cell_index: int) -> void:
 	if cell == null:
 		return
 	if host._camera != null and host._ui_manager != null:
-		host._camera.ensure_point_visible(host._cell_display_world(cell), host._ui_manager.map_safe_area())
+		host._camera.ensure_point_visible(host._selection_component._cell_display_world(host, cell), host._ui_manager.map_safe_area())
 
 
 
 func ensure_selected_visible(host) -> void:
 	if host._selected_cell == null or host._camera == null or host._ui_manager == null:
 		return
-	host._camera.ensure_point_visible(host._cell_display_world(host._selected_cell),
+	host._camera.ensure_point_visible(host._selection_component._cell_display_world(host, host._selected_cell),
 		host._ui_manager.map_safe_area())
 
 
@@ -135,7 +135,7 @@ func select_cell(host, cell) -> void:
 		host.clear_selection()
 		return
 	host._selected_cell = cell
-	var display_world = host._cell_display_world(cell)
+	var display_world = host._selection_component._cell_display_world(host, cell)
 	var wrap_period: float = host._runtime_host.map_wrap_period_x() if host._runtime_host != null else 0.0
 	if host._highlight != null:
 		host._highlight.set_cell_display(cell, host._runtime_host.hex_size if host._runtime_host != null else 22.0,
@@ -159,8 +159,8 @@ func clear_selection(host) -> void:
 
 
 func sync_ui(host) -> void:
-	host._sync_clock_visual_state()
-	host._sync_time_ui()
+	host.ClockPresentation._sync_clock_visual_state(host)
+	host.ClockPresentation._sync_time_ui(host)
 	host._annual_report_flow.try_present()
 	host._narrative_flow.try_present()
 
@@ -241,9 +241,9 @@ func refresh_country_binding(host) -> void:
 		if not host._ideology_facade.command_settled.is_connected(ideology_callback):
 			host._ideology_facade.command_settled.connect(ideology_callback)
 	if host._country_facade != null:
-		host._configure_music_situation()
+		host.AudioPresentation._configure_music_situation(host)
 		host._sync_era_reward_offer()
-		host._sync_era_music(true)
+		host.AudioPresentation._sync_era_music(host, true)
 	host._sync_family_founding_offer()
 	host._progression_component.connect_era_advancement_view(host)
 	host._configure_narrative_runtime()
@@ -259,7 +259,7 @@ func focus_cell(host, cell: int) -> void:
 	var cell_obj = map.cell_at(int(cell))
 	if cell_obj == null:
 		return
-	host._camera.ensure_point_visible(host._cell_display_world(cell_obj),
+	host._camera.ensure_point_visible(host._selection_component._cell_display_world(host, cell_obj),
 		host._ui_manager.map_safe_area())
 
 

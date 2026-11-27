@@ -20,6 +20,7 @@ import check_skill_mirrors as skill_mirrors
 import world_ext_bindings
 import check_world_ext_bindings as binding_guard
 import check_script_native_access as script_access
+from cpp_source import read_cpp_source
 import runtime_test_hygiene as hygiene
 import subprocess
 import os
@@ -46,7 +47,7 @@ class GuardsTest(unittest.TestCase):
             paths={x['source'] for x in data['resolve']+data['apply']+data['retained_soft_paths']} | {'gdext/src/native_simulation_host.cpp'}
             for path in paths:
                 target=root/path; target.parent.mkdir(parents=True,exist_ok=True)
-                target.write_text((resolve_apply.ROOT/path).read_text())
+                target.write_text(read_cpp_source(resolve_apply.ROOT / path))
             self.assertFalse(resolve_apply.violations(root,data))
             for row in data['resolve']:
                 p=root/row['source']; original=p.read_text()
@@ -114,7 +115,7 @@ class GuardsTest(unittest.TestCase):
             source.with_name("annual_development_host.cpp").write_text(annual_good)
             source.with_name("native_simulation_host_ideology.cpp").write_text("copy_committed_view(); assert(_modifier_pod_authority.observe_committed_view(modifier_view));" + opinion_good)
             source.with_name("native_simulation_host_modifier.cpp").write_text("copy_committed_view(); assert(_effect_pod_authority.observe_committed_view(effect_view));")
-            source.with_name("economy_runtime_family_effect_inputs.cpp").write_text("void refresh_class_opinion_metrics() { copy_lineage_opinion_view(); assert(view.observe(_lineage_opinion_view_version)); }")
+            source.with_name("economy_runtime_family_effect_inputs_metrics.cpp").write_text("void refresh_class_opinion_metrics() { copy_lineage_opinion_view(); assert(view.observe(_lineage_opinion_view_version)); }")
             self.assertFalse(views.violations(root))
             for bypass in ["const auto &s = _climate_authority.store();",
                            "auto &owner = _climate_authority; owner.store();",
@@ -208,7 +209,9 @@ class GuardsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);data=json.loads((modules.ROOT/modules.REGISTRY).read_text())
             for relative in [modules.HEADER]+[e['source'] for e in data['reviewed_reads']]:
-                target=root/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(modules.ROOT/relative,target)
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(read_cpp_source(modules.ROOT / relative))
             self.assertFalse(modules.violations(root,data))
             data['modules'][8]['reads']='country, modifier'
             (root/modules.HEADER).write_text(modules.render(data))
@@ -222,17 +225,17 @@ class GuardsTest(unittest.TestCase):
             root = Path(directory)
             leaf = root / "Project/project-keynes/scripts/leaf.gd"
             leaf.parent.mkdir(parents=True)
-            leaf.write_text("pass\n" * 810)
+            leaf.write_text("pass\n" * 780)
             baseline = size.measure(root)
             self.assertFalse(size.violations(baseline, baseline))
-            leaf.write_text("pass\n" * 861)
+            leaf.write_text("pass\n" * 790)
             self.assertEqual(len(size.violations(size.measure(root), baseline)), 1)
             current = size.measure(root)
             current[leaf.relative_to(root).as_posix()]["limit"] = 1000
             self.assertEqual(len(size.violations(current, baseline)), 1)
-            leaf.write_text("pass\n" * 809)
+            leaf.write_text("pass\n" * 779)
             self.assertFalse(size.violations(size.measure(root), baseline))
-            leaf.with_name("new.gd").write_text("pass\n" * 801)
+            leaf.with_name("new.gd").write_text("pass\n" * 800)
             self.assertEqual(len(size.violations(size.measure(root), baseline)), 1)
             for folder in ("tests", "addons", "generated"):
                 excluded = root / "Project/project-keynes" / folder / "big.gd"
@@ -252,11 +255,11 @@ class GuardsTest(unittest.TestCase):
             root = Path(directory)
             leaf = root / "Project/project-keynes/scripts/leaf.gd"
             leaf.parent.mkdir(parents=True)
-            leaf.write_text("pass\n" * 850)
+            leaf.write_text("pass\n" * 790)
             name = leaf.relative_to(root).as_posix()
             (root / "baseline.json").write_text(json.dumps(
-                {"version": 1, "files": {name: {"lines": 810, "limit": 800}}}))
-            message = (f"{name} grew 810 -> 850 lines (threshold 800); "
+                {"version": 1, "files": {name: {"lines": 780, "limit": 799}}}))
+            message = (f"{name} grew 780 -> 790 lines (threshold 799); "
                        "split it before adding more, see docs/architecture/development-guide.md")
             env = os.environ.copy()
             env.pop("GITHUB_ACTIONS", None)
@@ -270,7 +273,7 @@ class GuardsTest(unittest.TestCase):
                         expected.append(f"::error file={name}::{message}")
                     expected.extend([
                         "size ratchet: 1 files, 1 violations, 0 growth warnings",
-                        f"{name}: 850 lines > 810 (threshold 800)",
+                        f"{name}: 790 lines > 780 (threshold 799)",
                     ])
                     self.assertEqual(result.returncode, 1, result.stderr)
                     self.assertEqual(result.stdout.splitlines(), expected)
@@ -280,7 +283,7 @@ class GuardsTest(unittest.TestCase):
             root = Path(directory)
             leaf = root / "Project/project-keynes/scripts/leaf.gd"
             leaf.parent.mkdir(parents=True)
-            leaf.write_text("pass\n" * 810)
+            leaf.write_text("pass\n" * 780)
             (root / "baseline.json").write_text(json.dumps(
                 {"version": 1, "files": size.measure(root)}))
 
@@ -295,7 +298,7 @@ class GuardsTest(unittest.TestCase):
             root = Path(directory)
             leaf = root / "Project/project-keynes/scripts/leaf.gd"
             leaf.parent.mkdir(parents=True)
-            leaf.write_text("pass\n" * 810)
+            leaf.write_text("pass\n" * 780)
             (root / "baseline.json").write_text(json.dumps(
                 {"version": 1, "files": size.measure(root)}))
             with leaf.open("a") as source:
@@ -303,58 +306,58 @@ class GuardsTest(unittest.TestCase):
 
             result = self.run_size_guard(root)
             self.assertEqual(result.returncode, 1, result.stderr)
-            self.assertIn("leaf.gd: 811 lines > 810 (threshold 800)", result.stdout)
+            self.assertIn("leaf.gd: 781 lines > 780 (threshold 799)", result.stdout)
 
     def test_size_baseline_write_leaves_file_unchanged_when_nothing_tightens(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            leaf = root / "Project/project-keynes/scripts/leaf.gd"
+            leaf = root / "Project/project-keynes/scripts/game/game_save_coordinator.gd"
             leaf.parent.mkdir(parents=True)
-            leaf.write_text("pass\n" * 810)
+            leaf.write_text("pass\n" * 700)
             path = root / "baseline.json"
             path.write_text(json.dumps({"version": 1, "files": size.measure(root)}))
             before = path.read_bytes()
 
             new_file = leaf.with_name("new.gd")
-            new_file.write_text("pass\n" * 801)
+            new_file.write_text("pass\n" * 800)
             result = self.run_size_guard(root, "--write-baseline")
             self.assertEqual(result.returncode, 1, result.stderr)
-            self.assertIn("new.gd: 801 lines > 800 (threshold)", result.stdout)
+            self.assertIn("new.gd: 800 lines > 799 (threshold)", result.stdout)
             self.assertIn("split the file", result.stdout)
             self.assertEqual(path.read_bytes(), before)
 
             new_file.unlink()
-            leaf.write_text("pass\n" * 811)
+            leaf.write_text("pass\n" * 701)
             result = self.run_size_guard(root, "--write-baseline")
             self.assertEqual(result.returncode, 1, result.stderr)
-            self.assertIn("leaf.gd: 811 lines > 810 (baseline)", result.stdout)
+            self.assertIn("game_save_coordinator.gd: 701 lines > 700 (baseline)", result.stdout)
             self.assertEqual(path.read_bytes(), before)
 
     def test_size_baseline_write_tightens_despite_growth_and_new_oversize(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             scripts = root / "Project/project-keynes/scripts"
-            scripts.mkdir(parents=True)
-            shrinking = scripts / "shrinking.gd"
-            growing = scripts / "growing.gd"
-            removed = scripts / "removed.gd"
+            shrinking = scripts / "geography/map_generator.gd"
+            growing = scripts / "rendering/map_baker.gd"
+            removed = scripts / "game/game_save_coordinator.gd"
             for source in (shrinking, growing, removed):
-                source.write_text("pass\n" * 850)
+                source.parent.mkdir(parents=True)
+                source.write_text("pass\n" * 700)
             path = root / "baseline.json"
             path.write_text(json.dumps({"version": 1, "files": size.measure(root)}))
-            shrinking.write_text("pass\n" * 849)
-            growing.write_text("pass\n" * 851)
+            shrinking.write_text("pass\n" * 699)
+            growing.write_text("pass\n" * 701)
             removed.unlink()
-            (scripts / "new.gd").write_text("pass\n" * 801)
+            (scripts / "new.gd").write_text("pass\n" * 800)
 
             result = self.run_size_guard(root, "--write-baseline")
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            self.assertIn("growing.gd: 851 lines > 850 (baseline)", result.stdout)
-            self.assertIn("new.gd: 801 lines > 800 (threshold)", result.stdout)
+            self.assertIn("map_baker.gd: 701 lines > 700 (baseline)", result.stdout)
+            self.assertIn("new.gd: 800 lines > 799 (threshold)", result.stdout)
             self.assertEqual(json.loads(path.read_text()), {
                 "version": 1, "files": {
-                    growing.relative_to(root).as_posix(): {"lines": 850, "limit": 800},
-                    shrinking.relative_to(root).as_posix(): {"lines": 849, "limit": 800},
+                    growing.relative_to(root).as_posix(): {"lines": 700, "limit": 600},
+                    shrinking.relative_to(root).as_posix(): {"lines": 699, "limit": 600},
                 },
             })
             self.assertIn("baseline entries lowered=1, dropped=1", result.stdout)
@@ -362,23 +365,70 @@ class GuardsTest(unittest.TestCase):
     def test_size_baseline_write_lowers_and_drops_entries(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            leaf = root / "Project/project-keynes/scripts/leaf.gd"
+            leaf = root / "Project/project-keynes/scripts/game/game_save_coordinator.gd"
             leaf.parent.mkdir(parents=True)
-            other = leaf.with_name("other.gd")
+            other = leaf.with_name("world_runtime_host.gd")
             for source in (leaf, other):
-                source.write_text("pass\n" * 850)
+                source.write_text("pass\n" * 700)
             path = root / "baseline.json"
             path.write_text(json.dumps({"version": 1, "files": size.measure(root)}))
-            leaf.write_text("pass\n" * 849)
-            other.write_text("pass\n" * 800)
+            leaf.write_text("pass\n" * 699)
+            other.write_text("pass\n" * 600)
             result = self.run_size_guard(root, "--write-baseline")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(json.loads(path.read_text()), {
                 "version": 1, "files": {
-                    leaf.relative_to(root).as_posix(): {"lines": 849, "limit": 800},
+                    leaf.relative_to(root).as_posix(): {"lines": 699, "limit": 600},
                 },
             })
             self.assertIn("baseline entries lowered=1, dropped=1", result.stdout)
+
+    def test_size_all_scanned_source_kinds_reject_the_800th_line(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "baseline.json").write_text(json.dumps({"version": 1, "files": {}}))
+            sources = (
+                "Project/project-keynes/scripts/leaf.gd",
+                "gdext/src/leaf.cpp",
+                "gdext/src/leaf.h",
+                "gdext/src/leaf.inc",
+            )
+            for name in sources:
+                source = root / name
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text("// comment\n" * 799)
+            accepted = self.run_size_guard(root)
+            self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+            for name in sources:
+                with (root / name).open("a") as source:
+                    source.write("\n")
+            refused = self.run_size_guard(root)
+            self.assertEqual(refused.returncode, 1, refused.stdout + refused.stderr)
+            self.assertIn("4 files, 4 violations", refused.stdout)
+            for name in sources:
+                self.assertIn(f"{name}: 800 lines > 799", refused.stdout)
+
+    def test_size_stale_baseline_cannot_waive_the_hard_cap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            name = "gdext/src/native_simulation_host.cpp"
+            source = root / name
+            source.parent.mkdir(parents=True)
+            source.write_text("// comment\n" * 800)
+            baseline = root / "baseline.json"
+            baseline.write_text(json.dumps({
+                "version": 1, "files": {name: {"lines": 850, "limit": 600}},
+            }))
+
+            checked = self.run_size_guard(root)
+            self.assertEqual(checked.returncode, 1, checked.stdout + checked.stderr)
+            self.assertIn(f"{name}: 800 lines > 799", checked.stdout)
+            written = self.run_size_guard(root, "--write-baseline")
+            self.assertEqual(written.returncode, 1, written.stdout + written.stderr)
+            self.assertIn(f"{name}: 800 lines > 799", written.stdout)
+            self.assertEqual(json.loads(baseline.read_text())["files"][name], {
+                "lines": 799, "limit": 600,
+            })
 
     def test_foreign_include_and_type_increases_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -501,6 +551,56 @@ class GuardsTest(unittest.TestCase):
         wrong_symbol = target.replace("country_ai_core.h", "country_runtime.h")
         with self.assertRaises(ValueError):
             deps.updated_baseline({wrong_symbol: 1}, baseline, {wrong_symbol: header})
+
+    def test_responsibility_header_move_preserves_owner_and_requires_reduction(self):
+        original = "gdext/src/modifier_runtime.h"
+        edge = "|modifier->country|type:CountryState"
+        source = original + edge
+        target = "gdext/src/modifier_runtime_country_state.h" + edge
+        baseline = {"version": 1, "references": {source: 1}}
+
+        moved = deps.updated_baseline({target: 1}, baseline, {target: original})
+        self.assertEqual(moved["metrics"]["header_exposed"], 1)
+        self.assertFalse(deps.baseline_errors(moved))
+
+        for wrong_path in ("gdext/src/modifier_country_state.h",
+                           "gdext/src/modifier_runtime_family_state.h",
+                           "gdext/src/internal/modifier_runtime_country_state.h"):
+            with self.subTest(path=wrong_path), self.assertRaises(ValueError):
+                deps.updated_baseline({wrong_path + edge: 1}, baseline, {wrong_path + edge: original})
+        with self.assertRaises(ValueError):
+            deps.updated_baseline({source: 1, target: 1}, baseline, {target: original})
+        with self.assertRaises(ValueError):
+            deps.updated_baseline({target: 1}, baseline, {
+                target: {"moved_from": original, "mode": "duplicate"},
+            })
+
+    def test_cpp_source_reader_expands_sibling_fragments_in_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "owner"
+            root.mkdir()
+            source = root / "runtime.cpp"
+            (root / "runtime_section_publish.inc").write_text(
+                'prepare();\n#include "publication_body.inc"\npublish();\n')
+            (root / "publication_body.inc").write_text("commit();\n")
+            (root.parent / "runtime_section_external.inc").write_text("foreign();\n")
+            source.write_text(
+                '#include "runtime_section_publish.inc"\n'
+                '#include "../runtime_section_external.inc"\n'
+                '/*\n#include "runtime_section_missing.inc"\n*/\n'
+                'auto text = R"doc(\n#include "runtime_section_in_text.inc"\n)doc";\n'
+            )
+            code = read_cpp_source(source)
+            self.assertRegex(code, r"prepare\(\);\s+commit\(\);\s+publish\(\);")
+            self.assertNotIn("foreign();", code)
+            self.assertIn('#include "runtime_section_missing.inc"', code)
+            self.assertIn('#include "runtime_section_in_text.inc"', code)
+            (root / "publication_body.inc").unlink()
+            with self.assertRaisesRegex(FileNotFoundError, "publication_body.inc"):
+                read_cpp_source(source)
+            (root / "publication_body.inc").write_text('#include "runtime_section_publish.inc"\n')
+            with self.assertRaisesRegex(ValueError, "Circular C\\+\\+ source fragment"):
+                read_cpp_source(source)
 
     def test_economy_cpp_relocation_requires_same_symbol_reduction(self):
         origin = "gdext/src/economy_runtime.cpp"
@@ -912,7 +1012,7 @@ class GuardsTest(unittest.TestCase):
             for row in registry["sections"]:
                 target = root / row["source"]
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text((saves.ROOT / row["source"]).read_text())
+                target.write_text(read_cpp_source(saves.ROOT / row["source"]))
             self.assertFalse(saves.cpp_section_violations(root))
             broken = json.loads(json.dumps(registry))
             family = next(row for row in broken["sections"] if row["domain"] == "family")

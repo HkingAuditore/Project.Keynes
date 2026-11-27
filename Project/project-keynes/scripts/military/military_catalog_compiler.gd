@@ -1,6 +1,12 @@
 class_name MilitaryCatalogCompiler
 extends RefCounted
 
+const CatalogValidation = preload("res://scripts/military/military_catalog_validation.gd")
+
+const StateBuildings = preload("res://scripts/military/military_catalog_state_buildings.gd")
+
+const CatalogSchema = preload("res://scripts/military/military_catalog_schema.gd")
+
 const WaterUnlocks = preload("res://scripts/military/military_catalog_water_unlocks.gd")
 
 ## Compiles `data/military/military_catalog.json` into the dense-id dictionary the
@@ -54,20 +60,19 @@ const CLASS_MOBILE := 1
 const CLASS_ARTILLERY := 2
 const CLASS_IDS := ["line", "mobile", "artillery"]
 
-const SUPPLY_RATION := 0
-const SUPPLY_FODDER := 1
-const SUPPLY_AMMUNITION := 2
-const SUPPLY_FUEL := 3
-const SUPPLY_UPKEEP := 4
+const SUPPLY_RATION = CatalogSchema.SUPPLY_RATION
+const SUPPLY_FODDER = CatalogSchema.SUPPLY_FODDER
+const SUPPLY_AMMUNITION = CatalogSchema.SUPPLY_AMMUNITION
+const SUPPLY_FUEL = CatalogSchema.SUPPLY_FUEL
+const SUPPLY_UPKEEP = CatalogSchema.SUPPLY_UPKEEP
 const SUPPLY_EQUIPMENT := 5
-const SUPPLY_CLASS_COUNT := 6
-const SUPPLY_CLASS_IDS: Array[String] = [
-	"ration", "fodder", "ammunition", "fuel", "upkeep", "equipment"]
+const SUPPLY_CLASS_COUNT = CatalogSchema.SUPPLY_CLASS_COUNT
+const SUPPLY_CLASS_IDS: Array[String] = CatalogSchema.SUPPLY_CLASS_IDS
 
-const ROLE_BARRACKS := 0
+const ROLE_BARRACKS = CatalogSchema.ROLE_BARRACKS
 const ROLE_FORTIFICATION := 1
 const ROLE_WAR_COLLEGE := 2
-const ROLE_IDS := ["barracks", "fortification", "war_college"]
+const ROLE_IDS = CatalogSchema.ROLE_IDS
 
 const SOLDIER_PLAN_ID := "soldier_household"
 const SOLDIER_PROFESSION_ID := "soldier"
@@ -76,22 +81,22 @@ const SOLDIER_PROFESSION_ID := "soldier"
 ## any lot whose economy profile is not authored as a state building, so a
 ## profile accidentally left at `industrial` cannot silently become a
 ## market producer that the military runtime keeps counting.
-const ECONOMY_BUILDING_KIND_STATE := 3
+const ECONOMY_BUILDING_KIND_STATE = CatalogSchema.ECONOMY_BUILDING_KIND_STATE
 const UNEMPLOYED_PROFESSION_ID := "unemployed"
 ## The two `soldier_household` needs whose variants become ration candidates.
 const RATION_NEED_IDS: Array[String] = ["staple_food", "protein"]
-const MAX_UNITS := 64
+const MAX_UNITS = CatalogSchema.MAX_UNITS
 const MAX_EQUIP_SLOTS := 4
 ## Native repair recipe slot cap: `MilitaryUnitType::repair_materials` and the
 ## `MilitaryStateBuilding` equivalent hold four entries each.
-const MAX_REPAIR_SLOTS := 4
+const MAX_REPAIR_SLOTS = CatalogSchema.MAX_REPAIR_SLOTS
 ## `repair_rate_q32` is q32 of ONE MILLI-GOOD per day. The native side
 ## accumulates `rate_q32 * units`, emits `>> 32` milli-goods and keeps the
 ## remainder, so a rate below one milli-good per day is a legitimate value.
-const REPAIR_Q32_ONE := 4294967296.0
-const REPAIR_MILLI_GOODS := 1000.0
+const REPAIR_Q32_ONE = CatalogSchema.REPAIR_Q32_ONE
+const REPAIR_MILLI_GOODS = CatalogSchema.REPAIR_MILLI_GOODS
 ## `default_price` is authored in money subunits per 1.0 good (MONEY_SCALE).
-const REPAIR_MONEY_SCALE := 10000.0
+const REPAIR_MONEY_SCALE = CatalogSchema.REPAIR_MONEY_SCALE
 
 
 static func slot_accepted_goods(slot: Dictionary, category: Dictionary) -> PackedInt32Array:
@@ -107,12 +112,12 @@ static func unit_consumed_goods(military: Dictionary, unit: Dictionary) -> Packe
 ## close: max authored attack is 80, fort +2.4, training x3.0, upkeep 15/day.
 ## The ceilings exist so a column accidentally written in its *internal* fixed
 ## point form fails validation loudly instead of shipping `守备 +1966100%`.
-const MAX_FORT_BONUS := 10.0
-const MAX_TRAINING_SPEED := 10.0
-const MAX_BUILDING_UPKEEP := 100.0
+const MAX_FORT_BONUS = CatalogSchema.MAX_FORT_BONUS
+const MAX_TRAINING_SPEED = CatalogSchema.MAX_TRAINING_SPEED
+const MAX_BUILDING_UPKEEP = CatalogSchema.MAX_BUILDING_UPKEEP
 const MAX_UNIT_STAT := 1000.0
 ## Material quantities are whole good units per building (max authored: 300).
-const MAX_MATERIAL_UNITS := 1000.0
+const MAX_MATERIAL_UNITS = CatalogSchema.MAX_MATERIAL_UNITS
 ## Equipment power weight per unit (max authored: 0.6).
 const MAX_EQUIP_WEIGHT := 10.0
 
@@ -273,66 +278,7 @@ static func compile_from_data(data: Dictionary, economy_catalog: Dictionary,
 static func validate(catalog: Dictionary, economy_catalog: Dictionary,
 		technology_catalog: Dictionary) -> Dictionary:
 	var compiled := compile_from_data(catalog, economy_catalog, technology_catalog)
-	if not bool(compiled.get("ok", false)):
-		return compiled
-	var problems: Array[String] = []
-	if int(compiled.get("militia_unit_index", -1)) < 0:
-		problems.append("catalog must declare exactly one militia unit")
-	var supply_goods: Array = compiled.get("supply_goods", [])
-	if supply_goods.size() != SUPPLY_CLASS_COUNT:
-		problems.append("supply_goods must hold %d rows" % SUPPLY_CLASS_COUNT)
-	else:
-		var ration: PackedInt32Array = supply_goods[SUPPLY_RATION]
-		if ration.is_empty():
-			problems.append("ration candidates are empty")
-	var units: Array = compiled.get("units", [])
-	if units.size() > MAX_UNITS:
-		problems.append("unit count %d exceeds %d" % [units.size(), MAX_UNITS])
-	# A supply class with unit demand but no candidate goods can never settle:
-	# procurement (`military_core_logistics.cpp:1064`) and consumption (`:1787`)
-	# both short-circuit on the empty row, while `use.need` still counts it.
-	# Only `equipment` is allowed to stay empty (it uses the slot path).
-	for supply_class in [SUPPLY_FODDER, SUPPLY_AMMUNITION, SUPPLY_FUEL, SUPPLY_UPKEEP]:
-		if supply_class >= supply_goods.size():
-			continue
-		var row: PackedInt32Array = supply_goods[supply_class]
-		if not row.is_empty():
-			continue
-		var demanded := false
-		for unit_value in units:
-			var unit_row: Dictionary = unit_value
-			var idle: PackedFloat32Array = unit_row.get("supply_idle",
-				PackedFloat32Array())
-			var combat: PackedFloat32Array = unit_row.get("supply_combat",
-				PackedFloat32Array())
-			if supply_class < idle.size() and float(idle[supply_class]) > 0.0:
-				demanded = true
-			if supply_class < combat.size() and float(combat[supply_class]) > 0.0:
-				demanded = true
-			if demanded:
-				break
-		if demanded:
-			problems.append("supply class %s has demand but no candidate goods"
-				% SUPPLY_CLASS_IDS[supply_class])
-	var barracks := 0
-	for building in compiled.get("state_buildings", []):
-		if int((building as Dictionary).get("role", -1)) == ROLE_BARRACKS:
-			barracks += 1
-	if barracks == 0:
-		problems.append("no barracks state building declared")
-	# Water crossing (contract 2 §2.2): all four tiers must resolve, or that kind
-	# of water can never open and an army ordered across it would silently do
-	# nothing.
-	for gate in ["water_lake_bit", "water_shallow_bit", "water_far_bit", "water_deep_bit"]:
-		if int(compiled.get(gate, -1)) < 0:
-			problems.append("unlock_tech_ids must name the four water-tier technologies (%s unresolved)" % gate)
-	if problems.is_empty():
-		return compiled
-	var failed := compiled.duplicate()
-	failed["ok"] = false
-	failed["reason"] = "military_catalog_invalid"
-	failed["problems"] = problems
-	return failed
+	return CatalogValidation.validate_compiled(compiled)
 
 
 # ---------------------------------------------------------------- internals
@@ -597,18 +543,7 @@ static func _supply_vector(raw_value, unit_id: String) -> PackedFloat32Array:
 
 static func _resolve_unlock(tech_id: String, tech_index: Dictionary,
 		unlock_tech_ids: PackedInt32Array, unlock_bits: Dictionary) -> Dictionary:
-	if not unlock_bits.has(tech_id):
-		var dense := _index_optional(tech_index, tech_id)
-		if dense < 0:
-			return _fail("military_unlock_technology_unknown: %s" % tech_id)
-		unlock_bits[tech_id] = unlock_tech_ids.size()
-		unlock_tech_ids.append(dense)
-	return {
-		"ok": true,
-		"bit": int(unlock_bits[tech_id]),
-		"unlock_tech_ids": unlock_tech_ids,
-		"unlock_bits": unlock_bits,
-	}
+	return CatalogSchema._resolve_unlock(tech_id, tech_index, unlock_tech_ids, unlock_bits)
 
 
 static func _compile_water_unlocks(raw_ids, tech_index: Dictionary,
@@ -623,258 +558,15 @@ static func _compile_state_buildings(raw_buildings, good_index: Dictionary,
 		economy_tag_offsets: PackedInt32Array = PackedInt32Array(),
 		economy_tags: PackedStringArray = PackedStringArray(),
 		economy_kinds: PackedInt32Array = PackedInt32Array()) -> Dictionary:
-	var building_index := _index_of(building_type_ids)
-	var out: Array = []
-	var seen := {}
-	var ordered_unlock_tech := unlock_tech_ids
-	var ordered_bits := unlock_bits
-	for raw_value in raw_buildings:
-		if not raw_value is Dictionary:
-			return _fail("military_state_building_not_object")
-		var raw: Dictionary = raw_value
-		var building_id := String(raw.get("id", "")).strip_edges()
-		if building_id.is_empty() or seen.has(building_id):
-			return _fail("military_state_building_id_invalid")
-		seen[building_id] = true
-		var role_id := String(raw.get("role", "barracks")).strip_edges()
-		var role := ROLE_IDS.find(role_id)
-		if role < 0:
-			return _fail("military_state_building_role_invalid: %s" % building_id)
-		var unlock_bit := -1
-		var tech_id := String(raw.get("tech", "")).strip_edges()
-		# Design §1.4: every state lot is gated by a technology. An empty
-		# `tech` used to mean "always buildable", which silently shipped a
-		# free barracks alongside the researched ones.
-		if tech_id.is_empty():
-			return _fail("military_state_building_technology_missing: %s"
-				% building_id)
-		# Bridge to the economy catalog (design §5.1/§5.2/§5.4). The dense
-		# economy building type index is the only handle either runtime may
-		# use to name "this same lot": it is what `building_commit` keys the
-		# ledger on, what the construction workspace offers, and what the
-		# derived `barracks_count` / `fort_tier` / `college_tier` read back.
-		# Resolving by stable id keeps the two catalogs independent; a -1
-		# placeholder would instead let the military side invent a lot that
-		# no economy group exists for, so it is a hard failure here.
-		var economy_building := _index_optional(building_index, building_id)
-		if economy_building < 0:
-			return _fail(
-				"military_state_building_without_economy_profile: %s"
-				% building_id)
-		if not economy_kinds.is_empty():
-			if economy_building >= economy_kinds.size():
-				return _fail(
-					"military_state_building_economy_columns_ragged: %s"
-					% building_id)
-			var economy_kind := int(economy_kinds[economy_building])
-			if economy_kind != ECONOMY_BUILDING_KIND_STATE:
-				return _fail(
-					"military_state_building_economy_kind_invalid: %s (kind=%d)"
-					% [building_id, economy_kind])
-		var bit_result := _resolve_unlock(tech_id, tech_index,
-			ordered_unlock_tech, ordered_bits)
-		if not bool(bit_result.get("ok", false)):
-			return bit_result
-		ordered_unlock_tech = bit_result.get("unlock_tech_ids",
-			ordered_unlock_tech)
-		ordered_bits = bit_result.get("unlock_bits", ordered_bits)
-		unlock_bit = int(bit_result.get("bit", -1))
-		# Design §1.4/§1.5: this catalog and the economy building profile are
-		# two separate content files that must agree on the one technology
-		# unlocking the lot. If they drift, the construction workspace and
-		# the military roster advertise different gates for the same
-		# building. Reported against the building id: it is an authoring
-		# error in that pair, not a catalog-wide one.
-		if not economy_tag_offsets.is_empty():
-			if economy_building + 1 >= economy_tag_offsets.size():
-				return _fail(
-					"military_state_building_technology_columns_ragged: %s"
-					% building_id)
-			var economy_technology_ids := PackedStringArray()
-			var economy_tag_begin := int(economy_tag_offsets[economy_building])
-			var economy_tag_end := int(economy_tag_offsets[economy_building + 1])
-			if economy_tag_begin < 0 or economy_tag_end > economy_tags.size():
-				return _fail(
-					"military_state_building_technology_columns_ragged: %s"
-					% building_id)
-			for economy_tag_index in range(economy_tag_begin, economy_tag_end):
-				var economy_tag := String(
-					economy_tags[economy_tag_index]).strip_edges()
-				if economy_tag.begins_with("tech."):
-					economy_technology_ids.append(economy_tag)
-			if economy_technology_ids.size() != 1:
-				return _fail(
-					"military_state_building_technology_count_invalid: %s (%d)"
-					% [building_id, economy_technology_ids.size()])
-			if economy_technology_ids[0] != tech_id:
-				return _fail(
-					("military_state_building_technology_mismatch: %s "
-						+ "(military=%s economy=%s)")
-					% [building_id, tech_id, economy_technology_ids[0]])
-		var fort_bonus := maxf(0.0, float(raw.get("fort_bonus", 0.0)))
-		var training_speed := maxf(0.0, float(raw.get("training_speed", 1.0)))
-		var upkeep := maxf(0.0, float(raw.get("upkeep", 0.0)))
-		# Scale check: these columns are authored human-readable and multiplied by
-		# q16 / MONEY_SCALE exactly once downstream. A value above the design
-		# ceiling means the column was written in its internal fixed-point form,
-		# which would render as `守备 +1966100%` and clamp training to int32 max.
-		if fort_bonus > MAX_FORT_BONUS:
-			return _fail("military_state_building_fort_bonus_out_of_range: %s (%s)"
-				% [building_id, str(fort_bonus)])
-		if training_speed > MAX_TRAINING_SPEED:
-			return _fail("military_state_building_training_speed_out_of_range: %s (%s)"
-				% [building_id, str(training_speed)])
-		if upkeep > MAX_BUILDING_UPKEEP:
-			return _fail("military_state_building_upkeep_out_of_range: %s (%s)"
-				% [building_id, str(upkeep)])
-		var material_goods := PackedInt32Array()
-		var material_qty := PackedInt64Array()
-		var materials: Dictionary = raw.get("materials", {})
-		for good_key in materials.keys():
-			var good := _index_optional(good_index, String(good_key))
-			if good < 0:
-				return _fail("military_state_building_material_unknown: %s" % String(
-					good_key))
-			var material_units := maxf(0.0, float(materials[good_key]))
-			if material_units > MAX_MATERIAL_UNITS:
-				return _fail(
-					"military_state_building_material_out_of_range: %s.%s (%s)"
-					% [building_id, String(good_key), str(material_units)])
-			material_goods.append(good)
-			material_qty.append(maxi(0, int(round(material_units * 1000.0))))
-		# Physical repair materials. The IDLE building upkeep (money units per
-		# day) is converted into goods through each good's `default_price`;
-		# `upkeep` itself stays authored because the legacy cash path still
-		# settles it until the follow-up stage removes it.
-		var repair := _compile_repair(raw.get("repair", {}), good_index,
-			building_id, good_default_price, upkeep, true)
-		if not bool(repair.get("ok", false)):
-			return repair
-		out.append({
-			"id": building_id,
-			"name": String(raw.get("name", "")).strip_edges(),
-			"economy_building_id": economy_building,
-			"role": role,
-			"tier": clampi(int(raw.get("tier", 0)), 0, 7),
-			"unlock_bit": unlock_bit,
-			# Authored stable technology id behind `unlock_bit` ("" = always
-			# available). UI-only label so a gate never has to reverse the dense
-			# id table; it is not part of the catalog hash.
-			"unlock_tech_id": tech_id,
-			"capacity": maxi(0, int(raw.get("capacity", 0))),
-			"fort_bonus": fort_bonus,
-			"training_speed": training_speed,
-			"upkeep": upkeep,
-			"build_days": maxi(0, int(raw.get("build_days", 0))),
-			"material_goods": material_goods,
-			"material_qty": material_qty,
-			# Dense repair goods and their per-day physical rate, parallel and
-			# in authored order (same q32-of-milli-goods unit as the units).
-			"repair_goods": PackedInt32Array(
-				repair.get("goods", PackedInt32Array())),
-			"repair_rate_q32": PackedInt64Array(
-				repair.get("rate_q32", PackedInt64Array())),
-		})
-	return {
-		"ok": true,
-		"state_buildings": out,
-		"unlock_tech_ids": ordered_unlock_tech,
-		"unlock_bits": ordered_bits,
-	}
+	return StateBuildings._compile_state_buildings(raw_buildings, good_index, good_default_price, building_type_ids, tech_index, unlock_tech_ids, unlock_bits, economy_tag_offsets, economy_tags, economy_kinds)
 
 
-## Resolves one authored `"repair": { "goods": [{good, weight}, ...] }` recipe
-## into the two parallel packed columns the native runtime reads
-## (`repair_goods` / `repair_rate_q32`), in authored order.
-##
-## `intensity` is the authored daily service level of the owner:
-##   - state building: cash `upkeep` in money units per day, converted to goods
-##     through the good's `default_price` (`scale_by_price = true`):
-##       daily_goods = upkeep * w / sum_w * 10000 / default_price
-##   - unit: `supply_idle.upkeep`, already authored in goods units per 100
-##     heads per day, so the ratio is used as-is (`scale_by_price = false`):
-##       daily_goods = idle_upkeep * w / sum_w
-## Both land in the same unit: `rate_q32` is q32 of ONE MILLI-GOOD per day,
-## i.e. `round(daily_goods * 1000 * 2^32)`. A positive weight whose rate rounds
-## to zero is intentionally allowed - the native side accumulates a fractional
-## remainder, so a tiny lot is not forced to consume a whole item per day. A
-## zero service level (militia) ships empty columns instead of zero-rate rows.
 static func _compile_repair(raw_repair, good_index: Dictionary, owner_id: String,
 		good_default_price: PackedInt32Array, intensity: float,
 		scale_by_price: bool) -> Dictionary:
-	var goods := PackedInt32Array()
-	var rate_q32 := PackedInt64Array()
-	if raw_repair == null:
-		return {"ok": true, "goods": goods, "rate_q32": rate_q32}
-	if not raw_repair is Dictionary:
-		return _fail("military_repair_not_object: %s" % owner_id)
-	var recipe: Dictionary = raw_repair
-	var raw_rows = recipe.get("goods", [])
-	if not raw_rows is Array:
-		return _fail("military_repair_goods_not_array: %s" % owner_id)
-	var rows: Array = raw_rows
-	# The native slots are fixed at four entries per owner.
-	if rows.size() > MAX_REPAIR_SLOTS:
-		return _fail("military_repair_overflow: %s (%d)"
-			% [owner_id, rows.size()])
-	if rows.is_empty():
-		return {"ok": true, "goods": goods, "rate_q32": rate_q32}
-	var weights := PackedFloat64Array()
-	var resolved_ids: Array[String] = []
-	var seen := {}
-	var weight_sum := 0.0
-	for row_value in rows:
-		if not row_value is Dictionary:
-			return _fail("military_repair_good_not_object: %s" % owner_id)
-		var row: Dictionary = row_value
-		var good_id := String(row.get("good", "")).strip_edges()
-		var good := _index_optional(good_index, good_id)
-		if good < 0:
-			return _fail("military_repair_good_unknown: %s:%s"
-				% [owner_id, good_id])
-		if seen.has(good):
-			return _fail("military_repair_good_duplicate: %s:%s"
-				% [owner_id, good_id])
-		seen[good] = true
-		var weight := float(row.get("weight", 0.0))
-		if weight <= 0.0:
-			return _fail("military_repair_weight_invalid: %s:%s (%s)"
-				% [owner_id, good_id, str(weight)])
-		goods.append(good)
-		weights.append(weight)
-		resolved_ids.append(good_id)
-		weight_sum += weight
-	# A zero price would make the cash -> goods conversion undefined; the native
-	# side has no fallback, so a bad row must never reach it.
-	var prices := PackedInt64Array()
-	for k in range(goods.size()):
-		var good := int(goods[k])
-		if good >= good_default_price.size():
-			return _fail("military_repair_price_missing: %s:%s"
-				% [owner_id, resolved_ids[k]])
-		var price := int(good_default_price[good])
-		if price <= 0:
-			return _fail("military_repair_price_missing: %s:%s (%d)"
-				% [owner_id, resolved_ids[k], price])
-		prices.append(price)
-	# Zero service level: nothing to maintain. Checked after validation so a
-	# broken recipe still fails loudly even on a free lot.
-	if intensity <= 0.0:
-		return {"ok": true, "goods": PackedInt32Array(),
-			"rate_q32": PackedInt64Array()}
-	for k in range(goods.size()):
-		var daily_goods := intensity * float(weights[k]) / weight_sum
-		if scale_by_price:
-			daily_goods = daily_goods * REPAIR_MONEY_SCALE \
-				/ float(prices[k])
-		rate_q32.append(maxi(0, int(round(
-			daily_goods * REPAIR_MILLI_GOODS * REPAIR_Q32_ONE))))
-	return {"ok": true, "goods": goods, "rate_q32": rate_q32}
+	return StateBuildings._compile_repair(raw_repair, good_index, owner_id, good_default_price, intensity, scale_by_price)
 
 
-## Ration candidates come straight from the `soldier_household` consumption plan
-## so a change to the staple/protein variants can never drift from the army's
-## actual field ration (design §9.2 "口粮折算").
 static func _compile_ration(good_index: Dictionary, economy_catalog: Dictionary) -> Dictionary:
 	var plan_ids: PackedStringArray = economy_catalog.get("plan_ids", PackedStringArray())
 	var plan_index := _index_optional(_index_of(plan_ids), SOLDIER_PLAN_ID)
@@ -1093,15 +785,12 @@ static func _read_json(path: String) -> Dictionary:
 
 
 static func _index_of(ids: PackedStringArray) -> Dictionary:
-	var index := {}
-	for i in range(ids.size()):
-		index[String(ids[i])] = i
-	return index
+	return CatalogSchema._index_of(ids)
 
 
 static func _index_optional(index: Dictionary, id_value: String) -> int:
-	return int(index.get(id_value, -1))
+	return CatalogSchema._index_optional(index, id_value)
 
 
 static func _fail(reason: String) -> Dictionary:
-	return {"ok": false, "reason": reason}
+	return CatalogSchema._fail(reason)
