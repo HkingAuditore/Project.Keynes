@@ -378,8 +378,6 @@ static func _publish_cell_lut_textures(baker: MapBaker, world: WorldData,
 	report["texture_upload_ms"] = float(Time.get_ticks_usec() - upload_t0_us) / 1000.0
 	# [cell-field 2026-11-18] cell_table 紧跟 eco_lut 发布（同一个 refresh），
 	# 是追加工件：上面三张 LUT 的字节与上传时机一行没改。
-	# layer0/2 由 enum_changed 门控重建，layer1 只在 dyn_changed 时重写 —— 与
-	# dyn_lut 的更新节奏严格同步（每天都变的是 state，不是 class）。
 	#
 	# 放在 helper 里而不是 bake_cell_luts 的调用点：native 的 defer_upload 路径由
 	# flush_staged_cell_lut_upload 直接调本函数发布，绕开 bake_cell_luts；表若留在
@@ -387,18 +385,12 @@ static func _publish_cell_lut_textures(baker: MapBaker, world: WorldData,
 	# map 取 baker._last_bake_map：发布器签名里没有 map，而整个会话就是 bake_world
 	# 那一个实例（天气表也用该引用）；null 时
 	# _publish_cell_table 自己会把 bound/layers 归零。
-	# [vision-dirty-aux] 视野脏格必须并进 class_indices：cell_table 的 aux 层
-	# （layer2.R = 雾 k，PW_CELL_FIELD 路径唯一的 k 来源）只按 class_indices 重建。
-	# 只填 dirty_indices 时 `_cell_table_static_words()` 的循环是 `indices.size()`=0 次，
-	# aux 永远停在初始 255 —— 雾层在 draw list 里、k 读出来却全是"可见"（雾画不出来）。
-	# 并集只覆盖真正变化的格，不需要 force_full_encode 的全量重编。
-	var table_static_cells := class_indices
-	if not dirty_indices.is_empty():
-		table_static_cells = class_indices.duplicate()
-		table_static_cells.append_array(dirty_indices)
+	# Worker updates already include vision changes in class_indices. Callers
+	# without a separate classification mask use dirty_indices when encoding.
+	var full_table := force_full_encode or enum_changed
 	report.merge(_publish_cell_table(baker, baker._last_bake_map, world, e, d,
-		enum_changed or not table_static_cells.is_empty(), dyn_changed,
-		table_static_cells, force_full_encode or enum_changed), true)
+		full_table or not class_indices.is_empty(), dyn_changed,
+		class_indices, full_table), true)
 	var bounce_t0_us := Time.get_ticks_usec()
 	report["bounce_lut_published"] = false
 	if enum_changed or dyn_changed or world.bounce_lut_tex == null:
@@ -645,9 +637,9 @@ static func _publish_cell_table(baker: MapBaker, map: MapData, world: WorldData,
 				required_images[CellTableCodecScript.LAYER_CLASS_BY_INDEX] = true
 				images[CellTableCodecScript.LAYER_CLASS_BY_INDEX] = _cell_table_image(
 					CellTableCodecScript.index_space_fill_bytes(map_w, map_h), map_w, map_h)
-		# [aux-upload-gate] 绑静态重建，不用「值相等」判断：值比较在缓存领先 GPU 时会
-		# 永久判为「没变」，aux 就再也传不上去。静态重建一次多传一层 60×40 RGBA8（≈9.6 KB）。
-		if need_all or static_changed:
+		# The cache holds the last submitted bytes. Rebuilding a class does
+		# not require uploading the fog/depth image again if those bytes match.
+		if need_all or aux != previous_aux:
 			required_images[CellTableCodecScript.LAYER_AUX] = true
 			images[CellTableCodecScript.LAYER_AUX] = _cell_table_image(
 				_cell_words_to_offset(aux, layout).to_byte_array(), map_w, map_h)
@@ -704,11 +696,7 @@ static func _publish_cell_table(baker: MapBaker, map: MapData, world: WorldData,
 		world.cell_table_fog_coverage = null
 	if images[CellTableCodecScript.LAYER_CLASS] != null or aux_image != null:
 		world.land_base_revision += 1
-	# [aux-upload-gate] 缓存只能记**真正上传成功**的那一份。原来无条件写回算出来的 `aux`：
-	# 一旦某次没建 image（`aux != previous_aux` 比的是「算过的值」）也就没上传，但缓存已经
-	# 变成新值，之后每次都相等 ⇒ 永远不再上传，GPU 停在首帧 255。实测就是
-	# `aux_cache.R=0 / aux@offset=255 / gpu_aux_zero=0/2400`，表现为「雾从来没画过」。
-	# 改为按层 dirty：未上传的层沿用上次上传的字节，等值比较才真正等于「脏」。
+	# Remember only the submitted layers so failed preparation can be retried.
 	baker._cell_table_source_cache = {"texture": tex, "layout": layout,
 		"class": classes if uploaded["class"] else previous_class,
 		"aux": aux if uploaded["aux"] else previous_aux,

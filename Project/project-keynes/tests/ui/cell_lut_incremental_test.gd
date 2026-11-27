@@ -38,6 +38,7 @@ func _run() -> void:
 	_test_precise_native_flush(ext, dirty_world)
 	_test_dense_native_flush(ext, dirty_world, map)
 	_test_incremental_lut(ext, dirty_world, map)
+	_test_cell_table_selective_upload()
 	_test_worker_lut_upload_batch()
 	_test_worker_ecology_frame(ext, map)
 	_test_held_distinct_cells()
@@ -61,6 +62,58 @@ func _make_map() -> MapData:
 		map.set_cell(cell)
 	map.rebuild_soa_from_cells()
 	return map
+
+
+func _test_cell_table_selective_upload() -> void:
+	var map := _make_map()
+	var baker := MapBaker.new()
+	baker._last_bake_map = map
+	var world := WorldData.new()
+	world.lut_dims = Vector2i(4, 1)
+	var enums := PackedByteArray()
+	enums.resize(16)
+	for cell in map.cell_count():
+		enums[cell * 4 + 3] = 255
+	var state := PackedByteArray()
+	state.resize(16)
+	var eco := state.duplicate()
+	var initial := {}
+	DCCellLutBaker._publish_cell_lut_textures(baker, world, enums, state, eco, initial)
+	_expect("cold cell table publishes the fog layer",
+		"aux" in String(initial.get("cell_table_layers", "")).split(","))
+	var initial_fog_revision := world.fog_texture_revision
+	var initial_land_revision := world.land_base_revision
+	var initial_fog := world.cell_table_fog_coverage_source
+	state = state.duplicate()
+	state[4] = 100
+	var daily := {}
+	DCCellLutBaker._publish_cell_lut_textures(baker, world, enums, state, eco, daily,
+		PackedInt32Array([1]), false, PackedInt32Array())
+	_expect("a state-only update skips the unchanged class and fog layers",
+		daily.get("cell_table_layers") == "state"
+		and world.fog_texture_revision == initial_fog_revision
+		and world.land_base_revision == initial_land_revision
+		and world.cell_table_fog_coverage_source == initial_fog)
+
+	var land_before_reveal := world.land_base_revision
+	enums = enums.duplicate()
+	enums[7] = 64
+	var reveal := {}
+	DCCellLutBaker._publish_cell_lut_textures(baker, world, enums, state, eco, reveal,
+		PackedInt32Array([1]), false, PackedInt32Array([1]))
+	var fog := world.cell_table_fog_coverage_source
+	_expect("a changed fog cell publishes its new coverage byte",
+		reveal.get("cell_table_layers") == "aux" and fog != null and fog.get_data()[4] == 64
+		and world.land_base_revision == land_before_reveal + 1)
+
+	var new_landform := (int(map.landform_arr[2]) + 1) % 16
+	map.landform_arr[2] = new_landform
+	var recovered := {}
+	DCCellLutBaker._publish_cell_lut_textures(baker, world, enums, state, eco, recovered,
+		PackedInt32Array(), true, PackedInt32Array())
+	_expect("a full recovery picks up landform changes and retains the installed fog bytes",
+		world.cell_table_bound and (baker._cell_table_source_cache["class"][2] >> 24) == new_landform
+		and world.cell_table_fog_coverage_source.get_data() == fog.get_data())
 
 
 func _test_precise_native_flush(ext: DCWorldExt, dirty_world: DCWorld) -> void:
