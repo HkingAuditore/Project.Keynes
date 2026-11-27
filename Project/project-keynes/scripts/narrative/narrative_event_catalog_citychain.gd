@@ -17,7 +17,7 @@ const PACK_ID := &"citychain"
 const PREFIX := "evt.citychain."
 
 const CAST := [
-	"阿夯", "老堆", "郜父", "屈石", "坡口", "土墙", "界桩", "城门", "河滩",
+	"长老会", "城垣", "氏族", "守城武士", "公粮仓", "城邦议事", "祭司", "河谷聚落",
 ]
 
 const MUL_090 := 58982
@@ -53,8 +53,8 @@ static func append(catalog) -> void:
 	# ═══ 第 1 幕 · 筑城 ═══════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_CHAIN_CITY_WALL),
-		"title": "{settlement_name}·筑城",
-		"body_text": "雨季一过，阿夯把村里的人叫到坡上，说要在坡口垒一道墙。石头从河滩背，一天背三趟；土从沟里挖，夯一层撒一层水。老堆不同意，说垒墙的时候地里的草比人高，秋天吃什么。郜父蹲在坡口数了数，说这墙要垒到人胸口，得垒到入秋。阿夯没接话，把第一块石头摆在地上，石头底下垫了三把土。",
+		"title": "{settlement_name}·初筑城垣",
+		"body_text": "雨季过后，{settlement_name}这座日益兴旺的河谷聚落开始面临游牧劫掠者的频繁窥伺。长老会中主张固守的派系提议征发各氏族青壮，自河滩搬运巨石、夯土筑起一座真正的城垣。但农耕派系强烈警告，大兴土木势必抽空田间劳力，令秋收陷入危机；温和派则建议仅立木栅以省民力。一道墙的取舍，将决定聚落是否就此迈向城邦时代。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "Villagers carrying river stones and ramming earth into a low wall at the mouth of a slope",
 		"tags": ["dawn", "chain", "unrest"],
@@ -88,27 +88,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"raise_the_wall", "垒墙，征民夫",
-				"墙垒到胸口高",
-				"墙垒到胸口高那天，孩子在墙根下钻来钻去。石头是从河滩一块一块搬来的，搬了整整一秋。老堆的麦子晚收了十天，穗子掉了一地。",
+				"raise_the_wall", "征发民夫，夯筑城垣",
+				"城垣初成格局已变",
+				"经过整整一秋的繁重劳役，巍峨城垣终于在坡口合拢，聚落的营造与手工业技艺大进。尽管误了农时致使口粮吃紧，但一座真正的城邦已具雏形。",
 				[
 					Shared.manufacturing(3, 540),
 					Shared.staple(4, 360),
 					Shared.schedule(Ids.EVT_CHAIN_CITY_KING, 120, "城里的主"),
 				]),
 			Shared.option(
-				"build_a_fence", "只修一道栅栏",
-				"栅栏立在坡口",
-				"栅栏用的是削尖的木头，三天就立起来了。风一吹，木头缝里呜呜响。老堆说这挡不住人，阿夯说挡得住羊也行。",
+				"build_a_fence", "仅立木栅，略作屏障",
+				"木栅速成难抵大敌",
+				"削尖的木栅在数日内便围绕坡口立起，省下了大量存粮消耗。然而单薄的栅栏难令部众安心，围绕城防与权责的争论很快便在聚落内部发酵。",
 				[
 					Shared.agriculture(-2, 360),
 					Shared.staple(-3, 180),
 					Shared.schedule(Ids.EVT_CHAIN_CITY_KING, 90, "城里的主"),
 				]),
 			Shared.option(
-				"plant_first", "不修，先把地种上",
-				"坡口空了一年",
-				"那年秋天收成不错，坡口的草长到人腰高。入冬后有人从西边来，牵走了七只羊，没有进村。阿夯站在坡口看了一夜，第二天把草割了。",
+				"plant_first", "暂缓筑城，专力耕作",
+				"丰收背后隐患丛生",
+				"聚落全力投入秋耕，仓廪一时充盈。但无城可守的弱点很快招致西面游骑袭掠，牲畜被劫令各氏族人人自危，要求推举强力领袖的呼声日高。",
 				[
 					Shared.agriculture(5, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
@@ -120,8 +120,8 @@ static func append(catalog) -> void:
 	# ═══ 第 2 幕 · 城里的主 ═══════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_CHAIN_CITY_KING),
-		"title": "{settlement_name}·城里的主",
-		"body_text": "墙垒好第二年，坡口成了城。城里的事谁说了算，还没有定。老堆说自己辈分高，郜父说自己认得字，带过人的屈石不说话，只把刀横在膝上。三个人在墙根下坐了一下午，日头从墙头落到墙脚。墙根的土被踩实了，脚印一层压一层。阿夯蹲在旁边听，听到最后问了一句：出了事，谁去顶。没人答他。",
+		"title": "{settlement_name}·城邦之主",
+		"body_text": "城垣既成，{settlement_name}已不再是散漫的村落，而是一座需要统一号令的早期城邦。在决定最高权属的城邦议事上，三股势力僵持不下：长老会倚重资历与传统，主张推举德高望重者共治；掌管记事与礼仪的祭司强调法统与传承；手握兵权的守城武士则冷眼旁观，直言乱世之中唯有能提刀御敌者方配坐拥城主之位。城邦的政体归属，此刻系于一念。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "Three elders sitting at the base of an earthen wall at sunset, a knife resting across one man's knees",
 		"tags": ["dawn", "chain", "unrest"],
@@ -149,9 +149,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"choose_an_elder", "推举辈分最高的",
-				"老堆坐了上位",
-				"老堆坐上墙根那块最高的石头，第一件事是让人把界碑重新埋一遍。他说话慢，一件事要问三遍，问到第三遍，别人已经干完了。",
+				"choose_an_elder", "推举长老，依礼共治",
+				"长老执政礼法渐兴",
+				"德高望重的长老坐上高位，重划地界、广兴教化，城邦人口与知识稳步增长。但议事迟缓耗费了不少公粮储备，面对外部强敌时恐显优柔。",
 				[
 					Shared.birth(3, 540),
 					Shared.knowledge(3, 540),
@@ -159,9 +159,9 @@ static func append(catalog) -> void:
 					Shared.schedule(Ids.EVT_CHAIN_CITY_SIEGE, 240, "围城"),
 				]),
 			Shared.option(
-				"make_it_hereditary", "让他家世世代代管",
-				"屈石把刀收了",
-				"屈石把刀收进鞘里，说那就这么定。他家的人开始学着认字，字写得歪，架势很足。城里的工匠不服，把新刻的界碑又磨平了一次。",
+				"make_it_hereditary", "确立世袭，定鼎王统",
+				"世袭王权初立城邦",
+				"强权氏族确立了世袭统治，开始大兴营造并垄断工坊管理，城邦制造力随之跃升。然而世袭特权引发工匠阶层不满，营建成本亦水涨船高。",
 				[
 					Shared.manufacturing(4, 540),
 					Shared.build_cost(3, 540),
@@ -169,9 +169,9 @@ static func append(catalog) -> void:
 					Shared.schedule(Ids.EVT_CHAIN_CITY_SIEGE, 240, "围城"),
 				]),
 			Shared.option(
-				"let_the_soldier_rule", "让带兵的人管",
-				"城门归屈石的人守",
-				"城门归屈石的人守，进出要报名字。夜里墙上有火把，一直亮到天亮。城里的粮先紧着守墙的人，老堆的仓空了一半。",
+				"let_the_soldier_rule", "授权武士，军政合一",
+				"军事管制笼罩全城",
+				"守城武士接管城门与粮仓，全城转入严苛的战时戒严，军需补给效率大幅提升。但严密盘查与军粮优先征调，也让城中平民怨气日积。",
 				[
 					Shared.supply(8, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
@@ -183,8 +183,8 @@ static func append(catalog) -> void:
 	# ═══ 第 3 幕 · 围城 ═══════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_CHAIN_CITY_SIEGE),
-		"title": "{settlement_name}·围城",
-		"body_text": "围城的是西边来的人，没有打旗，先在河滩上扎了营。第三天，他们把上游的水断了。城里的井一天比一天浑，老堆把最后一袋谷子搬到墙根下，说先给守墙的人吃。屈石站在墙头看，说对面的人也不多，夜里可以出去打一下。郜父拉住他，说打输了，城就没了。墙下的孩子开始哭，哭声从墙根传到墙头。",
+		"title": "{settlement_name}·城下之围",
+		"body_text": "一支未打旗号的西来劲旅突然兵临{settlement_name}城下，在河滩扎营合围，并于三日内截断了上游水源。城中水井日渐浑浊，公粮仓的存粮已紧急调拨至城垣之下优先供给守军。守城武士请战，主张趁敌军立足未稳夜袭敌营；长老会则力谏切忌孤注一掷，一旦出击失利城邦必亡。围城之势如铁桶合拢，城邦迎来了存亡绝续的终极考验。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A mud-walled town under siege at dawn, an enemy camp on the river flat, defenders on the wall",
 		"tags": ["dawn", "chain", "unrest"],
@@ -196,35 +196,35 @@ static func append(catalog) -> void:
 		"max_era_index": 3,
 		"options": [
 			Shared.option(
-				"hold_the_wall", "闭门守，等他们退",
-				"围了四十天",
-				"围了四十天，墙根的粮吃完了，开始杀羊。第四十一天早上，河滩上的营地空了，锅还架在火上。城门开的时候，老堆数了数人，少了十七个。",
+				"hold_the_wall", "紧闭城门，坚壁死守",
+				"苦守解围元气大伤",
+				"全城实行严苛配给苦撑四十日，敌军终因粮尽拔营撤离。城邦得以保全，但城外良田尽毁、人丁折损，劫后余生的惊悸与怨怼久久未散。",
 				[
 					Shared.staple(-4, 540),
 					Shared.agriculture(-3, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
-				"open_and_bargain", "开城门，跟他们谈",
-				"城里多了一面旗",
-				"城门开了一条缝，郜父出去谈了半天。回来时身后跟着两个人，城里多了一面旗，粮仓的钥匙交出去一把。那年的税，西边的人先来收。",
+				"open_and_bargain", "遣使议和，纳贡通商",
+				"城下之盟换取生机",
+				"城门开启，双方达成城下之盟，城邦以缴纳岁贡为代价换取免遭屠戮，并由此打通了通往西方的商路。虽损及尊严，却暂时稳住了城内民心。",
 				[
 					Shared.cash_in(1.5, 360),
 					Shared.trade_capacity(4, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.95, 540),
 				]),
 			Shared.gamble(
-				"strike_at_night", "夜里出城打一下",
-				Shared.branch(39322, "营地烧了", # 60%
-					"屈石带人从水沟摸出去，先点的粮车，后烧的帐篷。天亮时河滩上只剩黑架子，对面的人退到坡后。城里的男人回来了大半，少了几个。",
+				"strike_at_night", "挑选锐卒，夜袭敌营",
+				Shared.branch(39322, "夜袭奏凯敌军溃退", # 60%
+					"守城武士借暗夜潜出城垣，火焚敌军粮草大营，西来之敌仓皇溃逃。此战不仅缴获物资振奋了农工生产，更确立了城邦在河谷的赫赫威名。",
 					[
 						Shared.agriculture(3, 540),
 						Shared.manufacturing(4, 540),
 						Shared.staple(3, 360),
 						Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 					]),
-				Shared.branch(26214, "回来的没几个", # 40%
-					"出去的人走到半路就被发现了。火把从河滩那头压过来，屈石最后一个退回来，肩上中了一箭。第二天，墙头上换了西边的人站。",
+				Shared.branch(26214, "劫营败绩城垣失守", # 40%
+					"夜袭行动半途败露，出城精锐遭敌反包围损失惨重。失去骨干守军的城垣被迫洞开，城邦制造业与人口惨遭重创，动荡阴影笼罩全城。",
 					[
 						Shared.manufacturing(-5, 360),
 						Shared.birth(-4, 540),

@@ -20,7 +20,6 @@ constexpr int64_t kMobThetaLowQ16 = 32768;
 constexpr int64_t kMobStageGate[5] = {0, 19661, 29491, 40632, 51118};
 constexpr int64_t kMobTierGate[5] = {0, 16384, 29491, 40632, 52429};
 constexpr int64_t kMobBaseHazardQ16 = 6554;      // 10% per epoch at full severity
-constexpr int64_t kMobEscalateChanceQ16 = 22938; // 35% per check
 constexpr int64_t kMobMaxHazardQ16 = 3277;       // 5% cap
 constexpr int64_t kMobTauUpDays = 60;
 constexpr int64_t kMobTauDownDays = 35;
@@ -278,12 +277,13 @@ void NativeEconomyRuntime::advance_cell_mobilization(
                         static_cast<int32_t>(day + kMobStageDelayDays[1]);
                 }
             }
-        } else if (day >= row.next_check_day) {
+        } else if (day >= row.next_check_day && day >= row.cooldown_until_day) {
             bool escalated = false;
+            // Victoria-style progression: the chain advances when organization
+            // (plus local pressure) actually reaches the next gate. There is no
+            // extra dice roll; a failed action only delays the next check.
             if (stage < 4 && mobilization >= kMobStageGate[stage + 1] &&
-                power >= kMobTierGate[stage + 1] &&
-                static_cast<int64_t>(mob_hash64(day, cell, profession, stage,
-                    0x455343414c415445ULL) % kMobQ16) < kMobEscalateChanceQ16) {
+                power >= kMobTierGate[stage + 1]) {
                 ++stage;
                 escalated = true;
             }
@@ -295,12 +295,15 @@ void NativeEconomyRuntime::advance_cell_mobilization(
         // but it never becomes an independence event.
         if (is_capital && stage > 3) stage = 3;
         // AI countries resolve their own stage transition immediately: no popup,
-        // just a deterministic repression/ignore decision. Applying the result
-        // also emits the fact, so the block below skips its own fact for AI.
+        // just a deterministic repression/ignore decision. If that action changes
+        // the row it emits its own fact; otherwise the escalation below must
+        // still be published.
         bool ai_resolved = false;
         if (!is_player_country && stage != previous_stage) {
             row.stage = static_cast<uint8_t>(stage);
             row.mobilization_q16 = static_cast<uint16_t>(mobilization);
+            const int32_t before_action_stage = row.stage;
+            const uint8_t before_action_flags = row.flags;
             const bool has_garrison =
                 cell >= 0 && static_cast<size_t>(cell) < _cell_garrison_heads.size() &&
                 _cell_garrison_heads[static_cast<size_t>(cell)] > 0;
@@ -311,9 +314,15 @@ void NativeEconomyRuntime::advance_cell_mobilization(
             apply_mobilization_result(cell, profession, ai_action, ai_success);
             stage = row.stage;
             mobilization = row.mobilization_q16;
-            ai_resolved = true;
+            ai_resolved = stage != before_action_stage ||
+                (row.flags & 8) != (before_action_flags & 8);
         }
-        const uint8_t pending_independence = row.flags & 8;
+        uint8_t pending_independence = row.flags & 8;
+        // Fallback for a save taken after the narrative cancelled a last-city
+        // independence but before its transient clear reached the economy: a
+        // country down to its final territory never keeps the bit.
+        if (pending_independence != 0 && country_cell_count(country) <= 1)
+            pending_independence = 0;
         row.stage = static_cast<uint8_t>(stage);
         row.mobilization_q16 = static_cast<uint16_t>(mobilization);
         row.flags = static_cast<uint8_t>(
@@ -656,12 +665,20 @@ bool NativeEconomyRuntime::apply_mobilization_result(
             default:
                 return false;
         }
+        // A successful intervention buys quiet time: no escalation check runs
+        // until the cooldown expires, even if organization is still above the
+        // next gate.
+        row.next_check_day = row.cooldown_until_day;
     } else {
+        // A failed action does not advance the chain. Organization and trauma
+        // keep moving, the simulation continues, and the next event only opens
+        // when the next stage's organization gate is actually reached. A failed
+        // final-stage action is the one exception: the city is already in armed
+        // revolt, so the old sovereign loses it.
         mobilization += stage >= 3 ? 13107 : (stage == 2 ? 6554 : 3277);
         if (action == 2) trauma += 6554;
-        if (stage < 4) ++stage;
-        row.next_check_day = static_cast<int32_t>(day + 7);
-        if (stage >= 4 && (action == 2 || action == 5)) {
+        row.next_check_day = static_cast<int32_t>(day + kMobStallDelayDays);
+        if (stage == 4 && (action == 2 || action == 4 || action == 5)) {
             const bool capital =
                 row.owner_slot >= 0 &&
                 row.owner_slot < static_cast<int32_t>(
@@ -686,6 +703,25 @@ bool NativeEconomyRuntime::apply_mobilization_result(
         _staging_gameplay_facts.push_back(fact);
     }
     return true;
+}
+
+int32_t NativeEconomyRuntime::clear_cell_mobilization_independence(int32_t cell) {
+    const int32_t cell_count = _cell_count.get();
+    if (cell < 0 || cell >= cell_count) return 0;
+    if (_stratum_mobilization.cell_offsets.size() !=
+        static_cast<size_t>(cell_count) + 1u) return 0;
+    const int32_t begin = _stratum_mobilization.cell_offsets[static_cast<size_t>(cell)];
+    const int32_t end =
+        _stratum_mobilization.cell_offsets[static_cast<size_t>(cell) + 1u];
+    int32_t cleared = 0;
+    for (int32_t index = begin; index < end; ++index) {
+        StratumMobilizationRow &row =
+            _stratum_mobilization.rows[static_cast<size_t>(index)];
+        if ((row.flags & 8) == 0) continue;
+        row.flags = static_cast<uint8_t>(row.flags & ~8);
+        ++cleared;
+    }
+    return cleared;
 }
 
 } // namespace pk

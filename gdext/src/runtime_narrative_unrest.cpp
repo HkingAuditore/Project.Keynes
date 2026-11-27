@@ -29,6 +29,10 @@ std::vector<NarrativeIndependenceAction> RuntimeNarrative::take_independence_act
     return std::exchange(_independence_actions, {});
 }
 
+std::vector<int32_t> RuntimeNarrative::take_independence_clears() {
+    return std::exchange(_independence_clears, {});
+}
+
 void RuntimeNarrative::advance_independence(const NarrativeDay &input) {
     std::vector<Independence> remaining;
     for (auto &item : _independence) {
@@ -49,6 +53,17 @@ void RuntimeNarrative::advance_independence(const NarrativeDay &input) {
                 item.stable_id, sample.settlement + "自治"});
             item.submitted = true;
             remaining.push_back(std::move(item));
+        } else if (!item.submitted) {
+            // The last territory cannot leave the country. Cancel the request,
+            // tell the player, and ask the host to clear the independence bit at
+            // the next day's prepare boundary. The item is dropped: the city
+            // stays with its current owner.
+            if (item.owner == _country)
+                enqueue_notice(input, item.cell, 0, "stratum_unrest.last_city_held",
+                               "最后一城不能独立");
+            if (std::find(_independence_clears.begin(), _independence_clears.end(),
+                    item.cell) == _independence_clears.end())
+                _independence_clears.push_back(item.cell);
         }
     }
     _independence = std::move(remaining);
@@ -165,7 +180,7 @@ void RuntimeNarrative::unrest(const NarrativeDay &input,
     }
 }
 
-void RuntimeNarrative::finish_unrest_choice(bool applied, int64_t day) {
+void RuntimeNarrative::finish_unrest_choice(bool applied, bool independence_pending, int64_t day) {
     const Dictionary meta = _choice_record.get("meta", Dictionary());
     if (!applied || String(meta.get("kind", "")) != "rebellion") return;
     const int32_t cell = meta.get("cell", -1);
@@ -176,7 +191,9 @@ void RuntimeNarrative::finish_unrest_choice(bool applied, int64_t day) {
     const Array actions = meta.get("actions", Array());
     if (option < 0 || option >= actions.size()) return;
     const bool success = int64_t(_choice_record.get("rolled_outcome_index", 1)) == 0;
-    if (int32_t(actions[option]) == ABANDON || (stage >= 4 && !success)) {
+    // Economy owns the independence transition. Narrative only consumes the
+    // committed flag returned after the action has been applied.
+    if (independence_pending) {
         _last_unrest_day = day;
         queue_independence(cell, owner);
     }

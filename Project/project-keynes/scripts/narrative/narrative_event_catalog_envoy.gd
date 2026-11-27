@@ -30,8 +30,7 @@ const PACK_ID := &"envoy"
 const PREFIX := "evt.envoy."
 
 const CAST := [
-	"苏勒", "葛逻", "何通", "康屠", "阿卜", "麦纥", "蔡五",
-	"符节", "国书", "礼单", "印泥", "丝绸", "驿馆",
+	"使团", "外邦", "符节", "国书", "礼单", "印泥", "丝绸", "驿馆", "边市", "盟约",
 ]
 
 const MUL_115 := 75366
@@ -71,7 +70,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ENVOY_TRIBUTE),
 		"title": "{settlement_name}·贡船",
-		"body_text": "西边汗国的船在港口外下了锚，一共三条，最大那条的桅杆上挂着一面画着狼的旗。使臣葛逻带了国书和礼单，礼单用朱砂写，回礼该给什么、给多少，一条一条列着。他说这是回礼，不是纳贡，说完就不再看你。管码头的蔡五在舱口探头，说舱底压着一层盐包，压得船身都沉了。苏勒把符节放在案上，符节上的漆掉了一角。船就停在港口外，等到天黑就要走。",
+		"body_text": "西方汗国的使团率领三艘巨舰停泊于外港，递交了盖有王印的国书与朱砂礼单。来使宣称此行系平等邦交的互赠而非藩属纳贡，礼单上却逐项列明了索要回礼的品目与定额。港务官员查验后密报，商船底舱满载优质海盐，显然意在借外交礼仪换取免税贸易与丰厚回赐。若在日落前不作答复，船队便将扬帆北去。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "Three foreign ships anchored outside a harbour, an envoy holding a vermilion gift list on the quay, dockworkers peering into a salt-loaded hold",
 		"tags": ["envoy", "market"],
@@ -105,27 +104,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"take_and_return", "收下，照单回礼",
-				"回礼装了两条船",
-				"丝绸和漆器装了两条船，跟着贡船一起走。葛逻在船头拱手，蔡五在岸上数货，数到最后一件，把册子合上了。",
+				"take_and_return", "全额收礼，照单厚赐",
+				"厚往薄来",
+				"满载丝绸与漆器的回礼船队随使团离港，换来了稳固的跨海商路与制造订单。然而这笔体面的外交开支最终摊派给了地方民众。",
 				[
 					Shared.cash_in(1.5, 540, "向本地人数最多的{primary_profession}征收其现金的 1.5%（礼单摊派）"),
 					Shared.trade_capacity(5, 540),
 					Shared.manufacturing(3, 540),
 				]),
 			Shared.option(
-				"take_salt_only", "盐收下，礼先欠着",
-				"欠着的东西最难还",
-				"盐卸进官仓，回礼只给了一小半。葛逻没说什么，第二天船就走了，港里空出三段栈桥。",
+				"take_salt_only", "收下海盐，折半回礼",
+				"礼节有亏",
+				"海盐悉数入仓以平抑本地食盐与主食开销，但缩水的回礼激怒了外邦使团。船队次日便愤然撤离，本地外贸与手工业随之下滑。",
 				[
 					Shared.manufacturing(-3, 540),
 					Shared.staple(-2, 360),
 					Shared.bias(Ids.TAG_MARKET, 0.90, 540),
 				]),
 			Shared.option(
-				"keep_them_out", "把船挡在港外",
-				"船在港口外停了一夜",
-				"船在港口外停了一夜，天亮时收了帆，往北去了。港里的盐当天就贵了，蔡五在账上记了一笔。",
+				"keep_them_out", "拒之港外，不予接纳",
+				"闭港拒使",
+				"强硬驱离外邦使团捍卫了朝廷威严，也减少了边防摩擦的风险。但失去这批海盐补给后，本地民生开销随之加重。",
 				[
 					Shared.staple(4, 360),
 					Shared.bias(Ids.TAG_FRONTIER, 0.90, 540),
@@ -138,7 +137,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ENVOY_INTERPRETER),
 		"title": "{settlement_name}·通译",
-		"body_text": "阿卜会说两种话。他替外邦商人记账，也替衙门抄文书，两边都给他钱，两边都不认他。今天西边来的车队要谈盐价和铁价，衙门里只剩他一个人听得懂那种话。康屠站在门外，把礼单卷成一卷，说这人靠不住，去年他给对面报过我们的底价。阿卜进来的时候，袖口上还沾着印泥，他先看礼单，再看你。他问，是替你们谈，还是替他们听。",
+		"body_text": "西方商队携大批盐铁抵达，要求就关税与交易定额展开谈判，而官署内精通双语的通译仅有一人。此人长年游走于外邦商团与本地官府之间，熟悉双方礼单与公文印泥的规制，却也因两头领薪而屡遭猜忌。本土商帮代表警告，此人往年曾向外邦泄露底价；但若临阵撤换，谈判恐将陷入僵局。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "An interpreter with ink-stained cuffs standing between a merchant holding a rolled gift list and a magistrate's desk",
 		"tags": ["envoy", "market", "people"],
@@ -171,26 +170,26 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"give_him_office", "给他名分，让他去谈",
-				"他站在帘子前面",
-				"阿卜换了衙门发的衣裳，站在帘子前面替我们说话。谈成之后他要了一份文书，写明他是谁的人。",
+				"give_him_office", "授予官职，正式纳用",
+				"通译入仕",
+				"通译获授正式官身与俸禄，凭借其人脉迅速敲定了有利的贸易协定。本地商运与作坊皆受其惠，唯独地方需承担其署衙开支。",
 				[
 					Shared.cash_in(1.0, 360, "向本地人数最多的{primary_profession}征收其现金的 1%（通译的俸与纸墨）"),
 					Shared.trade_capacity(4, 540),
 					Shared.manufacturing(2, 540),
 				]),
 			Shared.option(
-				"let_him_run_both", "让他两边跑，不给名分",
-				"两头都有他的位置",
-				"阿卜还是两边跑。市上的价他先知道，衙门里的意思对面也先知道。有人开始绕开他去谈。",
+				"let_him_run_both", "维持现状，不授名分",
+				"双面掮客",
+				"未获正式任命的通译继续在两方之间穿梭牟利，虽极大活跃了边境贸易，但政务机密屡屡外泄，引发官民广泛不安。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					Shared.trade_capacity(6, 540),
 				]),
 			Shared.option(
-				"use_our_own", "换掉他，用自己人",
-				"换上来的人听得慢",
-				"换上来的人只会一半的话，谈到一半要停下来问。车队等了三天，把货转去了下游的盟邦。印泥在文书上按了三回，才按对地方。",
+				"use_our_own", "撤换通译，起用本国文吏",
+				"谈判受挫",
+				"新任文吏因语言生疏频频误解条款，谈判拖延数日无果。外邦商队最终转赴下游盟邦交易，本地制造业蒙受了订单损失。",
 				[
 					Shared.manufacturing(-3, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
@@ -203,7 +202,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ENVOY_BORDER),
 		"title": "{settlement_name}·边市",
-		"body_text": "边市的木栅是新砍的，还带着树皮，两边的摊子隔着一条干沟。对面牵马来换铁，我们这边摆出去的是锅、犁和钉子。康屠说，按旧例铁器不许出境，可对面出三倍的价，一车铁能换回四车盐。何通把符节从梁上取下来，把律条翻到那一页，指头压在纸上，纸边都被压皱了。有人提议把铁熔了重铸成农具，样子变了，里头还是铁。栅栏外那几匹马开始刨地，鼻子喷出一团白气。",
+		"body_text": "边境的边市木栅刚刚落成，外邦商队牵来大批良马与食盐，点名换购我方的铁锅、农具与铁钉。依照旧法，铁器属于严禁出境的战略物资，持符节镇守关口的军官坚决反对放行。然而商帮算过细账，外邦愿以三倍溢价收购，若以民用农具名义放行，可换回足以充盈仓廪的紧缺食盐。禁令与厚利摆在案头，亟待裁断。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "A border market of fresh wooden fencing, iron pots and ploughs on one side, horses on the other, a gate officer holding a law scroll",
 		"tags": ["envoy", "market", "frontier"],
@@ -236,27 +235,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"open_ban_iron", "开市，铁器一律不准出",
-				"关口上多了一把锁",
-				"市开了，铁器留在这一边。对面的商人围着锅和犁看了半天，最后只买走两车陶器。何通每天黄昏亲自去锁栅门。",
+				"open_ban_iron", "开放边市，严禁铁器出关",
+				"限贸开市",
+				"边市如期开放，但严密的稽查将铁器悉数拦在关内。外邦商队虽颇感失望，仍以陶器与杂货达成了交易，边境秩序得以维持。",
 				[
 					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（设卡与守栅的工食）"),
 					Shared.trade_capacity(6, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 			Shared.option(
-				"open_sell_anything", "开市，什么都能卖",
-				"铁出了关",
-				"铁锅、铁犁，连打坏的刀都卖了。第七天，何通在关口上看见对面的人腰里别着用我们的钉子打的刀。",
+				"open_sell_anything", "全面放开，允许铁器交易",
+				"铁利通边",
+				"大量铁制农具与器皿涌向境外，本地贸易与冶铁作坊迎来繁荣。然而不久后哨探回报，外邦骑兵已开始将我方铁料改铸为兵刃。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 					Shared.trade_capacity(8, 540),
 					Shared.manufacturing(3, 540),
 				]),
 			Shared.option(
-				"keep_it_shut", "不开市，守旧例",
-				"栅栏没拆",
-				"栅栏没拆，两边的人隔着干沟喊价，喊了一整天，一桩也没成。入冬前，盐涨了，铁也涨了。",
+				"keep_it_shut", "关闭边市，恪守旧禁",
+				"封关守禁",
+				"边市大门紧闭，战略铁料未曾外流分毫。但断绝边境互市导致紧缺物资无法补充，入冬前本地民生与主食开销明显攀升。",
 				[
 					Shared.staple(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
@@ -269,7 +268,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ENVOY_OATH),
 		"title": "{settlement_name}·背盟",
-		"body_text": "盟约签了两年，纸还压在匣子里，印泥的红已经发黑。今年开春，对面的骑兵过了河，占了三个村子，说是来追逃人。葛逻带着国书来，说这不是汗王的令，是下面的人自作主张。管兵的蔡五在城头站了一夜，回来说河对岸的火堆数不清。按盟约我们该出兵，出兵就要钱；不按盟约，往后谁还肯跟我们签。苏勒把国书摊在案上，纸角被风掀起，又落下去。",
+		"body_text": "与邻邦签署的盟约墨迹犹在，今春对方骑兵却悍然渡河，以追捕逃奴为名侵占我方数座边境村落。外邦使团随即递交国书，轻描淡写地将其归咎于边将擅自行动，并无归还之意。前线守军回报对岸营火连绵，显然早有预谋。若履约出兵必将耗费巨资，若吞声忍让则国威扫地，今后恐再无邻邦敬畏我朝盟约。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A two-year-old treaty sealed in red ink on a desk, a herald with a letter of credence, watchfires across a river at night",
 		"tags": ["envoy", "unrest", "court"],
@@ -302,34 +301,34 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.gamble(
-				"honour_the_oath", "按盟约出兵",
-				Shared.branch(42598, "对面退了",
-					"我们的旗到了河边，对面的火堆一夜之间少了一半。葛逻送来一封国书，说这是误会，说他回去一定查。",
+				"honour_the_oath", "依约兴师，强硬反击",
+				Shared.branch(42598, "敌军退却",
+					"我军大旗刚抵河岸，对岸敌营便连夜后撤。外邦使团仓皇致歉并重申盟约，此番果断出兵不仅提振了军备效率，也稳固了边境商路。",
 					[
 						Shared.cash_in(2.0, 540, "向本地人数最多的{primary_profession}征收其现金的 2%（出兵的开拔钱）"),
 						Shared.supply(10, 540),
 						Shared.trade_capacity(4, 540),
 					]),
-				Shared.branch(22938, "打了一场",
-					"两军在河滩上撞了一回，各自退回去收尸。盟约还压在匣子里，谁也没提它。",
+				Shared.branch(22938, "河滩血战",
+					"两军在河滩爆发激烈冲突，双方各有伤亡后各自撤军。战事虽未演变为全面战争，但抚恤与补械的摊派令地方财政备受压力。",
 					[
 						Shared.cash_in(2.5, 540, "向本地人数最多的{primary_profession}征收其现金的 2.5%（抚恤与补械）"),
 						Shared.supply(8, 360),
 						Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 					])),
 			Shared.option(
-				"tear_it_up", "不履约，把国书收进库",
-				"库里多了一卷纸",
-				"国书收进库里，出兵的事再没人提。对面的商队改道走了下游，市上的铜料一夜之间断了。",
+				"tear_it_up", "封存国书，拒绝出兵",
+				"吞声避战",
+				"盟约被束之高阁，朝廷避免了高昂的战争开支并保住了境内安宁。但外邦商队见我朝软弱随即改道，本地原料供应与制造业受挫。",
 				[
 					Shared.manufacturing(-4, 540),
 					Shared.supply(8, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 			Shared.option(
-				"stall_the_army", "只做样子，按兵不动",
-				"兵在城外扎了三天",
-				"兵在城外扎了三天，没过大河，也没回家。河对岸的人每天都在数这边的灶烟。",
+				"stall_the_army", "陈兵城外，虚张声势",
+				"按兵对峙",
+				"大军在城外扎营示威却按兵不动，既未渡河收复失地，也未撤回营房。这种首鼠两端的姿态虽保住了农时，却令国内舆情汹涌。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					Shared.agriculture(2, 540),
@@ -343,7 +342,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ENVOY_MARRIAGE),
 		"title": "{settlement_name}·婚约",
-		"body_text": "西边汗国来求亲，要的是你族里那个会写字的姑娘。礼物装了六车，丝绸压在箱底，礼单头一行写着她的名字。何通说，嫁过去的不只是人，还有一整套陪嫁的工匠和种子。康屠算过账，这桩婚事办下来，市上三年收的税都不够。姑娘自己没说话，只在廊下站了一会儿，把苏勒递给她的符节还了回去。日子定在秋天，秋天之前得回话。",
+		"body_text": "西方汗国遣使团前来求亲，指名迎娶我朝宗室一位通晓文墨的贵女，并备下六车丝绸作为聘礼。礼单之上附带苛刻条件，要求随嫁大批工匠与良种，以借联姻之名汲取我方工艺。财政官员核算后指出，筹办此番厚嫁的开销远超数年商税；然而断然拒绝又恐触怒强邻，令边疆再起衅端。回话的期限就在入秋之前。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "Six gift carts of silk before a hall, a gift list with one name at its head, a young woman returning a tally token in a corridor",
 		"tags": ["envoy", "court", "people"],
@@ -376,27 +375,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"send_her_with_gifts", "把人嫁过去，厚礼陪送",
-				"车队走得比礼单还长",
-				"送亲的车队比礼单还长，走到河边停了一停。姑娘掀开车帘看了一眼对岸，把帘子放下了。",
+				"send_her_with_gifts", "应允联姻，厚礼陪嫁",
+				"和亲通好",
+				"绵延数里的送亲车队渡河西去，两邦借由姻亲关系确立了长期通商协定。虽然陪嫁摊派加重了地方负担，但宫廷与边疆局势皆趋缓和。",
 				[
 					Shared.cash_in(2.0, 540, "向本地人数最多的{primary_profession}征收其现金的 2%（陪嫁摊派）"),
 					Shared.trade_capacity(6, 540),
 					Shared.bias(Ids.TAG_COURT, 0.90, 540),
 				]),
 			Shared.option(
-				"send_the_list_only", "人留下，只送一份礼单",
-				"礼单退了回来",
-				"礼单原样退回来，角上多了一个火漆印。何通把纸收好，说这一页往后还有用。",
+				"send_the_list_only", "婉拒婚事，仅遣使回礼",
+				"留人还礼",
+				"外邦使团将未署名的礼单原样退回，并盖上了措辞严厉的火漆印。工匠与人才得以留在国内充实文教与制造，但边境紧张气氛陡增。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					Shared.manufacturing(3, 540),
 					Shared.knowledge(2, 540),
 				]),
 			Shared.option(
-				"wait_for_autumn", "拖着，秋天再回话",
-				"秋天到了",
-				"秋天到了，话没回。对面的使臣在驿馆住了两个月，最后自己走了，走的时候没跟任何人打招呼。",
+				"wait_for_autumn", "拖延答复，以待时变",
+				"使团拂袖",
+				"朝廷迟迟未予明确答复，外邦使团在驿馆苦候两月后不辞而别。虽避免了直接冲突与赔嫁支出，但双边商贸与本地制造均陷入冷淡。",
 				[
 					Shared.manufacturing(-3, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
@@ -409,7 +408,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ENVOY_HORSES),
 		"title": "{settlement_name}·马礼",
-		"body_text": "对面送来二十匹马，都是四岁的口，毛色刷得发亮，牵进马厩时蹄子上还裹着布。送礼的葛逻说这是汗王的一点心意，说完把礼单递上来，站在那儿等回礼。麦纥蹲在马腿边看蹄铁，说这蹄铁打得好，比我们作坊的还结实。市上的规矩是回礼要比收的多一分，可仓里剩下的丝绸只够一半。苏勒让人把马牵到后院，先不卸鞍。礼单摊在案上，墨还没干透。",
+		"body_text": "外邦使团驱赶二十匹精壮骏马入城，递上礼单声称系汗王睦邻之礼。工坊匠师查验后发现，这批战马不仅骨架上乘，所钉蹄铁的锻造工艺亦颇为精良。按照邦交惯例，受礼一方须回赠价值更高的国礼以示大国气度，但官仓现存丝绸仅足半数。若以铁器充抵恐资敌，若筹款采买则耗费民力，如何回礼关乎国体。",
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "Twenty well-groomed horses with cloth-wrapped hooves led into a stable, a groom inspecting a hoof, a gift list drying on a desk",
 		"tags": ["envoy", "market"],
@@ -442,27 +441,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"return_silk", "收下马，回赠丝绸",
-				"马进了厩",
-				"马进了厩，丝绸装了四车送出去。麦纥给每匹马都钉了新蹄铁，用的是仓里最后一块好铁。",
+				"return_silk", "收下骏马，筹购丝绸回赠",
+				"丝马互市",
+				"骏马悉数编入马政储备，朝廷筹集四车上等丝绸体面回赠。此举既充实了本地马匹存量，也进一步拓宽了双方的贸易渠道。",
 				[
 					Shared.cash_in(1.5, 540, "向本地人数最多的{primary_profession}征收其现金的 1.5%（回礼的丝绸摊派）"),
 					Shared.stock("horses", 10),
 					Shared.trade_capacity(4, 540),
 				]),
 			Shared.option(
-				"return_iron", "收下马，回赠铁器",
-				"铁器出了关",
-				"回礼里头有铁锅和铁犁，还有两把没开刃的刀。对面的使臣看了看刀，笑了，把礼单收进袖子。",
+				"return_iron", "收下骏马，以铁器折抵回礼",
+				"铁器出关",
+				"大批铁制农具与未开刃铁器被装车送往外邦，本地冶铁作坊与商贸一时兴旺。但外邦使臣意味深长的神情，却让朝中主战派倍感忧虑。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					Shared.manufacturing(4, 540),
 					Shared.trade_capacity(4, 540),
 				]),
 			Shared.option(
-				"send_them_back", "原样退回，一匹不留",
-				"马队原路回去",
-				"马队原路回去，蹄子踏在来时的车辙上。麦纥站在门口看了很久，说这批马蹄子好，可惜了。",
+				"send_them_back", "婉言谢绝，原样退还骏马",
+				"却礼自守",
+				"马队沿着来路原样撤回，朝廷免去了沉重的回礼开销。但此番冷遇令外邦商旅望而却步，本地制造与市场活跃度随之降温。",
 				[
 					Shared.manufacturing(-3, 540),
 					Shared.bias(Ids.TAG_MARKET, 0.90, 540),
@@ -475,7 +474,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ENVOY_SECRET),
 		"title": "{settlement_name}·密约",
-		"body_text": "国书的夹层里还夹着一张纸，字比正文字小，写的是两国在河上怎么分兵、谁先过桥。送书的人说这张纸不能给第三个人看，看完就烧，印泥是另配的，验不出来。何通把纸对着窗，透光看了两遍，说这上头没有汗王的印。苏勒问他信不信送书的人，何通说不信，可条款对我们有利。灯芯烧到一半，纸边上已经卷了起来。屋外有人走动，脚步声在门口停了一下。",
+		"body_text": "外邦使团呈上的正式国书夹层中，暗藏着一份未盖王印的秘密条款，详述了两国在边境河道分兵与过桥的默契安排。密使宣称此约绝不可示于第三人，所用印泥亦为特制，事后无从查证。枢密幕僚验看后坦言，密约真伪难辨，极可能是对方派系私下试探，但其条款却对我方极为有利。签与不签，皆是一场豪赌。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A hidden clause on thin paper held against a window, a letter of credence with two different seals, a lamp burning low",
 		"tags": ["envoy", "court"],
@@ -508,27 +507,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"sign_and_lock", "签下，锁进库房",
-				"两把钥匙",
-				"条款签了，锁进库房最里那一格，两把钥匙，一把在你这里。何通在封皮上又压了一道印泥。",
+				"sign_and_lock", "密签条款，锁入机要库房",
+				"密约归档",
+				"密约签署后被严密封存，朝廷筹措了一笔隐秘定金以示诚意。此后边境军需与商路调度果然顺畅许多，只是这笔见不得光的交易随时可能反噬。",
 				[
 					Shared.cash_in(2.0, 540, "向本地人数最多的{primary_profession}征收其现金的 2%（密约的定金）"),
 					Shared.trade_capacity(6, 540),
 					Shared.supply(10, 540),
 				]),
 			Shared.option(
-				"refuse_and_copy", "不签，抄一份送回去",
-				"抄本送了回去",
-				"抄本送回去，正本留下。何通把纸晾在窗台上等墨干，晾了三天，风吹走了一角。",
+				"refuse_and_copy", "拒绝签署，留存抄本备查",
+				"留档拒签",
+				"朝廷退回密约正本的抄件，仅将情报归档交由智囊研判。虽然双边商贸与本地制造因信任受挫而短暂遇冷，但情报体系借此摸清了对手底牌。",
 				[
 					Shared.manufacturing(-3, 540),
 					Shared.knowledge(4, 540),
 					Shared.bias(Ids.TAG_COURT, 0.90, 540),
 				]),
 			Shared.option(
-				"sign_half", "签一半，留一条空着",
-				"空着的那一条",
-				"空着的那一条谁也没提。半年后对面来问，何通说原本就是这样写的，说完把国书往前推了推。",
+				"sign_half", "部分签署，留白核心条款",
+				"留白博弈",
+				"朝廷刻意在关键条文处留白，借机换取了眼前的贸易与制造红利。半年后外邦就模糊地带发难，双方陷入了旷日持久的外交扯皮与猜忌。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 					Shared.trade_capacity(3, 540),

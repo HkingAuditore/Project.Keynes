@@ -71,7 +71,7 @@ static func append_waterworks_events(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(EVENT_PROPOSAL),
 		"title": "{settlement_name}·开渠",
-		"body_text": "殿里烧着炭，门口还是漏风。沈渠跪在石板上，膝盖底下垫着那卷渠图，图角被手汗浸得发软。他不是本地人，说话带着东边的口音，报名字的时候顿了一下，像在想要不要用真名。他说这条渠能把河水引进城外的盐碱地，三年以后，那片白花花的地能长麦子。没有人接话。管粮的官吏低头翻册子，算征发民夫要吃多少粮；杜衡站在柱子旁边，一直没有看你。最后是他先开口：东边的邻国，正等着我们把青壮年都耗在土方上。",
+		"body_text": "一名外来水利工师向朝廷呈上引水方案，主张在{settlement_name}开凿干渠，将河水引入城外大片盐碱荒地，预计数年后即可辟为良田。度支官吏核算后警告，大规模征发民夫将消耗可观的国库口粮与地方劳力。军政重臣更提出严峻顾虑，邻国正伺机而动，此刻将青壮年倾注于土木工程，恐令边防空虚，疑此工师实为敌国疲兵之计。",
 		"image_key": "hydrology.water",
 		"ai_visual_prompt": "Ancient hydraulic engineer unrolling a canal survey before officials on a dry river plain",
 		"tags": ["waterworks", "irrigation", "engineering", "chain"],
@@ -115,12 +115,12 @@ static func append_waterworks_events(catalog) -> void:
 		"options": [
 			{
 				"option_id": "appoint_engineer",
-				"text": "把渠交给他，征发民夫",
+				"text": "批准开渠，征发民夫",
 				"outcomes": [
 					{
 						"probability_q16": 65536,
-						"outcome_title": "动工了",
-						"outcome_narrative": "民夫在河边扎下营寨。国库拨出的口粮先到，名册后到，念名字的人念错了好几个，没人纠正。有人说是仁政，也有人说，这是把种地的人赶去挖土。",
+						"outcome_title": "动工兴修",
+						"outcome_narrative": "水利工程正式破土动工，大批民夫沿河扎营。国库拨付的钱粮率先运抵工地，但仓促编制的役籍仍引发劳工阶层怨言，地方舆论对此褒贬不一。",
 						"effects": [
 							{
 								"kind": Kind.TREASURY_CASH_TO_COHORT,
@@ -171,12 +171,12 @@ static func append_waterworks_events(catalog) -> void:
 			},
 			{
 				"option_id": "imprison_then_verify",
-				"text": "先关起来，把图验清楚",
+				"text": "暂扣工师，复核勘测方案",
 				"outcomes": [
 					{
 						"probability_q16": 36045, # 55%
-						"outcome_title": "他画了一夜",
-						"outcome_narrative": "沈渠在牢里画了一夜。天亮时他把图从门缝里递出来，手上全是墨。你让人放他出去，说，去凿吧。他磕头，站起来的时候踉跄了一下。杜衡站在台阶上，一直没说话。",
+						"outcome_title": "复核过关准予兴工",
+						"outcome_narrative": "工师在看押期间连夜补绘水文细图，经朝廷工官核验确为绝佳良策。工程随即获批动工，这批详尽的水利图籍亦大幅充实了本地学识。",
 						"effects": [
 							{
 								"kind": Kind.TREASURY_CASH_TO_COHORT,
@@ -209,8 +209,8 @@ static func append_waterworks_events(catalog) -> void:
 					},
 					{
 						"probability_q16": 29491, # 45%
-						"outcome_title": "图进了库房",
-						"outcome_narrative": "沈渠被押进牢里，图卷起来，塞进库房最里层的架子。那天夜里，邻国的使者在客栈喝了很多酒，第二天走的时候，赏了伙计一枚钱。",
+						"outcome_title": "工师下狱渠图封存",
+						"outcome_narrative": "朝廷终未打消疑虑，工师遭押入狱，渠图亦被封存入库。地方摊派追回前期筹备耗费，然旱地失灌令周边农事蒙受拖累，邻国使臣暗自庆幸。",
 						"effects": [
 							{
 								"kind": Kind.COHORT_CASH_TO_TREASURY,
@@ -245,12 +245,12 @@ static func append_waterworks_events(catalog) -> void:
 			},
 			{
 				"option_id": "dismiss_and_farm",
-				"text": "停工，让人回去种地",
+				"text": "驳回工程，以农事为先",
 				"outcomes": [
 					{
 						"probability_q16": 65536,
-						"outcome_title": "名册合上了",
-						"outcome_narrative": "民夫各自回乡，河边的口粮摊撤了。里正挨户来收这一冬的摊派，走到王三家门口，王三把门开了一条缝。河边打好的木桩没人管，一场雨之后，歪了。",
+						"outcome_title": "罢工归农",
+						"outcome_narrative": "朝廷下令解散工役、遣散民夫归乡，并向地方征收前期筹备摊派以充公库。荒废的河滩旱地未能得水，周边农事产出随之小幅回落。",
 						"effects": [
 							{
 								"kind": Kind.COHORT_CASH_TO_TREASURY,
@@ -294,7 +294,7 @@ static func append_waterworks_events(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(EVENT_COMPLETED),
 		"title": "{settlement_name}·通水",
-		"body_text": "通水那天，渠口围了很多人。河水第一次拐进新开的支流，浑黄的水推着草根和树枝往前走，漫过白花花的盐碱地，像有人在田里铺了一层湿泥。没有人欢呼。民夫们蹲在渠边，看水，也看工头的脸色——工钱还没发，谁也不敢先走。王三把手伸进水里，捞出一把泥，在指间搓了搓，又扔回去。他家里那两亩地，今年还种不种得上，他心里没底。",
+		"body_text": "{settlement_name}干渠终告合龙通水，裹挟泥沙的浑黄河水顺着新凿支流奔涌而出，首次漫过城外大片盐碱荒地。水利工官呈请推行稳健的引洪淤田之法，以泥沙压碱肥地、厚植长期农本。度支官员则急于收回巨额工程成本，主张立刻将渠田新粮折钱解送国库以充军资。另有激进督工建议开闸全量漫灌，赌一次彻底洗碱速成。",
 		"image_key": "hydrology.water",
 		"ai_visual_prompt": "Completed ancient irrigation canal feeding wheat fields, silt-laden water spreading over saline flats",
 		"tags": ["waterworks", "irrigation", "harvest", "chain"],
@@ -308,12 +308,12 @@ static func append_waterworks_events(catalog) -> void:
 		"options": [
 			{
 				"option_id": "silt_irrigation",
-				"text": "放洪水灌田，压住盐碱",
+				"text": "引洪淤田，厚植长期地力",
 				"outcomes": [
 					{
 						"probability_q16": 65536,
-						"outcome_title": "地换了颜色",
-						"outcome_narrative": "渠水裹着泥沙漫过田面，老农蹲下去抓了一把，说这是给地喂饭。秋后麦穗压弯了秆，王三家也分到了一水。他去领粮的时候，特意换了件干净的衣裳。",
+						"outcome_title": "淤泥肥田良畴初成",
+						"outcome_narrative": "富含肥力的泥沙层层沉降于荒地之上，盐碱尽退。周边农田连季丰产、主食负担大幅减轻，这一引洪治碱之法亦迅速推广至全国。",
 						"effects": [
 							{
 								"kind": Kind.CITY_MODIFIER,
@@ -353,12 +353,12 @@ static func append_waterworks_events(catalog) -> void:
 			},
 			{
 				"option_id": "ship_grain_to_capital",
-				"text": "渠粮折钱，解送国库",
+				"text": "渠粮折钱，急输国库",
 				"outcomes": [
 					{
 						"probability_q16": 65536,
-						"outcome_title": "粮车走了",
-						"outcome_narrative": "粮行的渠粮折成钱，连夜解送国库；民夫的工钱也折成粮发下去。王三领了粮去市上换盐，粮行门口排的队比昨天长。他算了一遍，这点粮刚好够买回春天借出去的种粮。",
+						"outcome_title": "折粮入库军资充盈",
+						"outcome_narrative": "度支署迅速将渠田收益折现解送国库，充实了中央财政。随着水利配套与磨坊器械相继投用，本地及周边工坊的制造效率亦获提升。",
 						"effects": [
 							{
 								"kind": Kind.COHORT_CASH_TO_TREASURY,
@@ -387,12 +387,12 @@ static func append_waterworks_events(catalog) -> void:
 			},
 			{
 				"option_id": "flood_the_fields",
-				"text": "放水漫灌，一次灌透",
+				"text": "开闸漫灌，一举洗碱",
 				"outcomes": [
 					{
 						"probability_q16": 39321, # 60%
-						"outcome_title": "水退之后",
-						"outcome_narrative": "水退之后，田面结了一层新淤，白碱被压到土下面。渠田连片泛绿，王三把春天借的种粮还了，还剩半袋。他把剩下的半袋埋在地窖里，没告诉任何人。",
+						"outcome_title": "洗碱大成丰产倍增",
+						"outcome_narrative": "大水退去后新淤厚积，顽固盐碱被彻底压入深土。周边渠田连片翻绿，农业产出迎来井喷，本地主食供给压力大幅缓解。",
 						"effects": [
 							{
 								"kind": Kind.CITY_MODIFIER,
@@ -423,8 +423,8 @@ static func append_waterworks_events(catalog) -> void:
 					},
 					{
 						"probability_q16": 26215, # 40%
-						"outcome_title": "碱又回来了",
-						"outcome_narrative": "水退得太慢，盐碱又泛上来。渠边的禾苗成片枯黄。王三蹲在田埂上，一句话也没说。收工的时候，他把铁锹插在土里，没带走。",
+						"outcome_title": "积水返碱农田重创",
+						"outcome_narrative": "排水不畅反令地下盐碱大面积上泛，沿岸禾苗成片枯萎。农业产出锐减、主食开销攀升，国库不得不紧急拨款赈济善后。",
 						"effects": [
 							{
 								"kind": Kind.CITY_MODIFIER,
@@ -461,7 +461,7 @@ static func append_waterworks_events(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(EVENT_ABANDONED),
 		"title": "{settlement_name}·半条渠",
-		"body_text": "渠线只挖了一半。工棚空了，挖出来的土堆在河边，被雨水冲出一道道沟。邻国的使者送来贺礼，话说得很客气：贵国终于懂得爱惜民力。议事的时候，没有人再提那卷图。它还在库房里，落着灰，压在一摞旧账本下面。只有管库的老吏记得它——每年夏天翻晒的时候，他会把图抽出来，抖一抖灰，再放回去。",
+		"body_text": "{settlement_name}的引水干渠半途而废，未竟的渠沟在雨水冲刷下日渐坍塌。邻国使节适时遣使致贺，盛赞我国爱惜民力、不兴大役，言辞间却难掩如释重负之意。朝堂之上已无人愿再触及此案，唯有工部档案库中仍妥善保存着当年详尽的水文勘测图卷。如今朝廷须做最终决断：是拨款重启勘测图籍以续前功，还是彻底销案、将全部精力收归日常农耕。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "Abandoned canal trench with surveyor stakes on a dry plain, envoys watching from a distance",
 		"tags": ["waterworks", "chain"],
@@ -473,12 +473,12 @@ static func append_waterworks_events(catalog) -> void:
 		"options": [
 			{
 				"option_id": "keep_the_survey",
-				"text": "把图收好，等以后再挖",
+				"text": "重裱图籍，拨款重启渠工",
 				"outcomes": [
 					{
 						"probability_q16": 65536,
-						"outcome_title": "图又被翻出来",
-						"outcome_narrative": "图卷被重新裱好，收进库房最里面。几年后有人翻出它，纸边已经发黄，折痕处裂了一道口子。管库的老吏已经换了人，新来的不认识那是什么，差点拿去引火。",
+						"outcome_title": "旧图重启再续前功",
+						"outcome_narrative": "朝廷重新启用封存的水文图卷，拨付专款组织工官修补图纸并筹备复工。这番测绘整理不仅充实了本地学识，亦令未竟的干渠重现通水之望。",
 						"effects": [
 							{
 								"kind": Kind.TREASURY_CASH_TO_COHORT,
@@ -512,12 +512,12 @@ static func append_waterworks_events(catalog) -> void:
 			},
 			{
 				"option_id": "close_the_dossier",
-				"text": "算了，专心种地",
+				"text": "彻底销案，专务农耕",
 				"outcomes": [
 					{
 						"probability_q16": 65536,
-						"outcome_title": "没人再提",
-						"outcome_narrative": "渠线被雨水冲平，渠边的木桩被人拆回去当柴烧。邻国的使者回国之后升了官。那年冬天，河边结冰，孩子们在旧渠的沟底上跑。",
+						"outcome_title": "渠案永绝归于平畴",
+						"outcome_narrative": "半截渠沟被平毁复耕，地方按户补缴了收尾摊派。劳力悉数回归常规农事令周边收成略有起色，邻国使臣也因成功阻滞大计而获封赏。",
 						"effects": [
 							{
 								"kind": Kind.COHORT_CASH_TO_TREASURY,
@@ -550,7 +550,7 @@ static func append_waterworks_events(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(EVENT_LEGACY),
 		"title": "{settlement_name}·渠田丰收",
-		"body_text": "渠田连着几年丰收。城外的粮车多了起来，市集上开始出现从没见过的大车，车轴压过石板路，声音很沉。收粮的账房在仓门口支了张桌，算盘珠子响到天黑。你的仓廪和兵源一起涨了起来。何老四家添了一头驴，他逢人就说，这驴是渠水养的。只有一件事没人提：渠口上游那几个村子，这两年打井，水位一年比一年低。",
+		"body_text": "干渠建成之后，{settlement_name}连年喜获丰收，满载谷物的重型粮车络绎不绝，官仓与兵源随之日益充盈。朝廷终于迎来将这项地方水利转化为国家长远实力的收获之期。军政重臣力请借此丰年加征渠赋、以渠田余粮供养精锐大军并推动全国营造动员；地方官吏与乡绅则恳请藏富于民，由国库拨款贴补新垦农户，以吸引更多人口落籍拓荒。",
 		"image_key": "climate.sun",
 		"ai_visual_prompt": "Prosperous ancient granary town beside irrigated wheat fields, carts loaded with grain",
 		"tags": ["waterworks", "prosperity", "chain"],
@@ -562,12 +562,12 @@ static func append_waterworks_events(catalog) -> void:
 		"options": [
 			{
 				"option_id": "fund_state_from_canal",
-				"text": "用渠田的粮养兵",
+				"text": "征渠田余粮，强军兴邦",
 				"outcomes": [
 					{
 						"probability_q16": 65536,
-						"outcome_title": "粮仓与兵源",
-						"outcome_narrative": "西门出去的粮车少了一截，兵册上新添的名字还没干。渠田的粮被装上车，往东边的前线去了。何老四牵着驴在路边看，车过去很久，他才想起来把驴拉开。",
+						"outcome_title": "足食强兵国势大振",
+						"outcome_narrative": "源源不断的渠粮与渠赋汇入中央，显著压低了全国军需补给负担并拉动全国营建产能。虽令本地主食开销略有上升，国家战略实力已然跃升。",
 						"effects": [
 							{
 								"kind": Kind.COUNTRY_MODIFIER,
@@ -614,12 +614,12 @@ static func append_waterworks_events(catalog) -> void:
 			},
 			{
 				"option_id": "lighten_canal_tax",
-				"text": "拨钱贴补，粮留本地",
+				"text": "拨款贴补，藏富于民",
 				"outcomes": [
 					{
 						"probability_q16": 65536,
-						"outcome_title": "村里立了碑",
-						"outcome_narrative": "官府按户发了贴补，村里立了碑，碑上刻着督工官吏的名字，没有民夫的名字。粮册上没添几笔，村口的名册上多了几户。",
+						"outcome_title": "沃野聚民百业俱兴",
+						"outcome_narrative": "国库按户发放农垦贴补并留粮本地，大批外来农户闻讯迁入落籍。周边渠田农产与人口繁衍同步攀升，主食负担大幅减轻，乡里立碑纪功。",
 						"effects": [
 							{
 								# 「名册上多了几户」是有人真的落了籍：光给产出与出生率，

@@ -21,8 +21,8 @@ const PACK_ID := &"atom"
 const PREFIX := "evt.atom."
 
 const CAST := [
-	"邝其昌", "卫砚生", "汤知白", "郁长庚", "闻玉山", "苗青禾", "应连生", "费守拙", "游照川", "尹四",
-	"砂洲", "冷河湾", "白茅滩", "铁砧坳", "铅箱", "封条", "夜班表", "名册", "台标", "交换机", "纸带", "天线",
+	"能源委员会", "反应堆", "冷却水", "核废料", "遥感卫星", "广播电台",
+	"数据网络", "安全部门", "自动化产线", "地方议会", "工业部", "财政部",
 ]
 
 const MUL_110 := 72090
@@ -62,7 +62,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ATOM_REACTOR),
 		"title": "{settlement_name}·核站",
-		"body_text": "反应堆的地基打在砂洲城外，离最近的院子只隔一道土坡。冷却水得从冷河湾引，渠一开，下游三个村的稻田就少灌一季。邝其昌把水位表按在桌上，说泵一开就不能停，停了堆芯要热。卫砚生算的是另一笔：渠首的闸门归谁管，出了事谁签字。夜里浇地的老农蹲在渠边，看水往坡上去。上头的人明天来听答复，图纸摊在桌上，一角压着石头。",
+		"body_text": "{settlement_name}的新建核电反应堆工程在冷却方案上陷入僵局。能源委员会提交的直流取水方案成本最低、投产最快，但抽调河道冷却水将大幅削减下游灌区的枯水期流量，引发当地农业团体通过地方议会强烈抗议；若改建闭式冷却塔，则工期延后且需追加大笔地方财政摊派。工业部正急等电力并网，最终方案待你拍板。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A reactor foundation at the edge of a river town, an irrigation ditch being dug uphill, engineers and farmers arguing over a water gauge",
 		"tags": ["atom", "unrest", "era"],
@@ -95,18 +95,18 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"draw_from_the_river", "从冷河湾引水",
-				"渠首的闸",
-				"渠挖了一个夏天，水上了坡。渠首的闸门挂了锁，钥匙在邝其昌腰上，他睡觉也压着。",
+				"draw_from_the_river", "批准直流取水方案",
+				"工业供电优先落地",
+				"引水泵站按期竣工，充沛的电力迅速推动工业区扩张。下游农田因枯水期减流而连季歉收，农业团体的怨气随之积聚。",
 				[
 					Shared.energy(7, 540),
 					Shared.manufacturing(3, 540),
 					Shared.agriculture(-4, 540),
 				]),
 			Shared.option(
-				"build_cooling_towers", "修冷却塔，水自己转",
-				"塔下的白汽",
-				"塔修起来，白汽一夜到天亮。摊派的钱按户收，交不出的记在账上，利滚利。",
+				"build_cooling_towers", "追加预算兴建冷却塔",
+				"闭式循环工程竣工",
+				"高耸的冷却塔投入运转，兼顾了核电出力与下游灌溉。但为弥补工程超支而开征的地方附加税，令本地市民背负了沉重压力。",
 				[
 					Shared.energy(5, 540),
 					Shared.knowledge(3, 540),
@@ -114,16 +114,16 @@ static func append(catalog) -> void:
 					Shared.build_cost(3, 540),
 				]),
 			Shared.gamble(
-				"run_it_low", "低功率先转起来",
-				Shared.branch(42598, "灯先亮了", # 65%
-					"它转起来了，声音比想的低。城里的灯先亮了一半，另一半等明年。",
+				"run_it_low", "先期低功率试运行",
+				Shared.branch(42598, "试运平稳达标", # 65%
+					"反应堆在低功率区间平稳运行，不仅缓解了部分用电缺口，还为国家电网积累了宝贵的核能工程经验。",
 					[
 						Shared.energy(6, 540),
 						Shared.knowledge(5, 540),
 						Shared.research_signal("breakthrough.electrification", "电气化"),
 					]),
-				Shared.branch(22938, "堆芯发烫", # 35%
-					"表针往上走，止不住。撤出来的人站在坡上，看白汽从缝里冒。当夜下了雨。",
+				Shared.branch(22938, "冷却回路过热事故", # 35%
+					"试运行期间堆芯温度异常攀升，机组被迫紧急停堆并疏散外围人员。事故震动全城，能源部门公信力遭受重创。",
 					[
 						Shared.energy(-6, 540),
 						Shared.birth(-4, 540),
@@ -136,7 +136,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ATOM_WASTE),
 		"title": "{settlement_name}·废料",
-		"body_text": "用过的东西从堆里捞出来，装进铅箱，编号，封条压上骑缝章。往哪儿放，城里吵了半个月。白茅滩的地软，挖三丈就出水；铁砧坳是石头，可离井太近。汤知白说石头不漏，应连生说井就在下头。守夜的人在坑口搭了草棚，一夜添两回灯油。封条上写着明年开春再验，验完那一栏空着，风把纸角掀起又落下。",
+		"body_text": "{settlement_name}首批高放核废料已完成铅罐封装，永久处置选址却在地方议会引发激烈争执。安全部门提议就地深埋于近郊岩层，但地质学家警告邻近含水层存在渗漏隐患。若转运至北方废弃矿区，则须向地方征收高额转运专项费；若暂存地表露天堆场，则需长期派驻安保并面临舆论反弹。",
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "Lead-lined boxes sealed with paper strips stacked beside a freshly dug pit, a straw watch hut and an oil lamp at night",
 		"tags": ["atom", "unrest", "land"],
@@ -169,27 +169,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"bury_in_the_stone", "埋进铁砧坳",
-				"石缝封了",
-				"石场封了口子，碾盘停了三座。汤知白每天去看一回，用脚踩踩新土。",
+				"bury_in_the_stone", "封存近郊岩层深埋",
+				"近郊矿区划为禁区",
+				"近郊石场随即关停并改建为深层封存库，本地采掘产能因此受限。严格的隔离措施暂时平息了市民的恐慌情绪。",
 				[
 					Shared.extraction(-3, 540),
 					Shared.knowledge(2, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
 			Shared.option(
-				"haul_it_north", "运去北边的旧矿",
-				"车皮夜里走",
-				"车皮都在夜里走，走一趟三天。钱按户摊，铁铺的人说，这是替全城出的。",
+				"haul_it_north", "征收专款，跨区外运",
+				"专列转运北方矿区",
+				"特种专列连夜将废料运往北方深矿封存，本地工业与科研未受干扰。但分摊到各行业的高额转运税引发了商界不满。",
 				[
 					Shared.cash_in(2.0, 360),
 					Shared.manufacturing(2, 540),
 					Shared.knowledge(3, 540),
 				]),
 			Shared.option(
-				"leave_it_open", "敞着放，派人看着",
-				"草棚里的灯",
-				"草棚里点着灯，一夜添两回油，看一夜的人补半升米。应连生守了四十天，回家那天先洗了三遍手。",
+				"leave_it_open", "拨款暂存，强化监测",
+				"临时堆场引发抗议",
+				"政府拨款设立全天候监测站与隔离区，暂缓永久处置。长期暴露的风险令周边社区人心惶惶，抗议活动此起彼伏。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					Shared.cash_out(1.5, 540),
@@ -202,7 +202,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ATOM_SATELLITE),
 		"title": "{settlement_name}·卫星",
-		"body_text": "天线架在铁砧坳的坡上，铁架子比水塔还高，风大的时候整座架子会哼。游照川说它看得见河对岸的车辙，也看得见谁家夜里还亮着灯。苗青禾想用它看云，好早两天报雨；管仓的人想用它数来往的车。开机的头一晚，屏上过了一片田，田里有人在烧秸秆。游照川把镜头停在那儿，问这算不算看见。批文上写的是看天，他把镜头挪开半步，又挪回去。",
+		"body_text": "{settlement_name}的遥感卫星地面接收站正式投入运转，高空影像足以清晰辨识气象演变与地面物流动向。科学界呼吁向全社会开放数据以服务气象预报与学术研究，安全部门则要求将其列为国家机密，专供军政与仓储监管。财政部与工业部另提折中方案，主张向商业机构有偿出租部分观测频段。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A tall lattice antenna on a rocky ridge above a river town, a small screen showing a field with burning stubble",
 		"tags": ["atom", "era"],
@@ -234,27 +234,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"open_the_scope", "谁想看都能看",
-				"屏前一屋子人",
-				"登记簿写了半个月，看的人排到门外。苗青禾的报雨晚了两个时辰，云已经到头顶。",
+				"open_the_scope", "全面开放公共数据",
+				"民用科研获益匪浅",
+				"接收站向全国高校与民间机构敞开大门，全国科研活力显著提升。但蜂拥而至的申请令本地站点的日常调度一度陷入混乱。",
 				[
 					Shared.knowledge(-3, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 					Shared.country_sector("knowledge", 4, 540),
 				]),
 			Shared.option(
-				"seal_it_for_the_state", "只给官府用",
-				"门上了锁",
-				"机房加了哨，画面上只看得到官仓和渡口。管仓的人每天抄一遍，抄完锁进柜子。",
+				"seal_it_for_the_state", "划归国家机密专用",
+				"军政情报能力大增",
+				"安全部门全面接管接收站，高空影像成为中央统筹战略资源的利器。但全天候监控的传闻迅速在民间蔓延，引发对权力的猜忌。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 					Shared.knowledge(4, 540),
 					Shared.country_sector("knowledge", 5, 540),
 				]),
 			Shared.option(
-				"rent_half_of_it", "租一半给人看地",
-				"看一亩收一斗",
-				"看一亩收一斗，钱进国库，数目对不上。账房查了半个月，先记在粮行头上。",
+				"rent_half_of_it", "开放商业频段有偿租赁",
+				"卫星数据实现创收",
+				"农垦企业与物流巨头竞相购买遥感测绘服务，国库进账颇丰，工业与科研部门也借由商业化运作同步升级了分析设备。",
 				[
 					Shared.cash_in(1.5, 360),
 					Shared.manufacturing(2, 540),
@@ -267,7 +267,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ATOM_CHANNEL),
 		"title": "{settlement_name}·电视",
-		"body_text": "转播塔立起来那天，全城只有一台机器能发信号，晚上七点开，十一点关。台标是一只展翅的鸟，画了七稿，最后用的是最不像鸟的那一稿。郁长庚管节目，他想播戏，说人累了一天，得看点别的；闻玉山管电，说播戏费电，播通知省。头一晚播的是征粮通告，播完没人吭声。第二天有人来问，能不能播一场球。郁长庚把节目单摊开，笔尖停在那个空格上。",
+		"body_text": "{settlement_name}首座区域广播电台与电视转播塔落成，但受限于夜间电力配额，黄金时段仅够维持单一公共频道。能源委员会主张只播送政令公告与气象预警以节约电力。地方议会与文化团体要求增加文艺演出与体育转播以舒缓民意，各区代表也趁机争取自主制作节目的配额。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "A single broadcast tower above a town, a room of neighbours watching one small screen at night, a bird emblem painted on the wall",
 		"tags": ["atom", "people", "era"],
@@ -300,27 +300,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"notices_only", "只播通告和天气",
-				"夜里没人开",
-				"节目单只剩两栏，戏班子散了，锣鼓搬进仓房。有人吃完饭还是把机器打开，看一会儿雪花。",
+				"notices_only", "限定播送政令与气象",
+				"频道沦为官方通告",
+				"枯燥的政令播报省下了可观的工业电力，政令传达效率大增，但文化生活陷入沉闷，市民对公共广播几乎失去兴趣。",
 				[
 					Shared.knowledge(-3, 540),
 					Shared.manufacturing(2, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.95, 540),
 				]),
 			Shared.option(
-				"plays_and_ballgames", "播戏，也播球",
-				"半个城在听",
-				"球赛那晚，街上没人。电费摊到户上，交不出的人家少看半个月。",
+				"plays_and_ballgames", "开征视听费，增设文体",
+				"公共娱乐凝聚民心",
+				"精彩的文艺演出与赛事转播迅速风靡全城，社会氛围显著缓和。按户征收的广播视听费也为国库补齐了运营开支。",
 				[
 					Shared.cash_in(1.0, 360),
 					Shared.knowledge(3, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 				]),
 			Shared.option(
-				"let_the_villages_send", "各乡自己送节目",
-				"各唱各的调",
-				"各乡把自家的戏送来，口音不一样，播到一半有人上门吵。一个月后定下轮流，谁先谁后抽了签。",
+				"let_the_villages_send", "放开各区轮流制作节目",
+				"多元舆论激荡全城",
+				"各社区与民间团体纷纷借电台发声，本土文化与公共讨论空前活跃，但立场交锋与地域争执也随之频频登上荧屏。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					Shared.knowledge(4, 540),
@@ -333,7 +333,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ATOM_NETWORK),
 		"title": "{settlement_name}·网络",
-		"body_text": "交换机搬进原来放粮的屋子，墙上钉了一排铁架子，线从架上垂下来，像晾着的面。全城的账要并成一张，粮行的、铁铺的、渡口的，都得报。费守拙带着几个学徒抄了三个月，抄到眼红，纸带上打的孔比字还多。苗青禾说并了以后，谁家余多少粮一眼就看得出；粮行的人说，那不如把仓门敞开。并网头一天只并上七家。剩下的三十几家把账簿抱回去，说等明年。",
+		"body_text": "财政部与工业部联合推进{settlement_name}的政务数据网络工程，计划将全市仓储、商号与交通枢纽的账目全面并入中央主机。技术人员指出，全网打通后可实时掌握物资流向并杜绝偷漏税。但各大商会强烈抵制，认为此举等同于剥夺商业机密，迄今绝大多数私营企业仍拒绝接入。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "A switchboard installed in an old grain warehouse, cables hanging like drying noodles, clerks copying ledgers by lamplight",
 		"tags": ["atom", "market", "labor"],
@@ -365,9 +365,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"merge_everything", "全并进去",
-				"账成了一张",
-				"并网那天，费守拙在机房坐到天亮。铺线的钱按铺面摊，粮行先交了，账还是对不上。",
+				"merge_everything", "强制全行业限期并网",
+				"数字统筹体系成型",
+				"政府以行政令强推全面并网并向商界分摊线路费。国家对全国产业链的调度能力跃上新台阶，催生了全新的工业组织形态。",
 				[
 					Shared.cash_in(2.0, 360),
 					Shared.knowledge(5, 540),
@@ -375,18 +375,18 @@ static func append(catalog) -> void:
 					Shared.research_signal("breakthrough.industrial_organization", "工业组织"),
 				]),
 			Shared.option(
-				"state_granaries_only", "只并官仓和税册",
-				"两本账",
-				"官仓的数清了，街面的账还在纸上。抄账的人被调去录单，纸账没人管，虫蛀了边。",
+				"state_granaries_only", "仅限国营仓储与税册",
+				"公私账目分轨运行",
+				"财政部退让一步，仅将公营资产纳入数据网络。商界抵触情绪得以缓和，但半吊子的信息化改造限制了整体数据效能。",
 				[
 					Shared.knowledge(-3, 540),
 					Shared.manufacturing(2, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 			Shared.option(
-				"half_and_half", "一半并，一半留纸",
-				"两边对不上",
-				"月底对账，两边差了三船粮。谁改的，说不清，先按纸上的记，机房的人不肯签。",
+				"half_and_half", "推行电子与纸质双轨制",
+				"双轨对账漏洞百出",
+				"部分并网导致电子台账与民间纸账频频冲突，月末核销屡现巨额差额。官商互相推诿，行政效率与市场秩序双双受损。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 					Shared.knowledge(2, 540),
@@ -399,7 +399,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ATOM_PRIVACY),
 		"title": "{settlement_name}·隐私",
-		"body_text": "城门口的灯换成新的，进出的车马都要记一笔，记在夜班表的背面。卫砚生手下有六个人轮值，最忙的一晚记了两百多行。名册越厚，来查的人越多：查丢牛的，查逃役的，查谁家半夜运粮出城。尹四说查得细，贼不敢动；住在冷河湾的老妇来问，能不能只记她儿子的名字，别记他几点回来。卫砚生把笔放下，翻到那一页，没写。",
+		"body_text": "依托新建的城区数据网络，安全部门在{settlement_name}各交通要道部署了全天候身份核验与行程登记系统。警方声称这套严密档案已显著遏制盗窃与走私，但地方议会收到大量市民联名投诉，抗议行政权力无孔不入地窥探个人行踪。如何在治安效能与公民隐私边界之间划线，已成为舆论焦点。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A gate lantern at night, a watchman's ledger opened to a half-filled page, an old woman standing at the gate",
 		"tags": ["atom", "unrest", "people"],
@@ -432,27 +432,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"to_each_household", "查到户，全部留底",
-				"名册堆到房梁",
-				"名册堆到房梁，查一个人要翻半天。尹四说这活干不动了，没人接，灯还是照样亮。",
+				"to_each_household", "维持全员全域留底",
+				"严密监控压抑社会",
+				"全域档案系统全面铺开，治安管理与行政效率明显提升，但无处不在的监视感令市民怨声载道，暗流在民间滋长。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					Shared.knowledge(3, 540),
 					Shared.manufacturing(2, 540),
 				]),
 			Shared.option(
-				"to_the_gate_only", "只查到街口",
-				"门房换了锁",
-				"门房换了新锁，守夜的人领了器械，钱从街上摊。丢牛的事多了一回，也没人再提。",
+				"to_the_gate_only", "收窄至要道卡口核验",
+				"治安与隐私暂得平衡",
+				"安全部门撤除了社区级监控，改为在交通干道增配巡逻器械。此举虽增加了运维耗材开支，却有效安抚了公众的不安情绪。",
 				[
 					Shared.tools(3, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 					Shared.manufacturing(2, 540),
 				]),
 			Shared.option(
-				"names_without_hours", "只记名字，不记时辰",
-				"那一页空着",
-				"名册只记名字，不记几点回来。抄写的工钱从街上摊，商号出了大半。卫砚生把那页空着，交上去时没解释。",
+				"names_without_hours", "立法脱敏，禁录行踪时间",
+				"隐私法案获得通过",
+				"地方议会通过数据脱敏条款，只保留基础身份核验并向商界征收合规审计费。情报颗粒度虽有下降，社会信任却得以维系。",
 				[
 					Shared.cash_in(1.2, 360),
 					Shared.knowledge(-2, 540),
@@ -465,7 +465,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ATOM_AUTOMATION),
 		"title": "{settlement_name}·自动化",
-		"body_text": "新产线装在西头的厂房里，从进料到装箱，中间没有人。尹四原来带十六个人看机床，如今夜班表上只剩他一个名字，他看灯：绿灯亮着，就不用管。苗青禾算过，一条线省下的人够开两处新工地，可新工地还没影。被调走的人领了三个月粮，第四个月开始自己找活。有人蹲在厂门口，等哪台机器坏了好进去修。尹四下班前总要摸一遍那排铁壳子，还是热的。",
+		"body_text": "{settlement_name}工业区率先引入全流程自动化产线，从投料加工到封装出库仅需寥寥数名值守技师。工业部报告称，全面推广将令全国制造效率实现跨越，但首批被裁撤的大批熟练工人已聚集在工厂外抗议生计无着。地方议会呼吁放缓替代节奏或由国家统筹转岗，资本与劳工的矛盾一触即发。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A machine line running without workers, one man walking past a row of warm metal housings, idle men waiting outside the gate",
 		"tags": ["atom", "labor", "unrest"],
@@ -498,9 +498,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"run_the_line", "全线开，减人",
-				"灯亮着，人走了",
-				"线开足了，厂里只剩巡灯的人。被调走的人领了三个月粮，第四个月没人再提。",
+				"run_the_line", "全面推行全自动生产",
+				"产能激增伴随裁员潮",
+				"自动化产线全速运转，制造业产出大幅飙升并催生了新的技术突破。但骤增的失业人群令工会与地方治安陷入高度紧张。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.35, 540),
 					Shared.manufacturing(6, 540),
@@ -508,18 +508,18 @@ static func append(catalog) -> void:
 					Shared.research_signal("breakthrough.automation", "自动化"),
 				]),
 			Shared.option(
-				"keep_the_hands", "留着人，慢一点",
-				"人比机器慢",
-				"线开一半，人手都留着。产量上不去，接的单退了两家，工钱照发。",
+				"keep_the_hands", "限制替代比例，保就业",
+				"人机并存缓和冲击",
+				"政府强制要求产线保留核心人工岗位，工人抗议迅速平息，技师也在协作中积累了运维心得，代价则是产能增长显著放缓。",
 				[
 					Shared.manufacturing(-3, 540),
 					Shared.knowledge(2, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 				]),
 			Shared.option(
-				"send_them_to_the_ditch", "把人送去修渠",
-				"渠边多了人",
-				"调走的人去了渠上，头一个月住棚子，安置的钱从街上摊。苗青禾去看过一回，说那边缺筐。",
+				"send_them_to_the_ditch", "征收转岗税，组织兴农",
+				"富余劳力转投基建",
+				"财政部向高利润工厂征收转岗基金，将失业工人编入农田水利与生态修复工程。社会动荡得以化解，农业基础设施亦获加强。",
 				[
 					Shared.cash_in(2.0, 360),
 					Shared.agriculture(3, 540),

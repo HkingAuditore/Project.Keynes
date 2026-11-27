@@ -22,8 +22,8 @@ const PACK_ID := &"land"
 const PREFIX := "evt.land."
 
 const CAST := [
-	"温有庆", "沙尾港", "沙尾河", "鲍阿四", "邵九", "黑石岭", "冯四", "石满仓", "白榆林", "罗二",
-	"屈阿公", "杜衡", "三圣祠", "温四娘", "木桩", "条石",
+	"地方官署", "商旅团体", "工匠行会", "采掘矿场", "林政界线",
+	"河口航道", "乡绅长老", "地方公产", "税赋册籍", "营建署",
 ]
 
 const MUL_110 := 72090
@@ -63,7 +63,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LAND_SILTED_HARBOR),
 		"title": "{settlement_name}·淤了的港",
-		"body_text": "沙尾港的栈桥底下，泥一年比一年高。温有庆的大船停在口外三里，货用小驳船一趟趟倒进来，一袋盐过三遍手。他蹲在码头看水，木桩上刻的旧水位，今年露出泥面两指。县里的耙泥船雇一天，要管二十个人的饭；下游的滩地空着，可是得重新打桩。挑夫鲍阿四把绳子往肩上一搭，说不挖，他就没货可扛了。散的时候，温有庆把那根刻着水位的木桩拔了，扛回船上。",
+		"body_text": "连年泥沙淤积令{settlement_name}的河口航道日益浅窄，大型货船被迫滞留外海，全靠小驳船反复倒运入港，转运损耗不断攀升。商旅团体向地方官署递呈，请求立刻征集资金雇佣清淤船彻底疏浚；营建署则提出将码头整体迁往下游深水滩地，虽可一劳永逸却势必侵占沿岸农田并令老港劳工生计断绝。也有官员主张暂缓大兴土木，寄望来年汛期洪水自行冲开新槽。",
 		"image_key": "hydrology.water",
 		"ai_visual_prompt": "A silted river harbour with a rotting pier, a merchant measuring water depth against a notched stake, porters waiting",
 		"tags": ["land", "market", "unrest"],
@@ -104,34 +104,34 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"dredge_the_bar", "雇耙泥船，挖开",
-				"泥从河口挖到码头",
-				"耙泥船在河口挖了四十天，泥堆到下游的滩上。第一艘大船靠岸那天，温有庆在船头放了一挂鞭，炮仗皮顺水漂了半里。",
+				"dredge_the_bar", "摊派疏浚，清淤通航",
+				"航道疏浚商船复通",
+				"地方官署按货摊派筹措经费，清淤船昼夜作业数十日终将河口挖通。大船重新直抵码头，本地制造与对外运力迅速恢复。",
 				[
 					Shared.manufacturing(5, 360),
 					Shared.trade_capacity(6, 360),
 					Shared.cash_in(1.0, 360, "向本地人数最多的{primary_profession}征收其现金的 1%（疏浚摊派，按货抽一份）"),
 				]),
 			Shared.option(
-				"move_downstream", "搬到下游滩地",
-				"新桩打在空滩上",
-				"新码头打了半年桩，木料从上游放排下来。老港的栈桥没人修，涨潮时先塌了一截，塌下来的木头被人捡走当柴。",
+				"move_downstream", "迁港下游，重筑码头",
+				"新埠落成老港凋敝",
+				"新码头在下游深水滩地打桩建成，带动了周边工坊扩张。然而工程占去沿岸良田，老港搬运工群体失计，地方怨气随之滋长。",
 				[
 					Shared.manufacturing(6, 540),
 					Shared.agriculture(-3, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 			Shared.gamble(
-				"wait_for_the_flood", "赌汛期自己冲",
-				Shared.branch(39322, "一场水把泥带走了", # 60%
-					"夏天河水涨了七天，退下去的时候，河口自己开出一道槽。温有庆量了水深，比去年还多一尺，当天就卸了货。鲍阿四在岸上看着，没去扛。",
+				"wait_for_the_flood", "暂缓动工，待汛冲槽",
+				Shared.branch(39322, "夏汛冲淤航道自开", # 60%
+					"盛夏一场大水恰将河口泥沙冲出深槽，商船得以复航，工坊随之回暖。唯地方商民对官署听天由命的治理姿态仍颇感不满。",
 					[
 						Shared.trade_capacity(4, 360),
 						Shared.manufacturing(3, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.15, 360),
 					]),
-				Shared.branch(26214, "水没来，泥更高", # 40%
-					"那年河没涨起来。到冬天，驳船也进不了河口，货卸在口外，靠人背过滩。温有庆把船租给了别人，自己去县里问耙泥船的价。",
+				Shared.branch(26214, "枯水淤塞港口瘫痪", # 40%
+					"当年河水未涨，入冬后连浅水驳船也难以进港，货品全赖人力背负过滩。港口制造大受拖累，城中主食补给开销随之攀升。",
 					[
 						Shared.manufacturing(-4, 540),
 						Shared.staple(5, 540),
@@ -144,7 +144,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LAND_OLD_MINE),
 		"title": "{settlement_name}·老矿",
-		"body_text": "黑石岭的矿车一天拉两趟，去年是五趟。邵九蹲在井口削木撑，削下来的木屑是湿的。掌秤的冯四把秤砣往后挪了半寸，说石头越来越轻。往下再打十丈，要换抽水的斗，也要加新撑架；封坑省事，井口那排屋子还能拆出三车上好的梁木。矿上三十几户人家的灶，都在这两趟车上。邵九把削好的木撑立在井边，又拿起来比了比，嫌短。",
+		"body_text": "{settlement_name}的采掘矿场浅层矿脉日渐枯竭，每日出矿量已不及往年之半，且井下渗水日益严重。工匠行会勘察后呈报，若向下继续深掘，必须更换排水器具并加装重型支护，须向地方筹措一笔摊派；亦有矿工提议冒险改掘斜巷寻找偏转富脉。营建署则建议干脆封井止损，将井口完好的梁木与设施拆作城建公产，但矿区数十户人家的生计将就此断绝。",
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "A tired mine head with two carts of ore, a miner whittling a wet wooden prop, a weigher shifting the scale weight",
 		"tags": ["land", "unrest"],
@@ -183,35 +183,35 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"dig_ten_more_fathoms", "再往下打十丈",
-				"水抽上来了",
-				"新斗装上去，井下的水一天抽三遍。矿车回到四趟，只是拉上来的石头要过两遍手，才挑得出够分的。",
+				"dig_ten_more_fathoms", "筹资添械，继续深掘",
+				"排水奏效矿产回升",
+				"地方摊派筹款购置了新式排水器具与支护木料，矿井产量稳步回升。尽管额外征费引发些许怨言，矿区生计总算得以维系。",
 				[
 					Shared.extraction(6, 540),
 					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（换斗与撑架的摊派）"),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.gamble(
-				"follow_the_vein", "赌它拐个弯",
-				Shared.branch(36045, "斜巷接到了厚脉", # 55%
-					"斜巷掘到第九天，冯四把秤砣推回原位。石头变了颜色，敲开是亮的。他把那块石头放在窗台上，谁进来都看一眼。",
+				"follow_the_vein", "冒险斜掘，探寻富脉",
+				Shared.branch(36045, "斜巷贯通得遇富矿", # 55%
+					"矿队冒险斜掘数日后撞上成色极佳的厚矿脉，本地及全国采掘均获提振，并留存了珍贵矿样。唯井下惊险仍令矿工群体心有余悸。",
 					[
 						Shared.extraction(8, 540),
 						Shared.country_sector("extractive", 4, 360),
 						Shared.research_signal("resource.iron_ore", "铁帽石"),
 						Shared.bias(Ids.TAG_UNREST, 1.10, 360),
 					]),
-				Shared.branch(29491, "斜巷塌了半截", # 45%
-					"斜巷没撑住，塌下来的石头压坏两架车，一个人没能出来。井口停了九天，邵九把烧剩的撑木一根根码在墙边，没再说话。",
+				Shared.branch(29491, "斜巷塌方矿井停摆", # 45%
+					"斜巷支护未能承压，塌方砸毁矿车并造成人员遇难。矿场被迫停工整顿，采掘产出大跌，矿区上下对冒险政令愤慨不已。",
 					[
 						Shared.extraction(-4, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.35, 540),
 						Shared.flag(Ids.FLAG_MINE_COLLAPSE, 900, "标记「井下塌方」"),
 					])),
 			Shared.option(
-				"seal_the_pit", "封坑，卖梁木",
-				"井口盖上了石板",
-				"井口盖了石板，撑木拆下来装了六车，往城里的工地去了。冯四留下来掌秤，秤挂在空屋的梁上，风一吹就响。",
+				"seal_the_pit", "下令封井，拆料变现",
+				"矿井封死众户失计",
+				"官署下令封死井口，将拆除的支护梁木转作他用。采掘彻底停摆且工料周转反受牵连，失业的矿户群体令地方动荡风险骤增。",
 				[
 					Shared.extraction(-6, 540),
 					Shared.build_cost(4, 540),
@@ -225,7 +225,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LAND_FOREST_EDGE),
 		"title": "{settlement_name}·林边",
-		"body_text": "白榆林的边已经退到坡上。罗二的炭窑一年烧八窑，砍的都是林子最外一圈的榆树，炭上打着他家的印。屈阿公在林子里下套，说从前走半天见不到天，现在一抬头就是天。石满仓要再开两亩地，就在林子边，犁头已经磨好。里正说上头要报一个数，报多了要交，报少了要挨。三个人站在那棵被雷劈过的老榆下面，谁都不先走。",
+		"body_text": "{settlement_name}外围林区因过度烧炭与开荒不断退缩，原有林政界线早已名存实亡。工匠行会与烧炭作坊要求放宽采伐以供燃料，无地农户则磨刀霍霍欲沿林缘扩垦耕地，而依赖山林狩猎采集的乡绅长老则警告毁林将招致水土流失。地方官署面临重新核定税赋册籍与林地边界的棘手抉择，各方代表均在官署外静候裁断。",
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "A forest edge retreating up a slope, a charcoal kiln, a hunter with snares, a farmer with a polished ploughshare",
 		"tags": ["land", "unrest"],
@@ -279,27 +279,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"close_the_slope", "坡上那一圈封了",
-				"界石埋在坡腰",
-				"界石埋在坡腰，罗二被指到更远的沟里去砍，来回多走一个时辰。那年秋天，石满仓的犁挂在屋檐下，锈了一层。",
+				"close_the_slope", "划界封林，严禁越垦",
+				"山林得保怨气渐起",
+				"地方官署强制封禁山坡林缘，水土得以涵养，坡下农田收成随之稳步提升。然伐木工与扩垦农户断了近利，对禁令颇多抵触。",
 				[
 					Shared.agriculture(5, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					Shared.flag(Ids.FLAG_FOREST_CLOSED, 900, "标记「坡上封林」"),
 				]),
 			Shared.option(
-				"cut_and_mark_the_line", "照砍，划个界碑",
-				"八窑烧成了十二窑",
-				"那一年罗二多烧了四窑，炭车从坡上下来，压出一条新路。第二年春汛，坡下的田里盖了一层黑泥，石满仓蹲在地头，把泥捧起来又撒回去。",
+				"cut_and_mark_the_line", "放宽采伐，供应炭窑",
+				"炭产大增农田遭殃",
+				"炭窑扩产为本地工坊提供了充足燃料，制造产出随之走高。但山坡失林导致春汛泥沙冲入低田，农事受损且主食供给显著承压。",
 				[
 					Shared.manufacturing(4, 540),
 					Shared.agriculture(-4, 540),
 					Shared.staple(6, 540),
 				]),
 			Shared.option(
-				"report_and_wait", "报个数，明年再说",
-				"册子上多了一行",
-				"册子上添了一笔，用的是去年的数。罗二照旧烧，石满仓照旧开，屈阿公把套子往更深的地方挪了一里。那棵老榆第二年没再发芽。",
+				"report_and_wait", "沿用旧籍，暂缓定界",
+				"林界悬而未决",
+				"官署照抄往年旧数敷衍上报，未划定明确界线。各方趁机各自侵占，林缘加速退化，周边农田产出也因生态失衡渐次滑坡。",
 				[
 					Shared.flag(Ids.FLAG_FOREST_PENDING, 900, "标记「林界未定」"),
 					Shared.bias(Ids.TAG_LAND, 1.20, 540),
@@ -312,7 +312,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LAND_RUINED_SHRINE),
 		"title": "{settlement_name}·废祠",
-		"body_text": "三圣祠的后墙塌了半边，压坏两尊泥像。石狮子还在门口，嘴里塞着草。门槛被踩塌一角，露出底下垫的碎瓦。石匠杜衡用指节敲了敲条石，说这是好料，起新仓的墙够用，他按方算钱。守祠的温四娘每年清明还来上香，香插在台阶的裂缝里。县里说塌了就该拆干净，省得再塌一次压着人。杜衡的锤子已经放在石头上，还没落下去。",
+		"body_text": "{settlement_name}城郊一座年久失修的古旧宗祠后墙坍塌，危及过往行人。营建署勘查后指出，祠中留存的大批规整条石质地精良，若拆作地方公产可用于兴建新粮仓，能省下可观工料。然而地方乡绅长老与守祠信众强烈反对拆毁圣迹，恳请地方官署拨款照原样修缮，以维系一方教化与人心稳定；也有幕僚主张暂且围蔽封存，免得两头得罪。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A half-collapsed shrine with a stone lion, broken clay figures, a mason testing a carved stone block with his knuckles",
 		"tags": ["land", "unrest", "society"],
@@ -343,27 +343,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"take_the_stone", "拆石头，起新仓",
-				"条石进了仓墙",
-				"条石拆下来，砌进新仓的墙，缝对得很齐。温四娘来看过一次，站在原来的门口，低头找了半天，才找到自己插香的那道缝。",
+				"take_the_stone", "拆取条石，改建公仓",
+				"拆祠建仓务实招怨",
+				"旧祠条石悉数拆运砌入新仓，城中储粮条件改善、主食开销显著下降，工坊亦得余料之利。唯传统乡绅与信众深感冒犯，民间怨言四起。",
 				[
 					Shared.staple(-6, 540),
 					Shared.manufacturing(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
-				"rebuild_it", "照原样修起来",
-				"后墙又立起来了",
-				"墙照原样砌，新灰配旧石，颜色差一截。上梁那天来了不少人，温四娘把香插回原来的缝里，插了三根，只点着两根。",
+				"rebuild_it", "拨款修缮，重立旧祠",
+				"旧祠重光人心安靖",
+				"国库拨出专款按原制修复坍墙，落成之日地方乡绅与民众齐聚致谢。虽耗费一笔公帑，却有效安抚了地方情绪，稳固了基层秩序。",
 				[
 					Shared.cash_out(2.0, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 					Shared.flag(Ids.FLAG_SHRINE_KEPT, 900, "标记「旧祠重立」"),
 				]),
 			Shared.option(
-				"fence_it_off", "围起来，先不动",
-				"篱笆围了一圈",
-				"篱笆围了一圈，挂块木牌，写着不许靠近。入冬下了几场雨，另外半边墙也塌了。杜衡从那儿路过，看了一眼，没停。",
+				"fence_it_off", "立栏围蔽，暂且搁置",
+				"废墟倾颓争议犹存",
+				"官署仅派人围起木栏并挂牌禁入，既未修缮亦未拆用。入冬几场豪雨后剩余墙垣彻底倾塌，留下满地瓦砾与地方持久的不满。",
 				[
 					Shared.flag(Ids.FLAG_SHRINE_WAITING, 900, "标记「墙还塌着」"),
 					Shared.bias(Ids.TAG_LAND, 1.20, 540),

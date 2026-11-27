@@ -259,6 +259,14 @@ const char *NativeSimulationHost::stage_narrative(DayExecution &day) {
 bool NativeSimulationHost::prepare_narrative_day(int64_t day) {
     if (!_executor_narrative || !_world_environment) return false;
     auto &narrative = *_executor_narrative;
+    // A last territory cannot leave the country. The narrative detects it at the
+    // previous day's tail; clear the pending bit before this day's economy runs
+    // so the row and the published save agree.
+    const std::vector<int32_t> independence_clears = narrative.take_independence_clears();
+    if (_economy_production_runtime) {
+        for (const int32_t cell : independence_clears)
+            economy_api::clear_cell_independence(*_economy_production_runtime, cell);
+    }
     narrative.apply_pause_policy(day);
     narrative.apply_ai_policy(day);
     narrative.queue_automatic_choice(day, suppress_event_popups_on(day));

@@ -50,7 +50,7 @@ static func append_people_events(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(EVENT_HUNGRY),
 		"title": "{settlement_name}·城门外的人",
-		"body_text": "城门外聚着一群人。脸是黄的，眼睛陷进去，站都站不直。他们说是从下游来的，井干了，东家也跑了，一路走到这里。守门的兵把门闩上，不敢开，也不敢赶。城墙上的人往下看，谁都没说话。王顺在门洞底下站了很久，手里的册子翻来翻去，一页也没写。他把册子合上，又翻开，笔尖在纸上洇出一个点，还是没落下去。",
+		"body_text": "大批因生计断绝而逃荒的流民聚集在{settlement_name}城门外，形销骨立，恳求官府开仓济困。城防守备紧闭城门不敢轻放，担忧骤增的饥民冲垮本就吃紧的治安与口粮储备。地方官署紧急呈报三策：由官府调拨存粮入市并设点施赈、动用国库资金雇佣本地居民以工代赈修筑堤防，抑或干脆闭门驱离流民，将动荡风险挡在城墙之外。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "Hungry rural families waiting outside the mud walls of an ancient town gate at dusk",
 		"tags": ["society", "famine", "unrest", "people"],
@@ -90,12 +90,12 @@ static func append_people_events(catalog) -> void:
 		"options": [
 			{
 				"option_id": "open_the_granary",
-				"text": "开仓，在西门设粥棚",
+				"text": "调粮入市，西门设粥棚",
 				"outcomes": [
 					{
 						"probability_q16": 65536,
-						"outcome_title": "粥棚立起来",
-						"outcome_narrative": "官仓的粮车进了城，市上的粮行重新开了门。西门的粥棚是几家铺子凑起来的，队伍从城门排到河埠。第七天，队伍里少了几张脸，王顺没问他们去了哪里。",
+						"outcome_title": "开仓赈济秩序暂稳",
+						"outcome_narrative": "官府调拨的小麦迅速注入本地市场，城外随即支起粥棚按日施赈。汹涌的饥民情绪得以安抚，然如何善后安置这批流民很快将成为新的考验。",
 						"effects": [
 							{
 								"kind": Kind.MARKET_ADD_STOCK,
@@ -122,12 +122,12 @@ static func append_people_events(catalog) -> void:
 			},
 			{
 				"option_id": "relief_through_works",
-				"text": "雇本地人修堤，按日发钱",
+				"text": "拨款以工代赈，修筑旧堤",
 				"outcomes": [
 					{
 						"probability_q16": 65536,
-						"outcome_title": "工钱按日发",
-						"outcome_narrative": "官府雇了城里的人去修旧堤，工钱当天结算。城外的饥民隔着河看，有人问要不要短工，工头说人数够了。",
+						"outcome_title": "工赈并行农防加固",
+						"outcome_narrative": "国库拨出专款雇佣本地居民修筑水利堤防，工钱按日结算。城内生计得以稳固、农田防洪大有改观，唯城外流民仍待后续处置。",
 						"effects": [
 							{
 								"kind": Kind.TREASURY_CASH_TO_COHORT,
@@ -160,12 +160,12 @@ static func append_people_events(catalog) -> void:
 			},
 			{
 				"option_id": "bar_the_gate",
-				"text": "关门，把人赶走",
+				"text": "紧闭城门，强行驱离",
 				"outcomes": [
 					{
 						"probability_q16": 42598, # 65%
-						"outcome_title": "人群散了",
-						"outcome_narrative": "人群在城下站到天黑，慢慢散了。城门再开的时候，官道边上多了几座新坟。王顺让人去问是谁家的，问了一圈，没人知道。",
+						"outcome_title": "闭门驱散怨气暗涌",
+						"outcome_narrative": "城防守备严阵以待，绝望的流民在城下滞留至夜方才四散离去。城内虽免于一时粮耗，但沿途饿殍与冷酷政令令地方动荡风险显著上升。",
 						"effects": [
 							{
 								"kind": Kind.SET_STORY_FLAG,
@@ -185,8 +185,8 @@ static func append_people_events(catalog) -> void:
 					},
 					{
 						"probability_q16": 22938, # 35%
-						"outcome_title": "三更的砸门声",
-						"outcome_narrative": "三更，城外有人砸了粮行的门。守兵点了火把，天亮时才把人群赶过河。河面上漂着几块木板，是粮行的门板。",
+						"outcome_title": "饥民夜哗粮行遭劫",
+						"outcome_narrative": "走投无路的饥民于深夜砸毁城外粮行哄抢存粮，守军苦战至拂晓方将人群驱过河去。农商秩序深受波及，全境动荡危机骤然加剧。",
 						"effects": [
 							{
 								"kind": Kind.CITY_MODIFIER,
@@ -219,7 +219,7 @@ static func append_people_events(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(EVENT_AFTERMATH),
 		"title": "{settlement_name}·粥棚撤了",
-		"body_text": "粥棚撤了。活下来的人在城外搭起棚屋，用捡来的木板和破席。城门吏王顺捧着两本册子来找你：一本记流民，一本记新户。两本都还空着。他说，这些人有手艺，也有力气，就缺一个名分。王顺把册子往前递了递，纸边卷着。说完他站着没走，等你回话。",
+		"body_text": "紧急赈济告一段落，活下来的流民已在{settlement_name}城郊搭起成片棚屋，短期内不愿散去。地方官署呈上空白的流民遣返册与新户编籍册请示裁断，若将其正式编入户籍并分授荒田，可为本地补充宝贵的青壮劳力，但势必招致本地旧户的排斥与摩擦。若由官府押送遣返原籍，则虽可省去治理隐忧，却也白白流失这批现成的人手。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "Makeshift huts outside an ancient town wall, officials registering families with bamboo scrolls",
 		"tags": ["society", "people", "settlement", "chain"],
@@ -230,12 +230,12 @@ static func append_people_events(catalog) -> void:
 		"options": [
 			{
 				"option_id": "register_as_tenants",
-				"text": "给他们上户籍，分田",
+				"text": "编入户籍，分田安置",
 				"outcomes": [
 					{
 						"probability_q16": 65536,
-						"outcome_title": "他们有了户籍",
-						"outcome_narrative": "棚屋换成了土墙房，孩子被记进新册。秋后，这批人缴了第一回租；城里的老户在背后叫他们「粥棚户」。王顺听见了，没管。",
+						"outcome_title": "流民落籍新旧磨合",
+						"outcome_narrative": "大批流民正式入籍领田，简陋棚屋陆续改建为定居房舍，本地人口与农业产出同步增长。然旧户对新附移民颇存芥蒂，基层摩擦有所抬头。",
 						"effects": [
 							{
 								"kind": Kind.ADD_POPULATION,
@@ -264,12 +264,12 @@ static func append_people_events(catalog) -> void:
 			},
 			{
 				"option_id": "send_them_home",
-				"text": "遣返原籍，不设户籍",
+				"text": "押送遣返，不予入籍",
 				"outcomes": [
 					{
 						"probability_q16": 65536,
-						"outcome_title": "车把他们送走",
-						"outcome_narrative": "官车把他们送回下游。有人到家时，村里的井已经重新淘过；也有人在半路留下来，没人再记得他的名字。王顺把两本册子都收起来，第二年又拿出来用。",
+						"outcome_title": "流民遣散劳力外流",
+						"outcome_narrative": "官署组织车队将城外流民悉数遣返原籍，棚区随之清空。此举避免了新旧户籍之争，却也令本地错失劳力补充，短期农事略显人手不足。",
 						"effects": [
 							{
 								"kind": Kind.CITY_MODIFIER,

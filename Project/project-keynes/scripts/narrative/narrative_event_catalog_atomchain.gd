@@ -17,7 +17,7 @@ const PACK_ID := &"atomchain"
 const PREFIX := "evt.atomchain."
 
 const CAST := [
-	"郝工", "池监", "岑代表", "白塔", "废料池", "控制室", "表决票", "冷却水", "坡地",
+	"能源委员会", "反应堆", "电网", "安全局", "废料池", "地方议会", "公投", "工业界", "机组",
 ]
 
 const MUL_115 := 75366
@@ -52,7 +52,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_CHAIN_ATOM_LIGHT),
 		"title": "{settlement_name}·并网",
-		"body_text": "白塔的反应堆第一次并网，控制室里的灯全亮了。郝工盯着表盘，说还能再往上推两格；池监按住他的手，说先跑半个月再说。城里的电灯比往年亮，工厂的机器转到了半夜。白塔脚下的村子却没睡，有人蹲在院墙外听那声音。岑代表从村里来，问这东西要是出事，往哪跑。没人答他。",
+		"body_text": "{settlement_name}的新建核电反应堆已完成前期调试，正准备首次接入区域电网。能源委员会与工业界呼吁立即满功率并网，以彻底缓解制造业的电力瓶颈；核安全局则警告机组尚未经历完整热负荷周期，强行推高出力存在重大隐患。与此同时，周边社区代表通过地方议会发出质询，要求政府公开应急疏散预案并暂缓商运。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A reactor hall control room at first grid connection, dials lit, an engineer and a supervisor arguing over the controls",
 		"tags": ["atom", "chain", "unrest"],
@@ -86,17 +86,17 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.gamble(
-				"full_power", "满功率并网",
-				Shared.branch(39322, "表盘推到顶", # 60%
-					"表盘推到顶，控制室的嗡声比平时低了一点。城里的灯亮到后半夜，工厂的汽笛在半夜响了一次。白塔脚下的村子，那一夜没有熄灯。",
+				"full_power", "批准满功率并网",
+				Shared.branch(39322, "满载稳定运行", # 60%
+					"反应堆顺利达成满功率输出，区域电网负荷骤降，本地工业区迅速开启全天候生产。尽管能源危机暂解，周边居民对核设施安全的疑虑仍持续发酵。",
 					[
 						Shared.manufacturing(5, 540),
 						Shared.energy(5, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 						Shared.schedule(Ids.EVT_CHAIN_ATOM_WASTE, 360, "废料池"),
 					]),
-				Shared.branch(26214, "跳了一次机", # 40%
-					"推到第二格，警报先响了。控制棒落下去，整座城的灯灭了一瞬，又亮起来。池监在记录本上写了一行，写完把笔放下，手还在抖。",
+				Shared.branch(26214, "触发紧急停机", # 40%
+					"推升功率期间冷却回路触发高温警报，控制棒紧急插入导致机组跳闸并引发短暂大停电。事故简报虽被迅速压下，但公众恐慌与问责声浪已席卷全城。",
 					[
 						Shared.energy(-4, 540),
 						Shared.manufacturing(-2, 360),
@@ -104,9 +104,9 @@ static func append(catalog) -> void:
 						Shared.schedule(Ids.EVT_CHAIN_ATOM_WASTE, 300, "废料池"),
 					])),
 			Shared.option(
-				"half_power", "半功率试运行",
-				"只推了一格",
-				"只推了一格，控制室里的人轮班守着。城里的电够用，工厂加了一班。郝工把记录本写满了两页，池监在旁边看着，没有说话。",
+				"half_power", "核准半功率试运行",
+				"稳步接入电网",
+				"机组按半功率方案投入试运行，工程团队借此积累了详尽的堆芯运行数据。尽管未能立刻满足全部工业需求，安全局的审慎策略赢得了专业界认可。",
 				[
 					Shared.knowledge(4, 540),
 					Shared.manufacturing(2, 540),
@@ -114,9 +114,9 @@ static func append(catalog) -> void:
 					Shared.schedule(Ids.EVT_CHAIN_ATOM_WASTE, 300, "废料池"),
 				]),
 			Shared.option(
-				"wait_a_year", "推迟并网，再查一遍",
-				"白塔空转了一年",
-				"白塔空转了一年，冷却水在管道里来回走，没有进汽轮机。城里的电还是老样子，工厂少开一班。郝工把图纸锁进柜子，钥匙挂在池监腰上。",
+				"wait_a_year", "推迟并网，全面复检",
+				"机组延期投产",
+				"政府下令暂停并网并开展为期一年的全系统安全审计。电网缺口迫使部分工厂缩减班次，但严格的审查标准为后续核电规范奠定了基础。",
 				[
 					Shared.manufacturing(-3, 540),
 					Shared.knowledge(2, 540),
@@ -129,7 +129,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_CHAIN_ATOM_WASTE),
 		"title": "{settlement_name}·废料池",
-		"body_text": "废料池的水位线又高了一指。池监把记录本翻给郝工看，说再装半年就满了。扩建要占白塔脚下一片坡地，那片坡地是岑代表村里的。运走要车队，路上要人押，走到哪儿都得先问一声。封存最省事，可机器一停，城里的灯就得另找来源。三个人站在池边，风从坡上下来，带着一股铁锈味。",
+		"body_text": "连续运转令{settlement_name}核电站的乏燃料废料池逼近设计库容，安全局警告半年内必须落实处置方案。能源委员会主张征用厂区外围坡地就地扩建储池，但此举将直接触怒地方议会与周边农业社区。若改为专列跨区外运，则需承担高昂的安保转运开支并面临沿线抵制；若选择封存减产，区域电网又将立刻承压。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A spent fuel pool with a rising water line, a supervisor showing a logbook, a village representative standing at the fence",
 		"tags": ["atom", "chain", "unrest"],
@@ -158,18 +158,18 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"expand_here", "就地扩建，占那片坡地",
-				"围栏往外推了三十步",
-				"围栏往外推了三十步，坡地上的果树砍了。岑代表在围栏外站了半天，捡了一根断枝回去。池监把新池的水位线画在墙上，画得很高。",
+				"expand_here", "征地就地扩建废料池",
+				"外围坡地划入禁区",
+				"政府强行征用外围坡地并扩建了隔离设施，核电站得以维持满载运转。失去果园与耕地的社区随即发起抗议，地方矛盾进一步激化。",
 				[
 					Shared.extraction(3, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					Shared.schedule(Ids.EVT_CHAIN_ATOM_VOTE, 300, "表决"),
 				]),
 			Shared.option(
-				"ship_it_away", "装车运往外地",
-				"车队夜里出发",
-				"车队在夜里出发，六辆车，前后各一辆空车。走到边界被拦下来，对方要一份文件，文件在池监的抽屉里。车在界上停了两天，最后原路开回来。",
+				"ship_it_away", "拨款组织跨区专列外运",
+				"乏燃料转运受阻",
+				"国库拨出重金组建武装转运车队，但专列在边界屡遭邻区盘查与抗议阻拦，周转成本远超预期。外运通道虽勉强打通，区域摩擦却随之升级。",
 				[
 					Shared.cash_out(2.5, 360),
 					Shared.trade_capacity(3, 540),
@@ -177,9 +177,9 @@ static func append(catalog) -> void:
 					Shared.schedule(Ids.EVT_CHAIN_ATOM_VOTE, 240, "表决"),
 				]),
 			Shared.option(
-				"seal_it_for_now", "先封存，停一半机组",
-				"一半的灯灭了",
-				"一半机组停下来，城里的灯暗了一截，工厂改回夜里开工。池监把封条贴上去，贴了两道。郝工站在控制室里，把一半的表盘用布盖上。",
+				"seal_it_for_now", "封存半数机组，降载运行",
+				"电网出力大幅缩减",
+				"安全局对半数机组实施预防性封存以减缓废料累积。区域电力供应随之吃紧，但科研部门借机获得了宝贵的乏燃料减容研究窗口。",
 				[
 					Shared.energy(-3, 540),
 					Shared.knowledge(2, 540),
@@ -192,7 +192,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_CHAIN_ATOM_VOTE),
 		"title": "{settlement_name}·表决",
-		"body_text": "全城表决那天，投票的桌子摆在白塔脚下。岑代表的人来得最早，郝工的人来得最齐。票数一张一张念，念到一半，两边都不说话了。念票的人嗓子哑了，换了一个人接着念。池监站在桌子后面，手里捏着最后一张，没投。风把票纸吹起来一张，落在废料池的围栏边上，没人去捡。",
+		"body_text": "围绕{settlement_name}核电站去留的争论最终演变为全城公投。工业界与能源委员会反复强调，一旦停堆将导致区域电网崩溃与大批工厂外迁；而反对派联合地方议会，以废料池风险和社区安全为由要求彻底弃核。计票结果极其接近，全城舆论已然撕裂，最终的能源国策仍需由国家最高层拍板定案。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A public vote at the foot of a reactor tower, two groups watching a clerk count ballots, one ballot blown against a fence",
 		"tags": ["atom", "chain", "unrest"],
@@ -204,27 +204,27 @@ static func append(catalog) -> void:
 		"max_era_index": 10,
 		"options": [
 			Shared.option(
-				"keep_it_running", "继续运行",
-				"白塔没有停",
-				"白塔没有停，城里的灯照旧亮到后半夜。岑代表的人在围栏外搭了一个棚子，住了下来。池监把最后一张票投进箱子，箱子满了，盖子合不上。",
+				"keep_it_running", "否决停堆，维持核电运转",
+				"核电国策得以延续",
+				"中央政府力排众议批准机组继续运行，充沛的电力保障了工业区的长期扩张。反对派在隔离区外发起持久静坐，社会对立短期内难以弥合。",
 				[
 					Shared.energy(6, 540),
 					Shared.manufacturing(4, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 			Shared.option(
-				"phase_it_out", "逐步停堆",
-				"灯一盏一盏地换",
-				"机组一台一台停，城里的灯一盏一盏换回旧的电。工厂走了一批人，村里回来了一批。白塔还立着，塔顶的灯灭了以后，夜里能看见星星。",
+				"phase_it_out", "尊重民意，逐步停堆退役",
+				"核电站进入退役程序",
+				"各机组按计划陆续停机并切换回常规电网，重工业产出与就业随之回落。社区紧张局势显著缓和，居民对地方居住环境的信心得以恢复。",
 				[
 					Shared.energy(-5, 540),
 					Shared.manufacturing(-3, 540),
 					Shared.birth(3, 540),
 				]),
 			Shared.option(
-				"send_it_upstairs", "交给上头决定",
-				"文件装进牛皮纸袋",
-				"文件装进牛皮纸袋，封了口，送到更远的地方。白塔照旧运行，围栏外的棚子拆了又搭。池监在记录本最后一页写下日期，写完把笔帽盖上，盖了很久。",
+				"send_it_upstairs", "冻结公投结果，行政裁定",
+				"能源争端被强行搁置",
+				"政府以国家战略安全为由冻结地方公投效力，强行维持现行运转并征收特别安全费。此举虽保住了短期财政进项，却严重折损了公信力与科研士气。",
 				[
 					Shared.knowledge(-3, 540),
 					Shared.cash_in(1.0, 360),

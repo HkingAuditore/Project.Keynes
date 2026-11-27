@@ -23,8 +23,7 @@ const PACK_ID := &"faith"
 const PREFIX := "evt.faith."
 
 const CAST := [
-	"静光寺", "慧灯", "韩牧", "邵九娘", "陆仲堪", "岑放", "瞿敬", "裴敬之", "卫阿六", "罗善", "陈艾",
-	"明算堂", "汲古坊", "落星桥", "鱼鳞册", "星度常序", "铜镜", "敕牒",
+	"教团", "寺产", "敕牒", "鱼鳞册", "书院", "星历典籍", "铜镜", "圣坛", "祭典",
 ]
 
 const MUL_060 := 39322
@@ -66,7 +65,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_FAITH_TEMPLE_ESTATE),
 		"title": "{settlement_name}·寺产",
-		"body_text": "静光寺的田在城西，一直不纳粮。户曹韩牧带了铜尺和鱼鳞册来，量到第三块地，鞋上全是泥。知客僧慧灯把一只铁匣放在田埂上，匣里是前朝的敕牒，纸边发脆，一翻就掉渣。韩牧看了很久，说上面的年号跟寺里碑上的差着十一年。慧灯没接话，去把匣盖按上。佃户邵九娘把麻束按在膝上捆，她租的是寺里的田，交租的斗比官斗大一圈，这话她没说。风把敕牒掀起一角，慧灯伸手按住，手背上全是墨。",
+		"body_text": "城西大片肥沃良田归属当地教团作为寺产，长年享有免税特权。财政官员携鱼鳞册实地清丈时，教团代表搬出前朝颁发的泛黄敕牒力证免赋合法性，但官员查验后指出敕牒纪年与碑文存在明显出入。与此同时，耕种寺产的佃户私下怨言颇深，称教团收取的私租远重于官税。是强行清丈收税、以豁免换取开仓济民，还是暂且搁置争议，关乎国家财源与政教关系。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "An official measuring temple fields with a bronze ruler, a monk holding an iron box of old edicts, a tenant binding hemp",
 		"tags": ["faith", "unrest", "chain"],
@@ -101,35 +100,35 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"measure_and_seize", "量完这块地，田入官册",
-				"田册上多了一页",
-				"铜尺量到天黑，韩牧在册子上添了一页，寺田折成官田，租额照旧。抄经房上了锁，几个小沙弥背着包袱出了西门。邵九娘第二天去交租，斗换成了官斗，收租的人说旧欠要一并补齐。",
+				"measure_and_seize", "铁腕清丈，将寺产编入官册",
+				"寺田入官",
+				"丈量官强行将寺产折入官册并追缴旧税，国库获得了一笔可观入账。然而教团愤然关闭抄经讲堂，大批僧侣离城，本地文教事业遭受重创。",
 				[
 					Shared.cash_in(2.0, 540, "向本地人数最多的{primary_profession}征收其现金的 2%（补缴旧租折税）"),
 					Shared.knowledge(-6, 540),
 					Shared.flag(Ids.FLAG_TEMPLE_SEIZED, 900, "标记「田入官册」"),
 				]),
 			Shared.gamble(
-				"bargain_for_granary", "免三年税，换寺里开仓",
-				Shared.branch(36045, "寺里开了仓", # 55%
-					"寺里的车从西门进来，一车一车卸在落星桥头，米价当天就松了。慧灯站在仓门口数车，数到第九辆就不数了。经楼的架子立起来，木料是新的，刻工说三年也刻不完。",
+				"bargain_for_granary", "特许免税三年，换取教团开仓",
+				Shared.branch(36045, "开仓济市", # 55%
+					"教团如约开启私仓，大批粮食运抵城中，显著压低了本地主食开销。但作为交换，教团大兴土木扩建经楼，世俗学术的影响力随之萎缩。",
 					[
 						Shared.staple(-8, 360),
 						Shared.knowledge(-3, 360),
 						Shared.flag(Ids.FLAG_TEMPLE_BARGAINED, 900, "标记「折税未动」"),
 						Shared.schedule(Ids.EVT_FAITH_ONE_BOOK, 120, "一本书"),
 					]),
-				Shared.branch(29491, "只送来三车陈米", # 45%
-					"秋天过完，寺里才送来三车陈米，米里掺着沙。韩牧让人把米倒进官仓，账上记作已缴。佃户在桥头等了半个月，等到的是寺里加租的话。",
+				Shared.branch(29491, "以次充好", # 45%
+					"直到秋末教团才敷衍送来数车掺沙陈米，反手却向佃户加征地租。主食开销不降反升，民间对官府姑息教团的怨气迅速积聚。",
 					[
 						Shared.staple(10, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 						Shared.flag(Ids.FLAG_TEMPLE_BARGAINED, 900, "标记「折税未动」"),
 					])),
 			Shared.option(
-				"close_the_ledger", "把册子合上，秋后再说",
-				"册子合上了",
-				"韩牧把鱼鳞册卷起来，铜尺还在田埂上，忘了拿。那年冬天，寺里把两百亩田挂到三个外乡人的名下，契纸上的墨还是湿的。开春再量，界石已经挪过两回。",
+				"close_the_ledger", "合上鱼鳞册，待秋后再议",
+				"清丈搁置",
+				"清丈行动半途而废，教团趁冬日将大批良田暗中过户至外乡代理人名下。开春复核时田籍早已面目全非，政教积怨为后续风波埋下伏笔。",
 				[
 					Shared.flag(Ids.FLAG_TEMPLE_PENDING, 900, "标记「田册未定」"),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 720),
@@ -142,7 +141,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_FAITH_ONE_BOOK),
 		"title": "{settlement_name}·一本书",
-		"body_text": "《星度常序》抄了七本，蓝布封皮，第三卷最后一行写着：天有常序，不必问坛。陆仲堪把七本摊在明算堂的长桌上，让学生自己挑一本带走，自己留下最破的那本。三天后，白衣长老瞿敬带着两个人进了书院，说想借去看看，回去抄一份。山长岑放给他们倒了茶，没让人去取书。窗外的檐水滴在石阶上，一滴一滴，谁也没有先动。",
+		"body_text": "本地书院的学者编纂了一部星历典籍，在卷末赫然断言天象运行自有恒常规律，无须依赖祭祀与神坛祈禳。抄本刚在学子间流传，教团长老便率众闯入书院，以亵渎圣统为由强硬要求交出原稿与全部抄本。书院山长婉言推诿，学者们则视此书为理性求知的根基。这已不仅是一卷书稿的存废，更是世俗学术与正统教权之间的一次正面交锋。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "Seven hand-copied books on a long academy table, a white-robed elder waiting, rain dripping from the eaves",
 		"tags": ["faith", "scholar", "chain"],
@@ -184,35 +183,35 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"burn_the_book", "当众烧书，封院三日",
-				"火在院子里烧了一夜",
-				"书在院子当中烧到半夜，瞿敬站在火边看，走的时候朝韩牧拱了拱手。陆仲堪没出门，学生在墙根下站成一排，鞋底碾着地上的纸灰。第四天，明算堂开门，讲席上换了个念经疏的人。",
+				"burn_the_book", "当众焚毁典籍，封院整顿三日",
+				"焚书息争",
+				"全部抄本在广场付之一炬，教团满意离去，地方动荡风险暂时平息。但书院复课后讲席被经学派接管，本地学术与科研产出陷入长期低迷。",
 				[
 					Shared.knowledge(-6, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 360),
 					Shared.schedule(Ids.EVT_FAITH_NEW_ALTAR, 150, "新坛"),
 				]),
 			Shared.gamble(
-				"let_him_prove_it", "让他在庙前算一场",
-				Shared.branch(39322, "算赢了", # 60%
-					"陆仲堪把月食的时辰写在板上，历官算了三遍，三遍都对不上。人群里有人笑出声，笑到一半停住——瞿敬转身走了。第二天，城里传抄《星度常序》的人排到了落星桥。",
+				"let_him_prove_it", "准许学者在庙前公开推演天象",
+				Shared.branch(39322, "星历胜出", # 60%
+					"学者精准预言了月食时刻，令教团历官哑口无言。星历典籍随即风行全城并催生了印刷术的探索热情，但也彻底激怒了保守教派。",
 					[
 						Shared.knowledge(5, 540),
 						Shared.research_signal("breakthrough.printing", "印刷"),
 						Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 						Shared.schedule(Ids.EVT_FAITH_NEW_ALTAR, 150, "新坛"),
 					]),
-				Shared.branch(26214, "差了一个时辰", # 40%
-					"历官把两家的时辰并排写在板上，陆仲堪那一行差了一个时辰。他没再说话，学生替他说了两句，被人拉开。散场时，瞿敬的人把板子抬走了。",
+				Shared.branch(26214, "推演失准", # 40%
+					"公开推演的时刻竟出现明显偏差，教团趁机大造声势并将讲席彻底清场。书院颜面扫地，本地学术元气大伤，派系冲突愈演愈烈。",
 					[
 						Shared.knowledge(-4, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 						Shared.schedule(Ids.EVT_FAITH_NEW_ALTAR, 120, "新坛"),
 					])),
 			Shared.option(
-				"lock_the_book", "书锁进库房，谁也不给",
-				"库里多了一只木箱",
-				"七本书装进木箱，抬进官库，钥匙挂在韩牧腰上。教门来要过两回，学院来要过三回，都说等上面的话。三个月后开箱，纸已经发潮，字还认得出。",
+				"lock_the_book", "封存书稿入库，双方均不发还",
+				"封存冷处理",
+				"七部抄本被悉数锁入官库，教团与书院数度交涉皆未获答复。这种回避立场的拖延手段两面不讨好，令双方积怨在沉默中不断发酵。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 720),
 					Shared.schedule(Ids.EVT_FAITH_NEW_ALTAR, 210, "新坛"),
@@ -224,7 +223,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_FAITH_NEW_ALTAR),
 		"title": "{settlement_name}·新坛",
-		"body_text": "坛的基座砌好了，三样东西摆在雨里等人来定。寺里送来那面铜镜，装在木匣里，四个人抬；明算堂送来一块无字的木牌，一个人抱得动；城西的老妇把泥塑的白公像放在台阶上，自己坐在旁边不走。石匠卫阿六靠着檐柱磨錾子，问三个都留下行不行。檐水砸在磨石上，浆水流到台阶下。掌印的老臣裴敬之把三份呈文叠在一起，压在铜镜的匣盖上。雨大了，木牌上的墨开始洇。",
+		"body_text": "耗资修筑的城中圣坛基座已告竣工，究竟供奉何物却引发三方激烈角力。正统教团抬来象征神权的古旧铜镜，要求确立唯一国教地位；书院呈上一块无字素牌，主张以理性与礼法为宗；民间乡绅则拥护本土神明泥像，坚称其最得百姓香火。三份呈文同时压在执政案头，圣坛的归属将长远塑造国家的意识形态与文化根基。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "Three rival sacred objects on a rainy stone altar base, a mason sharpening a chisel under the eaves",
 		"tags": ["faith", "unrest", "chain"],
@@ -236,26 +235,26 @@ static func append(catalog) -> void:
 		"max_era_index": 7,
 		"options": [
 			Shared.gamble(
-				"raise_the_mirror", "定铜镜，昭告全城",
-				Shared.branch(36045, "铜镜进了坛", # 55%
-					"铜镜抬上坛那天，寺里的人都出来了，沿街撒米。明算堂的牌子摘下来，换成经院，陆仲堪的名字从讲席上抹掉了。白公的泥像送回城西，老妇坐在门口，没哭，也没让人扶。",
+				"raise_the_mirror", "钦定铜镜入坛，确立正统教权",
+				Shared.branch(36045, "国坛既立", # 55%
+					"铜镜在盛大仪仗中登上圣坛，教团协助稳定了民间秩序并折纳寺田税赋。代价是书院被迫改制，世俗学术在正统神权压制下大幅萎缩。",
 					[
 						Shared.bias(Ids.TAG_UNREST, 0.80, 720),
 						Shared.knowledge(-5, 720),
 						Shared.cash_in(1.5, 540, "向本地人数最多的{primary_profession}征收其现金的 1.5%（寺田折租入库）"),
 						Shared.flag(Ids.FLAG_ALTAR_OFFICIAL, 900, "标记「国坛已立」"),
 					]),
-				Shared.branch(29491, "匣子在坛前砸了", # 45%
-					"抬镜的人刚上台阶，学院的学生从侧面挤上来，匣子脱手，铜镜磕在石角上，缺了一块。白公的信众趁乱把泥像搬上正位。裴敬之站在雨里，把三份呈文一张一张撕了。",
+				Shared.branch(29491, "坛前骚乱", # 45%
+					"仪仗登坛之际遭到书院学子冲撞，铜镜摔损，民间信众趁乱将泥像抬上正位。圣坛沦为派系分裂的现场，学术与社会秩序双双受创。",
 					[
 						Shared.bias(Ids.TAG_UNREST, 1.35, 720),
 						Shared.knowledge(-3, 540),
 						Shared.flag(Ids.FLAG_ALTAR_SPLIT, 900, "标记「坛前分家」"),
 					])),
 			Shared.option(
-				"hold_a_council", "开一场会，让三方来议",
-				"会开了三个月",
-				"会开在明算堂，三方的凳子摆成一个圈，谁都不肯先坐。争到第三个月，议出一个长名字，把三方都写进去，谁也念不全。名字刻上碑那天，城里的活停了一半，木匠在碑背后又刻了一行小字。",
+				"hold_a_council", "召集三方会盟，共议兼容礼制",
+				"三方合议",
+				"历时数月的辩论最终诞生了一套折中礼制，虽耗费国库资金并一度拖累地方制造，但思想碰撞极大提振了全国的学术与知识产出。",
 				[
 					Shared.country_sector("knowledge", 6, 720),
 					Shared.cash_out(2.0),
@@ -263,9 +262,9 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 0.90, 720),
 				]),
 			Shared.option(
-				"leave_the_altar_empty", "坛空着，神像都收进库",
-				"坛上只有雨",
-				"三样东西都抬进库房，基座上什么都没留。石匠卫阿六把錾子收进布袋，说开春再来。开春他没来，城外河滩上倒多了七八个小龛，泥塑的，没名字，香火一直没断。",
+				"leave_the_altar_empty", "圣坛留白虚设，圣物悉数入库",
+				"坛上无像",
+				"三方圣物皆被封存，空荡的圣坛成为世俗政权中立的象征。然而缺乏官方精神寄托导致城外私龛遍地开花，营建与治安成本随之抬升。",
 				[
 					Shared.flag(Ids.FLAG_ALTAR_EMPTY, 900, "标记「坛上无像」"),
 					Shared.build_cost(3, 540),
@@ -278,7 +277,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_FAITH_PLAGUE_PROCESSION),
 		"title": "{settlement_name}·抬神出城",
-		"body_text": "入秋以后，城西死了七个人，棺材铺的木料不够，有人用门板。香头罗善挨家收钱，说要抬静光寺那面铜镜出城，走到河滩再回来，走过的地方病就退。医者陈艾按住他的手。罗善把手抽回来，去门口搬那根抬杠。守门的老卒把门闩抬起来，又放下，抬了三次。城外河滩上已经站了人，雾里看不清有多少。",
+		"body_text": "入秋以来，城西爆发不明疫病，接连有居民病亡，恐慌迅速在街巷蔓延。教团与民间社首四处募捐，执意要举行盛大祭典，抬出供奉的铜镜游街出城以驱散瘟疫。随行医官急切劝阻，警告大规模人群聚集只会加速疫病扩散；而城门守军见城外已聚集大批焦躁民众，正焦急请示是否放行。安抚民心与科学防疫，此刻尖锐对立。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A crowd waiting at a city gate in fog, a bronze mirror on a carrying pole, a physician holding a medicine box",
 		"tags": ["faith", "unrest", "people"],
@@ -337,27 +336,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"open_the_gate", "开门，让他们抬出去",
-				"队伍出了西门",
-				"门开了，队伍从西门出去，铜镜走在最前面，后面跟着一群人，一路唱着。走到河滩，雾散了，有人跪下来磕头。三天后队伍回来，人少了几个，走在后面的人说，是路上走散的。",
+				"open_the_gate", "开启城门，准许祭典出城巡游",
+				"巡游驱疫",
+				"浩荡的巡游队伍抬着铜镜出城祈福，恐慌情绪一时大为缓解。但密集聚集导致疫病进一步蔓延，本地人口出生率与作坊开工均受重创。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 0.90, 270),
 					Shared.birth(-6, 540),
 					Shared.manufacturing(-4, 360),
 				]),
 			Shared.option(
-				"three_streets_only", "只许抬到城隍庙",
-				"在城里绕了三圈",
-				"队伍没出城门，在城里绕了三圈，铜镜从每条街上过。人挤在街口，家家门口摆一只水盆。陈艾背着药箱从人缝里挤，挤到第三条街，药箱被挤掉在地上。",
+				"three_streets_only", "限制规模，仅许仪仗在主街简行",
+				"城内简行",
+				"祭典被限制在城内数条街道举行，勉强兼顾了民情与管控。然而街口拥挤仍加剧了传播与物资紧张，出生率下滑且主食开销随之增加。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 0.95, 270),
 					Shared.birth(-4, 540),
 					Shared.staple(4, 270),
 				]),
 			Shared.option(
-				"bar_the_gate_three_days", "封三天门，先不表态",
-				"第四天门自己开了",
-				"城门封了三天，第三天夜里有人撞门，撞到天亮，门闩断成两截。人自己抬着铜镜出去了，罗善走在最前面，没人拦。老卒蹲在门洞底下捡那两截门闩，捡了半天。",
+				"bar_the_gate_three_days", "严令封城三日，禁止一切聚集",
+				"破门强行",
+				"强硬封城阻断了初期传染，保住了人口生机。但连日高压彻底激怒了恐慌的民众，第三夜人群冲破城门强行抬神出城，社会动荡风险陡增。",
 				[
 					Shared.birth(3, 180),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 540),

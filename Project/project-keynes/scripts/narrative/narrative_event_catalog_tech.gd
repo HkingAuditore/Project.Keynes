@@ -20,8 +20,9 @@ const PACK_ID := &"tech"
 const PREFIX := "evt.tech."
 
 const CAST := [
-	"韦顺", "韩仓", "李七", "周敬之", "罗阿石", "柳嫂", "邬三", "常五", "苗大", "石宝",
-	"祠堂", "族仓", "城南", "官道",
+	"水利司", "分水册", "书业行会", "活字印坊",
+	"兵部", "火器局", "蒸汽工场", "织造行会",
+	"铁路局", "车马行", "农政署", "合成肥料",
 ]
 
 const MUL_110 := 72090
@@ -59,8 +60,8 @@ static func append(catalog) -> void:
 	# ═══ 灌溉 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_TECH_IRRIGATION),
-		"title": "{settlement_name}·水册",
-		"body_text": "渠修到村口，水口只有一个。上游的田先浇，下游的人半夜去扒口子，被巡渠的撞见。里正把水册摊在碾盘上，说按亩分，一亩一炷香。常五说自家地少，按户分才公平。韦顺把锹插在渠边，拿树枝在泥里画了一道线，说线以上先浇。线画完，上游的人先应了声。常五没再争，把铁锹扛上肩。",
+		"title": "{settlement_name}·分水之争",
+		"body_text": "新修的灌溉干渠通抵{settlement_name}，但干渠闸口有限，上下游农田随即爆发争水纠纷。上游田亩连片的大户依仗水利司旧例，要求按亩配水以保最大产出；下游小户却屡屡夜掘堤口，主张按户轮灌才算公允。若不尽快颁定统一的分水册，农时将误且乡野械斗恐难避免。",
 		"image_key": "hydrology.water",
 		"ai_visual_prompt": "A single irrigation sluice at a village, water roster on a millstone, a line drawn in mud, farmers on both banks",
 		"tags": ["tech", "land", "agriculture"],
@@ -88,25 +89,25 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"by_acre", "按亩分水",
-				"水册按亩写",
-				"水册按亩写，上游的田先浇，一亩一炷香。常五把自家那几行看了三遍，没说话。渠水下去以后，下游的田还是晚了两天。",
+				"by_acre", "依田亩配水，优先保障大田",
+				"按亩定例",
+				"分水册按田亩多寡排定次序，上游连片良田灌溉充足，农产稳步增长。但下游小户浇灌屡屡误时，乡间积怨随之加剧。",
 				[
 					Shared.agriculture(3, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
-				"by_household", "按户分水",
-				"水口按户轮",
-				"水口按户轮，一家一昼夜。上游的人夜里守着，下游的人白天守着，谁也没多浇。轮完一轮，渠底露了泥。",
+				"by_household", "按户均轮灌，兼顾下游小农",
+				"均户轮灌",
+				"官府拨款修筑分水闸并推行按户轮灌，小农口粮得以宽裕，乡野安宁。但频繁启闭耗费国库开支，上游大户颇有微词。",
 				[
 					Shared.staple(-3, 360),
 					Shared.cash_out(1.0, 360),
 				]),
 			Shared.option(
-				"official_roster", "官定水册",
-				"水册盖了官印",
-				"水册盖了官印，按亩按户都写在上面。巡渠的加了两个，工钱从水费里出。常五把水费交了，回头看了一眼那条线。",
+				"official_roster", "官定分水册，征收水税专管",
+				"官印征费",
+				"水利司加派巡渠官吏并按水册征收水税，国库添了一笔固定岁入。然而额外摊派惹怒了上下游农户，抗税与私掘时有发生。",
 				[
 					Shared.cash_in(1.0, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
@@ -117,8 +118,8 @@ static func append(catalog) -> void:
 	# ═══ 印刷 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_TECH_PRINTING),
-		"title": "{settlement_name}·盗印",
-		"body_text": "印坊的活字排了一夜，天亮时《四书》的墨还没干。书价落到从前一半，买书的人排到巷口。书坊的旧主拿着原版来告，说印坊盗印，字是他家刻的。罗阿石说，字是字，书是书。韦顺把两本书并排放在案上，纸色不一样，字口也不一样。旧主伸手去翻，被印坊的伙计挡开。案上的墨还没干透。",
+		"title": "{settlement_name}·活字盗印",
+		"body_text": "{settlement_name}新兴的活字印坊连夜赶印大批经史典籍，成本骤降之下，寒门学子争相购阅。然而执掌雕版旧业的书业行会联名控告印坊窃取祖传刻本，要求官府查抄活字并严惩盗印。学界普遍乐见典籍广传，行会则威胁若不保护版刻专权，将撤回对地方商税的承保。",
 		"image_key": "country.technology",
 		"ai_visual_prompt": "A print shop at dawn with movable type, two editions side by side, an old publisher arguing with the printer",
 		"tags": ["tech", "school", "market"],
@@ -146,25 +147,25 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"ban_the_pirates", "查禁盗印",
-				"印坊的版被起走",
-				"印坊的版被起走，活字撒了一地。第二天书又卖回原来的价，买书的人少了一半。旧主把原版收进柜子，钥匙挂回腰上。",
+				"ban_the_pirates", "严查私印，维护书业行会专权",
+				"查抄活字",
+				"官差起获私印活字并向书业行会征收护版规费，国库小有所得。但典籍供给重回垄断，寒门向学之路再度受阻。",
 				[
 					Shared.knowledge(-2, 360),
 					Shared.cash_in(1.0, 360),
 				]),
 			Shared.option(
-				"let_it_spread", "放任不管",
-				"书价没再涨",
-				"书钱没再往上走，印坊的活字越排越多。旧主的书铺关了门，伙计去了印坊。那年冬天，城里的孩子多了几本翻烂的《四书》。",
+				"let_it_spread", "放任活字翻印，任由典籍广传",
+				"文风广布",
+				"活字印坊迅速扩张，圣贤经典与实用算册遍及闾巷，地方学风大盛。但传统雕版书坊接连倒闭，手工业产值短期受挫。",
 				[
 					Shared.knowledge(3, 540),
 					Shared.manufacturing(-2, 360),
 				]),
 			Shared.option(
-				"official_print", "官印官卖",
-				"官印的书盖了戳",
-				"官印的书盖了戳，价钱定在半价。印坊替官府印，旧主替官府校。两家人坐在一条板凳上，谁也没看谁。",
+				"official_print", "设立官印局，统购活字校刊",
+				"官刊定本",
+				"朝廷拨款组建官印局，由旧书坊负责校勘、新印坊承印官本。典籍流通与校勘质量皆得保障，唯财政需承担持续补贴。",
 				[
 					Shared.cash_out(1.5, 360),
 					Shared.knowledge(2, 540),
@@ -175,8 +176,8 @@ static func append(catalog) -> void:
 	# ═══ 火药 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_TECH_GUNPOWDER),
-		"title": "{settlement_name}·炮位",
-		"body_text": "炮铸出来了，试放那天，城外的石墙被轰开一个口子。苗大说要改城墙，把马面加厚；工房说该多铸几门炮，墙再厚也挡不住炮。两种说法都递到衙门，预算只够一样。韦顺去看那段墙，豁口里露出旧砖，砖上还有前朝的印。他伸手摸了摸豁口，砖是凉的。守备站在后头，没说话。",
+		"title": "{settlement_name}·火炮与城防",
+		"body_text": "{settlement_name}火器局新铸的重炮在试射中一举轰塌了旧式石垣，令城防体系顿时陷入过时危机。兵部守将力主大举改筑城墙、加厚棱堡与马面以抵御敌军炮火；火器局工师则主张将有限军费尽数投入扩产火炮，以攻代守方为上策。军费预算捉襟见肘，两派奏议同时呈至御前。",
 		"image_key": "country.military",
 		"ai_visual_prompt": "A newly cast cannon before a breached stone wall, an old brick with a previous dynasty's stamp exposed",
 		"tags": ["tech", "war", "frontier"],
@@ -204,26 +205,26 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"thicken_the_wall", "把城墙加厚",
-				"马面加了三尺",
-				"马面加了三尺，旧砖被新砖包进去。石匠说这样能扛几炮，守备没说能扛几炮。炮位留在城头，炮口朝着城外。",
+				"thicken_the_wall", "拨款改筑城垣，加厚防炮马面",
+				"固守新垣",
+				"国库拨款征调石匠加厚城垣并增设炮台，朝堂守成派深感满意。但庞大的土木工程推高了营造耗费，短期财政承压。",
 				[
 					Shared.cash_out(2.0, 360),
 					Shared.build_cost(3, 540),
 					Shared.bias(Ids.TAG_COURT, 1.15, 540),
 				]),
 			Shared.option(
-				"cast_more_cannons", "多铸几门炮",
-				"工房连夜开炉",
-				"工房连夜开炉，铁水映红了半条街。新炮排在城头，旧墙的豁口还没补。守备去看了一回，说炮是好炮。",
+				"cast_more_cannons", "扩建火器局，加铸野战重炮",
+				"铸炮强军",
+				"军费悉数注入火器局开炉铸炮，冶铁与军工制造技艺突飞猛进。虽旧墙豁口暂未修补，城头火力已令周边邻邦忌惮。",
 				[
 					Shared.cash_out(2.5, 360),
 					Shared.manufacturing(4, 540),
 				]),
 			Shared.option(
-				"do_neither", "两样都不办",
-				"豁口拿木栅拦上",
-				"豁口拿木栅拦上，砖头堆在墙根。工房的人把炮图收起来，守备再没来过。那年秋天，墙根下的草长到了栅栏顶。",
+				"do_neither", "缩减军费开支，暂以木栅修补",
+				"防务松弛",
+				"两项提案皆被搁置，城墙豁口仅以木栅草草遮蔽。火器局匠师寒心散去，城防空虚的消息令地方人心惶惶。",
 				[
 					Shared.knowledge(-2, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
@@ -234,8 +235,8 @@ static func append(catalog) -> void:
 	# ═══ 蒸汽 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_TECH_STEAM),
-		"title": "{settlement_name}·蒸汽房",
-		"body_text": "蒸汽机搬进工场那天，房梁震了一整天。织机转得快了，女工的手跟不上，断线接不过来。罗阿石算了一笔账：机器烧的煤比人工贵，可出的布多。隔壁的织户来看了两回，回去把自己的机子砸了。李七站在门口，看了一会儿，说这机器一天吃多少煤。罗阿石没答，把炉门添了一铲。",
+		"title": "{settlement_name}·蒸汽机房",
+		"body_text": "第一座大型蒸汽工场在{settlement_name}点火试产，轰鸣的动力织机瞬间将布匹日产推上新台阶。然而传统织造行会面临灭顶之灾，大批手摇织户被迫停机，纷纷向市政当局递交请愿书要求限制机器扩张。资本家则警告，若因顾忌旧行会而延误机械化，本地纺织业将被外埠廉价机布彻底吞噬。",
 		"image_key": "country.technology",
 		"ai_visual_prompt": "A steam engine inside a weaving workshop, trembling beams, a broken handloom next door, coal shovel by the furnace",
 		"tags": ["tech", "labor", "market"],
@@ -263,33 +264,33 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"build_the_mill", "把厂办起来",
-				"厂房的烟囱立起来",
-				"厂房的烟囱立起来，煤从城外一车一车运。布一匹一匹堆进仓里，织户的机子一台一台停。罗阿石在账房坐到半夜，把工钱算到每一匹布上。",
+				"build_the_mill", "国库注资扩厂，全面机械化",
+				"烟囱林立",
+				"财政贴息助建大规模蒸汽工场，高耸烟囱成为城市新景，本地制造业产能大幅跃升。传统手工织坊随之成片退出舞台。",
 				[
 					Shared.cash_out(2.0, 360),
 					Shared.manufacturing(5, 540),
 				]),
 			Shared.gamble(
-				"share_with_weavers", "让织户合营",
-				Shared.branch(39322, "织户入了股", # 60%
-					"织户入了股，机器还是那台，织机多了二十张。李七把第一年的红利用纸包着发下去，纸包上写着各家的姓。",
+				"share_with_weavers", "撮合织造行会入股合营",
+				Shared.branch(39322, "合营分红", # 60%
+					"织户以手织机与资金入股蒸汽工场，新旧产能顺利整合。首年分红按契兑付，国库税收、制造产出与外销运力同步增长。",
 					[
 						Shared.cash_in(1.0, 360),
 						Shared.manufacturing(3, 540),
 						Shared.trade_capacity(3, 540),
 					]),
-				Shared.branch(26214, "织户退了股", # 40%
-					"织户退了股，把股钱拍在柜台上。机器照转，厂里少了二十张手织机。罗阿石把退股的字据叠好，压在账本底下。",
+				Shared.branch(26214, "退股风波", # 40%
+					"织造行会不满工场利润分配而集体撤股，被迫由官府出面垫资善后。工厂停摆减产，城内劳资与行会矛盾骤然激化。",
 					[
 						Shared.cash_out(1.5, 360),
 						Shared.manufacturing(-3, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 					])),
 			Shared.option(
-				"wait_and_watch", "暂时不收",
-				"机器用布盖起来",
-				"机器用布盖起来，煤堆在墙角。罗阿石说再等等，等织户想明白。李七说等他们想明白，布早就堆在仓里卖不动。",
+				"wait_and_watch", "暂缓审批扩建，观望行会动向",
+				"机房封存",
+				"蒸汽设备被蒙布封存以安抚旧行会，错失了抢占市场的先机。技术革新停滞不前，商界与失意工匠的怨气仍在暗中滋长。",
 				[
 					Shared.knowledge(-2, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
@@ -300,8 +301,8 @@ static func append(catalog) -> void:
 	# ═══ 铁路 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_TECH_RAIL),
-		"title": "{settlement_name}·车站",
-		"body_text": "铁路修到城外，站台是一片夯土。通车头一天，来看的人挤满了坡。韩仓说，往后粮不用车马了；赶车的把式站在人群外，手里还攥着鞭子。李七去问运费，回来的时候脸色不好，说比车马便宜一半。坡上的人还在数车厢，一节一节地数。火车头冒出的白气，把站台罩住了。",
+		"title": "{settlement_name}·铁道通车",
+		"body_text": "铁路局干线正式贯通{settlement_name}城郊，蒸汽列车的汽笛彻底改写了陆路物流格局。铁路货运运力惊人且成本远低于传统驿道，令垄断本地短途转运数十年的车马行陷入绝境。商会催促市政厅立即拨地兴建站前货栈以承接工业货流，车马行则集结失业车夫堵在站口，要求当局安置生计。",
 		"image_key": "country.technology",
 		"ai_visual_prompt": "A rammed-earth station platform on opening day, a carter holding his whip outside the crowd, white steam over the platform",
 		"tags": ["tech", "market", "rail"],
@@ -329,25 +330,25 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"build_the_warehouse", "先建货栈",
-				"货栈挨着站台",
-				"货栈挨着站台，粮包从车厢直接扛进去。韩仓在门口记账，笔没停过。赶车的把式把鞭子挂在墙上，再没取下来。",
+				"build_the_warehouse", "拨款兴建站前货栈，对接干线",
+				"铁道枢纽",
+				"大型货栈紧邻站台落成，原料与成品得以直接装车外运，本地制造业效率显著提升。传统车马行自此彻底退出干线运输。",
 				[
 					Shared.cash_out(2.0, 360),
 					Shared.manufacturing(4, 540),
 				]),
 			Shared.option(
-				"retrain_the_carters", "让把式转行",
-				"鞭子换成了秤",
-				"把式转行去扛包，鞭子换成秤。李七给他们发了工钱，说往后靠力气吃饭。有人干了一个月，还是回乡下租了头驴。",
+				"retrain_the_carters", "收编车马行转任站台装卸",
+				"车夫转业",
+				"当局向车马行征收转业登记费并将其编入站台装卸队，国库小有进账。但收入落差令大批老车夫心怀怨怼，罢工风潮暗涌。",
 				[
 					Shared.cash_in(1.0, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 			Shared.option(
-				"wait_and_see", "不建，先看",
-				"站台还是夯土",
-				"站台还是夯土，货堆在露天，下雨就盖席。李七说再等等，等运费落定。火车一天过两趟，没停。",
+				"wait_and_see", "暂缓站区配套，任由市场自调",
+				"露天积货",
+				"站台长期缺乏仓储设施，货物露天堆放损耗严重，列车频频过站不停。商界痛斥市政失职，物流革新停滞不前。",
 				[
 					Shared.knowledge(-2, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
@@ -358,8 +359,8 @@ static func append(catalog) -> void:
 	# ═══ 化肥 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_TECH_FERTILIZER),
-		"title": "{settlement_name}·地力",
-		"body_text": "肥田粉从城里运来，一袋一袋码在祠堂门口。苗大抓了一把闻，说味道像硝。农技员说一亩撒多少有定数，撒多了烧苗。第一块田试下来，稻秆比往年高出一截，可地里的蚯蚓少了。石宝把土翻开，看了半天。他把土放回原处，拍了拍手上的泥。苗大问他看出什么，石宝说土里有虫。",
+		"title": "{settlement_name}·化肥推广",
+		"body_text": "农政署向{settlement_name}调拨了首批工业合成肥料，试种田块的谷穗长势惊人，单产跃升显著。然而随行农学家与老农联合呈报，过量施用已导致表土板结、蚯蚓锐减，长期恐透支地力。面对日益增长的城市口粮需求，是全面补贴推广还是谨慎分区试行，内阁必须定夺。",
 		"image_key": "climate.rain",
 		"ai_visual_prompt": "Fertilizer sacks stacked by a clan hall, an old farmer smelling a handful, a spade turning over soil with few worms",
 		"tags": ["tech", "agriculture", "land"],
@@ -387,26 +388,26 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"spread_it", "全面推广",
-				"田里都撒了肥",
-				"田里都撒了肥，稻秆高过膝盖。第一年收成好，第二年土发硬，犁要往下多压两寸。石宝说这土像是被抽干了。",
+				"spread_it", "财政补贴，全境推广合成肥料",
+				"丰产透支",
+				"国库全额补贴化肥下乡，当季粮食单产大幅跃升，有效缓解了城市供给。但次年耕地显露板结迹象，农政署不得不着手监测土质。",
 				[
 					Shared.cash_out(2.0, 360),
 					Shared.agriculture(5, 540),
 				]),
 			Shared.option(
-				"half_first", "先试一半",
-				"一半田撒，一半不撒",
-				"一半田撒，一半不撒。秋收的时候，两块田的稻穗差了一截。苗大把两把稻穗并排放在祠堂门口，让人自己看。",
+				"half_first", "有偿配售半数田亩，对比试种",
+				"分区对照",
+				"农政署有偿配售化肥并划定半数耕地对照试种，国库收回部分成本且总产小幅增长。但未获配额的农户怨言四起，基层摩擦加剧。",
 				[
 					Shared.cash_in(1.0, 360),
 					Shared.agriculture(2, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
-				"leave_it", "先放着不用",
-				"肥袋堆在祠堂角落",
-				"肥袋堆在祠堂角落，袋子受了潮，结成一团。农技员来问过两回，没人应。那年冬天，蚯蚓又回到了田里。",
+				"leave_it", "封存化肥，优先保护土壤生态",
+				"休养地力",
+				"这批合成肥料被封存停用，土壤生态与长期农艺观察得以留存。但缺少增产手段令当季农业产出回落，口粮供应略显吃紧。",
 				[
 					Shared.agriculture(-3, 360),
 					Shared.knowledge(1, 360),

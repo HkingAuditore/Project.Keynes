@@ -20,8 +20,8 @@ const PACK_ID := &"wilds"
 const PREFIX := "evt.wilds."
 
 const CAST := [
-	"郑阿土", "韩四", "陆春生", "冯灶", "姜九", "董阿婆", "万德昌", "邵九", "冯石", "柳七", "韦三",
-	"灰峪", "白碱洼", "柳湾", "苇子洼", "南洼", "三节井绳", "木盐耙", "苇箔刀", "六尺板船",
+	"地方官署", "农垦乡民", "商旅车队", "水利沟渠", "官道驿路",
+	"常平粮仓", "矿业工队", "边地巡防", "盐碱荒滩", "地方民壮",
 ]
 
 const MUL_085 := 55706
@@ -65,7 +65,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WILDS_DRY_WELL),
 		"title": "{settlement_name}·枯井",
-		"body_text": "灰峪的井见了底。郑阿土把吊桶放下去，三节井绳在井壁上磨出声，半天才碰着水。提上来的水是浑的，桶底沉着半指泥，倒进桶里能看见草屑。渠水就是从这口井放的，麦正灌浆，地裂着口子。井台上排着七八只水桶，桶底都蹭着泥。郑阿土说，先留人喝的，渠口拿石板压上。韩四把铁锹插进渠口的泥里，两只手按着锹把，不让人动。",
+		"body_text": "持续干旱令{settlement_name}的公用深井水位告急，提上来的井水混浊稀少，而周边农田正值灌浆关键期，水利沟渠早已干涸龟裂。农垦乡民强烈要求开闸引井水保苗，称若失此一季秋收，全境将陷入饥荒；地方官署中负责民生的官员则力主立刻封堵渠口，优先保障全城饮水安全，以防断水引发疫病与人丁折损。如何分配这最后一点水源，已成燃眉之急。",
 		"image_key": "hydrology.water",
 		"ai_visual_prompt": "A village well nearly dry, buckets queued on the stone platform, a farmer pressing a spade into an irrigation ditch",
 		"tags": ["land", "unrest"],
@@ -98,18 +98,18 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"plug_the_ditch", "压住渠口，先留人喝",
-				"井台边的水桶满了",
-				"石板压在渠口，头一夜就有人来掀，被韩四撞见，两个人在泥里滚了一身。水够喝了，麦却黄了尖。",
+				"plug_the_ditch", "封堵渠口，优先保饮水",
+				"饮水无虞农田减产",
+				"官署派人压石封死渠口，虽在初期引发农户冲突，但全城饮水得以保全，人丁平安无恙，地方秩序也随之趋于稳定。",
 				[
 					Shared.agriculture(-5, 540),
 					Shared.birth(3, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 				]),
 			Shared.option(
-				"open_the_ditch", "开渠浇地，人省着喝",
-				"渠水流进了麦地",
-				"渠口挖开，水顺着垄沟走，韩四跟在后面培土，一锹一锹。井又往下凿了三尺，掏出来的泥堆在井台边，像个小坟。那年麦收得不错，入秋村里有两个孩子没站住。",
+				"open_the_ditch", "开闸灌田，限额供水",
+				"保得秋收人丁受损",
+				"井水倾注麦田并顺势深凿取水，秋收得以保全，工匠亦摸索出深井暗渠之法。然饮水紧缺伤及妇孺，地方怨气随之高涨。",
 				[
 					Shared.agriculture(5, 540),
 					Shared.birth(-4, 540),
@@ -117,9 +117,9 @@ static func append(catalog) -> void:
 					Shared.research_signal("breakthrough.hydraulic_engineering", "深井暗渠"),
 				]),
 			Shared.option(
-				"share_and_wait", "先分着用，等雨",
-				"井台边上没人来了",
-				"头一个月还排队，后来谁家先到谁打，打不上就回去。郑阿土把三节井绳收进屋，挂在梁上。第二年开春，井里能照见底。",
+				"share_and_wait", "不设禁令，听凭分用",
+				"水源枯竭争端四起",
+				"官署未加管制，作坊暂得周转，但无序抢水很快耗干井底。农事与主食供给长期承压，乡里为争水频发械斗。",
 				[
 					Shared.manufacturing(3, 540),
 					Shared.agriculture(-3, 900),
@@ -133,7 +133,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WILDS_LOCUST),
 		"title": "{settlement_name}·蝗",
-		"body_text": "陆春生坐在田埂上，把镰刀横在膝上，看见地上多了一层会动的灰。蝗虫从东边的荒草滩过来，先落在最外那两亩黍子上，秆子一点点弯。他脱下褂子抽，抽一下飞起一片，落回去还是一片。冯灶从磨坊跑来，说割一条三丈宽的带子，烧了。陆春生掏出火镰，火石在裤腿上蹭两下，没打着。东边的风把灰吹到他脸上。他弯下腰，先割了第一把黍子。",
+		"body_text": "遮天蔽日的蝗群自东面荒滩压境而来，迅速吞噬{settlement_name}外围农田，常平粮仓本就吃紧的局势雪上加霜。农垦乡民急向地方官署求援，一派主张当机立断割出宽阔隔离带并纵火焚毁，以弃卒保车之法护住腹地主产区；另一派则建议动用公帑大开水利沟渠引水淹蝗，然此举若控水不当恐致苗木涝死。若坐视不理，整片平原的收成都将荡然无存。",
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "A farmer in a millet field covered by a moving grey layer of locusts, another man running from a mill with a fire striker",
 		"tags": ["land", "unrest"],
@@ -167,34 +167,34 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"burn_a_strip", "割三丈带子，放火烧",
-				"烧出一条黑带子",
-				"火从地头起来，烧了小半个时辰，焦味压过草味。蝗虫飞到黑带子边上，停了一阵，往北去了。陆春生站在灰里，脚底下是他家那两亩黍子。",
+				"burn_a_strip", "割带焚烧，阻断蝗群",
+				"焦土阻蝗保住腹地",
+				"官署下令焚毁外围田带，蝗群受阻北移，腹地主产区得以保全。然被焚边田的失收推高了主食负担，受灾农户颇多怨言。",
 				[
 					Shared.agriculture(4, 360),
 					Shared.staple(5, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 360),
 				]),
 			Shared.gamble(
-				"flood_the_field", "引渠水灌田，赌一把",
-				Shared.branch(36045, "水漫过去，蝗没落", # 55%
-					"渠水放了一天一夜，田里积起一层浅水。蝗虫落在水上，翅膀湿了飞不起来，被孩子拿竹竿往沟里扫。",
+				"flood_the_field", "拨款引渠，漫灌灭蝗",
+				Shared.branch(36045, "渠水淹蝗灾情大减", # 55%
+					"国库拨款组织引水漫灌，蝗群落水难以起飞，被乡民悉数清扫。本地与全国农事均受益于此番治蝗方略。",
 					[
 						Shared.cash_out(1.5, 360),
 						Shared.agriculture(6, 540),
 						Shared.country_sector("agriculture", 3, 540),
 					]),
-				Shared.branch(29491, "水泡了苗，蝗还是吃了", # 45%
-					"水放多了，苗泡两天就发黄。蝗虫从西边绕进来，落在泡过的田里，把剩下的啃到根。陆春生把一截断秆叼在嘴里，用手背抹了把脸上的土。",
+				Shared.branch(29491, "水涝虫害双重重创", # 45%
+					"渠水放量失控浸泡禾苗，蝗群又从侧翼绕入啃食殆尽。国库钱粮白白耗尽，本地农事重创，主食供给陷入严重困境。",
 					[
 						Shared.cash_out(1.5, 360),
 						Shared.agriculture(-6, 540),
 						Shared.staple(8, 540),
 					])),
 			Shared.option(
-				"wait_for_the_county", "等县里来人再说",
-				"县里没来人",
-				"等了六天，差役来看一眼，说这个不归他管。蝗虫往南去了，南边是别人的田。陆春生把镰刀磨了一遍，没下地。",
+				"wait_for_the_county", "按兵不动，任其过境",
+				"听任肆虐农事受挫",
+				"官署迟迟未予处置，蝗群饱食南去。部分失计农夫被迫转入采掘谋生，本地农田长期减产，主食吃紧且民心大失。",
 				[
 					Shared.extraction(2, 360),
 					Shared.agriculture(-4, 900),
@@ -208,7 +208,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WILDS_WOLF_WINTER),
 		"title": "{settlement_name}·狼冬",
-		"body_text": "雪下了三天，姜九的羊圈塌了一角。夜里狼在坡上叫，不远，羊挤成一堆，小的压在底下叫不出声。他抱一捆柴在圈门口点着，火不大，狼不退。村东头董阿婆的孙子天黑还没回来，她站在雪地里喊，喊一声，坡上就静一下。她的鞋陷进雪里，拔出来只剩一只。姜九腰里别着柴刀，圈里有一百多只羊。他往坡上走了两步，又回头看了看羊圈的门。",
+		"body_text": "连日暴雪封山，饥饿的狼群逼近{settlement_name}外围定居点，冲毁多处牲畜围栏，甚至危及夜行乡民。地方官署与边地巡防紧急会商，若动员全境地方民壮轮班守夜并将畜群迁入城内，需由国库拨付额外粮饷与柴火。部分农垦乡民提议弃置少量老弱牲畜于村外诱狼退去，以换取喘息。亦有官员主张仅在要道燃火驱兽，避免大规模征调民壮引发怨气。",
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "A collapsed sheep pen in heavy snow, wolves on the slope, an old woman calling into the dark, a shepherd with a billhook",
 		"tags": ["land", "unrest"],
@@ -241,9 +241,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"keep_watch", "全村守夜，羊赶进屋",
-				"一夜一夜地守",
-				"男人分三班，火堆在圈门口没断过。第四天夜里狼下了坡，被火逼回去，踩塌一段篱笆。董阿婆的孙子在草垛里睡着，天亮才被找出来。",
+				"keep_watch", "拨款组壮，昼夜联防",
+				"联防击退狼群安境",
+				"国库拨资供应巡防粮柴，地方民壮分班值守终于逼退狼群。虽短期主食消耗略增，却保住了全境农牧根基，地方安宁如故。",
 				[
 					Shared.agriculture(4, 540),
 					Shared.cash_out(1.5, 360),
@@ -251,18 +251,18 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
 			Shared.option(
-				"feed_them_outside", "丢几只羊在村外",
-				"树底下的羊没剩",
-				"天没亮，树底下只剩绳子和一摊红。那几天狼没再下坡。圈里的羊少了几只，董阿婆的孙子那个冬天没喝上奶。",
+				"feed_them_outside", "弃畜于外，诱狼退去",
+				"损畜避患怨气难平",
+				"官署强征牲畜弃于坡外喂狼，狼群暂且退去。然畜群折损拖累了次年农牧，城中主食开销攀升，乡民对官署懦弱之举深感不满。",
 				[
 					Shared.staple(6, 540),
 					Shared.agriculture(-3, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
-				"fires_only", "村口点火，不派人",
-				"火点了三夜就灭了",
-				"头三夜有人添柴，第四夜下大雪，谁也没出去。开春数羊，少了十一只。姜九在坡上找到两个羊头，骨头被啃得很干净。",
+				"fires_only", "仅燃篝火，免征民壮",
+				"防务松懈人畜俱损",
+				"因免去夜巡劳役，民间一时未起怨言。然大雪扑灭无人看管的火堆后，狼群屡次入村袭扰，致使人丁与畜群蒙受长期损失。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 					Shared.birth(-4, 900),
@@ -275,7 +275,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WILDS_SALT_BLOOM),
 		"title": "{settlement_name}·盐霜",
-		"body_text": "开春化雪，白碱洼的地上一层白，脚踩上去咯吱响。万德昌把手掌按进地里，抓一把，用舌尖舔了舔，说这是好盐，晒一晒就能卖。陆春生今年要在这块地下种，犁头翻起来，土还是白的。万德昌的木盐耙靠在车上，木齿磨得发亮。洗地要水，水在五里外的渠里，一亩地要挑三十担。万德昌把盐耙从车上抽下来，扛在肩上，等人开口。",
+		"body_text": "开春融雪之后，{settlement_name}大片低洼农田返碱严重，地表凝结出厚重白霜，沦为盐碱荒滩。商旅车队闻讯赶来，向地方官署提议组织人手刮取表层硝盐贩售入市，既可解食盐紧缺又能坐收厚利。农垦乡民则恳请国库拨款，从远方水利沟渠引水洗地压碱以保住耕地；若既不治碱也不采盐、强行照常下种，恐将白白耗费宝贵的春耕种粮。",
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "White salt crust on a field, a salt merchant tasting it, a farmer holding a plough, a wooden rake on a cart",
 		"tags": ["land", "market"],
@@ -308,18 +308,18 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"scrape_the_salt", "刮盐，卖给盐商",
-				"白霜刮成了堆",
-				"万德昌雇了十几个人，用木耙把白霜刮成堆，装麻袋往城里运。刮过的地方露出湿土，一脚踩下去一个坑。第二年陆春生的犁翻上来，土还是白的。",
+				"scrape_the_salt", "准许刮盐，充实市面",
+				"采盐获利耕地受损",
+				"商队雇工大举刮盐入市，采掘产出走高且本地食盐库存得以补充。但表层耕土遭到破坏，农田产出随之明显下滑。",
 				[
 					Shared.extraction(6, 540),
 					Shared.stock("salt", 20),
 					Shared.agriculture(-4, 540),
 				]),
 			Shared.option(
-				"wash_the_field", "挑水洗地，压盐",
-				"渠水漫过白地",
-				"一亩三十担，挑了整整一春，肩膀磨破一层。水漫过去，盐往下走，土色深了些。麦种下去出得晚，收得也少，地算是保住了。",
+				"wash_the_field", "拨款引水，洗地压碱",
+				"压碱保田农事回暖",
+				"国库拨资动员劳力挑水洗地整春，盐碱渐退、农田产出回升且主食负担减轻。唯工程艰苦繁重，乡里对劳役颇有微词。",
 				[
 					Shared.agriculture(5, 540),
 					Shared.cash_out(2.0, 360),
@@ -327,9 +327,9 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 1.10, 360),
 				]),
 			Shared.option(
-				"sow_anyway", "先照常下种，看苗",
-				"苗出得稀稀拉拉",
-				"种下去了，出苗的不到一半，剩下的地方白霜又上来。陆春生俯下身，把没出苗的土扒开看，种子还在，就是没动。",
+				"sow_anyway", "不作处置，照常下种",
+				"碱地薄收口粮承压",
+				"官署未予干预，工坊运转未受征调影响。然而盐碱地中出苗寥寥，农田长期歉收，城中主食补给日益吃紧。",
 				[
 					Shared.manufacturing(2, 360),
 					Shared.agriculture(-4, 900),
@@ -342,7 +342,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WILDS_LANDSLIDE),
 		"title": "{settlement_name}·塌方",
-		"body_text": "雨下了两天，灰峪南坡塌了半边。土石压在官道上，最厚的地方没到人腰。冯石赶的车堵在山这头三天，车上的铁件卸下来，一件件搬不过去。塌下来的断面露出一条发黑的石线，邵九用锤子敲下一块，说这是铁。清路要人，半个月；顺着石线挖，也要人。冯石坐在车辕上啃干粮，脚边一堆卸下的铁件。他把一块石头揣进怀里，站起来去牵马。",
+		"body_text": "连日暴雨引发山体滑坡，巨量土石彻底掩埋了{settlement_name}境内的官道驿路，大批商旅车队被迫滞留山脚。然而山体崩塌后的新鲜断面却意外裸露出一条富集铁矿脉。矿业工队兴奋请命，要求趁势顺脉开矿、将人力优先投入采掘；商旅与工坊代表则急催地方官署立刻清通官道以恢复货流。若暂且绕道河滩，恐将长期拖慢全境转运效率。",
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "A landslide blocking a mountain road, an exposed dark ore seam, a cart with iron parts unloaded, a miner testing the rock",
 		"tags": ["land", "unrest"],
@@ -376,18 +376,18 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"clear_the_road", "先清路，铁件运过去",
-				"路通了，铁件运下山",
-				"清路清了十三天，最后一车土推到沟里。冯石的车第一个过去，铁件重新装上，绳子勒进车辕。邵九站在坡上看，手里还捏着那块石头。",
+				"clear_the_road", "调集人手，抢通官道",
+				"官道复通商工两旺",
+				"官署集中劳力日夜清障，滞留货车悉数过境，贸易运力与本地制造迅速回升。连日高强度抢修也让劳工事务成为地方议题。",
 				[
 					Shared.trade_capacity(5, 540),
 					Shared.manufacturing(4, 540),
 					Shared.bias(Ids.TAG_LABOR, 1.10, 540),
 				]),
 			Shared.option(
-				"follow_the_seam", "顺石线开矿，路先搁着",
-				"井口开在塌方上",
-				"顺着石线挖进去两丈，就是成片的铁。矿石用筐往下背，人走的是那条被埋了一半的旧路。山下的粮车绕远，砂石路上翻过一辆。",
+				"follow_the_seam", "顺脉开矿，暂缓修路",
+				"新矿大兴转运受阻",
+				"矿业工队顺断面掘得大片富铁矿，采掘激增并留下珍贵矿脉记录。但官道梗阻导致粮车绕远倾覆，本地制造与主食开销俱受拖累。",
 				[
 					Shared.extraction(6, 540),
 					Shared.research_signal("resource.iron_ore", "铁帽石"),
@@ -395,9 +395,9 @@ static func append(catalog) -> void:
 					Shared.staple(5, 540),
 				]),
 			Shared.option(
-				"take_the_long_way", "绕道走，先不动路",
-				"车都走河滩",
-				"河滩上压出两道新车辙，底盘低的车要人抬。入冬路面冻上，车辙冻成沟。冯石把车拆了，铁件一件一件背过山。",
+				"take_the_long_way", "暂绕河滩，搁置塌方",
+				"绕行维艰怨声载道",
+				"车队被迫改走泥泞河滩，入冬冻土后更是寸步难行。虽零星采掘未断，但运力锐减推升主食开销，商民对官署敷衍颇为不满。",
 				[
 					Shared.extraction(2, 360),
 					Shared.staple(4, 900),
@@ -410,7 +410,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WILDS_RIVER_FORD),
 		"title": "{settlement_name}·渡口",
-		"body_text": "柳湾只有一只六尺板船，柳七撑了十九年。上游下了雨，水涨到木桩的第二道刻痕，篙要插到底才使得上劲。船一趟装六个人，多一个就往下沉。船帮上补过三次，钉子锈成红点。岸上等着的是挑柴的、赶集的，还有万德昌的一车盐。柳七一天撑八趟，收的钱一半交给县里。他把船靠住，没解缆，蹲下来把缆绳在桩上多绕了一圈。",
+		"body_text": "{settlement_name}城外要津仅靠一艘年久失修的官渡木船维系两岸交通，随着上游汛期涨水与商旅车队日益频繁，渡口拥堵已成常态。商旅与农垦乡民联名陈情，恳请地方官署动用国库添造新船并增派渡夫。财政幕僚则提议将渡口经营权发包给私人，准其提价收费以充实公库。也有官员主张维持旧制、避免额外开支，任由旧船继续勉力周转。",
 		"image_key": "hydrology.water",
 		"ai_visual_prompt": "A small wooden ferry boat at a river crossing, a ferryman coiling the rope, travellers and a salt cart waiting on the bank",
 		"tags": ["land", "market"],
@@ -442,9 +442,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"add_a_boat", "添一只船，雇人撑",
-				"第二只船下了水",
-				"新船比旧船短两尺，好掉头。柳七带了个十六岁的徒弟，撑篙的姿势教了三天。岸上等船的人少了，挑柴的不用再抱着扁担等到天黑。",
+				"add_a_boat", "国库拨款，增船添夫",
+				"双舟并渡运力大增",
+				"国库拨资打造新渡船并增雇渡夫，两岸积压商货迅速疏通，贸易运力大幅提升。唯修造工料与渡口调度略微推高了营造负担。",
 				[
 					Shared.trade_capacity(6, 540),
 					Shared.cash_out(1.5, 360),
@@ -452,9 +452,9 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 1.05, 360),
 				]),
 			Shared.option(
-				"farm_out_the_crossing", "渡口包给他，涨船钱",
-				"船钱涨了，船还是那只",
-				"过路钱翻了一倍，柳七自己抽三成。挑柴的把柴卸在岸边等人来收，等不到的又挑回去。那车盐在岸上搁了两天，万德昌在船上骂了半天。",
+				"farm_out_the_crossing", "发包渡口，准增渡资",
+				"包渡加费商民怨沸",
+				"官署收得包渡现款且周转略有起色，但承包者旋即倍增过河船资。小贩与挑夫不堪重负，本地主食开销上升，民间怨气骤增。",
 				[
 					Shared.cash_in(1.5, 540),
 					Shared.trade_capacity(3, 540),
@@ -462,9 +462,9 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 			Shared.option(
-				"keep_it_as_it_is", "船照旧，不加人",
-				"船板薄了一层",
-				"柳七一天撑十趟，船底在浅滩上蹭，年年要补。补船的木头从上游放下来，钱是柳七自己出的。第三年冬天他把船拖上岸，船底翻开全是虫眼。",
+				"keep_it_as_it_is", "维持旧制，不增人船",
+				"旧舟朽坏转运维艰",
+				"因未加征费役，一时未起纷争。然而旧船超负荷运转终致朽坏，两岸货流与主食转运长期受阻，本地制造亦受牵连。",
 				[
 					Shared.manufacturing(-3, 900),
 					Shared.staple(4, 900),
@@ -477,7 +477,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WILDS_REED_FIRE),
 		"title": "{settlement_name}·苇火",
-		"body_text": "苇子洼的火从北边来，先烧的是去年割下没运走的干苇。风往南压，压着韦三的席场。东边隔着一条水沟，是陆春生的稻田。韦三站在自家地界上，手里拎着苇箔刀。割一条隔离带要二十个人，一个上午。他身后堆着三百领没卖出去的席，垛得比人高。烟压得很低，呛得人睁不开眼。韦三把刀往地上一插，转身回去拿火镰。",
+		"body_text": "{settlement_name}北面湿地突发荒火，借着北风迅速蔓延，直逼囤积大批苇席原料的手工业场院，而一沟之隔便是农垦乡民赖以为生的连片稻田。地方官署急令地方民壮集结，若立刻强行抢割隔离带，可望两全却须耗费大量口粮与人力。若放任火势烧至水利沟渠自然熄灭，虽能以草木灰肥田，却将彻底毁掉手工业场院。若观望风向再做决断，则恐酿成更大灾祸。",
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "A reed marsh fire pushing south toward a matting yard, a reed cutter with a knife, a rice field across a ditch",
 		"tags": ["land", "unrest"],
@@ -512,18 +512,18 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"cut_a_firebreak", "抢割隔离带，保住席场",
-				"割出一道空场",
-				"二十个人割了一个上午，苇子堆在场边，来不及打捆。火到空场就停了，席场还在。那年冬天苇席少编三百领，钱是实的。",
+				"cut_a_firebreak", "急调民壮，抢辟火道",
+				"火道阻焰农工俱保",
+				"地方民壮顶着浓烟抢割出宽阔隔离带，火势在场院外戛然而止。农田与编席作坊均得以保全，仅因紧急动员略增短期口粮开销。",
 				[
 					Shared.manufacturing(4, 540),
 					Shared.agriculture(3, 540),
 					Shared.staple(3, 360),
 				]),
 			Shared.option(
-				"let_it_burn", "让它烧到河边",
-				"火烧到河边自己灭了",
-				"火烧了两天，灰落了一层在稻田里，黑得发亮。第二年稻子长得比往年高。韦三的席场没了，湖边的人一个夏天没打着几条鱼。",
+				"let_it_burn", "任其焚尽，以灰肥田",
+				"灰肥稻田苇业尽毁",
+				"大火烧至河边自灭，厚重草木灰令来年稻田丰产。然手工业场院与渔猎苇荡付之一炬，制造重挫、民生吃紧，失计手工业者怨声四起。",
 				[
 					Shared.agriculture(5, 540),
 					Shared.manufacturing(-4, 540),
@@ -531,9 +531,9 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
-				"watch_the_wind", "看风向，风变再说",
-				"夜里风转了",
-				"第三天夜里风从南转成东，火头偏了，绕过场院进了稻田。稻子烧了大半，韦三的席场反倒保住。陆春生在地头站了很久，把烧黑的稻穗一把一把揪下来。",
+				"watch_the_wind", "暂且观望，视风定策",
+				"夜风突变灾情失控",
+				"入夜后风向骤转，烈焰绕过沟渠直扑稻田并波及周边作坊。农事与制造双双蒙受重创，民众纷纷责难官署优柔寡断。",
 				[
 					Shared.agriculture(-5, 900),
 					Shared.manufacturing(-3, 900),
@@ -546,7 +546,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WILDS_COLD_SPRING),
 		"title": "{settlement_name}·倒春寒",
-		"body_text": "南洼的秧田里苗刚出土，一寸高，绿得发白。夜里霜下来了，早上田埂上的草叶都是硬的，畦边的水洼结着薄冰，一踩就碎。董阿婆用手去摸，苗尖一碰就断。仓里还剩两斗谷种，补种赶得上，只是晚一茬，秋天要少吃半个月。她儿子说再等等，太阳一出来就没事。董阿婆回家把盖被的旧棉絮抱出来，一块一块压在秧畦上。",
+		"body_text": "一场突如其来的倒春寒席卷{settlement_name}，刚破土的早稻秧苗遭遇严霜冻害，大片秧田危在旦夕。农垦乡民急向地方官署请命，若由国库拨款购置湿柴彻夜熏烟，可望护住现存秧苗却会消耗大量薪炭口粮。若动用常平粮仓仅存的备荒谷种抢时补播，虽能挽回秋收却会令春荒青黄不接更为严峻。若坐等天晴回暖，则恐颗粒无收。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "Frost on young rice seedlings in a nursery bed, an old woman pressing old cotton wadding over the seedlings",
 		"tags": ["land", "unrest"],
@@ -579,9 +579,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"smoke_the_field", "夜里熏烟，护住秧苗",
-				"田里一夜都是烟",
-				"湿柴压着火，烟顺着垄沟爬，把秧畦盖住。天亮看，苗尖还是绿的，只焦了最外一圈。烧掉的柴够做半个月的饭，董阿婆的儿子去更远的坡上砍。",
+				"smoke_the_field", "拨款购柴，彻夜熏烟",
+				"烟幕护苗春耕得保",
+				"国库拨资组织农户燃湿柴熏烟抵御寒霜，绝大多数秧苗安然过关，乡民交口称赞。唯连夜耗柴与补给略微增加了短期主食开销。",
 				[
 					Shared.agriculture(5, 540),
 					Shared.cash_out(1.5, 360),
@@ -589,18 +589,18 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
 			Shared.option(
-				"resow_with_stored_grain", "拿剩的谷种补种",
-				"补种的苗晚了一茬",
-				"两斗谷种全下了地，苗出得齐。秋天割的时候比别家晚半个月。交完租，仓里剩的粮要省着吃，孩子先吃稀的。",
+				"resow_with_stored_grain", "动用余种，抢时补播",
+				"补种晚收口粮趋紧",
+				"常平仓余留谷种悉数下地，秋收总算得以勉强维系。然而口粮储备见底令本地主食负担骤增，荒春困顿亦伤及人丁。",
 				[
 					Shared.staple(6, 360),
 					Shared.agriculture(3, 540),
 					Shared.birth(-3, 360),
 				]),
 			Shared.option(
-				"wait_for_the_sun", "先不补，等太阳",
-				"太阳出来了，苗没起来",
-				"第二天日头很好，化了的霜水积在畦里。苗烂在泥里，一拔就断。董阿婆把棉絮抱回屋，搭在绳上晒，一句话没说。",
+				"wait_for_the_sun", "暂不干预，静候回暖",
+				"霜融苗烂民怨沸腾",
+				"晴日化霜反致秧畦积水冻烂，春苗十不存一。本地农事蒙受长期重创，乡民对官署见危不救之举怨声载道。",
 				[
 					Shared.agriculture(-5, 900),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 900),

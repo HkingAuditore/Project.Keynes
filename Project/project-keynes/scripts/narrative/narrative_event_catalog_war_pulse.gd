@@ -33,7 +33,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WAR_CONSCRIPTION),
 		"title": "{settlement_name}·征丁",
-		"body_text": "征丁的告示贴到里巷，一户出一个。韦顺拿着册子挨门点，点到第三家，门里说人不在。他往里看了一眼，灶是热的。巷子尽头，有人翻墙走了，墙头踩塌了一块土。邬三在册子上按了手印，按完把手在裤子上擦了擦。册子合上，纸被汗浸软了，他换了一本新的。巷口的狗叫了两声，没人出来看。",
+		"body_text": "前线战损持续扩大，总参谋部向{settlement_name}下达了新一轮紧急征兵动员令。地方官署按户籍抽丁却频频遭遇隐匿与逃避，部分富裕阶层暗中托人疏通，要求以缴纳税款折抵兵役。强行按册征发必将激化民间抵触并冲击农业劳力，而放宽免役又会损及兵源公平，如何执行亟待决断。",
 		"image_key": "country.military",
 		"ai_visual_prompt": "A conscription notice in a narrow lane, a clerk at a door, a man climbing over a wall at the end",
 		"tags": ["war", "unrest"],
@@ -61,25 +61,25 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"take_them_by_the_roll", "按册强征",
-				"册子上的名字一个个划",
-				"册子上的名字一个个划，划到第三页，差役押着人往外走。灶上的锅还热着，没人管。那年秋收，田里少了一半人。",
+				"take_them_by_the_roll", "铁腕按册强征入伍",
+				"兵源补齐而民怨沸腾",
+				"地方官署动用强制手段补足了征兵配额，青壮年大批离乡令人口增长放缓，基层社会暗潮涌动。",
 				[
 					Shared.birth(-3, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 			Shared.option(
-				"let_them_buy_out", "出钱免役",
-				"免役的钱进了库",
-				"免役的钱进了库，交得起的人留了下来。交不起的，还是被带走了。名单上的空行，韦顺用墨涂掉。",
+				"let_them_buy_out", "准许纳资代役",
+				"富户买免充实国库",
+				"富商与豪绅纷纷缴纳巨额免役金，国库获益颇丰，但穷人上阵、富人留乡的不公激起了底层愤慨。",
 				[
 					Shared.cash_in(1.5, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
-				"halve_the_levy", "缓征一半",
-				"册子只用了半本",
-				"册子只用了半本，剩下的折角压着。前线的催单又来了，韦顺把催单和册子放在一起，没回。",
+				"halve_the_levy", "体恤地方，缓征半数",
+				"征兵折半拖累军务",
+				"政府下令减半执行本期征额以安抚地方，前线催调文书不断，后方工商业也因战局胶着而士气低迷。",
 				[
 					Shared.manufacturing(-2, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
@@ -91,7 +91,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WAR_ARREARS),
 		"title": "{settlement_name}·欠饷",
-		"body_text": "营里的饷拖了两个月。兵在衙门口站成一排，不喊，也不走。韦顺出来说话，说库里的银子在路上。队伍里有人笑了一声。笑完，队伍往前挪了半步。韩仓把库房的账本抱出来，翻给韦顺看，最后一页是空的。韦顺把封条按了按，封条还是去年那张。队伍里有人开始数台阶。",
+		"body_text": "战事拖延令国库捉襟见肘，驻守{settlement_name}的守军已连续两月未能领到足额军饷。大批官兵列队聚集在地方官署外无声施压，营中哗变的流言正在迅速扩散。军需部呈报，眼下要么立刻拨款补发欠饷，要么签发战后兑付的军用欠条，或者趁机裁撤半数编余部队以缩减开支。",
 		"image_key": "country.military",
 		"ai_visual_prompt": "Soldiers standing silently outside a yamen over unpaid wages, an official speaking from the steps",
 		"tags": ["war", "unrest", "fiscal"],
@@ -118,25 +118,25 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"pay_in_full", "把钱补上",
-				"银子抬进营里",
-				"银子抬进营里，一箱一箱摆在台子上。兵排队领，领完回营。韦顺看着最后一箱抬走，库房的门没关，里面空了一半。",
+				"pay_in_full", "紧急调拨国库补足欠饷",
+				"军心迅速恢复稳定",
+				"国库紧急拨付现款结清全部欠饷，哗变危机烟消云散，驻军秩序与地方治安随之回稳。",
 				[
 					Shared.cash_out(2.5, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
 			Shared.option(
-				"issue_promises", "先打白条",
-				"白条按了印",
-				"白条按了印，一张一张发下去。有兵把白条折好，塞进绑腿里；也有兵当场撕了，纸屑落在台阶上。",
+				"issue_promises", "签发官印欠条，战后兑付",
+				"白条抵饷引发不满",
+				"官兵们对空头支票普遍心怀怨怼，军纪松弛波及地方商市，社会动荡风险显著攀升。",
 				[
 					Shared.manufacturing(-2, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 			Shared.option(
-				"discharge_half", "裁掉一半",
-				"营里空了一半",
-				"营里空了一半，被裁的人领了半个月的饷。他们出营的时候，把兵器交在门口，堆成一小垛。韦顺站在垛边，没说话。",
+				"discharge_half", "缩编裁撤半数驻军",
+				"遣散官兵引发骚动",
+				"裁军虽暂时减轻了财政负担并腾出部分地方资金，但大批失意退伍兵滞留街头，令治安形势骤然恶化。",
 				[
 					Shared.cash_in(1.0, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.40, 720),
@@ -148,7 +148,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WAR_WOUNDED),
 		"title": "{settlement_name}·伤兵",
-		"body_text": "城隍庙里躺满了伤兵，医官只有两个。药不够，用盐水洗。一个兵问，断了腿还能不能回家种地。医官没答，把布条缠紧了些。柳嫂在庙门口支了一口锅，烧水给伤兵喝，水是井里现打的。韦顺让人去药铺赊几斤草药，药铺的掌柜没要押。庙外的柳树上，拴着几匹没人来牵的马。",
+		"body_text": "持续不断的拉锯战令{settlement_name}的野战医院人满为患，军医与基础药品双双告急。大量重伤员因缺乏及时救治而面临致残或感染风险，地方官署虽已向民间药商紧急赊购草药，仍是杯水车薪。后勤部门请求中央指示：是拨款增派医护、分批遣送回乡，还是仅集中资源救治轻伤员。",
 		"image_key": "country.military",
 		"ai_visual_prompt": "Wounded soldiers in a temple, a physician washing wounds with salt water, riderless horses tied outside",
 		"tags": ["war", "people"],
@@ -175,25 +175,25 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"more_physicians", "加派医官",
-				"庙里多了三张门板",
-				"庙里多了三张门板，医官从一个变成三个。药还是不够，盐水换成了草药水。那个断了腿的兵，最后能拄着棍站起来了。",
+				"more_physicians", "拨款增派医护与药械",
+				"伤员救治率显著提高",
+				"国库紧急增援医疗队伍与足量药品，大批伤员转危为安，国家对将士的担当极大稳住了后方民心。",
 				[
 					Shared.cash_out(2.0, 360),
 					Shared.birth(3, 540),
 				]),
 			Shared.option(
-				"send_them_home", "送回乡里",
-				"牛车一辆辆出城",
-				"牛车一辆辆出城，车上铺着干草。能坐起来的靠在车栏上，坐不起来的躺着。城门口的名册上，一天划掉十几个名字。",
+				"send_them_home", "发给抚恤，遣返乡里",
+				"伤员分批返乡休养",
+				"政府出资雇车将伤员送归原籍，减轻了医院运转压力，但大批伤残者返乡也加重了地方口粮负担。",
 				[
 					Shared.cash_out(1.0, 360),
 					Shared.staple(3, 540),
 				]),
 			Shared.option(
-				"only_the_savable", "只留能治的",
-				"庙门从里面关上了",
-				"庙门从里面关上了，能治的留下，治不了的抬到后院。后院的草席不够，有人躺在石板上。第三天，后院空了。",
+				"only_the_savable", "实行残酷分诊，放弃重伤",
+				"冷血分诊重创士气",
+				"医疗资源全部向轻伤员倾斜，重伤者被无情放弃。消息传出后举城哗然，学术界与民间一致谴责当局冷酷。",
 				[
 					Shared.knowledge(-2, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
@@ -205,7 +205,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WAR_REFUGEES),
 		"title": "{settlement_name}·城下的人",
-		"body_text": "北边来的人堵在城门口，说要进去。守门的问有没有路引，头一个人从怀里掏出一张湿纸。韦顺站在门楼上往下看，看见人群里有孩子骑在大人肩上。城里的米价，昨天又涨了一回。守门的把门闩抬起来，又放下，抬了三次。韦顺让人去问，回来的人说，是北边三个县的。他把手按在城垛上，砖是凉的。",
+		"body_text": "前线战火不断蔓延，大批逃离战区的难民涌至{settlement_name}外围请求庇护。本地守军紧闭防线待命，地方官署则忧心忡忡，担心放任数以千计的流民入城会彻底冲垮本就紧张的口粮储备与治安。然而若在战时冷酷拒纳本国子民，恐将引发严重的道义危机与动荡。",
 		"image_key": "country.military",
 		"ai_visual_prompt": "Refugees crowding a city gate, one holding a soaked travel permit, a child on an adult's shoulders seen from the wall",
 		"tags": ["war", "unrest", "people"],
@@ -233,26 +233,26 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"open_the_gate", "开门收容",
-				"城门开了一条缝",
-				"城门开了一条缝，人挤着进来。当天夜里，城里的米价又涨了一回。韦顺让人在庙里铺草，草不够，有人睡在街上。",
+				"open_the_gate", "开放防线，全面收容入籍",
+				"大批难民涌入城区",
+				"地方官署敞开城防接纳难民并就地登记落籍，城市人口显著增长，但口粮消耗与治安摩擦也随之骤增。",
 				[
 					Shared.population_rate(15, "本地人口 +15%（难民入城）"),
 					Shared.staple(4, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
-				"camp_outside", "城外设棚",
-				"城外的空地上支起了席棚",
-				"城外的空地上支起了席棚，粥棚摆在棚口。城里的人不许出去，城外的人不许进来。第三天，席棚边上多了几个坟头。",
+				"camp_outside", "拨款在城外设立隔离营",
+				"城外营地勉强维系",
+				"国库拨出专款在城外搭建临时收容营并派发口粮，既保住了城区秩序，也令营地内的苦难与不满持续积聚。",
 				[
 					Shared.cash_out(1.5, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
-				"keep_the_gate_shut", "不放进来",
-				"城门没开",
-				"城门没开，人群在城下站了两天。第三天早上，城下空了，雪地上留着几行脚印。守门的把门闩抬起来，又放下。",
+				"keep_the_gate_shut", "严守防线，禁止难民入境",
+				"驱离难民保全城内",
+				"守军坚决驱离城外人群，保住了城内的口粮供应与短期安宁，但见死不救的恶名迅速传遍全国。",
 				[
 					Shared.staple(-2, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 720),
@@ -264,7 +264,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WAR_ARMY_MARKET),
 		"title": "{settlement_name}·军市",
-		"body_text": "军营外头自发成了一个市，卖酒的、补鞋的、卖药的都有。税吏去收摊钱，被几个兵围住。韦顺赶到时，税吏的帽子在泥里，摊子上的酒坛碎了一个，酒味压过了马粪味。李七来看了两回，第二回带了两个伙计。韦顺把帽子从泥里捡起来，拍了拍，扣回税吏头上。酒味到第二天还没散。",
+		"body_text": "围绕{settlement_name}的守军驻地，一座庞大的自发军市迅速成形，酒肆、修械与黑市交易应有尽有。地方官署派出的税吏前往课税时遭到士兵围攻驱逐，军纪与税政双双受挫。军需部与地方商会趁机各提方案：要么收归官营统一抽税，要么承包给大商号缴纳特许金，或者直接出兵取缔以整肃军纪。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "An improvised market outside an army camp, a tax clerk surrounded by soldiers, a broken wine jar in the mud",
 		"tags": ["war", "market"],
@@ -291,25 +291,25 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"run_it_officially", "官营军市",
-				"市口立了一块木牌",
-				"市口立了一块木牌，写着官营。摊子照摆，钱交给官设的柜上。酒坛又添了几个，一碗酒比外面少半碗。",
+				"run_it_officially", "收归官营，设立军市税卡",
+				"官营军市充实国库",
+				"官署正式接管营外商市并征收固定税费，国库进项增加，但官营体系的克扣引发了驻军与小贩的不满。",
 				[
 					Shared.cash_in(1.5, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 				]),
 			Shared.option(
-				"farm_it_out", "包给商人",
-				"市口换了招牌",
-				"市口换了招牌，李家出了保证金，摊钱归他收。兵的酒钱涨了，补鞋的也涨了。韦顺从市口过，没停。",
+				"farm_it_out", "招标承包给本地大商号",
+				"商号包税获利颇丰",
+				"大商号缴足特许押金后垄断了军市经营权，财政大为宽裕，但商号盘剥令底层劳工与士兵摩擦不断。",
 				[
 					Shared.cash_in(2.0, 360),
 					Shared.bias(Ids.TAG_LABOR, 1.15, 540),
 				]),
 			Shared.option(
-				"shut_it_down", "把摊子收了",
-				"摊子收了",
-				"摊子收了，市口空出来。兵的酒没处买，夜里翻墙出去。韦顺让人把墙加高了两尺，墙根下多了几架梯子。",
+				"shut_it_down", "严令取缔，整肃营地军纪",
+				"强制清场反致私贸",
+				"军市被强行拆除，商业流通受阻且地下黑市转入暗处，士兵私自越营寻欢的事件反而层出不穷。",
 				[
 					Shared.manufacturing(-2, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
@@ -321,7 +321,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WAR_AFTERMATH),
 		"title": "{settlement_name}·战后",
-		"body_text": "仗打完了，城里的男人少了一批。田里荒着，官仓里也空。韦顺把两本册子并排放着，一本记阵亡，一本记欠税。他先翻开了记阵亡的那本，翻到一半，又合上了。窗外的田里，草已经长到人腰高。他起身去开窗，窗纸破了一个洞。他把两本册子叠在一起，抱着去了库房，库房的锁锈了，他拧了两下才开。",
+		"body_text": "漫长的战火终于平息，{settlement_name}却已千疮百孔。大量青壮年折损于前线，成片农田抛荒，国库与地方仓储双双见底。地方官署将厚重的阵亡名册与欠税账簿一并呈上案头，究竟是优先拨款抚恤遗属、招徕流民垦荒复产，还是铁腕追缴欠税以迅速填补财政窟窿，全看你的战后国策。",
 		"image_key": "country.military",
 		"ai_visual_prompt": "Two ledgers side by side after a war, one for the dead and one for unpaid taxes, empty fields beyond the window",
 		"tags": ["war", "unrest", "fiscal"],
@@ -348,17 +348,17 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"pay_the_dead", "抚恤阵亡",
-				"阵亡册上的名字一个个对",
-				"阵亡册上的名字一个个对，对到天黑，还有两页。领钱的人在衙门口等着，没人催。韦顺把最后一笔发完，把册子锁进柜子。",
+				"pay_the_dead", "国库拨款，全面抚恤阵亡",
+				"厚恤遗属休养生息",
+				"国家不惜重金向阵亡将士遗属发放足额抚恤，战争创伤逐渐抚平，地方人口与生育意愿稳步回升。",
 				[
 					Shared.cash_out(2.5, 360),
 					Shared.birth(2, 540),
 				]),
 			Shared.option(
-				"settle_the_fields", "招人垦荒",
-				"荒田插了木牌",
-				"荒田插了木牌，写着谁开归谁。第一批去的是没分到地的人，第二批是从北边回来的。犁不够，有人用锄头翻。",
+				"settle_the_fields", "颁布垦荒令，招民复耕",
+				"回流农户重垦荒田",
+				"官署宣布开荒免税并拨付农具补贴，大批外迁人口陆续回流落籍，农业迅速复苏，唯工坊人手一时略显吃紧。",
 				[
 					# 「从北边回来的」是真的往回填人：荒田得有人种，人才算真回来。
 					Shared.population_rate(10, "本地人口 +10%（回流农户落籍垦荒）"),
@@ -367,9 +367,9 @@ static func append(catalog) -> void:
 					Shared.manufacturing(-2, 360),
 				]),
 			Shared.option(
-				"collect_the_taxes", "先追欠税",
-				"欠税册翻开了",
-				"欠税册翻开了，一家一家追。追到第三家，那家的男人跪在门口，说他儿子没回来。韦顺把册子合上，站了一会儿，又翻开。",
+				"collect_the_taxes", "强行清缴战时全部欠税",
+				"严苛追税激化怨愤",
+				"税吏逐户催缴战时欠赋，国库虽迅速回血，但向阵亡将士家庭逼税的冷酷行径在民间埋下了深重仇恨。",
 				[
 					Shared.cash_in(2.0, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
@@ -381,7 +381,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WAR_KINDRED_LEVY),
 		"title": "{settlement_name}·族里出人",
-		"body_text": "征丁的册子送到族里，指名要一个男丁。周朴说族里出人，不能让人说周家躲在后面。李七说族里出人容易，回来难。韦顺把册子摊在桌上，笔尖在名字那一格停了很久。院里站着一个后生，手里拎着一双新鞋，鞋底还是白的。周朴看了他一眼，把茶碗里的水泼在台阶上。后生把鞋换了，旧鞋留在门槛上。",
+		"body_text": "前线兵源吃紧，总参谋部下达特别动员令，要求{settlement_name}的本地名族率先遣送嫡系子弟从军以作表率。族中主战派认为此乃彰显门第担当、换取朝廷恩宠的良机；保守派则极力劝阻，主张出钱买免或改抽普通民户顶替。地方官署不敢擅专，正等待中央示下。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A conscription roster in a clan courtyard, a young man changing into new shoes, old shoes left on the threshold",
 		"tags": ["war", "family"],
@@ -409,26 +409,26 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"send_a_son", "让族里出人",
-				"名字写上了册子",
-				"名字写上了册子，周朴把新鞋塞给后生，鞋是新的，人还不会穿。后生跟着差役出巷口，回头看了一眼。",
+				"send_a_son", "征召名族子弟奔赴前线",
+				"名门子弟披甲出征",
+				"国家赐予治装补助，名族子弟如期入伍并编入主力部队。此举在地方树起表率，全族上下则日夜悬心前线战报。",
 				[
 					Shared.flag(Ids.FLAG_WAR_KINDRED_SENT, 1825, "族中子弟从军"),
 					Shared.schedule(Ids.EVT_WAR_KINDRED_WAIT, 150, "家书", &"war_kindred"),
 					Shared.cash_out(1.0, 360),
 				]),
 			Shared.option(
-				"buy_him_out", "出钱买免",
-				"册子上的名字划掉了",
-				"册子上的名字划掉了，钱装进一只布袋。差役掂了掂，没说话。后生留在族里，那双新鞋收进了柜子。",
+				"buy_him_out", "默许其以财物抵免兵役",
+				"特权免役暗生非议",
+				"大族借关系保住了自家子弟，朝廷为此妥协并承担了额外替补安置费用，政界围绕豪强特权的攻讦随之升温。",
 				[
 					Shared.cash_out(1.5, 360),
 					Shared.bias(Ids.TAG_COURT, 1.15, 540),
 				]),
 			Shared.option(
-				"take_another", "抽别家的人",
-				"别家的门被敲响了",
-				"别家的门被敲响了，巷子里传出哭声。周朴站在自家门口，没出去。第二天，族里的孩子被人扔了石头。",
+				"take_another", "改抽普通民户顶替名额",
+				"偏袒豪强惹怒百姓",
+				"地方官署将兵役配额强行转嫁给无权无势的平民家庭，全城民众愤慨不已，对大族与官府的怨恨急剧加深。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.35, 720),
 				]),
@@ -439,7 +439,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WAR_KINDRED_WAIT),
 		"title": "{settlement_name}·家书",
-		"body_text": "信是秋天到的，封口的火漆裂了。韦顺拆开，里面只有半张纸，写着“人没找到”。他把纸翻过来，背面是空的。周朴在祠堂里坐了一夜，第二天让人去问，问了三回，回话都一样。李七说，没消息也算消息。韦顺把半张纸夹进册子里，册子合上时，纸角露在外头。他把册子翻到那页，名字旁边空着一格，他没填。",
+		"body_text": "前线送抵{settlement_name}的军情简报令本地名族陷入恐慌。此前应征入伍的族中子弟在惨烈交锋后下落不明，总参谋部的伤亡名册上仅标注为失踪。地方官署连发数次公函核查仍无定论，族中长老正要求朝廷给出明确说法，以决定是否按阵亡抚恤或继续搜寻。",
 		"image_key": "country.military",
 		"ai_visual_prompt": "A letter with a cracked wax seal and only half a page, a clan elder sitting alone in an ancestral hall at night",
 		"tags": ["war", "family"],
@@ -454,9 +454,9 @@ static func append(catalog) -> void:
 		"weight_rules": [],
 		"options": [
 			Shared.option(
-				"no_one_found", "没有找到人",
-				"族里立了衣冠冢",
-				"族里立了衣冠冢，埋的是那双旧鞋。周朴让人在冢前种了一棵树，树苗是从城外挖的。没有人哭。",
+				"no_one_found", "正式宣告阵亡，备办追悼",
+				"名族立冢哀悼忠烈",
+				"军方最终确认其已殉国，地方名族悲痛地为其设立衣冠冢。沉重的伤亡阴影笼罩全城，厌战情绪悄然抬头。",
 				[
 					Shared.clear_flag(Ids.FLAG_WAR_KINDRED_SENT, "家书已读"),
 					Shared.flag(Ids.FLAG_WAR_KINDRED_DEAD, 1825, "族中子弟阵亡"),
@@ -464,18 +464,18 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 			Shared.option(
-				"he_came_back", "人回来了",
-				"门槛上的旧鞋不见了",
-				"人回来了，少了一条腿，拄着棍。周朴让人把门槛锯低了一寸。那双旧鞋不知被谁收走，门口空了。",
+				"he_came_back", "核实生还，拨款接回疗养",
+				"负伤归乡重聚族人",
+				"失踪者最终在后方医院被寻获，虽负重伤致残，仍获国库拨款妥善安置返乡。劫后余生的消息令地方民心大慰。",
 				[
 					Shared.clear_flag(Ids.FLAG_WAR_KINDRED_SENT, "家书已读"),
 					Shared.birth(2, 540),
 					Shared.cash_out(1.0, 360),
 				]),
 			Shared.option(
-				"no_news", "一直没有消息",
-				"册子上的名字空着",
-				"一直没有消息，册子上的名字空着。周朴说再等等，李七说等不起了。那年冬天，族里没有再提这个人。",
+				"no_news", "暂列失踪，搁置善后定论",
+				"音讯杳无徒留悬案",
+				"军方既不宣告阵亡亦无力继续搜寻，悬而未决的状态消耗了地方耐心，生产士气与社会信任随之受挫。",
 				[
 					Shared.clear_flag(Ids.FLAG_WAR_KINDRED_SENT, "家书已读"),
 					Shared.manufacturing(-2, 360),
@@ -488,7 +488,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_WAR_KINDRED_SHRINE),
 		"title": "{settlement_name}·立祠",
-		"body_text": "族里要立祠。周朴说名字要刻在族谱上，刻深一点。韦顺说刻名字容易，往后每年谁来上香。祠堂的梁上还挂着去年的白布，没摘。石匠在门口等，凿子放在脚边。李七蹲在门槛上，拿手指头在灰里写了一个字，又抹掉。周朴没看那个字，只问石匠，碑要多高。石匠说碑要青石，周朴说青石贵，先用河边的。",
+		"body_text": "为纪念此前在前线殉国的子弟，{settlement_name}的本地名族向地方官署递交奏请，希望动用公私款项修建忠烈祠庙并刻碑永志。支持者称表彰忠义有助于凝聚士绅门第与国家认同。财政官员则认为战时国库紧张，不宜为单一宗族大兴土木，建议仅录入宗谱或予以驳回。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A clan hall with last year's white mourning cloth still on the beam, a stonemason waiting with a chisel, a name written in dust",
 		"tags": ["war", "family", "faith"],
@@ -503,26 +503,26 @@ static func append(catalog) -> void:
 		"weight_rules": [],
 		"options": [
 			Shared.option(
-				"carve_the_name", "把名字刻上",
-				"碑立在祠堂西侧",
-				"碑立在祠堂西侧，名字刻得很深。周朴每年亲自去描一遍红。族里的孩子经过，会念那个名字。",
+				"carve_the_name", "拨款准建忠烈祠，旌表门第",
+				"忠烈祠成，声望大振",
+				"朝廷拨款资助建祠立碑并敕封士绅门第，忠义事迹传为佳话，地方文教风气与士气皆受鼓舞。",
 				[
 					_grant("j020_gentry", "士绅门第"),
 					Shared.knowledge(2, 540),
 					Shared.cash_out(1.5, 360),
 				]),
 			Shared.option(
-				"no_shrine", "不给他立祠",
-				"白布摘了",
-				"白布摘了，祠堂的梁上留着一道印。周朴说人死如灯灭，李七没接话。那年祭祖，族里少摆了一副碗筷。",
+				"no_shrine", "以财政紧缩为由严辞驳回",
+				"寒心之举折损声望",
+				"建祠奏请遭到冷漠否决，地方名族与民众深感报国无门，文教士气低落且离心倾向加剧。",
 				[
 					Shared.knowledge(-2, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
-				"only_the_genealogy", "只记在族谱里",
-				"族谱添了一行",
-				"族谱添了一行，字比别的行小。韦顺说这样也好，省得年年修碑。周朴把族谱合上，放回柜子最高一格。",
+				"only_the_genealogy", "准予记入官修史册，不另建祠",
+				"折中旌表平稳收场",
+				"朝廷批准将其事迹载入地方史志与宗谱而不另费土木。此举既守住了国库预算，也维系了与地方豪强的体面关系。",
 				[
 					Shared.knowledge(1, 360),
 					Shared.bias(Ids.TAG_COURT, 1.15, 540),

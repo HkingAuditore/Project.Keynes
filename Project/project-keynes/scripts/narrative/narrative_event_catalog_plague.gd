@@ -24,9 +24,8 @@ const PACK_ID := &"plague"
 const PREFIX := "evt.plague."
 
 const CAST := [
-	"铁角湾", "柳七", "白布条", "烂泥渡", "陆阿满", "记名册", "石灰",
-	"葛四婶", "铜盆", "邢先生", "费伯", "苦蒿", "药圃",
-	"沈司医", "痘痂", "岑九",
+	"医政署", "地方官署", "商旅船队", "隔离封锁线", "病籍名册",
+	"济贫医馆", "药草官圃", "接生旧俗", "种痘方术", "市井民众",
 ]
 
 const MUL_110 := 72090
@@ -66,7 +65,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_PLAGUE_SHIP),
 		"title": "{settlement_name}·疫船",
-		"body_text": "铁角湾口外停着一条三桅船，锚链放到了底，船头挂一条湿透的白布条。柳七划小艇过去看了一眼，回来说舱里躺着七八个人，身上烫得能烙饼，还有人气着要往岸上跳。船主站在船尾喊，货是盐和铁，卸了就走，人死不死跟岸上没关系。码头上扛包的都停了手，谁也不敢去接缆；粮行的伙计把秤收了，说这一船货进了仓，米价就得自己往上蹦。柳七把小艇拴回桩上，蹲在岸边等一句准话。",
+		"body_text": "一艘满载食盐与铁料的外来商旅船队在{settlement_name}口外下锚，船首高悬疫病警示白布。医政署派员查验后急报，底舱已有数名水手身染烈性热病，随时可能蔓延上岸。船主坚持只求卸货便即刻离港，本地商贾亦觊觎这批紧俏物资；然而港口劳工与市井民众人心惶惶，纷纷要求地方官署严防死守，哪怕焚船驱离亦不可放疫入城。",
 		"image_key": "hydrology.water",
 		"ai_visual_prompt": "A three-masted ship anchored outside a small harbour, a strip of white cloth on its bow, a rowboat with one man watching from the water",
 		"tags": ["plague", "market", "unrest"],
@@ -98,27 +97,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"let_it_dock", "准它进港卸货",
-				"货卸了，病也上了岸",
-				"盐包一袋袋过秤，当天夜里码头就有人发起热来。柳七把自家门板卸下来，抬了三趟人。",
+				"let_it_dock", "准许靠岸，优先卸货",
+				"货通港城疫病登岸",
+				"紧俏盐铁顺利入库，港口贸易运力与工坊制造随之提振。然而热病当夜便在码头扩散，全城人丁因此蒙受折损。",
 				[
 					Shared.trade_capacity(5, 360),
 					Shared.manufacturing(4, 360),
 					Shared.birth(-4, 540),
 				]),
 			Shared.option(
-				"burn_it_off", "放火烧船，赶走",
-				"口外烧了一夜",
-				"火从后舱烧到桅杆，烧了一夜。船主跳了水，捞上来的时候手里还攥着半张货单。",
+				"burn_it_off", "下令焚船，彻底驱离",
+				"烈焰断疫商路受挫",
+				"巡防队纵火焚毁疫船，口外浓烟彻夜不散。强硬手段虽挡住了热病，却重创港口制造与主食周转，商民惊恐怨恨交加。",
 				[
 					Shared.manufacturing(-4, 540),
 					Shared.staple(4, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
-				"hold_at_anchor", "扣在口外，送水送饭",
-				"小艇一天两趟",
-				"小艇一天两趟，饭桶用绳子吊上去，空桶再吊下来。到第九天，船上没人应声了。",
+				"hold_at_anchor", "滞留口外，按日补给",
+				"严守锚地静待疫熄",
+				"地方官署按户摊派护港费，雇小艇每日向口外疫船运送水粮。直至船上再无声息，全城方得安宁，唯口粮供给略显吃紧。",
 				[
 					Shared.cash_in(1.2, 360,
 						"向本地人数最多的{primary_profession}征收其现金的 1.2%（护港摊派，按户收）"),
@@ -131,7 +130,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_PLAGUE_QUARANTINE),
 		"title": "{settlement_name}·隔离",
-		"body_text": "烂泥渡最先病倒的是个挑水的，第二天他隔壁两家也躺下了。县里来人，把三条巷子的口用板子拦住，拦板一人高的地方系一条白布条。陆阿满被派去送饭，一天两趟，饭桶放在巷口的石墩上，人退开十步，等里面的人自己来提。他手里有一本记名册，谁家几口人，谁家昨天没出来提饭，都要画一笔。有人说这样封着，饿死的人会比病死的人多；也有人说，白布条一解，全城都得躺下。石灰堆在巷口，风一吹就起白烟。",
+		"body_text": "{settlement_name}人口稠密的旧街区爆发烈性热病，数户居民接连病倒。地方官署与医政署火速设立隔离封锁线，逐户登记病籍名册并定时投放口粮。如今朝野对封控尺度争执不下：主严派要求彻底钉死整片街区，不惜令作坊停摆也要阻断传播；务实派则主张仅封锁确诊病家以保农商运转，或直接将病患迁往城外搭棚集中照看，唯需向地方摊派额外照护经费。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A narrow lane blocked by planks with a white cloth strip, a meal bucket left on a stone, lime dust blowing at dusk",
 		"tags": ["plague", "unrest", "people"],
@@ -164,32 +163,32 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"nail_the_lanes", "钉死巷口，谁也不许出",
-				"巷口钉死了",
-				"板子钉到第三层，里面有人拿扁担往外捅。第七天，送饭的换成了穿号衣的人。",
+				"nail_the_lanes", "严封整片街区，禁止出入",
+				"铁腕封控民怨沸腾",
+				"官署派兵加固封锁木板并严禁越界，疫势虽被压制，却令周边工坊停摆、主食供给吃紧，被困居民的怨怒一触即发。",
 				[
 					Shared.manufacturing(-4, 540),
 					Shared.staple(5, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.gamble(
-				"seal_only_the_sick", "只封病家，别家照常",
-				Shared.branch(39322, "册子停在第四页", # 六成
-					"送饭的册子停在第四页，往后再没添新名字。撤板子那天，有人在墙根晒被子。",
+				"seal_only_the_sick", "仅封病家，余户照常生计",
+				Shared.branch(39322, "精准控疫城池安然", # 六成
+					"国库拨款保障病家补给，病籍名册再未添新名。封锁如期撤除，全城农事与市面运转未受大碍。",
 					[
 						Shared.agriculture(3, 360),
 						Shared.cash_out(1.0, 360),
 					]),
-				Shared.branch(26214, "板子撤早了", # 四成
-					"板子撤到一半，隔壁巷子又倒下两个。县里重新钉，钉得比上回还密。",
+				Shared.branch(26214, "管控失守疫势复燃", # 四成
+					"封锁松动令热病迅速波及邻巷，官署被迫仓促加严封控。疫情扩散致使人丁受损，城中恐慌与动荡随之加剧。",
 					[
 						Shared.birth(-5, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 					])),
 			Shared.option(
-				"move_them_out", "抬到城外，雇人照看",
-				"棚子搭在河滩上",
-				"棚子四面透风，但离井远。雇来的人一天三十文，先付了半个月。",
+				"move_them_out", "迁往城外，摊派雇人照护",
+				"城外设棚移治病患",
+				"官署向地方摊派筹款，在城外河滩搭棚集中收治并详录病程，积累了宝贵医知。唯棚区条件简陋，仍有不少病患不治。",
 				[
 					Shared.cash_in(1.5, 540,
 						"向本地人数最多的{primary_profession}征收其现金的 1.5%（雇人照看的工钱）"),
@@ -203,7 +202,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_PLAGUE_MIDWIFE),
 		"title": "{settlement_name}·产褥热",
-		"body_text": "葛四婶的手接了三代人，指甲缝里是洗不掉的褐色。邢先生从外头回来，说产后的热病是从手上带进去的，接生之前要用铜盆里的滚水烫过，指甲剪到肉。葛四婶听着，把手在围裙上擦了两下，说她接生的孩子没一个坏的，倒是先生们开的方子吃死过人。可这半个月，烂泥渡那边连着走了两个产妇，都是她接的。她把铜盆端到门口，看里面的水汽一点点散掉，没有伸手。",
+		"body_text": "{settlement_name}近期接连发生多起产妇死于产后热病的惨剧。医政署派驻的革新医官查验后指出，根源在于民间沿袭已久的接生旧俗，力主颁布政令强制产婆在接生前一律修剪指甲并以滚水反复烫洗手具。然而地方产婆与保守市井民众抵触情绪强烈，斥责新规繁琐耗柴、侮辱老手艺，地方官署须决断是否强推这项卫生改革。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "An old midwife with stained hands standing at a doorway beside a steaming copper basin, a young physician with a bag behind her",
 		"tags": ["plague", "people", "faith"],
@@ -235,26 +234,26 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"boil_the_basin", "洗手，用滚水烫过",
-				"水凉了再换一盆",
-				"她把指甲剪到肉，手背烫得发红。那一年接生的孩子，活下来的比往年多。",
+				"boil_the_basin", "颁令推行滚水洁手新规",
+				"洁手新规显著保命",
+				"官署严令各地接生一律备置铜盆滚水洁手，虽略增器具消耗，但产妇与新生儿存活率大幅提升，新医理亦得以确立。",
 				[
 					Shared.birth(6, 540),
 					Shared.tools(3, 540),
 					Shared.knowledge(2, 360),
 				]),
 			Shared.option(
-				"keep_the_old_way", "照老规矩，不洗",
-				"褐色洗不掉",
-				"她照旧不洗，只在围裙上擦两下。第二年开春，又有两家在产床上没了人。",
+				"keep_the_old_way", "顺应民间，沿用旧俗",
+				"墨守旧俗产厄频发",
+				"官署未予干预，产婆仍沿旧法接生。次年产褥热再度肆虐，城中人丁蒙受损失，医政革新亦因缺乏公信而受挫。",
 				[
 					Shared.birth(-5, 540),
 					Shared.knowledge(-2, 360),
 				]),
 			Shared.option(
-				"wash_in_summer_only", "入夏才洗，冬天省柴",
-				"水只在伏天烧",
-				"三伏天她烧水，进了腊月就省了。她说手冻裂了容易烂，这话没人听得懂，只当她舍不得柴。",
+				"wash_in_summer_only", "折中推行，夏洗冬省",
+				"半途妥协学理难立",
+				"官署仅令伏天烧水洁手、寒冬听任省柴。此举虽保住部分母婴性命，却令医政规程流于敷衍，正统医学认知反受削弱。",
 				[
 					Shared.birth(2, 540),
 					Shared.knowledge(-3, 540),
@@ -266,7 +265,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_PLAGUE_HERBS),
 		"title": "{settlement_name}·药圃",
-		"body_text": "坡上那片药圃是费伯一锄一锄开出来的，最里头长着苦蒿。叶子揉碎了有股冲鼻的苦味，煮水喝下去，烧能退半截。这一季病人多，来讨药的人排到篱笆外头。费伯说苦蒿成片要三年，根一断，坡上就得空上几年；来讨药的人说，眼下这个人今夜就要烧过去。他蹲下去，把锄头横在垄上，问了一句，采几把，谁说了算。",
+		"body_text": "时疫横行之际，{settlement_name}坡上的药草官圃成为全城退烧救命的最后指望，圃中历时数年方才成片的苦蒿引来无数市井民众围堵讨药。医政署管圃官吏警告，苦蒿若连根拔除，整片山坡数载之内都将寸草不生。然而面对门外危在旦夕的病患家属，地方官署面临艰难取舍，须在竭泽采挖、只摘药叶保根与封圃摊派外购之间立刻决断。",
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "A hillside herb plot fenced with thorn branches, an old gatherer squatting with a hoe across the rows, a queue of villagers at the gate",
 		"tags": ["plague", "people", "land"],
@@ -302,25 +301,25 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"dig_it_all", "连根挖，先救眼前",
-				"坡上只剩翻过的土",
-				"连根挖了三天，坡上只剩翻过的土。第二年开春再去看，一株苦蒿也没冒头。",
+				"dig_it_all", "连根采挖，竭力救人",
+				"救回人丁药圃尽毁",
+				"官圃苦蒿被连根挖尽煎汤施药，大批高热病患转危为安。然而山坡表土翻毁、药根断绝，本地农垦产出随之受损。",
 				[
 					Shared.birth(5, 540),
 					Shared.agriculture(-4, 540),
 				]),
 			Shared.option(
-				"leaves_only", "只摘叶，把根留住",
-				"叶子摘了一半",
-				"只摘叶，根留在土里。那年冬天烧退得慢，扛不住的人比往年多几个。",
+				"leaves_only", "限采药叶，保全根系",
+				"留根存种重患难救",
+				"官署严令只摘叶片不伤药根，并记录下苦蒿再生之法充实医籍。但药效大减令部分重症病患未能熬过寒冬，人丁略有折损。",
 				[
 					Shared.birth(-3, 540),
 					Shared.knowledge(3, 360),
 				]),
 			Shared.option(
-				"fence_and_buy", "封了坡，去外头买药",
-				"药从水路来",
-				"坡用荆条围了，药从水路运来，一包一包拆开验。费伯每天去坡上转一圈，什么也不采。",
+				"fence_and_buy", "封圃护种，摊派外购",
+				"摊派购药工坊受累",
+				"药草官圃被严密围封保护，地方官署按户摊派筹资从水路购药应急。然征费与转运调度抽紧了地方资源，工坊制造随之承压。",
 				[
 					Shared.cash_in(1.5, 540,
 						"向本地人数最多的{primary_profession}征收其现金的 1.5%（买药摊派）"),
@@ -333,7 +332,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_PLAGUE_HOSPITAL),
 		"title": "{settlement_name}·医院",
-		"body_text": "邢先生在烂泥渡头上租了两间空仓，摆了十二张床，床板是从旧戏台上拆的。开张半个月，床上躺满了人，多半是扛包的、拉纤的、给人洗衣裳的。他不收诊金，药钱记在一本记名册上，到月底一算，亏空比上个月又厚了一层。管账的伙计说，照这样下去，仓租下个月就付不出，药铺也不肯再赊。墙角撒过石灰，扫起来还是一层灰。邢先生把册子翻到最后一页，指头在那片空白上按了按，合上。",
+		"body_text": "医政署在{settlement_name}租用空仓改建的济贫医馆人满为患，病籍名册上登记的尽是码头力夫、纤夫与贫苦工匠。医馆坚持免收诊金并赊账配药，如今仓租与药债债台高筑，药商已断绝赊供，医馆随时面临关门歇业。地方官署须决定如何填补这笔亏空：动用国库直接拨款补贴、向全城居民按户摊派药费，抑或开放本地大商号认捐冠名以换取资助。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "Two rented warehouses turned into a ward, rows of plank beds with the poor, a physician holding a ledger open at a blank page",
 		"tags": ["plague", "people", "market"],
@@ -366,26 +365,26 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"ask_the_treasury", "请国库支一份钱粮",
-				"县里只批了一半",
-				"县里批了一半，另一半让医馆自己想办法。床没减，饭减了一顿。",
+				"ask_the_treasury", "国库拨款，维持官办",
+				"公帑续命医籍日丰",
+				"国库批复专款维系医馆运转，医官借此整理出详尽病案充实学识。唯资金仍显紧俏，抽调人手照护亦略微拖慢了周边工坊。",
 				[
 					Shared.cash_out(1.5, 540),
 					Shared.knowledge(4, 360),
 					Shared.manufacturing(-3, 540),
 				]),
 			Shared.option(
-				"levy_the_households", "按户摊一份药钱",
-				"收钱的走到第三趟",
-				"钱是收上来了。收钱的人走到第三趟，门口就有人把门关了。",
+				"levy_the_households", "按户摊派，共担药资",
+				"摊派筹款病患得救",
+				"地方官署按户强征药费填平了医馆亏空，贫苦病患得以继续收治、人口略有回升，唯屡次摊派令市井百姓怨声颇重。",
 				[
 					Shared.cash_in(2.0, 540),
 					Shared.birth(2, 540),
 				]),
 			Shared.option(
-				"let_the_firms_endow", "请商号认捐，名字刻门上",
-				"牌上刻了名字",
-				"捐得多的刻在前头。穷人还是睡在最后两张床上，风从门缝里进来。",
+				"let_the_firms_endow", "引入商号认捐并配资",
+				"商号冠名医政旁落",
+				"国库辅以少量配资并准许大商号刻名认捐，商业势力借机扩大声望。然而医馆沦为名利场，医官精力耗于应酬，医学研习反受荒废。",
 				[
 					Shared.cash_out(1.0, 540),
 					Shared.bias(Ids.TAG_MARKET, 1.15, 540),
@@ -398,7 +397,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_PLAGUE_VACCINE),
 		"title": "{settlement_name}·疫苗",
-		"body_text": "沈司医从南边回来，怀里一小包痘痂，油纸包着，外头再套一层布袋。他说把痂研成末，吹进孩子的鼻孔，出过一次轻的，往后就不再出重的。城里没人肯先试，连药铺的伙计都把袖子放下来，退到门后。柳七家的老二前年出痘，烧了九天，退下来的时候耳朵就听不见了；可要拿孩子去试一样没验过的东西，柳七把手按在门框上，没有点头。沈司医把油纸包收回怀里，说他再等一年，等南边的信。这一年里还会有多少孩子烧过去，他不说。",
+		"body_text": "医政署遣赴外域考察的医官带回一套尚未验证的种痘方术，声称将干燥痘痂研末接种于孩童体内，引发轻症后便可终身免疫烈性痘疫。然而此术闻所未闻，市井民众与药铺掌柜皆深怀畏惧，无一家庭愿拿骨肉冒险试药。地方官署面临艰难抉择：强行遴选孩童先行试种、出重金向地方筹资招募自愿者，抑或再等一年待外域确凿实绩传来再议。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "A physician unwrapping a small oil-paper packet of dried scabs, a father with his hand flat on a doorframe, neighbours watching from behind a counter",
 		"tags": ["plague", "people", "era"],
@@ -430,32 +429,32 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.gamble(
-				"try_it_on_a_child", "挑一个孩子先试",
-				Shared.branch(42598, "胳膊上起了两个小疱", # 六成半
-					"胳膊上起了两个小疱，烧两天就退了。转过年来，城里出痘的孩子多半只出一身疹子。",
+				"try_it_on_a_child", "下令遴选幼童先行试种",
+				Shared.branch(42598, "试种告捷痘疫渐息", # 六成半
+					"受试孩童仅发轻热数日便告痊愈，国库随即拨款推广种痘方术。城中幼童存活率大增，本国医学认知亦迈出关键一步。",
 					[
 						Shared.birth(6, 540),
 						Shared.knowledge(5, 360),
 						Shared.cash_out(1.0, 540),
 					]),
-				Shared.branch(22938, "试的那个孩子没了", # 三成半
-					"试的那个孩子烧到第四天就没了。柳七把人埋了，回头把剩下的痘痂全烧了。",
+				Shared.branch(22938, "试种夭折民情大哗", # 三成半
+					"受试孩童高烧不退最终夭折，残存痘痂被愤怒的民众付之一炬。此番惨剧重创人口信心，城中反抗医政的怨潮迅速蔓延。",
 					[
 						Shared.birth(-7, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					])),
 			Shared.option(
-				"wait_one_more_year", "再等一年，等南边的信",
-				"信到的时候是冬天",
-				"信上说南边试过了，管用。这一年里，城里又添了十几座小坟。",
+				"wait_one_more_year", "暂缓推行，静候外域实绩",
+				"延宕一年幼童多殇",
+				"外域确信直到隆冬方才传回，证实种痘有效。然这一年延宕已令城中大批孩童死于痘疫，本地医学探索也落于人后。",
 				[
 					Shared.knowledge(-4, 540),
 					Shared.birth(-4, 540),
 				]),
 			Shared.option(
-				"buy_a_volunteer", "出钱买人来试",
-				"有人为了钱来",
-				"来的是寡妇家的孩子，价钱谈了三回。钱是各户凑上来的，寡妇领了，没回头。",
+				"buy_a_volunteer", "筹资悬赏，招募试药者",
+				"重金募试犹有折损",
+				"官署按户摊派并由国库贴补，终以重金募得贫户幼童试种。虽免于强征抗拒，但仓促施术仍致人丁受损，舆论颇多非议。",
 				[
 					Shared.cash_in(2.0, 540,
 						"向本地人数最多的{primary_profession}征收其现金的 2%（凑给试药人家的钱）"),
@@ -469,7 +468,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_PLAGUE_QUACK),
 		"title": "{settlement_name}·庸医",
-		"body_text": "岑九在集市口摆一张桌子，桌上七个一模一样的瓶子，瓶口用红布扎着。他说这药治一切热病、烂喉、身上起的东西，一瓶下去当天见效。来买的人从烂泥渡一路排到卖鱼的摊子前头，比邢先生那边多出三倍。邢先生站在对面看了一炷香，看见有人把药瓶揣进怀里，那人的孩子正烧得眼睛发直。他回身去抓药，手在药柜上停了停，说这药里就是糖水和烧酒。说这话的时候，排队的人往他这边看了一眼，又转回去了。",
+		"body_text": "一名游方术士在{settlement_name}闹市设摊兜售所谓包治热病与烂喉的神药，因索价低廉且夸口立效，排队购药的市井民众络绎不绝，门庭远盛于正统医馆。医政署暗中化验后证实药瓶内不过是糖水兑烈酒，痛陈其贻误病情、草菅人命，敦请地方官署立刻取缔驱逐。但财政吏员提出可借机发照征税纳管，也有人建议动用公费当街化验以正视听。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "A quack's table at a market corner with seven identical bottles tied with red cloth, a long queue, a physician watching from across the street",
 		"tags": ["plague", "market", "unrest"],
@@ -501,25 +500,25 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"drive_him_out", "赶出城，砸了摊子",
-				"摊子砸了，人还在",
-				"瓶子碎了一地，糖水渗进土里。第三天，他在城外柳树下又摆了一张。",
+				"drive_him_out", "查抄药摊，驱逐出境",
+				"铁腕取缔民怨暗生",
+				"巡防队当街捣毁假药摊并将术士逐出城外，正统医政权威得以维护。但买不起良药的底层病患愤懑不已，城中怨气随之滋长。",
 				[
 					Shared.knowledge(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 			Shared.option(
-				"tax_him", "让他摆，抽他的税",
-				"官凭贴在摊角上",
-				"一张官凭贴在摊子角上，每月抽钱。买药的人看见官凭，买得更放心了。",
+				"tax_him", "准其设摊，按月征税",
+				"征税背书延误病机",
+				"官署颁发执照并按月抽税，公库进项颇丰。然而官府准许反令百姓对假药深信不疑，无数病患因延误诊治而折损性命。",
 				[
 					Shared.cash_in(1.5, 540),
 					Shared.birth(-3, 540),
 				]),
 			Shared.option(
-				"test_it_in_the_street", "当街验他的药",
-				"碗里的东西分了三层",
-				"碗里的东西沉淀一夜，分成三层。看的人少了一半，剩下一半说大夫是嫉妒他。",
+				"test_it_in_the_street", "拨款当街验药，以正视听",
+				"公费辟谣反遭疑谤",
+				"医政署动用公款当街析出糖水沉渣，围观者却半信半疑，反谣传官医嫉贤妒能。此举徒耗经费，更令正统医政公信受损。",
 				[
 					Shared.knowledge(-3, 540),
 					Shared.cash_out(0.5, 540),

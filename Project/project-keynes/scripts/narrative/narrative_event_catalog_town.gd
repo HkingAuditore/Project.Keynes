@@ -17,8 +17,7 @@ const PACK_ID := &"town"
 const PREFIX := "evt.town."
 
 const CAST := [
-	"翟老卯", "宗有粮", "卫长庚", "韩天增", "郑五斗", "卞四娘", "潘玉枝", "蔡四", "甘氏", "荀德茂", "蒯阿六", "屈老康",
-	"桦树巷", "石灰巷", "砖桥口", "北门更楼", "甜水井", "永济号", "三和栈", "公顺堂", "义盛杠房", "公匣",
+	"市政署", "商会", "行会", "巡防司", "常平仓", "公产基金", "市集特许", "钱监", "水务局", "街坊公议",
 ]
 
 const MUL_075 := 49152
@@ -64,8 +63,8 @@ static func append(catalog) -> void:
 	# ═══ 更夫 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_TOWN_NIGHT_WATCH),
-		"title": "{settlement_name}·更夫",
-		"body_text": "北门更楼的梆子一夜敲五遍，翟老卯敲了四十一年，今年入冬左膝先不听话。砖桥口入秋丢了三回东西：永济号丢了一串钱，三和栈丢挂在檐下的两块腊肉，公顺堂丢的是一屉药材。韩天增在柜台后头算完账，说添一个人，按铺面大小摊，一家摊得下来；这钱让郑五斗去收，收上来先补他去年垫的。翟老卯听见「添一个人」，把手从膝盖上拿开，说这活他孙子也能干。郑五斗没接话，低头把算盘珠子归到一边。散场时翟老卯把梆子从钉子上取下来，用袖子擦了一遍，又挂回去，挂得比原来高半寸。",
+		"title": "{settlement_name}·市政夜巡",
+		"body_text": "随着{settlement_name}坊市扩张，原有的夜间巡防体制已难覆盖新建街区，近来商栈与工坊屡遭窃案。商会代表联名向市政署递交陈情，要求立即扩编巡防司人手，但对按铺面规模加征巡防捐颇有微词。地方财政官则指出，若全由国库垫付巡夜开销，势必挤占其他市政预算；而部分老资格守夜人亦反对引入新制，唯恐世袭差事旁落。如何平衡治安投入与商民税负，已成当务之急。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A night watchman with a wooden clapper in a gate tower, shopkeepers counting coins below, a constable with an abacus",
 		"tags": ["town", "unrest"],
@@ -99,26 +98,26 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"tax_the_shops", "按铺面摊钱，添一班",
-				"二更多了一个人",
-				"新来的那个是翟老卯的孙子，十六岁，梆子拿在手里嫌沉。头一夜他跟在后头，只敲了半条街，另一半是他爷敲的。铺子门口的灯比上月多亮了半个时辰。",
+				"tax_the_shops", "征收铺捐，扩编巡防",
+				"夜巡扩编落地",
+				"市政署按铺面等级摊派巡防捐，巡防司得以增设双班夜哨。商栈失窃案随即锐减，工坊得以安心赶工，虽有中小商贩抱怨税负加重，整体治安已显著改观。",
 				[
 					Shared.cash_in(1.5, 540, "向本地人数最多的{primary_profession}征收其现金的 1.5%（铺捐转拨更夫）"),
 					Shared.manufacturing(3, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 				]),
 			Shared.option(
-				"let_the_family_watch", "叫翟老卯带孙子守夜",
-				"梆子还是那个梆子",
-				"爷孙俩分前后半夜，孙子走东边，走到砖桥口就回头。第一场雪后，三和栈的檐下又少了一块腊肉。掌柜的没报官，第二天把狗牵进了院子。",
+				"let_the_family_watch", "国库补贴旧制守夜",
+				"旧制勉强维持",
+				"朝廷拨款补贴原有守夜人手，未动商铺分毫。然而旧有巡逻编组难以兼顾偏远街区，入冬后窃案再度抬头，各商栈只得自行雇佣护院，街面猜忌日深。",
 				[
 					Shared.cash_out(1.0, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
-				"wait_until_spring", "先不添，敲到开春",
-				"开春再说",
-				"腊月里砖桥口又丢了两回，丢的都是挂在门外的东西。翟老卯照旧一夜五遍，走到没灯的巷口就停下来，把梆子敲得急一点，再往回走。",
+				"wait_until_spring", "暂缓扩编，维持现状",
+				"治安持续恶化",
+				"市政署搁置了巡防改革方案，夜间巡逻仍捉襟见肘。随着入室盗窃频发，工坊被迫缩短夜班工时，商民对地方治理的不满在坊间迅速蔓延。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 720),
 					Shared.manufacturing(-3, 540),
@@ -129,8 +128,8 @@ static func append(catalog) -> void:
 	# ═══ 丐头 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_TOWN_BEGGAR_GUILD),
-		"title": "{settlement_name}·丐头",
-		"body_text": "砖桥口的石阶空了。宗有粮把三个瞎眼乞丐领到巷子外头，一人发了一条旧席。永济号给了，三和栈给了，公顺堂拖了三天，第四天门槛上就躺了个烂腿的。韩天增把钱数好，拿纸包上，说这钱给得比丢的少。郑五斗听说这事，第二天到巷口从早坐到晚，问宗有粮收的是哪一门的钱。宗有粮把破碗在手里转了一圈，说收的是扫地的钱。当夜下雪，石阶上扫得干干净净，一个人也没有。",
+		"title": "{settlement_name}·流民秩序",
+		"body_text": "{settlement_name}繁华街区近来涌入大批无业流民，其首领竟以维持街面整洁为名，向沿街商号定期收取规费。凡按期交纳者门前清静无事，拒交者则屡遭聚众滋扰。商会内部对此意见分裂，部分大商号主张花钱消灾，另一派则痛斥此举形同私税，要求市政署派巡防司彻底清剿。但负责治安的官吏警告，强行驱逐大批流民若无安置去处，恐在城郊酿成更大动荡。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A beggar chief with a cracked bowl on stone steps, shopkeepers handing wrapped coins, a constable watching from the lane",
 		"tags": ["town", "unrest"],
@@ -164,27 +163,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"accept_the_rule", "认下规矩，巷外划地",
-				"巷子外多了一块席子地",
-				"郑五斗在巷外的空地上划了界，铺了三条旧席。宗有粮把最会闹的几个安置在界里，剩下的自己走。腊月里雪大，席子上的人挤成一堆，铺子里的灯照不到那里。",
+				"accept_the_rule", "划区收编，纳入规管",
+				"灰产转为规管",
+				"市政署在城郊划定收容区，将流民首领纳入街面杂役编外管理，并从商铺规费中抽成入库。商业区秩序迅速恢复，但城郊收容区内的隐性矛盾仍被压在台面之下。",
 				[
 					Shared.manufacturing(3, 540),
 					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（铺子那笔钱里抽一份）"),
 					Shared.bias(Ids.TAG_UNREST, 0.80, 540),
 				]),
 			Shared.option(
-				"drive_him_out", "抓了宗有粮，赶出城",
-				"城门口多了一排人",
-				"差役把宗有粮架出城门，破碗掉在门槛上，碎了。天没亮，城门外的人把扁担横在膝上，隔着门洞往里看。门内的石阶空着，没人扫雪。",
+				"drive_him_out", "出动巡防，强制清剿",
+				"清剿激化对立",
+				"巡防司耗费公帑逮捕流民首领并将闲散人员驱出城区。虽一时震慑了私收规费之风，但被逐流民在城外聚拢滋事，商路受阻，坊市人心愈发惶惶。",
 				[
 					Shared.cash_out(1.5, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 720),
 					Shared.manufacturing(-3, 540),
 				]),
 			Shared.option(
-				"look_the_other_way", "不认也不抓，看着",
-				"两张纸贴在墙上",
-				"衙门的告示贴在巷口，写的是禁乞；宗有粮的人在旁边贴了一张，写的是施粥的日子。头一张被人撕了，撕得不干净，边角还挂着。",
+				"look_the_other_way", "默许现状，暂不介入",
+				"政令形同虚设",
+				"市政署仅张贴禁令便不再深究，商号与地下帮派在暗中达成了脆弱的妥协。街面生意虽未停摆，但官府公信力大损，各方势力皆在试探法度底线。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 720),
 					Shared.manufacturing(2, 540),
@@ -195,8 +194,8 @@ static func append(catalog) -> void:
 	# ═══ 私钱 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_TOWN_FALSE_COIN),
-		"title": "{settlement_name}·私钱",
-		"body_text": "卫长庚的炉子在后院，白天不冒烟，夜里才点。他铸的钱比官钱厚一层，边上有锉过的痕，拿在手里压手。韩天增起初不肯收，收了一回，第二回就照他说的价换。永济号的柜台上摆着一只小秤，专门称这种钱。入秋官钱又薄了一层，市上买米要多搭一把钱，卫长庚的炉子就再没熄过。郑五斗带着两个差役来过一次，站在院墙外闻了半天烟味，没敲门。卫长庚把新出的一串钱埋进灶灰里，埋完把手在裤子上擦了擦。",
+		"title": "{settlement_name}·私铸货币",
+		"body_text": "由于官铸货币近来成色渐薄，{settlement_name}暗中出现了多处私铸炉灶，所出私钱反比官钱厚重压手。商会旗下商号起初尚存顾忌，但见市面信誉倾斜，已开始备秤验重、公然流通私钱。钱监官员紧急上书，痛陈铸币权乃国家命脉，绝不容民间染指；市政署却忧虑，若此时由巡防司强行查抄私炉，恐引发市面通货骤紧，反致工商业陷入停滞。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "A secret coin furnace smoking at night behind a house, thick coins on a small scale in a shop, an official sniffing outside the wall",
 		"tags": ["town", "market", "unrest"],
@@ -229,9 +228,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"take_the_furnace", "收炉入官，铸官钱",
-				"官炉搬到前院",
-				"官炉挪到前院，门口挂了牌，卫长庚成了炉头。头一炉出的钱还是厚，第三炉就照官样薄下去。他把锉刀搁在架子上，没再动。",
+				"take_the_furnace", "收编私炉，改隶钱监",
+				"私炉收归官营",
+				"国库拨款收购私铸工坊，将熟练炉匠一并编入钱监体系，统一铸造新式官币。铸币权得以保全，全国制造工艺亦受益于炉匠技术，但民间工匠对官营压价渐生怨怼。",
 				[
 					Shared.cash_out(2.0, 720),
 					Shared.country_sector("manufacturing", 3, 540),
@@ -239,18 +238,18 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_LABOR, 1.10, 540),
 				]),
 			Shared.option(
-				"seal_the_furnace", "封炉，照律办",
-				"炉子拆了",
-				"差役把炉膛拆开，砖还烫，水泼上去冒白气。卫长庚站在一边看，手里捏着一枚没锉完的钱。捏到散场，边角在他掌心压出一道红印。",
+				"seal_the_furnace", "依法封炉，没收铜铁",
+				"严厉取缔私铸",
+				"巡防司雷霆查封私铸作坊，拆毁炉膛并将查获的金属充入市面储备。官府权威虽得以维护，但本地作坊资金链受创，商民对成色不足的官币益发不满。",
 				[
 					Shared.stock("wrought_iron", 15),
 					Shared.manufacturing(-4, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 720),
 				]),
 			Shared.option(
-				"pretend_not_to_know", "装不知道",
-				"秤摆在明处",
-				"永济号的小秤挪到了柜台面上，谁的钱都称一称。郑五斗再来，只在门口站了站，问今年秋税怎么收。韩天增说照收，收完把那串私钱单独串起来，放进另一个抽屉。",
+				"pretend_not_to_know", "默许流通，择优征税",
+				"双轨通货并行",
+				"市政署对私钱睁一只眼闭一只眼，唯独在征收赋税时要求折算足色好钱。市面交易借此保持活跃，但货币主权旁落，潜藏的金融与社会风险正悄然积聚。",
 				[
 					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（秋税收进好钱）"),
 					Shared.manufacturing(3, 540),
@@ -262,8 +261,8 @@ static func append(catalog) -> void:
 	# ═══ 火 ═══════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_TOWN_FIRE),
-		"title": "{settlement_name}·火",
-		"body_text": "火从石灰巷的草棚起，风把火头往东推。卞四娘把豆腐坊的门板卸下来挡火，门板一烤就卷。砖桥口的水缸排成一行，一桶传一桶，传到第七个人手里只剩半桶。三和栈的掌柜在墙上喊，说仓里的粮够全城吃一冬；义盛杠房的蒯阿六抱着两根杠子站在门口，说杠子烧了，这个月死人拿什么抬。风忽然转了半圈，火头贴着瓦檐往北走。卞四娘回头看自己那盘石磨，磨盘上压着一块湿布，是她出门时盖上的。",
+		"title": "{settlement_name}·城区大火",
+		"body_text": "{settlement_name}密集的木构坊市突发大火，烈风裹挟火头迅速向东蔓延，逼近储备全城冬粮的常平仓与多处手工业作坊。巡防司组织人链提水扑救，但水源吃紧，火势仍呈失控之势。行会代表恳请优先保住沿街作坊与商栈，粮政官吏则严词警告，一旦常平仓付之一炬，全城今冬必陷粮荒。市政署必须在强拆民居开辟隔离带与集中兵力死守粮仓之间立刻拍板。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A street fire at night, door planks used as shields, a bucket line from water vats, a woman looking back at her millstone",
 		"tags": ["town", "unrest"],
@@ -297,9 +296,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"pull_down_the_east_row", "拆东头的屋，断火路",
-				"一条空巷",
-				"六间屋半天拆完，梁木拖到街心，火到空地上就矮了。卞四娘的石磨保住了，磨盘上那块湿布烤干，粘在石头上，撕下来带了一层灰。拆屋的人家把门框扛走，说开春再立。",
+				"pull_down_the_east_row", "强拆民房，开辟火路",
+				"断火止损成功",
+				"巡防司果断拆除东侧连片木屋，火势抵近隔离带后终于受控，核心作坊得以保全。国库拨款抚恤拆迁户，但无家可归的怨气与重建建材紧缺仍困扰着市政署。",
 				[
 					Shared.cash_out(2.0, 540),
 					Shared.manufacturing(3, 540),
@@ -307,25 +306,25 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 				]),
 			Shared.option(
-				"save_the_granary", "全扑三和栈的仓",
-				"仓门熏黑了，粮是干的",
-				"人全压到仓墙下，水一桶桶往瓦上泼，瓦炸了好几块。火绕过仓，从杠房那侧过去，杠子烧成炭，横在门口。卞四娘回去时，豆腐坊只剩半堵墙，石磨还在，裂了一道。",
+				"save_the_granary", "全力护卫常平粮仓",
+				"粮仓无恙工坊损",
+				"救火力量尽数压向常平仓，全城冬粮安然无恙，稳住了基本口粮供应。然而周边数座工坊与商铺未能幸免，本地制造业元气大伤，受灾坊民怨声载道。",
 				[
 					Shared.staple(-5, 540),
 					Shared.manufacturing(-4, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.gamble(
-				"bet_on_the_wind", "赌风会停，先守着",
-				Shared.branch(39322, "火在空地上矮下去", # 60%
-					"火头蹿到巷尾的柴堆，烧了一阵，自己矮了。天亮时清点，只烧掉草棚、柴堆和两间偏房。卞四娘把湿布从磨盘上揭下来，布还湿着。",
+				"bet_on_the_wind", "固守要冲，待风势转弱",
+				Shared.branch(39322, "风息火灭侥幸过关", # 60%
+					"风势在午夜前骤然减弱，火头烧尽外围棚屋后自行熄灭。核心街区与粮仓仅受轻微波及，但险象环生的救灾过程仍令坊间对市政应急能力颇有微词。",
 					[
 						Shared.manufacturing(-2, 360),
 						Shared.staple(3, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.05, 360),
 					]),
-				Shared.branch(26214, "风从北边转回来", # 40%
-					"风转回来的时候，人还压在仓墙下。火顺着瓦檐过了桦树巷，铺子的门板一间间烧穿。卞四娘的石磨裂成两半，磨眼里的粮食烧成了炭。",
+				Shared.branch(26214, "风向骤变火烧连营", # 40%
+					"大风突转北向，烈焰越过仓墙直扑核心商业区，大片工坊与商栈化为焦土。此次惨重火灾不仅重创本地产能与口粮储备，更导致人口折损与深重创伤。",
 					[
 						Shared.manufacturing(-6, 720),
 						Shared.staple(6, 540),
@@ -337,8 +336,8 @@ static func append(catalog) -> void:
 	# ═══ 摊 ═══════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_TOWN_STALL_FIGHT),
-		"title": "{settlement_name}·摊",
-		"body_text": "砖桥口的拐角只摆得下两个摊子。潘玉枝的卤煮锅占了里侧，地钱按月交给郑五斗，收条压在锅底下的瓦片下。蔡四的茶炉是上个月推来的，摆在桥栏边上，比她的锅靠外半步，挑夫卸了货就蹲在他那边喝。潘玉枝把收条抽出来，纸角已经油透。蔡四说他不知道这块地要交钱，知道了也不交，他一天卖不出几碗。郑五斗来得晚，站在两个摊子中间，先看锅，再看炉子。潘玉枝把勺子往锅沿上一磕，卤汤溅出来一点，落在她自己的鞋面上。",
+		"title": "{settlement_name}·市集特许",
+		"body_text": "{settlement_name}主干道桥口的黄金地段长期供不应求，近期爆发了激烈的摊位归属纠纷。按月向市政署缴纳市集特许费的持证商户指责大批无证商贩占道抢客，严重侵蚀合法商税收益；流动商贩则辩称官定摊费过高，普通小民唯有摆散摊方能糊口。商会要求官府严厉维护特许契约的严肃性，而基层官吏却担心一味驱逐会激化底层生计矛盾，令街面秩序失控。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "Two food stalls squeezed into a bridge corner, a stew pot and a tea stove, a constable standing between them",
 		"tags": ["town", "market"],
@@ -372,27 +371,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"honour_the_receipt", "照收条办，挪走一家",
-				"炉子挪进巷子",
-				"蔡四把炉子挪进去，一早上烧不开一壶。挑夫还是往巷子里拐，靠着巷墙喝，喝完把碗放在地上。潘玉枝的锅前空出一块地，她拿水冲了三遍。",
+				"honour_the_receipt", "维护特许，清退无证摊",
+				"特许契约得以维护",
+				"市政署强令无证商贩迁入偏僻巷道，严格保障持证商户的独占区位。摊税如期入库，商业秩序趋于规范，但失去生计渠道的底层商贩积怨日深。",
 				[
 					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（摊地钱照收）"),
 					Shared.manufacturing(2, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 				]),
 			Shared.option(
-				"draw_a_line", "划中线，两家都交",
-				"地上划了一道白线",
-				"郑五斗用石灰在地上划了一道线，两家各守一边。头三天没人越线，第四天挑夫把担子横在线上，两家一起骂他。潘玉枝把多交的那份钱记在收条背面，说开春再算。",
+				"draw_a_line", "划界并征，一律纳捐",
+				"全面划界征税",
+				"官府在要冲重新划定摊位标线，将所有流动商贩一并纳入摊税名册。财政收入随之增加，但加重的交易成本很快转嫁至日用饮食，令市民与商贩两头不悦。",
 				[
 					Shared.cash_in(1.5, 540, "向本地人数最多的{primary_profession}征收其现金的 1.5%（两家都交地钱）"),
 					Shared.staple(3, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
-				"let_them_quarrel", "让他们吵，等收摊",
-				"拐角空了",
-				"吵了半个月，潘玉枝把锅搬回家，说等开春。蔡四的炉子还在桥栏边，火一天比一天小。入冬第一场雪，拐角上只剩一圈黑印，是锅底留下的。",
+				"let_them_quarrel", "暂缓裁决，听凭自理",
+				"市集陷入混乱",
+				"市政署迟迟未作裁断，持证商户与流动商贩的摩擦愈演愈烈。多名纳捐商户愤而撤摊停业，桥口商贸日渐萧条，官府的市集管理威信也随之扫地。",
 				[
 					Shared.manufacturing(-3, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 720),
@@ -403,8 +402,8 @@ static func append(catalog) -> void:
 	# ═══ 谣言 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_TOWN_RUMOR),
-		"title": "{settlement_name}·谣言",
-		"body_text": "话是甘氏在井台边说的：三和栈的粮要装船往北调。她只说了一句，听的人替她补了三句，补到下午，成了「官仓已经空了，明日封门」。公顺堂的甘草一天卖空两屉，说能安神；永济号门前排了队，有人把压箱底的铜钱拿出来换米。三和栈的掌柜把仓门开了半天，让人伸头看，看的人出来还是不信。甘氏傍晚去井台打水，绳放下去，桶碰到水面的声音比昨天空。她把桶提上来，水里浮着一片草叶，她捞出来，弹掉了。",
+		"title": "{settlement_name}·粮荒谣言",
+		"body_text": "一则关于常平仓存粮即将外调、官仓已空的流言在{settlement_name}迅速发酵，短短数日便演变为全城范围的抢购潮。各大商号门前大排长龙，市民纷纷取出积蓄囤积口粮与药材，商会成员虽极力辟谣却收效甚微。巡防司主张立刻追查谣言源头、严惩造谣者以儆效尤；市政署部分幕僚则认为堵不如疏，唯有直接公开仓廪实况，方能彻底平息市场恐慌。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "A crowd queuing outside a grain shop, a woman at a well with a bucket, empty medicine drawers in an apothecary",
 		"tags": ["town", "unrest"],
@@ -437,27 +436,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"open_the_granary", "开仓，让人自己看",
-				"仓门开了半天",
-				"仓门开在东墙，人排着进去，出来时手里抓一把谷子给人看。米价当天落了回去，永济号门前的队散了一半。管仓的老吏把仓门重新锁上，锁了两遍，钥匙揣进怀里按了按。",
+				"open_the_granary", "开仓示众，刊布实账",
+				"公开账目平息恐慌",
+				"市政署敞开常平仓大门允许市民代表查验，并刊印详尽存粮告示广为张贴。粮价随即回落，抢购潮迅速退去，官府借此积累了印务公示的治理经验，唯行政耗费颇多。",
 				[
 					Shared.staple(-5, 540),
 					Shared.manufacturing(-3, 540),
 					Shared.research_signal("breakthrough.printing", "印版告示"),
 				]),
 			Shared.option(
-				"arrest_the_woman", "抓甘氏，押在衙门口",
-				"井台上没人说话了",
-				"甘氏在衙门口站了半天，脖子上挂了块纸牌。放回来那天，她照旧去井台打水，旁边的人让开半步，谁也没问。第二天井台上换了个生面孔在说话，说的还是粮。",
+				"arrest_the_woman", "严查源头，重罚造谣者",
+				"高压弹压适得其反",
+				"巡防司动用经费抓捕数名传谣者并游街示众。明面上的议论虽骤然消声，但私下里的猜疑却愈演愈烈，官民之间的信任裂痕进一步扩大。",
 				[
 					Shared.cash_out(1.0, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 720),
 					Shared.manufacturing(2, 360),
 				]),
 			Shared.option(
-				"let_it_cool", "不理会，等它自己凉",
-				"米价自己往上走",
-				"队越排越长，前头的人把钱攥在掌心，轮到了才递过去。第三天三和栈换了价牌，牌是新写的，字比原来大。甘氏没再去排队，把家里的缸挪到墙角，缸底还剩一层。",
+				"let_it_cool", "冷处理，待恐慌自息",
+				"囤积推高粮价",
+				"官府选择置之不理，恐慌情绪在沉默中持续放大。各大粮栈趁机抬高标价，民众生活成本骤增，坊间怨气积聚，连带正常工商业生产也受到拖累。",
 				[
 					Shared.staple(6, 720),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
@@ -469,8 +468,8 @@ static func append(catalog) -> void:
 	# ═══ 出殡 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_TOWN_GUILD_FUNERAL),
-		"title": "{settlement_name}·出殡",
-		"body_text": "荀德茂死在霜降前两天，义盛杠房的杠子擦了三遍。行会的人在他家院里站了一圈，执事说会首送出去得有三十六杠，鼓乐请两班，幡上的字请人写。公匣里的钱是各铺按月攒的，本来预备给死在家里的匠人买棺材、给寡妇发米。荀家的女人坐在门槛上，手里攥着块白布，说三十六杠她抬不动，也不用抬。蒯阿六把名单折起来塞进袖口，数着杠子，数到第十八根，忽然想起自己这个月还没开张。执事把公匣从柜上搬下来，放在桌上，说这钱今天得动。",
+		"title": "{settlement_name}·行会公产",
+		"body_text": "{settlement_name}德高望重的行会领袖日前辞世，行会执事团以维护行业体面与凝聚力为由，提议动用行会公产基金举办极为隆重的丧仪排场。然而公产基金本由各作坊按月集资而成，初衷系用于抚恤伤残匠人与接济遗属。广大基层匠人对此强烈不满，质疑执事团借礼制之名挥霍公款；市政署若介入裁定，则需在尊重行业传统与规范公益财务之间作出取舍。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A guild funeral courtyard with stacked carrying poles, an old woman with a key ring on the threshold, an apprentice counting poles",
 		"tags": ["town", "unrest"],
@@ -504,9 +503,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"full_pomp", "按会首的排场办",
-				"三十六杠出了巷",
-				"三十六杠抬出桦树巷，幡上的字是请公顺堂的账房写的，写坏了三张纸。鼓乐两班在桥口对着吹，吹到第三通，前一班的人先走了。蒯阿六抬最后一杠，肩上的垫布磨破了，他换了另一边。",
+				"full_pomp", "批准厚葬，彰显行会威仪",
+				"盛大丧仪耗资不菲",
+				"市政署批准并补贴了盛大丧仪，纸扎礼器需求大增，沿街铺面一时兴盛。行会高层的颜面得以保全，但公产基金几近见底，基层匠人对执事团的怨愤随之加深。",
 				[
 					Shared.cash_out(2.0, 540),
 					Shared.stock("paper", 10),
@@ -514,9 +513,9 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
-				"keep_the_fund", "省下排场，钱留公匣",
-				"杠子只用了八根",
-				"出殡那天只用了八根杠，鼓乐一班，幡上的字是蒯阿六自己描的，描得歪。路两头站了些看的人。荀家的女人把公匣的簿子交给执事，说这账明年再看。",
+				"keep_the_fund", "厉行节葬，保全公产基金",
+				"公产章程得以确立",
+				"丧仪一切从简，公产基金被严格锁定用于抚恤帮工与遗属。此举赢得广大匠人拥护，行会趁势拟定了更规范的互助章程，劳工组织意识亦随之抬头。",
 				[
 					Shared.cash_out(1.0, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
@@ -524,9 +523,9 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_LABOR, 1.10, 540),
 				]),
 			Shared.option(
-				"wait_three_days", "停灵三天，等各家凑",
-				"三天后抬出去",
-				"停了三天，院里点着香，来的人一拨比一拨少。第四天早上抬出去，杠子只用了四根。执事把借出去的钱记在簿子后头，写完把笔在砚台上按了按，没盖印。",
+				"wait_three_days", "暂缓发丧，令各户分摊",
+				"分摊丧费引发众怒",
+				"官府驳回动用公产的请求，改令各作坊另行凑集丧费并从中抽成入库。发丧一拖再拖，匠人停工抗议，行会内部与官民之间的裂痕双双加剧。",
 				[
 					Shared.manufacturing(-4, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 720),
@@ -538,8 +537,8 @@ static func append(catalog) -> void:
 	# ═══ 井水 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_TOWN_WELL_DISPUTE),
-		"title": "{settlement_name}·井水",
-		"body_text": "甜水井的水一天比一天低，桶放到底，提上来半桶泥。屈老康在自家院墙后头挖了一条沟，把坡上那股水引进菜地，沟沿拍得光光的。桦树巷的人天不亮去排队，排到第三家就没水，甘氏把衣裳端回家，用洗过菜的水又洗一遍。巷里推了两个人去找屈老康，他站在沟边，说沟挖在自家地里，谁家没个菜园。有人提出来要断他的沟，也有人说断了他家菜地，秋天的菜钱谁赔。甘氏没跟去，坐在井台上把井绳一圈圈绕好，绳头打了个结，比昨天多绕一圈。",
+		"title": "{settlement_name}·公私水权",
+		"body_text": "{settlement_name}赖以维生的公共主井近来水位骤降，经水务局查勘，系上游数户私有园圃私自掘渠截引地下水源所致。街坊公议连日向市政署施压，指责上游截流危及全城饮水安全，要求即刻强行填渠。上游业主却据理力争，坚称沟渠开凿于自家地界之内，若贸然断水将致本季蔬果绝收。如何在保障公共用水底线与保护私有产权之间划清红线，考验着官府的决断。",
 		"image_key": "hydrology.water",
 		"ai_visual_prompt": "A shallow well with muddy water, a hand-dug ditch running to a vegetable plot, neighbours arguing at the well platform",
 		"tags": ["town", "unrest"],
@@ -573,27 +572,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"cut_the_ditch", "断沟，水还给井",
-				"沟填了",
-				"沟填了半天，土拍实，屈老康站在边上看，手里捏着一把菜秧。水回到井里，要三天才见涨。甘氏头一个打水，桶提上来是清的，倒在盆里，盆底没有泥。",
+				"cut_the_ditch", "强行填渠，收归公水",
+				"水源重归公用",
+				"水务局动用公款雇工填平私渠，公共主井的水位在数日后逐渐回升。城区饮水危机得以解除，但上游农园收成锐减，业主群体的不满情绪持续发酵。",
 				[
 					Shared.cash_out(1.0, 360),
 					Shared.agriculture(-4, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
-				"dig_a_second_well", "屈家出井钱，另打一口",
-				"第二口井打在下游",
-				"井打在下游的墙根，挖了半个月见水，水是咸的，能洗不能喝。屈老康把钱交了两份，交完扶着沟沿的木桩看了半天，没把沟填回去。桦树巷的人还是天不亮去甜水井排队，只是不再骂他。",
+				"dig_a_second_well", "征资另凿副井分流",
+				"副井完工缓解水荒",
+				"市政署向相关户主摊派工程款，在下游另凿副井供浆洗与作坊使用。新井虽水质偏苦仅作杂用，却有效分担了主井压力，唯连带推高了本地营建成本。",
 				[
 					Shared.cash_in(1.5, 540, "向本地人数最多的{primary_profession}征收其现金的 1.5%（按户摊井钱）"),
 					Shared.manufacturing(3, 540),
 					Shared.build_cost(4, 540),
 				]),
 			Shared.option(
-				"post_a_schedule", "贴张排班纸，轮着来",
-				"纸被撕了",
-				"纸是郑五斗写的，贴在井台的木柱上，写明了时辰。第三天早上纸没了，柱子上留着一圈浆糊印。屈老康的沟还在，水从沟里过，绕过井台往菜地去。",
+				"post_a_schedule", "颁布轮灌水令，限期取水",
+				"水令难行纠纷再起",
+				"水务局张贴了分时取水章程，却未配备足够人手稽查。告示很快遭人撕毁，上游私截依旧，城区每日为争水爆发口角，工坊日常运作亦受波及。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 720),
 					Shared.manufacturing(-3, 540),

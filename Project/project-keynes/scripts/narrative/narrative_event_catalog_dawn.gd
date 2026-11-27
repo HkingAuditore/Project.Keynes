@@ -21,8 +21,7 @@ const PACK_ID := &"dawn"
 const PREFIX := "evt.dawn."
 
 const CAST := [
-	"阿禾", "石伯", "老陶", "谷生", "阿雉", "泥鳅",
-	"青背岭", "滩头", "界石", "陶罐",
+	"长老议会", "氏族", "先民", "石垣", "公井", "黑矿", "盟石", "祭司", "河滩集市", "公粮窖",
 ]
 
 const MUL_110 := 72090
@@ -61,8 +60,8 @@ static func append(catalog) -> void:
 	# ═══ 第一道墙 ═════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_DAWN_FIRST_WALL),
-		"title": "{settlement_name}·第一道墙",
-		"body_text": "青背岭下这片屋，东头没遮没拦，夜里风从坡上直灌进来。石伯主张圈一道石墙，说开春前丢过两只羊，脚印一直通到滩头。石头在河滩上，一块一块背上来，背一天够垒三尺。谷生不干，说地里正忙，抽人去背石头，秋后要少收两成。老陶算的是另一笔，墙一围，墙外那几块地就没人敢种。三个人蹲在墙基上争到天黑，石伯把第一块石头搬正，手掌在上面按了按。",
+		"title": "{settlement_name}·第一道石垣",
+		"body_text": "{settlement_name}的聚落坐落于河谷东侧，无险可守，近来屡遭外族游猎部众夜间袭扰，牲畜与存粮频频失窃。长老议会中主战一派主张即刻征发各氏族青壮，自河滩采石构筑第一道石垣以固根本。但掌管农事的代表强烈反对，警告此时正值农忙，抽调大批劳力搬石筑墙必误秋收；更有氏族忧虑，一旦围墙合拢，墙外开垦的田亩将彻底暴露于劫掠之下。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "Villagers stacking a low stone wall around a settlement at dawn, stones carried up from a river beach, a half-dug ditch beside the wall base",
 		"tags": ["dawn", "unrest"],
@@ -95,27 +94,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"build_it", "把墙垒起来",
-				"墙垒到胸口高",
-				"石头一块一块码上去，码到胸口高，墙根留了一道缝给孩子钻。谷生背了七天石头，秋收晚了三天。",
+				"build_it", "征发部众，合筑石垣",
+				"聚落首筑石垣",
+				"各氏族摊派物资并轮番出工，一道齐胸高的石垣终于合拢。虽短暂延误了部分农活，但聚落首次拥有了可靠的屏障，人心安定，长远耕作反倒更有保障。",
 				[
 					Shared.cash_in(1.0, 360),
 					Shared.agriculture(3, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 			Shared.option(
-				"dig_a_ditch", "挖沟，不垒墙",
-				"沟比墙深",
-				"沟挖了一人多深，土堆在里侧当埂。开春下雨，沟里积了水，泥鳅在里头摸鱼，摸回一裤腿。",
+				"dig_a_ditch", "掘壕为障，不筑石墙",
+				"深壕环绕聚落",
+				"部众改以深挖壕沟、堆土为埂的方式设防，虽占用了一定农时，却在掘土取石的过程中磨砺了工具与采掘技艺，为聚落积累了宝贵的营造经验。",
 				[
 					Shared.agriculture(-3, 360),
 					Shared.manufacturing(2, 360),
 					Shared.extraction(2, 360),
 				]),
 			Shared.option(
-				"wait", "先不修，看看再说",
-				"墙基长草了",
-				"墙基放了一季，草从石缝里长出来。夜里坡上有动静，第二天羊少了一只，谁也没敢往滩头那边找。",
+				"wait", "暂缓筑城，以农为先",
+				"秋收丰盈外患犹存",
+				"长老议会搁置了筑墙之议，全力保障当年耕种与收获。秋粮虽得以充实，但无遮无拦的聚落仍屡遭外敌窥伺，牲畜失窃令部众口粮负担暗中加重。",
 				[
 					Shared.staple(3, 360),
 					Shared.agriculture(2, 360),
@@ -126,8 +125,8 @@ static func append(catalog) -> void:
 	# ═══ 分地（博弈）═══════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_DAWN_DIVIDE_FIELDS),
-		"title": "{settlement_name}·分地",
-		"body_text": "河湾那片好地，今年要分到各户名下。阿禾要按人头分，一户几口就几垄，说人多的家吃得多，分少了要饿。老陶要按户分，说户是老的、地也是老的，新来的分一份就走，地就荒了。两拨人在滩头量地，草绳拉了三遍，量出来的数对不上。谷生把草绳往地上一扔，说再量下去麦子都黄了。泥鳅趴在田埂上，用树枝在泥里一道一道划，划到最后自己也认不出哪道是哪家的。",
+		"title": "{settlement_name}·授田之争",
+		"body_text": "河湾处新辟的大片沃土即将迎来分配，这是{settlement_name}由游猎转向定居农耕后的首次大规模授田。年轻的氏族主张按人口均分，认为口多食众者理应多得份地，否则难以为继；资历深厚的先民老户则坚持按原始户籍划拨，忧虑若任由新附之民瓜分良田，日后人心涣散、田地荒芜。长老议会反复丈量仍难定夺，眼看播种时节将近，拖延已危及全族生计。",
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "Villagers measuring a river-bend field with a rope, wooden stakes driven into the soil, a child drawing lines in the mud",
 		"tags": ["dawn", "land", "unrest"],
@@ -160,32 +159,32 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.gamble(
-				"by_head", "按人头平分",
-				Shared.branch(39322, "绳子量到最后一垄", # 60%
-					"绳子量到最后一垄，天已经黑了。阿禾把自己那垄让给泥鳅家半分，第二天有人跟着让，也有人趁黑把地头的犁沟往外重犁了一尺。",
+				"by_head", "按口均分，兼顾新民",
+				Shared.branch(39322, "均田落地农产大增", # 60%
+					"草绳丈量至日落，肥沃河湾按人口公平划入各户名下。新附氏族获得了立身之本，耕作热情空前高涨，当年便为聚落贡献了丰厚收成。",
 					[
 						Shared.cash_in(1.0, 360),
 						Shared.agriculture(5, 540),
 					]),
-				Shared.branch(26214, "绳子被人夺了", # 40%
-					"第二次量地，两家人夺绳子，绳子断在中间。地没分成，麦子黄在地里，收了七成。",
+				Shared.branch(26214, "争地酿乱贻误农时", # 40%
+					"老户与新民在丈量现场爆发激烈冲突，划界被迫中断。错过了最佳播种窗口，加之部众间裂痕加深，不仅耗费了公中积蓄，更令聚落人丁增长受挫。",
 					[
 						Shared.cash_in(2.0, 360),
 						Shared.birth(-5, 540),
 					])),
 			Shared.option(
-				"by_household", "按户分，老户先挑",
-				"界桩一早就埋好",
-				"削尖的木桩天没亮就砸进土里，老户挑的是靠河的垄。新来的几家分到坡上，土薄，种一年就板结。谷生把自家那根木桩拔了，扛回滩头。",
+				"by_household", "按户授田，老户优先",
+				"老户独占沃土",
+				"长老议会维护了先民老户的优先权，肥沃河岸尽归旧族，新民仅获贫瘠坡地。老户精耕细作提升了产出并总结出历法经验，但新附氏族的怨恨已悄然埋下。",
 				[
 					Shared.agriculture(4, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					Shared.knowledge(2, 360),
 				]),
 			Shared.option(
-				"common_plough", "先不分，合着种",
-				"地还是那块地",
-				"地还是那块地，谁家出几个人、收几成，全凭老陶一句话。第一年收得还行，第二年下种时没人肯先出种子。泥鳅家的那块田荒了半边，草长得比苗高。",
+				"common_plough", "暂不分田，延续共耕",
+				"共耕制效率下滑",
+				"土地继续维持氏族公有共耕，收成由长老统一分配。虽避免了分地动荡并促进了协作技艺的交流，但缺乏私产激励致使耕作懈怠，田间产出明显回落。",
 				[
 					Shared.agriculture(-4, 360),
 					Shared.knowledge(2, 360),
@@ -197,8 +196,8 @@ static func append(catalog) -> void:
 	# ═══ 公井 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_DAWN_COMMON_WELL),
-		"title": "{settlement_name}·公井",
-		"body_text": "坡下那口井，水甜，一桶提上来不洒。今年井壁塌了半边，得有人下去垒石。石伯说自己腰弯不下去，谷生说可以下，条件是先把井归谁定下来。阿雉天不亮就去打水，桶在井台上一溜排开，排到日头出来还没轮上她。有人说井归全寨，谁修谁先打；也有人说修的人出了力，水就该先紧着他家。阿雉把桶提回去，半桶水晃到门口只剩一瓢。",
+		"title": "{settlement_name}·公井归属",
+		"body_text": "旱季将至，维系{settlement_name}全寨饮水的坡下公井却突发井壁坍塌，急需下井重砌石壁。此役既耗劳力又具风险，各氏族皆不愿白白出力。一派主张由长老议会强制征调全寨合修，修成后公井仍归众人共用；另一派实力较强的大族则愿独自包揽修缮，但要求事后执掌水权，凡取水者皆须缴纳粮物。井边排队取水的队伍日渐焦躁，水权制度亟待确立。",
 		"image_key": "hydrology.water",
 		"ai_visual_prompt": "A stone-lined well with a collapsed side, buckets queued on the well platform at dawn, a young woman carrying a half bucket home",
 		"tags": ["dawn", "unrest"],
@@ -231,27 +230,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"all_hands", "全寨出力，井归全寨",
-				"井台砌了一圈石头",
-				"井台砌了一圈石头，孩子趴在井沿数圈数。井归全寨，谁先到谁先打，日头出来前井边排着七八只桶。",
+				"all_hands", "全寨合修，公井公用",
+				"公井重修归于众",
+				"全寨青壮暂放下农活合力重砌井壁，清冽井水重新惠及每一户人家。虽略微耽误了农时，但洁净水源保障了妇孺健康，也锤炼了部众的石作手艺。",
 				[
 					Shared.agriculture(-3, 360),
 					Shared.birth(3, 540),
 					Shared.manufacturing(2, 360),
 				]),
 			Shared.option(
-				"one_household", "让一户包修，打水交粮",
-				"井边多了个看井的人",
-				"井边多了个看井的老汉，桶放下去要先交一捧粮或半张皮子。交了的人打满桶，不交的等到晌午，水浑了才轮上。",
+				"one_household", "大族包修，取水纳粮",
+				"水权落入私门",
+				"大族迅速修好井壁并派人值守，取水须按量纳献，公中亦从中抽成。井水供应虽得以维持，但饮水受制于人的屈辱感在中小氏族间迅速滋长。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					Shared.cash_in(1.5, 360),
 					Shared.manufacturing(2, 360),
 				]),
 			Shared.option(
-				"no_well", "不修了，去河里挑",
-				"扁担压弯了两根",
-				"扁担压弯了两根，挑一趟要半个时辰。阿雉挑水回来，路上歇三回，桶里的水晃出去一半，剩下的浑。",
+				"no_well", "弃井不修，远赴河滩",
+				"弃井挑水苦不堪言",
+				"长老议会未能达成共识，公井就此荒废。部众虽未耽误农时，却不得不每日长途往返河滩挑水，浑浊河水与繁重劳役很快拖累了聚落的人口繁衍。",
 				[
 					Shared.birth(-4, 540),
 					Shared.agriculture(2, 360),
@@ -262,8 +261,8 @@ static func append(catalog) -> void:
 	# ═══ 集市 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_DAWN_FIRST_MARKET),
-		"title": "{settlement_name}·集市",
-		"body_text": "滩头那块平地，入秋支起了十几副摊子，盐、皮子、陶罐摆了一地。外地来的换盐人问，摆一天要交什么。老陶说这地是大家的，不该收；也有人说摊子踩坏了路、留下一地粪，总得有人扫。更麻烦的是秤：一根横木两头挂筐，各家的筐大小不一，一筐谷换一筐盐，换着换着就吵起来。阿禾提议让老陶管秤，说他的陶罐都是照一个模子做的。老陶把横木提起来掂了掂，没应。",
+		"title": "{settlement_name}·河滩初市",
+		"body_text": "入秋以来，{settlement_name}的河滩集市自发聚集了周边多个氏族与外来盐商，兽皮、陶器与食盐在此易物流通。然而缺乏规矩的交易很快引发混乱：各家自备的量器大小不一，换盐换谷屡生争执，更有商旅践踏田埂、留下一地污秽。长老议会面临抉择，是设立统一衡器并征收摊税以建秩序，还是保持绝对自由以吸引更多远方来客。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "A first market on a river beach, hides, salt and clay pots laid out, a beam with two hanging baskets used as a scale",
 		"tags": ["dawn", "market"],
@@ -296,27 +295,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"free_stalls", "不收地租，谁来都摆",
-				"摊子摆到了路中间",
-				"摊子摆到路中间，人挤得推车过不去。换了三天，两家人为一个位置打起来，摊子翻了，盐撒了一地，扫到天黑才扫完。",
+				"free_stalls", "免租放开，任其交易",
+				"自由集市熙攘无序",
+				"河滩集市不设门槛，四方货殖蜂拥而至，商贸流通与手工交换随之兴旺。然而摊位挤占通道、纠纷频发，缺少仲裁的集市逐渐成为滋生摩擦的温床。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 					Shared.trade_capacity(5, 540),
 					Shared.manufacturing(3, 540),
 				]),
 			Shared.option(
-				"fee_and_scale", "收地租，公家管秤",
-				"横木上刻了道印",
-				"横木上刻了一道印，一筐就是一筐。交过地租的摊子排在里头，没交的挪到外圈。老陶每天收工前把横木擦一遍，擦完挂回柱子上。",
+				"fee_and_scale", "立公衡，征收市税",
+				"公衡市税初具雏形",
+				"长老议会颁布标准量器并划定摊区，按日征收市税。尽管初期繁琐规制略微抑制了部分手工业者的热情，但公信力大增，远方商队更愿前来交易。",
 				[
 					Shared.manufacturing(-2, 360),
 					Shared.cash_in(1.5, 360),
 					Shared.trade_capacity(6, 540),
 				]),
 			Shared.option(
-				"let_them_weigh", "各家自己的筐，各管各",
-				"吵到日头偏西",
-				"一筐谷换一筐盐，谁家的筐大谁占便宜。吵到日头偏西，谷子还是那堆谷子，盐少了半袋。阿禾把自己家的筐换成了小一号的。",
+				"let_them_weigh", "各自为衡，官不介入",
+				"以物易物摩擦不断",
+				"部众继续沿用各自量器讨价还价，集市在喧嚣中勉强运转。往来交流虽带来些许外界见闻，但短斤少两的猜忌推高了交易损耗，日常口粮开销随之见涨。",
 				[
 					Shared.staple(3, 360),
 					Shared.trade_capacity(4, 540),
@@ -328,8 +327,8 @@ static func append(catalog) -> void:
 	# ═══ 铁匠 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_DAWN_FIRST_SMITH),
-		"title": "{settlement_name}·铁匠",
-		"body_text": "河滩上冲下来一块黑石头，砸开以后里头发亮，比骨头硬。谷生把它架在火上烧，烧红了拿石头砸了半天，敲出一小块能弯的黑片。寨里人都来看，问这东西做什么用。石伯说要打犁头，翻地能省一半力气；守夜的人说要打刀，坡上那些偷羊的才怕；老陶说要打钉子，屋梁和拉犁的木架都松了。三样东西，只有一块黑石头。谷生把石头放下，看火里那块还红着的黑片，谁也没先开口。",
+		"title": "{settlement_name}·初锻黑矿",
+		"body_text": "先民在河谷冲积层中寻得一块质地奇特的黑矿，经烈火反复煅烧锤击后，竟能锻出远胜骨器与石器的坚硬金属。长老议会迅速围聚炉旁，为这批珍贵初锻金属的用途争执不休：农耕氏族力主锻造犁头，以深耕沃土、倍增收成；负责防卫的勇士要求打造利刃，威慑周边窥伺的部族；工匠则呼吁先制铁钉，加固岌岌可危的屋梁与车轴。金属稀缺，最初的锻造取向将深刻影响聚落的发展方向。",
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "A black lump from a river beach heated in a fire and hammered on a stone, villagers arguing around the forge, a red-hot sliver of metal",
 		"tags": ["dawn", "labor"],
@@ -362,27 +361,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"plough_first", "先打犁头",
-				"犁头套上了木架",
-				"犁头套上木架，头一天翻的地比往年深半尺。守夜的人站在地头看，手里的木棍往地上戳了戳，没说话。",
+				"plough_first", "优先锻造金属犁头",
+				"铁犁破土农产跃升",
+				"第一批金属悉数铸为犁头，深耕之效立竿见影，农田收成显著提升，工具损耗亦随之减少。唯防卫勇士因未得利器而颇感失落，聚落防务隐忧犹存。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.10, 360),
 					Shared.agriculture(5, 540),
 					Shared.tools(-3, 360),
 				]),
 			Shared.option(
-				"blade_first", "先打一把刀",
-				"刀口开在石头上",
-				"刀口在石头上开了三回，砍木棍不卷。坡上偷羊的那伙人半个月没露面，守夜的人夜里敢往远处走两步。",
+				"blade_first", "优先锻造防身利刃",
+				"利刃出炉威慑四邻",
+				"炽热炉火锻出锋锐长刃，周边劫掠部族闻风退避，匠人亦借此摸清了铁矿冶炼的门道。然而抽调人力反复试锻占用了农时，当年耕作略有欠收。",
 				[
 					Shared.agriculture(-3, 360),
 					Shared.manufacturing(2, 360),
 					Shared.research_signal("resource.iron_ore", "黑石"),
 				]),
 			Shared.option(
-				"nails_first", "先打钉子",
-				"屋梁上多了几个黑点",
-				"屋梁和拉犁的木架上多了几个黑点，走起来不晃了。老陶把剩下的碎块收进陶罐，埋在自己床底下。",
+				"nails_first", "锻制铁钉，加固营造",
+				"营造工艺迈上新阶",
+				"金属被拉拔为坚固铁钉用于加固屋梁与车具，聚落制造能力大幅增强。公中亦借分配铁件收取了一笔贡赋，但稀缺金属的争夺暂时推高了营造开销。",
 				[
 					Shared.cash_in(1.2, 360),
 					Shared.manufacturing(4, 540),
@@ -394,8 +393,8 @@ static func append(catalog) -> void:
 	# ═══ 盟誓 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_DAWN_OATH_STONE),
-		"title": "{settlement_name}·盟誓",
-		"body_text": "青背岭那头的猎户和滩头种地的人，为坡上的林子争了两年，打到第三回，两边都死了人。这回他们说，在坡顶那块卧石上盟誓。押什么却谈不拢：猎户要押孩子，一家出一个，住到对方屋里去；种地的只肯押牲口和明年的种子。阿禾说，押孩子是押给自家看的，押种子是押给天看的。老陶伸手按着卧石，用尖石把两家的记号凿上去，凿到一半，回头问要不要再凿一道横。",
+		"title": "{settlement_name}·盟石立誓",
+		"body_text": "{settlement_name}周边的山林狩猎部族与河谷农耕氏族为争夺林地边界已连年流血，双方终于同意在岭顶盟石前举行和谈。祭司主持盟誓，但围绕确保停火的质押之物，双方立场针锋相对：狩猎部族遵循古俗，要求互换孩童为质以结血缘之信；农耕氏族则只愿押上牲畜与来年良种。长老议会必须裁定盟誓之制，决定这场脆弱和平的根基。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "Two kin groups swearing an oath at a boundary stone on a ridge, marks being chiselled into the stone, a goat and a sack of seed set beside it",
 		"tags": ["dawn", "people"],
@@ -428,27 +427,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"children", "各押一个孩子",
-				"两个孩子换了屋",
-				"两个孩子换了屋，头一个月谁也不肯吃饭。第二个月，猎户家的那个学会了扶犁，种地那家的那个学会了看脚印。",
+				"children", "依循古俗，互换质子",
+				"质子盟约维系和平",
+				"两族互换子弟寄养，沉重的血缘羁绊换来了切实的边境安宁。年轻一代在异族中习得农耕与追踪之术，促进了技艺交融，但骨肉分离也短暂压低了生育意愿。",
 				[
 					Shared.birth(-4, 540),
 					Shared.knowledge(3, 540),
 					Shared.agriculture(2, 360),
 				]),
 			Shared.option(
-				"beasts", "押牲口和明年的种子",
-				"种子分了两份",
-				"种子分两份，一份留在滩头，一份抬上青背岭。抬上去的那份被猎户家的孩子偷吃了半袋，两边又吵了一回，没动手。",
+				"beasts", "质押牲畜与来年良种",
+				"粮畜为质勉强停火",
+				"双方各出良种与牲畜交由祭司共管，林地争端暂告平息。农耕与手工业得以在和平中恢复，但抽调存粮作质令聚落当年的口粮调度略显吃紧。",
 				[
 					Shared.staple(3, 360),
 					Shared.agriculture(3, 540),
 					Shared.manufacturing(2, 360),
 				]),
 			Shared.option(
-				"cut_only", "只在石头上刻道痕",
-				"石头上多了一道横",
-				"那块卧石上多了一道横，谁也没押东西。第一年两边各守各的，第二年坡上的林子又被砍了一小片，没人提那道横。",
+				"cut_only", "仅刻盟文，不押人畜",
+				"空文盟誓难久维系",
+				"祭司仅在盟石上凿刻双方图腾记号便草草收场。未受实质约束的和平脆弱不堪，虽保住了当年农事与祭祀记录，但不过一载林地越界摩擦便再度抬头。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 					Shared.knowledge(2, 360),
@@ -460,8 +459,8 @@ static func append(catalog) -> void:
 	# ═══ 械斗 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_DAWN_WATER_BRAWL),
-		"title": "{settlement_name}·械斗",
-		"body_text": "上游的人上月垒了一道石堰，把水拦进自家那片地。下游的田裂了口子，禾苗卷了叶。谷生带着十几个人上去，把堰扒开一个口子；上游的人拎着木棍下来，两边在河湾打了一场，断了三根棍子，一个人的胳膊折了。阿禾赶到时，两边还在对骂，堰上的口子正往外淌水。石伯顺着堰走过去，看了半天，伸手摸了摸那道口子的边。",
+		"title": "{settlement_name}·争水械斗",
+		"body_text": "久旱少雨令河谷水位锐减，上游氏族擅自垒石筑堰，将河水尽数截入自家田亩，致使{settlement_name}下游禾苗成片枯黄。愤怒的下游农夫集结人马强行扒开石堰，双方在河湾爆发大规模械斗，多人负伤。面对一触即发的氏族血仇，长老议会必须立即介入：是强硬摧毁上游私堰、动用公粮窖赔偿和解，还是另辟新渠彻底绕开争端。",
 		"image_key": "hydrology.water",
 		"ai_visual_prompt": "Two groups fighting with wooden staves at a breached stone weir on a river, cracked fields downstream, water pouring through the gap",
 		"tags": ["dawn", "unrest"],
@@ -494,26 +493,26 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"cut_them_off", "把水断了",
-				"堰上的口子扒开了",
-				"堰被整个扒开，水顺着河床往下走，下游的田连夜灌了一遍。上游的人天亮前下来垒石头，两边在河湾又打了一回，这回动的是石块。",
+				"cut_them_off", "强拆私堰，放水济下",
+				"破堰通水结下深仇",
+				"长老议会下令彻底扒平上游石堰，河水奔涌而下挽救了下游濒枯的庄稼。然而上游氏族誓言报复，河谷两岸从此陷入更频繁的流血冲突。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					Shared.agriculture(4, 360),
 				]),
 			Shared.option(
-				"pay_grain", "赔粮讲和",
-				"公中的粮抬上了堰",
-				"公中的粮抬上堰，一家一袋，抬了两趟。上游的人收了粮，把堰改低了一尺，水从缺口往下走。谷生站在堰下，看水头推着草叶过来。",
+				"pay_grain", "拨付公粮，调停分水",
+				"出资赎水达成和解",
+				"公中拨付粮物补偿上游氏族，换取对方降低堰顶高度并立下分水规约。河谷重归平静，农事稳步恢复，此次调停也沉淀出早期水利分配的制度雏形。",
 				[
 					Shared.cash_out(1.5, 360),
 					Shared.agriculture(2, 540),
 					Shared.knowledge(2, 540),
 				]),
 			Shared.option(
-				"new_channel", "另挖一条渠",
-				"渠绕过了那道坡",
-				"渠绕过坡脚，挖了整一个月，占了自家三垄地。通水那天，泥鳅跳进渠里，水只到膝盖，他还是躺下去泡了一回。",
+				"new_channel", "另凿支渠，绕开争端",
+				"改道引水代价高昂",
+				"下游部众耗费整月人力绕坡另凿新渠，虽被迫占用部分耕地导致当年减产，却彻底摆脱了上游掣肘，稳定的水源保障了聚落长远的人口繁衍与水利经验。",
 				[
 					Shared.agriculture(-4, 540),
 					Shared.knowledge(2, 540),

@@ -86,13 +86,21 @@ tier_gate  = [0, 0.25, 0.45, 0.62, 0.80]
 stage 0 → 1：mob ≥ 0.30 且冷却结束，按 epoch 掷骰
   p = 0.10 × (mob−gate)/(1−gate) × influence × weight × (0.6+0.4×(1−local_sat)) × dt
   上限 5%
-stage k → k+1：到达 next_check_day 时掷 0.35，且需同时满足
+stage k → k+1：到达 next_check_day（且冷却已过）时，需同时满足
   mob ≥ stage_gate[k+1] 且 power ≥ tier_gate[k+1]
-  否则停在当前阶，next_check 再延 10 天
+  满足即升阶（不再掷骰）；否则停在当前阶，next_check 再延 10 天
 ```
 
 - 掷骰是无状态哈希：`hash64(day, cell, profession, stage, salt)`；不保存 RNG 状态。
+- **失败不升阶**：行动失败只增加组织度/后遗症，`next_check_day` 推后 10 天，模拟继续；
+  下一个事件只在组织度（和 power）越过下一阶门槛、检查日到达时才出现。
+- **成功买时间**：成功降阶并把 `next_check_day` 推到 `cooldown_until_day`，冷却期内不升阶。
+- 第 4 阶行动失败（招安、镇压，或弃城）才置 `flags & 8`；第 3 阶行动失败不会直接独立。
 - **首都免疫**：`cell == _epoch_country_capital_cells[country]` 且该格仍属该国 → `stage` 封顶 3，`flags` 置首都位，不发第 4 阶事实。
+- **最后一城不能独立**：`advance_independence` 只在该国仍有 >1 格时提交建国；只剩一城时取消请求，
+  给玩家一条「最后一城不能独立」提示，并在次日 prepare 调
+  `clear_cell_mobilization_independence(cell)` 清掉该格的 `flags & 8`。链条停留在当前阶
+  （通常是第 4 阶），不建国、不重复排队。
 - 当前 `stage 4` 只产生事实，不会自动建国；独立由 M3 的服务处理。
 
 ## 5. 事实
@@ -103,7 +111,7 @@ stage k → k+1：到达 next_check_day 时掷 0.35，且需同时满足
 cell = 格
 i0 = stage, i1 = previous_stage, i2 = profession, i3 = country_slot
 value = mobilization_q16, entity_id = 该职业人口
-flags = bit0 玩家国 / bit1 首都
+flags = bit0 玩家国 / bit1 首都 / bit3 独立待处理
 ```
 
 只在 stage 变化时发。GDScript 常量见 `gameplay_event_bus.gd` 的 `EVENT_STRATUM_MOBILIZATION` / `PAYLOAD_STRATUM_MOBILIZATION_V1`。
@@ -144,15 +152,16 @@ flags = bit0 玩家国 / bit1 首都
 ## 10. M2 玩家链（已落地）
 
 - `get_mobilization_odds(cell, profession, action, spend_bp)`：native 单一公式，返回 `p_success_q16`、`cost_bp` 与逐项加数（local_sat / garrison / family / cost / org / share）。`action` 0 让步、1 收买、2 镇压、3 无视、4 招安、5 弃城。
-- `apply_mobilization_result(cell, profession, action, success)`：在叙事弹窗持锁暂停时钟时同步调用；只改稀疏行，不碰守恒账本。成功按阶降低组织度并进冷却；失败升阶并可能置 `flags & 8`（独立待处理）。
-- `scripts/politics/stratum_unrest_service.gd`：轮询事实 → 玩家国投递四阶事件 → 玩家选择后按 `chain_salt` 掷骰、付让步成本、调 native 应用结果；`flags & 8` 进入独立队列（D+1 `create_country`，D+2 原主权国 `declare_war_forced` + `transfer_cell_garrison`）。AI 阶段在 native epoch 更新里自动决议（有驻军则镇压、否则无视，50% 确定性掷骰），服务只处理玩家事实与独立位。
-- **AI 原生自动决议**：`advance_cell_mobilization` 在 AI 行跨阶时直接调用 `apply_mobilization_result`；失败到第 4 阶置 `flags & 8`，由服务建国/宣战。没有弹窗，也不依赖时钟暂停。
+- `apply_mobilization_result(cell, profession, action, success)`：在叙事弹窗持锁暂停时钟时同步调用；只改稀疏行，不碰守恒账本。成功按阶降低组织度、进冷却并把 `next_check_day` 推到冷却结束；失败只增加组织度/后遗症，不升阶；第 4 阶招安、镇压失败或弃城才置 `flags & 8`（独立待处理）。Narrative 只读取该标记，不自行推断独立。
+- `clear_cell_mobilization_independence(cell)`：最后一城不能独立时清掉该格所有动员行的 `flags & 8`；host 在次日 prepare 调用，避免读档后反复排队。语义见 §4。
+- `gdext/src/runtime_narrative_unrest.cpp`：消费动员事实 → 玩家国投递四阶事件 → 玩家选择后按 `chain_salt` 掷骰、付让步成本、调 native 应用结果；`flags & 8` 进入独立队列（D+1 `create_country`，D+2 原主权国 `declare_war_forced` + `transfer_cell_garrison`）。AI 阶段在 native epoch 更新里自动决议（有驻军则镇压、否则无视，50% 确定性掷骰），叙事层只处理玩家事实与独立位。
+- **AI 原生自动决议**：`advance_cell_mobilization` 在 AI 行跨阶时直接调用 `apply_mobilization_result`；失败在第 4 阶置 `flags & 8`，由叙事层建国/宣战。没有弹窗，也不依赖时钟暂停。
 - `scripts/politics/stratum_rebellion_content.gd`：四阶 × 3–4 选项的中文内容，选项概率由服务在投递时注入。
 - 地块档案新增「民情」页签：按职业显示组织度条、阶段、最高阶段与其余阶层满意度（走 `metrics/gauges/insights` 通用渲染）。
 - 地图告警：`cell_situation_snapshot` 追加 `mobilization_stage` / `mobilization_q16` 两列（不改变原 severity stride）；`cell_situation_layer` 增加第 9 个「阶层组织度」图标，鼠标悬停显示阶段与说明。
 - 顶栏：`PlayerTopBar.set_unrest_status(count)` 程序化生成「离心 N」纸签（不改编排场景），`GameUIManager` 用 `country_mobilization_summary` 的 stage 3+4 计数刷新；为 0 时隐藏。
 - 玩家控制器在叙事运行时绑定时配置服务，并在每日提交后推进，先消费动员事实再处理普通叙事。动员事实使用独立游标和事件类型过滤。
-- 服务存档并入 `pknr.stratum_unrest`，与叙事队列一同恢复（事实游标、独立队列、升阶复核待办和旧 AI 待办）。缺少服务状态的旧存档在提交后从玩家领地的动员快照恢复当前未处于冷却的阶段。玩家选择失败时，下一次提交后复核受影响的职业行，以接续可能在经济周期切换时丢失的升阶事实。
+- 服务存档并入 `pknr.stratum_unrest`，与叙事队列一同恢复（事实游标、独立队列、升阶复核待办和旧 AI 待办）。缺少服务状态的旧存档在提交后从玩家领地的动员快照恢复当前未处于冷却的阶段。玩家选择失败时保留下一次复核待办，等该行真正升阶时补投下一幕（防止经济周期切换时丢失升阶事实）。
 
 测试：`tests/politics_parse_probe.gd`（PASS）、`tests/politics/stratum_unrest_service_test.gd`（7/0，覆盖让步付款、弃城→建国→宣战、队列清空）。
 

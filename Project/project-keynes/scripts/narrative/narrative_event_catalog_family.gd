@@ -19,8 +19,7 @@ const PACK_ID := &"family"
 const PREFIX := "evt.family."
 
 const CAST := [
-	"罗长庚", "罗小满", "罗广田", "岑九", "甘守业", "甘杏", "韦全", "陶婶", "蒲掌柜", "邵平",
-	"阿棠", "鸦关", "河埠", "磨盘", "地契", "字据", "名簿",
+	"宗族长老", "地方官署", "田产契约", "兵役名簿", "地方钱庄", "户籍册", "世族联姻", "伤残老兵",
 ]
 
 const MUL_110 := 72090
@@ -55,8 +54,8 @@ static func append(catalog) -> void:
 	# ═══ 次子 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_FAMILY_SECOND_SON),
-		"title": "{settlement_name}·次子",
-		"body_text": "分家的单子摊在磨盘上，墨还没干。罗长庚把地契折起来塞进怀里，又伸手按了按。罗小满站在门边，脚下一个包袱，两身衣裳，半袋种子。他问过里正：坡上的荒地开出来算谁的。里正说，算开的人。岑九念完最后一行，问有没有话说，屋里没人应。罗广田坐在灶前添柴，说地跟着姓走，不跟着人走。罗小满把包袱提起来，布带子勒进肩膀，站在门槛上等一句话。",
+		"title": "{settlement_name}·析产继承",
+		"body_text": "{settlement_name}人丁渐繁，可耕良田日趋紧张，围绕土地继承法的争端频频呈报至地方官署。宗族长老援引旧俗，坚持熟田归长房完整继承以防家业细碎化；大批无田可承的次子与旁支则要求依律析产，或获准开垦周边荒坡另立户籍册。官署官员亦提出第三条出路，建议将多余青壮征入行伍以解地少人多之困。如何裁定这份田产契约，将直接左右本地农产与兵源。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A family division deed spread on a millstone, a younger son with a cloth bundle at the threshold, an elder folding the land deed",
 		"tags": ["people", "society"],
@@ -88,26 +87,26 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"give_him_the_slope", "分他坡上三亩",
-				"坡上起了新屋",
-				"坡地的草根挖了三天，罗小满在坡顶立起两间土房，房梁是他从河滩上拖回来的。罗长庚来看过一回，站在门口没进去，说了一句，这坡漏水。秋后两家的谷分开晒，晒场上用石头划了一道线。",
+				"give_him_the_slope", "准予析产，拨荒立户",
+				"新户垦荒扩充田亩",
+				"地方官署核准旁支分户，将城外荒坡拨归新户开垦。新增耕地提升了本地农业产出，但分家另灶短期内也推高了全城基本口粮消耗。",
 				[
 					Shared.agriculture(4, 540),
 					Shared.staple(4, 360),
 					Shared.flag(Ids.FLAG_SECOND_SON_SPLIT, 900, "标记「坡地新户」"),
 				]),
 			Shared.option(
-				"send_him_to_the_camp", "送他去营里吃粮",
-				"他吃了军粮",
-				"罗小满跟着征丁的车走了，只带走那半袋种子，说营里管饭。罗长庚把坡地也圈进自家地里，界石往外挪了两步，没人拦。第二年秋，村口来了个人，左边袖子是空的。",
+				"send_him_to_the_camp", "编入行伍，以解田荒",
+				"次子从军田产归一",
+				"多余青壮被征调入伍吃粮，原有农田得以完整保留于长房名下。本地农忙劳力短期内有所流失，而这批远赴边关的士卒终有一日将带着战伤归乡。",
 				[
 					Shared.agriculture(-3, 360),
 					Shared.schedule(Ids.EVT_FAMILY_RETURNING_SOLDIER, 210, "回家的兵"),
 				]),
 			Shared.option(
-				"wait_until_autumn", "不分，等秋后再议",
-				"单子压在匣底",
-				"单子折了三折，压在祠堂的匣子底下。那年秋收两家还是一个灶，罗小满吃饭时话少了，筷子在碗沿上敲。罗长庚的媳妇开始把油罐往自己屋里搬，一次挪一寸。",
+				"wait_until_autumn", "暂缓析产，维持合户",
+				"分家搁置积怨暗生",
+				"官署将析产呈文压下不议，强令宗族暂维合灶共耕。虽在短期内稳住了规模耕作，但同室操戈的裂痕与生计摩擦正迫使更多家族矛盾浮出水面。",
 				[
 					Shared.agriculture(3, 270),
 					Shared.staple(3, 360),
@@ -120,8 +119,8 @@ static func append(catalog) -> void:
 	# ═══ 聘礼 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_FAMILY_BRIDE_PRICE),
-		"title": "{settlement_name}·聘礼",
-		"body_text": "甘家的堂屋摆了两张桌，一张放布和酒，一张放纸笔。甘守业不喝韦家送来的酒，只看纸上写的地。他要三亩水田，写在女儿名下，少一亩不谈。韦全说水田没有，坡地可以给两块，再替甘家还那笔旧债。媒人陶婶两头传话，鞋底在门槛上蹭得响。甘杏在里屋绞一根线，线断了两次。岑九把笔搁下，说写哪一样，你们先定。",
+		"title": "{settlement_name}·世族联姻",
+		"body_text": "{settlement_name}两大有产之家的世族联姻陷入僵局，成为全城议论的焦点。女方宗族长老坚持将大片水田写入田产契约作为聘礼底线，男方则主张以边坡荒地折抵并代偿旧债。此类以重产议婚之风近来愈演愈烈，已令不少中小户无力成家。地方官署面临两难：是介入核准契约以稳住大族颜面，鼓励折中换产，还是暂缓公证以观后效。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A betrothal negotiation with cloth, wine and a deed on two tables, a matchmaker at the threshold, a daughter winding thread inside",
 		"tags": ["people", "society"],
@@ -166,33 +165,33 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"sign_the_deed", "照甘家写的立契",
-				"婚书写在红纸上",
-				"婚书写在红纸上，按了三个印。酒席摆了六桌，甘家那头来了两车人。韦全喝到第二碗就不说话了，眼睛盯着院角那头牛；开春耕地，韦家的犁得从甘家的田里过。",
+				"sign_the_deed", "核准重聘，官署印契",
+				"重聘成婚契税入库",
+				"地方官署为这份高额田产契约加盖官印并征收契税，两族终成秦晋之好，带动了本地婚育风气。但水田割裂重组短期内打乱了原有耕作安排。",
 				[
 					Shared.agriculture(-3, 360),
 					Shared.birth(4, 540),
 					Shared.cash_in(1.0, 360, "向本地人数最多的{primary_profession}征收其现金的 1%（婚书立契，官账抽一份）"),
 				]),
 			Shared.gamble(
-				"swap_slope_for_debt", "用坡地和旧债抵聘",
-				Shared.branch(39322, "甘家收了坡地", # 60%
-					"甘家收了坡地，也收了韦家还的那笔钱。立契那天甘守业没笑，只在契尾多按了一个印。第二年两块坡地种上豆，收成薄，甘杏回娘家时带了一斗。",
+				"swap_slope_for_debt", "折中调解，以坡抵债",
+				Shared.branch(39322, "折中立契联姻告成", # 60%
+					"在官署斡旋与贴补下，双方同意以坡地与清债折抵聘礼。荒坡随之得以开垦增产，但勉强达成的妥协仍令两族心存芥蒂。",
 					[
 						Shared.agriculture(3, 540),
 						Shared.cash_out(1.0, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 					]),
-				Shared.branch(26214, "甘家把茶泼了", # 40%
-					"甘守业把茶泼在门槛外，让人把布和酒都提回去。三个月后甘杏许给了河埠一户姓邬的。韦全再去甘家，门关着，院里的狗认得他，叫了两声就不叫了。",
+				Shared.branch(26214, "议婚破裂两族交恶", # 40%
+					"女方长老愤然回绝折中方案，婚事彻底告吹。大族间由此结怨，高攀无门的僵局也令本地婚嫁意愿随之低迷。",
 					[
 						Shared.birth(-3, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 					])),
 			Shared.option(
-				"wait_a_year", "婚书先不写，再看一年",
-				"两张桌撤了一张",
-				"两张桌撤了一张，布和酒都提回韦家。甘杏那根线接上又断，她索性把线团收了。第二年来说亲的来了两家，甘守业都嫌远；岑九再提韦家，他说再看一年。",
+				"wait_a_year", "搁置印契，延后再议",
+				"婚契悬置议论纷起",
+				"官署暂缓公证婚书，两族礼聘无果而终。受高额聘礼风气拖累，本地适龄男女成婚推迟，围绕家产与婚配的民间纠纷仍将反复浮现。",
 				[
 					Shared.birth(-3, 540),
 					Shared.flag(Ids.FLAG_BRIDE_PENDING, 540, "标记「婚书未立」"),
@@ -204,8 +203,8 @@ static func append(catalog) -> void:
 	# ═══ 父债 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_FAMILY_FATHERS_DEBT),
-		"title": "{settlement_name}·父债",
-		"body_text": "邵平把他爹埋在西坡，回来时鞋上的泥还没干。院门口站着钱铺的蒲掌柜，手里一张字据，纸边磨得起毛。字据上是他爹的印，红得发暗。蒲掌柜把纸摊在石桌上，用一根指头压住角，风一吹，纸就响。邵平说家里只剩两间土房、一头驴、坡上还没割的谷。蒲掌柜没接话，从袖子里摸出印泥盒，放在纸旁边，盒盖开着。院里那头驴叫了一声，没人去管。",
+		"title": "{settlement_name}·高利借贷",
+		"body_text": "{settlement_name}近来频发债主追索陈年父债的纠纷，地方钱庄持旧日田产契约与借据登门，要求新丧家主的农户变卖耕畜与坡地抵债。宗族长老痛陈，若任由钱庄强收生产资料，破产农户势必沦为流民；钱庄东家却向地方官署施压，警告一旦官府庇护赖账之风，民间信贷将彻底冻结，来年春耕无人敢再赊借种子。法理与生计的冲突已摆上案头。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A moneylender pressing a worn promissory note on a stone table with an open seal-ink box, a donkey in the yard",
 		"tags": ["people", "fiscal", "unrest"],
@@ -239,25 +238,25 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"sell_and_settle", "卖驴卖坡，一次还清",
-				"驴是清早牵走的",
-				"驴是清早牵走的，邵平没送到村口。蒲掌柜在字据背面画了一道，把纸还给他，说留着吧，日后好说话。开春犁地，邵平借了邻家的牛，犁到一半，牛不肯走。",
+				"sell_and_settle", "依契清偿，变产抵债",
+				"严守债契农户失畜",
+				"地方官署裁定依约执行，欠户变卖耕畜与坡地结清宿债，官账亦按律抽取过户规费。商业信用得以维系，但失去农具与牲畜的农户产出随之下滑。",
 				[
 					Shared.agriculture(-3, 360),
 					Shared.cash_in(1.5, 360, "向本地人数最多的{primary_profession}征收其现金的 1.5%（债款过官账代还）"),
 				]),
 			Shared.option(
-				"acknowledge_and_repay", "认账，分三季还",
-				"字据上加了一行",
-				"岑九在字据上加了一行：分三季还，秋后先给一半。蒲掌柜按了印，走时在院里站了一会儿，看那头驴。那年秋收，邵平家的谷先进了蒲家的仓，自己留下的都是碎的。",
+				"acknowledge_and_repay", "官署作保，分季缓还",
+				"分期偿债保住耕作",
+				"官署居中订立分季偿还协议，保住了欠户的耕畜与农田，令其得以全力投入生产。然而秋收粮谷多半用于抵债，基层家庭的日常口粮顿时捉襟见肘。",
 				[
 					Shared.agriculture(4, 540),
 					Shared.staple(4, 360),
 				]),
 			Shared.option(
-				"put_it_under_the_rice_jar", "压着不办，等他自己来",
-				"纸压在米缸底下",
-				"字据折起来，压在米缸底下。邵平把丧事办得体面，吹鼓手请了六个。入冬后蒲掌柜再没进过这条巷子，来赊种子的邻人在门口站了半天，走了；第二年开春，坡上有两块地空着。",
+				"put_it_under_the_rice_jar", "暂压债案，不予受理",
+				"债案悬置信贷收紧",
+				"官署将追债诉状束之高阁，欠户暂时保住了家产。但地方钱庄随即收紧春耕赊贷，周边农户因缺种少本致使耕地撂荒，宿债隐患日后恐将变本加厉。",
 				[
 					Shared.agriculture(-3, 360),
 					Shared.flag(Ids.FLAG_DEBT_PENDING, 540, "标记「债字未销」"),
@@ -269,8 +268,8 @@ static func append(catalog) -> void:
 	# ═══ 回家的兵 ═════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_FAMILY_RETURNING_SOLDIER),
-		"title": "{settlement_name}·回家的兵",
-		"body_text": "他从鸦关回来，走了十九天。左边袖子空着，掖在腰带里，走快了就晃。家门是新换的，门框上他当年按的手印还在，浅了一层。阿棠从灶屋出来，先看他的袖子，再往他身后看。他哥不在，去河埠扛包，三天回一趟。里正岑九拿来一册名簿，翻到他的名字，说抚恤要往上报，得有人作保。他把包袱放在门槛上，人站在门外，没进去。",
+		"title": "{settlement_name}·伤兵安置",
+		"body_text": "一名在边关失去左臂的伤残老兵历经长途跋涉返回{settlement_name}，其旧宅已易主，亲族亦因生计艰难无力长期供养。地方官署翻查兵役名簿后回报，按现行规制申领国库抚恤不仅手续繁复，且须层层具保核验。宗族长老暗中担忧，若对浴血归乡的兵卒置之不理，日后朝廷再度征兵恐难服众；但若全面兜底抚恤，地方财政又将承受持续压力。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A one-armed soldier returning to a village door, a bundle on the threshold, a village clerk holding a register",
 		"tags": ["people", "unrest"],
@@ -302,25 +301,25 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"clear_the_west_room", "把西屋收拾出来给他",
-				"西屋的粮挪到灶边",
-				"西屋的粮挪到灶边，腾出来的地方铺了一层干草。他用一只手编筐，编得慢，编出来的筐比别人的深。阿棠每天多舀半勺米，舀了半个月，开始把勺子在锅沿上磕。",
+				"clear_the_west_room", "责成宗族，授艺安置",
+				"归乡伤兵习艺谋生",
+				"官署责成原籍宗族腾出居所并安排轻省手艺，伤残老兵得以自食其力，本地手工业略有增益。但平添赡养负担仍让本就紧巴的家庭口粮愈发吃紧。",
 				[
 					Shared.manufacturing(3, 540),
 					Shared.staple(4, 360),
 				]),
 			Shared.option(
-				"report_for_a_stipend", "报上去，领一份抚恤",
-				"名簿上多了一行",
-				"岑九在名簿上添了一行，写明缺一手，抚恤按半份算。钱在腊月里发下来，先到里正手上，再到哥嫂手里，最后到他手里剩一小把。他把那把钱包在布里，塞进墙缝。",
+				"report_for_a_stipend", "核准名簿，拨发抚恤",
+				"抚恤落地安抚军心",
+				"地方官署迅速核验兵役名簿，由国库拨付定额伤残抚恤金。此举虽增加了财政支出，却在民间树立了优待功臣的典范，令宗族与军属大感宽慰。",
 				[
 					Shared.cash_out(1.2, 360),
 					Shared.bias(Ids.TAG_PEOPLE, 1.15, 540),
 				]),
 			Shared.option(
-				"sleep_in_the_woodshed", "柴房先住着，名分再说",
-				"柴房的门帘是新的",
-				"柴房的门帘是阿棠用旧布拼的，拼得齐整。他夜里睡在柴堆边上，白天坐在门槛上削一根木棍，削完就搁着。入冬后村里的孩子路过，会朝柴房里看一眼，被他看一眼就跑了。",
+				"sleep_in_the_woodshed", "暂予栖身，抚恤待议",
+				"冷遇功臣寒彻民心",
+				"官署仅草草安排了简陋栖身之所，将抚恤事宜无限期搁置。伤残老兵流落乡里凄凉度日，坊间对此议论纷纷，民众对兵役与官府的怨怼暗自滋长。",
 				[
 					Shared.staple(3, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),

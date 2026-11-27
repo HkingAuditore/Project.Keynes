@@ -21,8 +21,9 @@ const PACK_ID := &"era"
 const PREFIX := "evt.era."
 
 const CAST := [
-	"邵伯钧", "谭三保", "邱秉文", "麦允中", "龚守义", "霍见山", "池砚秋", "岑九", "亓南枝", "鲁敬亭",
-	"砾川", "白碑原", "灰岭", "度量衡局", "第九设计院", "河鼓", "卡尺", "秒表", "标准动作表",
+	"国家工程署", "河鼓计划", "财政委员会", "度量衡总局",
+	"铁路局", "工业标准", "劳工调度系统", "工会代表",
+	"第九设计院", "算力配额", "科学委员会",
 ]
 
 const MUL_110 := 72090
@@ -58,8 +59,8 @@ static func append(catalog) -> void:
 	# ═══ 大工程 ═══════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ERA_GREAT_WORKS),
-		"title": "{settlement_name}·大工程",
-		"body_text": "白碑原的风把图纸掀起一角，邵伯钧用扳手压住。纸上那个东西叫「河鼓」，占着七十里荒地，全国凑得出的好钢正一车一车往这儿拉。地勘说底下是空的，还得再往下打三十丈。测线穿过谭三保家的祖坟，他把地契摊在桌上，说坟不挪。会计邱秉文把账本合上，不报数了。上头只问一句：几时能响。邵伯钧把扳手拿开，纸角立刻卷起来，他用手掌按住。",
+		"title": "{settlement_name}·河鼓大工程",
+		"body_text": "国家工程署在{settlement_name}近郊推进的国家级重型试验设施「河鼓计划」已汇聚全国精钢与顶尖工师。然而地质勘测突报基底空洞，需深掘加固，征地红线更直穿多处祖居村落，引发激烈拆迁抵制。财政委员会已发出预算超支预警，但国防与科技部门仍在催促按期试车点火，进退维谷的报告已送至内阁案头。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A huge engineering site on a plain, blueprints pinned by a wrench, survey stakes crossing an old graveyard, steel arriving by rail",
 		"tags": ["era", "science", "unrest"],
@@ -95,9 +96,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"fund_to_the_deadline", "再拨一笔，按期点火",
-				"两班换三班",
-				"钱拨下去，工地上的灯再没灭过。村子在夜里搬完，棺材抬上卡车，没人说话。邵伯钧在工棚里签第三张领料单，手边那份饭没动过。",
+				"fund_to_the_deadline", "追加国库拨款，强令按期完工",
+				"三班抢工",
+				"追加预算到位后，工地实行三班倒全速推进并强制迁村。设施如期落成并带动全国科研与制造，但强硬征地留下持久民怨。",
 				[
 					Shared.cash_out(3.0, 90),
 					Shared.manufacturing(5, 540),
@@ -105,26 +106,26 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 1.30, 360),
 				]),
 			Shared.gamble(
-				"light_it_early", "提前点火",
-				Shared.branch(42598, "响了三秒", # 65%
-					"它响了三秒，比图上画的小。观测棚的玻璃全碎了，没人去捡。邵伯钧蹲在土里，两只手还在抖。",
+				"light_it_early", "不等加固完成，批准提前点火",
+				Shared.branch(42598, "河鼓试车成功", # 65%
+					"试验装置在剧烈震鸣中稳定运行数秒，核心电气参数全部达标。尽管观测区多处受损，全国科学界仍为这一历史性突破振奋。",
 					[
 						Shared.knowledge(6, 540),
 						Shared.country_sector("knowledge", 6, 540),
 						Shared.research_signal("breakthrough.electrification", "电气化"),
 						Shared.flag(Ids.FLAG_HEGU_FIRED, 900, "标记「河鼓已响」"),
 					]),
-				Shared.branch(22938, "火从缝里回来", # 35%
-					"管子裂了，火从缝里倒灌。抬出来的人裹着同一条毯子。名单上有十九个名字，划掉了十八个。",
+				Shared.branch(22938, "管道爆裂事故", # 35%
+					"未加固的承压管线在点火瞬间爆裂回火，造成多名技术员与工人死伤。重大安全事故震惊朝野，工程署公信力跌入谷底。",
 					[
 						Shared.birth(-6, 540),
 						Shared.knowledge(-5, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 720),
 					])),
 			Shared.option(
-				"wait_for_the_steel", "等钢够了再说",
-				"图纸进柜",
-				"工地停了，塔吊还立着，钢梁上落了一层雪。邱秉文把账本锁回铁柜，钥匙挂回腰上。谭三保来问过一次，没人给他准话。",
+				"wait_for_the_steel", "暂缓工程进度，待钢材备齐",
+				"停工待料",
+				"工地全面停工封存，巨型塔吊在荒原上闲置生锈。高昂的前期投入未能见效，配套工厂与地方民众的不满情绪持续发酵。",
 				[
 					Shared.knowledge(-4, 540),
 					Shared.manufacturing(-3, 540),
@@ -136,8 +137,8 @@ static func append(catalog) -> void:
 	# ═══ 标准 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ERA_STANDARD_WAR),
-		"title": "{settlement_name}·标准",
-		"body_text": "两条铁路在砾川城外接上了，一宽一窄，货卸下来，人扛过去，再装车。度量衡局的麦允中带着一箱量具来开会。北线的人说他们的轨铺了二十年，南线调度霍见山说他们的车皮能进山。做扣件的龚守义不争，两种他都做，模具锁在抽屉里，图纸在他手上。会开到第三天，桌上多了一张纸：谁定下标准，谁的厂今后只开一种模。麦允中把量具一件一件摆开，最后一件是卡尺，垫布忘在旅馆了。他把卡尺搁在桌沿上，谁也没敢碰。",
+		"title": "{settlement_name}·轨距标准之争",
+		"body_text": "南北两条干线铁路在{settlement_name}城外交汇，却因宽窄轨距不一而被迫全线人工倒装。度量衡总局召集铁路局与重工企业召开工业标准裁定会：北线集团依仗干线里程长、运力大，力主全国并轨北制；南线代表则强调窄轨方可深入矿区腹地。而握有双制扣件专利的零部件财团正静候裁决，随时准备借统一标准垄断全国订单。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "Two railway gauges meeting outside a town, a box of measuring tools and a caliper on a conference table",
 		"tags": ["era", "market", "unrest"],
@@ -172,9 +173,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"pick_the_northern_gauge", "定北线的轨",
-				"排到坡下",
-				"站里的车皮一条线排到坡下，等着换轮。山里的煤堆在坡上，没人拉，自己烧起来。霍见山递了辞呈，桌上没人接。",
+				"pick_the_northern_gauge", "钦定北线宽轨为全国标准",
+				"强制并轨",
+				"全国铁路强制推行北线宽轨，干线贸易运力大增且基建标准趋同。但南线矿区换装积压严重，大批旧车皮报废引发剧烈震荡。",
 				[
 					Shared.trade_capacity(8, 540),
 					Shared.build_cost(5, 900),
@@ -182,9 +183,9 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 1.30, 360),
 				]),
 			Shared.option(
-				"take_a_cut_per_piece", "按件抽成",
-				"一件记一笔",
-				"龚守义的模具搬进了度量衡局的库房，每出一件扣件，账上记一笔。厂里的工价压下去两成，第二天来了七成人，谁也没吭声。",
+				"take_a_cut_per_piece", "收编标准模具，按件抽成",
+				"专营扣件",
+				"度量衡总局接管双制模具并按件抽成，国库进账可观且全国制造业得以兼容运转。但厂方将税负转嫁压低工薪，激起工人不满。",
 				[
 					Shared.cash_in(2.0, 270),
 					Shared.stock("wrought_iron", 20),
@@ -192,9 +193,9 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 1.30, 360),
 				]),
 			Shared.option(
-				"add_a_transfer_station", "加一个换装站",
-				"站台添了一张桌",
-				"换装站搭在两条轨中间，扛包的、箍桶的、记账的，一夜之间都有了活。货在站上多停一天，这笔钱谁也没算。麦允中的量具还锁在箱子里，垫布后来找着了。",
+				"add_a_transfer_station", "暂缓统一，增设大型换装站",
+				"折中换装",
+				"两轨之间建起机械化换装站，本地制造与工具消耗随之攀升。尽管眼下免去改轨剧痛，标准悬而未决的隐患仍被留给未来。",
 				[
 					Shared.manufacturing(4, 540),
 					Shared.tools(8, 540),
@@ -206,8 +207,8 @@ static func append(catalog) -> void:
 	# ═══ 排班 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ERA_ALGORITHM_SHIFT),
-		"title": "{settlement_name}·排班",
-		"body_text": "灰岭的装卸场挂了一块新板，板上全是格子，一个格子里一个名字。池砚秋是计时员，手里一块秒表，一叠写着「标准动作」的纸。上个月一车煤卸完要半晌，纸上写着两刻。岑九卸了十二年煤，说照纸那么干，腰撑不到年底。池砚秋没接话，把岑九的名字挪到夜班那一格。板子最下面一行小字：请假，先找人替。铃响了，没人走，都站着看那块板。池砚秋最后走，拿袖子把格子擦了一遍。",
+		"title": "{settlement_name}·效率排班制",
+		"body_text": "{settlement_name}的重型装卸场引入了基于工业标准与动作测时的劳工调度系统，将每项搬运工序精确切分至分秒，并规定未达标者自动调入夜班。管理层宣称此举可令货场吞吐翻倍，适应全国工业提速。工会代表则向市政厅严正抗议，指控这套冷酷的计件排班正透支老工人的体能极限，要求立即叫停。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A shift board covered in name slots at a coal yard, a timekeeper with a stopwatch, workers standing still at the bell",
 		"tags": ["era", "labor", "unrest"],
@@ -241,9 +242,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"follow_the_board", "照表排，慢的换掉",
-				"格子满了",
-				"表贴到每个场，慢的人第二天就不来了。岑九去了西头的旧场，工钱少一半。板上的格子填满，池砚秋把秒表收进兜里，走路时一直按着。",
+				"follow_the_board", "全线推行标准排班，末位淘汰",
+				"铁腕提效",
+				"严格计时的排班制覆盖各大厂区，本地与全国制造产能显著跃升。但高强度轮班导致工伤与过劳频发，生育率下滑且动荡风险飙升。",
 				[
 					Shared.manufacturing(6, 540),
 					Shared.country_sector("manufacturing", 5, 540),
@@ -251,25 +252,25 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 			Shared.option(
-				"pilot_one_yard", "只在新场试",
-				"两本账",
-				"新场照表排，老场照旧。两本工价册子摆在池砚秋桌上，谁也合不上。年底要结账，她把两本都塞进抽屉，锁了。",
+				"pilot_one_yard", "仅在新设货场试点双轨工价",
+				"双轨并行",
+				"新场实行标准排班，老场沿用旧制，产能略有起色。然而同工不同酬的两套工价迅速激化内部矛盾，管理摩擦日渐增多。",
 				[
 					Shared.manufacturing(4, 540),
 					Shared.flag(Ids.FLAG_SHIFT_PENDING, 720, "标记「两套工价」"),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.gamble(
-				"let_workers_fill_it", "表交给工人自己填",
-				Shared.branch(39322, "格子空了一半", # 60%
-					"表交回场里，工人自己填。头一个月慢，第三个月比表上还快。岑九把名字写在白班那一格，第一次没写夜班。",
+				"let_workers_fill_it", "下放排班权，由班组自主协商",
+				Shared.branch(39322, "班组自治见效", # 60%
+					"经过短暂磨合，老工人自发优化了轮换节奏，货场效率反超测时表。劳工健康与家庭生活得以保全，只是厂方仍对放权心存芥蒂。",
 					[
 						Shared.manufacturing(6, 720),
 						Shared.birth(5, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					]),
-				Shared.branch(26214, "板子从墙上扯下来", # 40%
-					"两班人抢同一台吊车，货压在场上。第三天打起来，板子被人从墙上扯下来。池砚秋去捡那些格子，捡了半筐。",
+				Shared.branch(26214, "班组争抢失序", # 40%
+					"不同班组为抢占白班与大型吊机爆发激烈冲突，大批物资滞压货场。混乱令工业产出重挫，生活物资供应随之紧张。",
 					[
 						Shared.manufacturing(-6, 540),
 						Shared.staple(10, 360),
@@ -281,8 +282,8 @@ static func append(catalog) -> void:
 	# ═══ 安静的房间 ═══════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_ERA_QUIET_ROOM),
-		"title": "{settlement_name}·安静的房间",
-		"body_text": "第九设计院三楼，机器一开，地板跟着抖。亓南枝在纸上算了四十天，卡在最后一步。她找管楼的鲁敬亭，要把整层停机三天。鲁敬亭翻登记本：这一层的机时排满了，灰岭的矿上来算通风，铁路来算车皮，还有一家算明年的汛。停机可以，违约金谁付。亓南枝把草稿推过去，最上面一行被橡皮擦破了。鲁敬亭从抽屉里摸出一把铜钥，插进去转了两下，停住了。",
+		"title": "{settlement_name}·科研算力之争",
+		"body_text": "设于{settlement_name}的第九设计院正陷入基础研究与商业订单的资源拉锯。科学委员会旗下的一支核心理论团队卡在关键推演的最后关头，请求全楼停机三日并独占算力配额以排除震动干扰。然而院务处指出，当前机时早已被矿业通风、铁路调度与水利测算的商业合同排满，贸然停机将面临巨额违约赔偿。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A shaking third-floor office above machinery, a researcher's worn draft, a caretaker trying keys from a drawer",
 		"tags": ["era", "scholar", "unrest"],
@@ -316,9 +317,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"stop_the_floor", "停三天，赔钱",
-				"最后一行",
-				"三楼停了三天，矿上的通风算到一半搁着。亓南枝第四天早上写出最后一行，笔尖把纸戳破了。违约金从院里的账上划走，鲁敬亭把铜钥收回抽屉，还是那把。",
+				"stop_the_floor", "财政兜底违约，全楼停机三日",
+				"理论告破",
+				"国库代付违约金后整层静默三日，核心理论如期告破，全国科研水平为之一振。但延误的矿业测算令本地采掘进度短暂受阻。",
 				[
 					Shared.cash_out(2.0, 90),
 					Shared.knowledge(6, 540),
@@ -326,9 +327,9 @@ static func append(catalog) -> void:
 					Shared.country_sector("knowledge", 6, 720),
 				]),
 			Shared.option(
-				"felt_the_walls", "贴毡，机器照开",
-				"账上写修缮",
-				"那间屋子四面贴了毡，机器照开，亓南枝说还是抖。隔壁两个组也来要毡，鲁敬亭只给了一间。毡钱记在院里，账上写的是修缮。",
+				"felt_the_walls", "加装隔振设施，商业机时照旧",
+				"折中修缮",
+				"设计院拨款为实验室加装隔振层，商业与矿业测算得以照常推进。但隔振效果有限且经费分配不均，科研人员怨声渐起。",
 				[
 					Shared.cash_out(2.0, 180),
 					Shared.knowledge(2, 540),
@@ -336,9 +337,9 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 1.20, 360),
 				]),
 			Shared.option(
-				"queue_for_next_month", "排到下月机时",
-				"抽屉里",
-				"机时排到下月，亓南枝把草稿锁进抽屉。第二个月她没来要机时。别处的院先登了那一步，报纸送到门口，鲁敬亭看了一眼，压在最下面。",
+				"queue_for_next_month", "严守合同契约，排期延至下月",
+				"错失先机",
+				"理论团队被迫让出算力配额，次月却传出他国同行抢先发表同等成果的消息。学术界士气受挫，指责当局短视的舆论四起。",
 				[
 					Shared.knowledge(-4, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),

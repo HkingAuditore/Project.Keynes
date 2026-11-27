@@ -7,6 +7,10 @@
 - 证据口径：本文的 `file:line` 均来自本次实际读到的代码/文档；标 **UNVERIFIED** 的条目表示只读代码、未跑测试或未实机验证。
 
 > **实施进展（2026-11-13，已收口）**：四项决策已定稿——独立必须新建国家；**所有国家都有首都**（= 世界生成起始格，PKCN v16 `capital_cell`），首都不可独立；AI 照常计算但不给玩家弹窗；独立后由原主权国"朝廷讨伐"宣战。Phase 0、M1 原生核心、M2 成功率/结算/四阶事件链、M3 建国/强制宣战/驻军转移、AI 原生自动决议、地块「民情」页签、地图告警与顶栏离心纸签均已落地；黄金 v4/v2/v3 与外部位移 v5 已按 5 次捕获重录并通过。验证：`country_capital_test` 16/0、`satisfaction_runtime_test` 58/0、军事自测 PASS、叙事 79/0、`stratum_unrest_service_test` 7/0、`golden_day_hash_test` 176/0、`golden_external_advancers_test` 338/0。实现细节见 [stratum-mobilization.md](../cpp-dots-runtime/stratum-mobilization.md)。
+>
+> **节奏修订（2026-11-27）**：§3.3/§3.4 的「升级判定 0.35」改为**阈值驱动**（对齐 Victoria 3 式机制）：行动失败不再直接升阶，只增加组织度/后遗症并把下一次检查推后；链只在 `next_check_day` 到达且组织度（及 power）越过下一阶门槛时升阶。成功则降阶并把下一次检查推到冷却结束。第 4 阶镇压失败才直接独立，第 3 阶镇压失败不再跳过「举旗」事件。代码契约见 [stratum-mobilization.md](../cpp-dots-runtime/stratum-mobilization.md) §4。
+>
+> **最后一城（2026-11-27，方案 D）**：只剩一座城时保留「不能独立」的保护；取消建国请求，给玩家一条「最后一城不能独立」提示，并在次日清掉该格的独立位。玩家保留城市，不进入零领土状态；链条停在当前阶。
 
 ---
 

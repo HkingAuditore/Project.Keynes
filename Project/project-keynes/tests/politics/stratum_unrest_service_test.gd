@@ -14,6 +14,9 @@ func _run() -> void:
 	if await _start_story({}):
 		await _check_independence()
 	await _close_story()
+	if await _start_story({}):
+		await _check_independence()
+	await _close_story()
 	print("stratum unrest executor: %d checks, %d failures" % [_checks, _failures])
 	call_deferred("quit", 0 if _failures == 0 else 1)
 

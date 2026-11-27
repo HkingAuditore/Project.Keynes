@@ -25,8 +25,9 @@ const PACK_ID := &"labor"
 const PREFIX := "evt.labor."
 
 const CAST := [
-	"韩双贵", "祁玉山", "郜书办", "陶麻子", "常万山", "苗巧", "岑氏", "冯铁嘴", "潘有田", "关老闷",
-	"南滩", "白碱滩", "铁砧巷", "石庙镇", "常记纱厂", "铁砧社", "界石", "梭子",
+	"圈地牧场", "自耕农", "纱厂资本", "动力织机",
+	"劳工群体", "工厂法案", "十小时制", "匠作行会",
+	"行会特许状", "独立作坊", "市政当局",
 ]
 
 const MUL_090 := 58982
@@ -66,8 +67,8 @@ static func append(catalog) -> void:
 	# ═══ 第 1 幕 · 牧场 ═══════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LABOR_ENCLOSURE),
-		"title": "{settlement_name}·牧场",
-		"body_text": "南滩牧业的木桩从荒坡下往上钉，一根接一根，钉到韩双贵家地头那条旧犁痕跟前。桩上刷白漆，写的是羊的编号，不是人的名字。犁痕尽头的石头卧在土里，他爹的名字被羊啃掉一个角，韩双贵伸手把石面上的土抹开。郜书办站在坡上念名册，念到「韩双桂」，没有人纠正。祁玉山在坡顶看羊，藤条一下一下敲着靴筒。公司的人说，一亩草养三只羊，一亩麦养不活一个人。韩双贵没接话，用鞋底把石头周围的土踩实了。",
+		"title": "{settlement_name}·圈地牧场",
+		"body_text": "受纺织业原毛需求激增驱动，大型农牧公司正在{settlement_name}近郊大肆设立圈地牧场，将传统公地与零散耕地纳入围栏。资本方援引地籍清丈令，宣称集约牧羊的商业回报远超分散耕作。世代耕作于此的自耕农则联名向市政当局申诉，一旦失地便将沦为流民，双方在田埂上剑拔弩张。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "White-painted pasture stakes driven into a hillside beside a worn boundary stone, sheep on the ridge, a clerk reading a roll",
 		"tags": ["labor", "unrest", "chain"],
@@ -102,9 +103,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"pull_the_stakes", "夜里把桩子拔了",
-				"桩子拔了，沟没挖",
-				"拔了大半夜，天亮只剩一地白漆木屑。排水沟的活停了，洼地的水排不出去，秋天的麦根泡在泥里，抓一把能捏出水。",
+				"pull_the_stakes", "默许乡民拔桩，驳回圈地令",
+				"驱牧保耕",
+				"乡民连夜拔除牧场围栏，耕地与农业产出得以保全，官府顺势向涉事公司课以罚金。但强硬对抗激化了劳资与土地矛盾。",
 				[
 					Shared.agriculture(8, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 360),
@@ -112,26 +113,26 @@ static func append(catalog) -> void:
 					Shared.schedule(Ids.EVT_LABOR_BROKEN_LOOM, 90, "砸机器"),
 				]),
 			Shared.gamble(
-				"take_shares_in_the_pasture", "拿地入股牧场",
-				Shared.branch(39322, "羊毛价没塌", # 60%
-					"头一年羊毛出了手，官家的贴补也跟着下来，韩双贵分到的钱够买半年的粮。他把石头搬回家垫门槛，有名字的那面朝上。",
+				"take_shares_in_the_pasture", "财政贴补，推行农地入股牧场",
+				Shared.branch(39322, "股息丰厚", # 60%
+					"国库注资担保后牧场顺利投产，原毛外销畅旺，农牧产出与商贸运力同步跃升。尽管部分失地农户仍感不安，整体改革初见成效。",
 					[
 						Shared.agriculture(12, 720),
 						Shared.trade_capacity(8, 720),
 						Shared.cash_out(2.0, 180),
 						Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 					]),
-				Shared.branch(26214, "羊价塌了，地也没了", # 40%
-					"羊毛一路往下跌，公司把牧工裁了一半。韩双贵领了工牌，站在自己原来的地头看羊，羊不认识他。",
+				Shared.branch(26214, "牧业崩盘", # 40%
+					"外部原毛需求骤冷，牧场公司大幅裁员并变卖草场。失地农户既失田产又无分红，农产重挫、口粮趋紧，人口元气大伤。",
 					[
 						Shared.agriculture(-6, 540),
 						Shared.staple(8, 540),
 						Shared.birth(-5, 540),
 					])),
 			Shared.option(
-				"petition_and_wait", "递呈文，等批",
-				"批文压在抽屉里",
-				"呈文递上去，郜书办说等秋后。秋后没消息，羊进了麦地，韩双贵拿扫帚赶，赶不动，站在地头看羊把最后一片青的啃完。",
+				"petition_and_wait", "留中不发，暂搁农户土地呈文",
+				"呈文积压",
+				"农户联名呈文被无限期搁置，牧群趁隙侵占大片麦田，农业产出明显下滑。失地流民涌入城镇，为劳工动荡埋下伏笔。",
 				[
 					Shared.flag(Ids.FLAG_ENCLOSURE_PETITION, 540, "标记「呈文未批」"),
 					Shared.bias(Ids.TAG_LABOR, 1.25, 540),
@@ -144,8 +145,8 @@ static func append(catalog) -> void:
 	# ═══ 第 2 幕 · 砸机器 ═════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LABOR_BROKEN_LOOM),
-		"title": "{settlement_name}·砸机器",
-		"body_text": "铁砧巷的铜铃响了三下，不是换班，是有人翻墙。常记纱厂的院子里，锭子还在转，皮带打在轴上啪啪响。陶麻子从怀里掏出一把梭子，木头的，磨得发亮，是他老婆生前用的。他把梭子塞进第一台织机的齿轮，机器叫了一声，停了。跟来的人拿錾子敲锭子，一根一根，敲完扔进染缸。看门的瘸子靠在门框上，没喊。天亮前他们走了，厂门口的灯还亮着，照见地上两只踩掉的鞋。",
+		"title": "{settlement_name}·捣毁织机",
+		"body_text": "大批因机械化失业的织工在夜间突袭{settlement_name}工业区，砸毁了数台高速运转的动力织机与纺锭。纱厂资本震怒异常，要求市政当局立刻派出巡警镇压并向全城摊派治安费；而劳工群体则声称这是被逼入绝境后的反抗，呼吁将熟练旧匠吸纳入厂培训而非一味驱逐。工业秩序已到爆发边缘。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "Weavers breaking spindles inside a cotton mill at night, a wooden shuttle jammed into the gears, two abandoned shoes on the floor",
 		"tags": ["labor", "unrest", "chain"],
@@ -180,25 +181,25 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.gamble(
-				"put_him_on_a_machine", "让陶麻子管一台机",
-				Shared.branch(39322, "他学会了看锭子的脾气", # 60%
-					"陶麻子三天就摸清了皮带什么时候该松，停机比谁都准。他把老婆那把梭子挂在机头上，谁也没动它。",
+				"put_him_on_a_machine", "招安带头工匠，转任机修技师",
+				Shared.branch(39322, "旧匠驯机", # 60%
+					"老练的手工织匠迅速摸透了机械传动脾气，反而大幅降低了织机故障率。全国制造效率与本地工业技艺皆得提振。",
 					[
 						Shared.country_sector("manufacturing", 5, 540),
 						Shared.knowledge(4, 540),
 						Shared.schedule(Ids.EVT_LABOR_FACTORY_ACT, 45, "工时"),
 					]),
-				Shared.branch(26214, "梭子卡住了皮带", # 40%
-					"陶麻子把手伸进齿轮去掏那把梭子，手背被咬掉一块。厂里赔了药钱，机器停了两天，夜里来的人更多了。",
+				Shared.branch(26214, "工伤酿成罢工", # 40%
+					"缺乏防护规程的培训引发严重卷入事故，带头工匠重伤致残。工厂被迫停产整顿，全城劳工怒火彻底点燃。",
 					[
 						Shared.manufacturing(-6, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.45, 540),
 						Shared.schedule(Ids.EVT_LABOR_FACTORY_ACT, 90, "工时"),
 					])),
 			Shared.option(
-				"call_the_patrol", "叫巡警来抓人",
-				"铁栅门焊上了",
-				"巡警半夜进巷，抓走两个，一个十九，一个比陶麻子还大两岁。铁栅门第三天就焊上了，漆还没干，门口多了一盏灯。",
+				"call_the_patrol", "派遣巡警镇压，课征治安罚金",
+				"铁腕戒严",
+				"巡警连夜搜捕为首工人并焊死厂区铁门，全国纺织工业得以强力运转且国库收缴罚金。但高压手段令地下劳工串联愈发激进。",
 				[
 					Shared.country_sector("manufacturing", 6, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.35, 540),
@@ -206,9 +207,9 @@ static func append(catalog) -> void:
 					Shared.schedule(Ids.EVT_LABOR_FACTORY_ACT, 60, "工时"),
 				]),
 			Shared.option(
-				"stop_for_one_night", "停工一夜，天亮照开",
-				"红纸贴在门口",
-				"停工一夜，第二天门口贴了招工的红纸，上头要「十五以上、手脚利索」，没写工钱。陶麻子站在纸前看了很久，把手插回袖子里。",
+				"stop_for_one_night", "停工一日整顿，另招新工顶替",
+				"换血复产",
+				"厂方草草清理现场并张榜重招廉价生手，既流失了熟练技工导致制造与技艺滑坡，也让失业劳工的积怨进一步发酵。",
 				[
 					Shared.manufacturing(-5, 360),
 					Shared.knowledge(-3, 360),
@@ -221,8 +222,8 @@ static func append(catalog) -> void:
 	# ═══ 第 3 幕 · 工时 ═══════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LABOR_FACTORY_ACT),
-		"title": "{settlement_name}·工时",
-		"body_text": "记时钟挂在门廊下，铜面，上弦的钥匙在常万山腰上。女工苗巧站在钟底下，右边袖子空着，用别针别在肩上，是上个月皮带轮卷走的。郜医官在账房里数手指头，数到第七根，把笔放下了。常万山掏出怀表，跟钟对了一遍，说钟快了人就早来一刻，钟慢了人不能早走。苗巧没听懂，她只问了一句，天黑以前能不能出门。没有人答她。钟当当地敲了六下，院子里的人往里走。",
+		"title": "{settlement_name}·工厂工时法案",
+		"body_text": "连日工伤频发终于引爆了{settlement_name}关于工厂法案的激烈议政。劳工群体与社会改良派递交联名请愿，要求立法确立每日十小时制上限以遏制无休止的夜班压榨。纱厂资本与出口商会则强烈反对国家干预契约自由，警告缩短工时将令本国产品丧失竞争优势，甚至威胁将订单转往邻省。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A brass time clock in a factory portico, a one-armed woman worker standing beneath it, the owner holding a pocket watch",
 		"tags": ["labor", "unrest", "chain"],
@@ -234,26 +235,26 @@ static func append(catalog) -> void:
 		"max_era_index": 8,
 		"options": [
 			Shared.gamble(
-				"try_ten_hours", "先试三个月十小时",
-				Shared.branch(39322, "钟敲九下就散工", # 60%
-					"头一个月单子没交齐，第二个月常万山添了两个人手，也就撑住了。苗巧第一次在天还亮的时候走回家，路上买了一把青菜。",
+				"try_ten_hours", "财政补贴过渡，试行十小时制",
+				Shared.branch(39322, "十小时制立稳", # 60%
+					"国库补贴助厂方渡过排班磨合期，工人得以休养生息，人口生育回升。现代轮班与工厂管理经验随之在全国推广。",
 					[
 						Shared.flag(Ids.FLAG_HOURS_TEN, 900, "标记「十小时制」"),
 						Shared.birth(5, 720),
 						Shared.cash_out(2.0, 180),
 						Shared.research_signal("breakthrough.industrial_organization", "工厂组织"),
 					]),
-				Shared.branch(26214, "单子转去了外县", # 40%
-					"南边的厂肯让人干到半夜，单子就转走了。常万山把钟往后拨了一刻，工钱按钟点算，账房门口多了一张写罚则的纸。",
+				Shared.branch(26214, "订单外流受挫", # 40%
+					"严苛工时限制令大批外商订单转向邻地无管制工场，本地制造产出下滑。资方借机克扣薪资，人口与治安皆受冲击。",
 					[
 						Shared.manufacturing(-6, 540),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 						Shared.birth(-3, 540),
 					])),
 			Shared.option(
-				"let_the_factory_decide", "不立规矩，厂里自己定",
-				"钟往后拨了两刻",
-				"常万山自己把钟拨了，说厂里的事厂里管。第二年春天苗巧没再来，招工的红纸上添了一行「招女工，能上夜班」。",
+				"let_the_factory_decide", "否决工时立法，由厂方自主定夺",
+				"资本主导",
+				"纱厂全面延长夜班并探索夜间电气照明，全国制造产出显著拉升。但过度压榨令劳工健康与生育率骤降，社会动荡急剧加剧。",
 				[
 					Shared.country_sector("manufacturing", 6, 720),
 					Shared.birth(-6, 720),
@@ -261,9 +262,9 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 1.35, 540),
 				]),
 			Shared.option(
-				"pay_by_the_piece", "按件计钱，不按钟点",
-				"钟拆了，换成秤",
-				"门口的木箱抬走，换上一只大筐，月底过秤。苗巧一天织的布比别人少两尺，她就把邻家孩子的活也领回家，灯点到很晚。",
+				"pay_by_the_piece", "废除计时考勤，改行计件薪酬",
+				"计件竞速",
+				"计件制彻底激发了工场产能，本地制造业产出猛增。但工人为维持生计被迫携家眷超时赶工，家庭元气与口粮负担双双恶化。",
 				[
 					Shared.manufacturing(8, 540),
 					Shared.birth(-5, 540),
@@ -275,8 +276,8 @@ static func append(catalog) -> void:
 	# ═══ 孤立 · 行会特许 ═══════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LABOR_GUILD_CHARTER),
-		"title": "{settlement_name}·行会特许",
-		"body_text": "铁砧社的执事冯铁嘴把一张纸铺在案上，纸角压着一枚铜印，印还没蘸火漆。纸上留着一块空白，是写名字的地方。木匠潘有田认得那块空白：填进去的人能在镇上开张，填不进去的只能挑着担子走街。门外关老闷把扁担横在膝上，箍桶的，逃荒来的，担子上的锯条还缠着布。郜书办蘸了笔，笔尖悬在空白上头，问写谁。冯铁嘴不看他，看着潘有田。潘有田把手在围裙上擦了两下，没说话。",
+		"title": "{settlement_name}·行会特许状",
+		"body_text": "{settlement_name}的匠作行会呈递了一份行会特许状草案，请求官府正式钤印确认其垄断经营权：凡未入行会者一律不得在城中开设独立作坊。行会承诺以此包缴匠税并严控器物成色；而大批涌入城郊的流民手艺人则呼吁废除行会壁垒，允许自由开张营生。究竟扶植行会还是放开竞争，已交由当局决断。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A guild charter with a blank name line, a bronze seal without wax, a cooper waiting outside with his tool pole",
 		"tags": ["labor", "unrest"],
@@ -310,18 +311,18 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"stamp_the_charter", "盖印，只准行会开张",
-				"火漆压下去了",
-				"印盖在空白上，冯铁嘴吹了吹火漆，把纸卷起来塞进袖里。关老闷第二天挑着担子出了镇，锯条还缠着布，走的是石桥那条路。",
+				"stamp_the_charter", "钤印特许状，确立行会垄断权",
+				"行会专营",
+				"行会缴纳税款取得独占特许，作坊品控与本地制造稳步增强，外来游匠则被悉数逐出城外，唯工具耗费随之略增。",
 				[
 					Shared.manufacturing(5, 540),
 					Shared.tools(6, 540),
 					Shared.cash_in(1.5, 180),
 				]),
 			Shared.option(
-				"let_anyone_open", "不盖印，谁都能开张",
-				"石桥底下支起摊子",
-				"关老闷第一天就接了七只桶，箍到天黑，手上全是铁锈。铁砧社的人来看了一眼，回去把门关上了，门闩落得很响。",
+				"let_anyone_open", "废除行会门槛，准许游匠落籍",
+				"开放竞业",
+				"外来逃荒匠户获准落籍开张，全境制造业活力与器具日常供给双双受惠。但老牌行会罢市抵制，本地作坊秩序短期震荡。",
 				[
 					# 逃荒来的箍桶匠从此在镇上落了脚：一户人，按 3 人（本人+家口）算。
 					Shared.population(3, "本地人口 +3 人（逃荒匠户落籍）"),
@@ -331,9 +332,9 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
-				"hold_the_paper", "押着不办，等章程",
-				"纸还在案上",
-				"纸压在铜印底下，火漆干了又化。关老闷搬到镇外的破庙住，白天不敢在主街生火，怕人认出来。",
+				"hold_the_paper", "暂压特许状，待详拟章程再议",
+				"火漆未干",
+				"特许状迟迟未获批复，城内新旧匠户皆不敢放手扩产。制造产出随之滑坡，行会与游匠间的暗中摩擦日渐升级。",
 				[
 					Shared.flag(Ids.FLAG_CHARTER_PENDING, 540, "标记「火漆未干」"),
 					Shared.manufacturing(-5, 360),
@@ -345,8 +346,8 @@ static func append(catalog) -> void:
 	# ═══ 孤立 · 寡妇的作坊 ═════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LABOR_WIDOW_WORKSHOP),
-		"title": "{settlement_name}·寡妇的作坊",
-		"body_text": "岑氏的招牌还挂在门框上，三颗铜钉，中间那颗被雨泡黑了。她男人苗德水死在春天，绳坊的活没停，欠常记的账也没停。铁砧社的执事冯铁嘴来了一趟，说招牌是行会的字号，人没了，字号要收回去。岑氏把招牌往里挪了半尺，说这牌子挡雨。学徒小顺坐在门槛上搓麻，头也不抬。冯铁嘴走的时候把话留在院里，月底以前，要么入行会，要么摘牌子。岑氏拿抹布去擦那三颗钉子，擦到中间那颗，停了一下。",
+		"title": "{settlement_name}·作坊承继权",
+		"body_text": "{settlement_name}一处由已故老匠人留下的独立作坊，正面临匠作行会收回字号的强硬通牒。按照行会特许状旧规，东家身故后其遗孀无权继续承继招牌，须于月底前缴纳高额入会份子或摘牌并入行会大坊。城中不少中小独立作坊正密切观望此案裁决，视其为当局对待民间产权与行会特权的风向标。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A widow wiping the three brass nails of a workshop sign, an apprentice twisting hemp on the threshold",
 		"tags": ["labor", "unrest", "people"],
@@ -380,27 +381,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"keep_the_sign", "挂她的牌，缴份子",
-				"招牌挪回来半尺",
-				"冯铁嘴收了钱，把招牌重新钉上，用的还是那三颗钉，中间那颗换了个位置。岑氏在门后数钱，数完把借据压回米缸，压得很深。",
+				"keep_the_sign", "准予补缴份子，保住独立字号",
+				"招牌留存",
+				"遗孀补缴核验规费后得以保留独立作坊字号，手艺与产能顺利延续。此例一开，城中多家小坊亦纷纷要求确认独立产权。",
 				[
 					Shared.cash_in(1.5, 180),
 					Shared.manufacturing(4, 540),
 					Shared.flag(Ids.FLAG_WIDOW_SIGN, 540, "标记「招牌未摘」"),
 				]),
 			Shared.option(
-				"take_the_sign_down", "摘牌，给人做下手",
-				"招牌劈了烧水",
-				"招牌摘下来靠在墙根，后来劈了烧水，铜钉收在碗柜里。岑氏天不亮去行会的作坊，天黑回来，手指上缠着麻线。",
+				"take_the_sign_down", "依行会旧规摘牌，并入大坊",
+				"字号兼并",
+				"独立作坊被摘牌兼并，行会借机整合人力提升了整体制造产出。但失坊匠户被迫沦为雇工，生计压榨令生育下滑且民怨暗生。",
 				[
 					Shared.manufacturing(5, 540),
 					Shared.birth(-4, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 360),
 				]),
 			Shared.option(
-				"wait_until_month_end", "拖到月底再说",
-				"月底过了",
-				"月底那天冯铁嘴没来，来的是常记的伙计，拿着借据站在门口。岑氏把钱数了三遍，差一小截，伙计站着不走，看她把碗柜上的铜钉一颗一颗摆齐。",
+				"wait_until_month_end", "不予裁断，任由债主与行会处置",
+				"产权悬空",
+				"当局袖手旁观，作坊月底即被债主与行会瓜分停摆。城中中小匠户人心惶惶，本地制造产出受挫且劳工怨气随之攀升。",
 				[
 					Shared.manufacturing(-5, 360),
 					Shared.bias(Ids.TAG_LABOR, 1.20, 540),

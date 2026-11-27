@@ -20,8 +20,9 @@ const PACK_ID := &"ages"
 const PREFIX := "evt.ages."
 
 const CAST := [
-	"阿禾", "石伯", "老陶", "甘棠", "陆沉", "麦芒", "郝梁", "屈木", "阿卜",
-	"陶罐", "界石", "铁针", "信号塔", "青背岭", "泥人",
+	"长老会", "氏族", "粮窖", "公墓", "陶窑", "祭祀",
+	"商队", "海务司", "罗盘", "行会",
+	"港务局", "信号塔", "工业资本", "监测系统", "生态红线", "林务委员会",
 ]
 
 const MUL_110 := 72090
@@ -62,8 +63,8 @@ static func append(catalog) -> void:
 	# ═══ 第一把种子 ═══════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_AGES_FIRST_SEED),
-		"title": "{settlement_name}·第一把种子",
-		"body_text": "秋天最后一把谷子，阿禾把它装进一只陶罐，罐口用泥封了。场院里的人围着看，谁都知道这一罐是明年的种。有人问能不能先吃一半，阿禾没答，把罐子抱进屋里。夜里他起来看过两回，罐子还在。第二天早上，罐口上的泥裂了一道缝，他用手指把缝抹平，抹完又朝窗外看了一眼。",
+		"title": "{settlement_name}·留种之议",
+		"body_text": "秋收告罄，{settlement_name}的粮窖仅余最后一批饱满谷种。氏族长老会主张严封谷种以备来年春播，否则聚落将彻底丧失农耕根基，被迫退回采集渔猎。但严冬将至，口粮吃紧的各户要求立即开窖分食，直言若挨不过寒冬便无来年可言。留种还是济急，这一抉择已摆上部落议事席。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A clay jar sealed with mud held by a villager, people watching around a threshing floor at the end of harvest",
 		"tags": ["ages", "unrest"],
@@ -95,25 +96,25 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"keep_the_seed", "留种，明年再种",
-				"种子埋进土里",
-				"种子埋进土里那天，阿禾在田边站了很久。冬天有人饿死，也有人把谷壳磨了掺在粥里。第二年穗子出来，谁也没提去年冬天。",
+				"keep_the_seed", "严封粮窖，保住来年谷种",
+				"春播有继",
+				"粮窖被泥封看守，部落在严冬里勒紧裤带，口粮损耗加剧。开春时饱满谷种如期入土，新季农耕得以延续。",
 				[
 					Shared.agriculture(4, 540),
 					Shared.staple(4, 360),
 				]),
 			Shared.option(
-				"grind_it_and_eat", "磨了吃，过冬要紧",
-				"磨盘响了半夜",
-				"磨盘响了半夜，第二天锅里有了稠粥。开春别人下种，阿禾家的田只撒了薄薄一层。那年秋天，他家的穗子比别家矮一截。",
+				"grind_it_and_eat", "开窖分食，先渡今冬荒年",
+				"权济寒冬",
+				"谷种被磨成口粮分予各户，聚落得以安然过冬，饥荒压力骤减。但来年春播无良种可用，田亩收成明显下滑。",
 				[
 					Shared.staple(-4, 180),
 					Shared.agriculture(-3, 360),
 				]),
 			Shared.option(
-				"share_with_neighbours", "分给邻人，一起种",
-				"七户人家各拿一份",
-				"陶罐里的谷子分成七份，七户人家各拿一份。有人嫌分得不匀，在祠堂门口吵了一架。第二年春天，七块地一起下种，出苗的日子差了三天。",
+				"share_with_neighbours", "各氏族均分谷种，共担春播",
+				"分户共耕",
+				"谷种按户分给相邻氏族共同保管耕作，既稳住了人心，也交流了选种经验，聚落人丁随之兴旺。",
 				[
 					Shared.birth(4, 540),
 					Shared.knowledge(3, 540),
@@ -125,8 +126,8 @@ static func append(catalog) -> void:
 	# ═══ 第一座坟 ═════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_AGES_FIRST_GRAVE),
-		"title": "{settlement_name}·第一座坟",
-		"body_text": "石伯死在冬天，身子停在屋里三天。大家争论埋在哪里：坡上离水远，路口离人近。老陶说，埋在路口，过路的人看见就知道这里有人住。有人不同意，说晦气。最后他们抬着石伯上了坡，路上歇了两回。坑挖到一半，铲子碰到一块石头，谁也搬不动。老陶蹲在坑边看了半天，说那就把石头留着。",
+		"title": "{settlement_name}·定居公墓",
+		"body_text": "随着{settlement_name}转向定居，如何安葬逝者成为氏族面临的新礼制难题。长老会提议在高坡划定固定公墓并举行祭祀，以此凝聚共同祖先记忆；务实派却主张简葬于荒野，将劳力与牲畜留给春耕。另有部落首领建议将坟茔筑于通衢路口，向往来外族宣示这片土地已有定居之主。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "Villagers carrying a body up a slope in winter, a half-dug grave with a large stone in it",
 		"tags": ["ages", "unrest"],
@@ -158,26 +159,26 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"pile_stones", "堆石为记",
-				"石堆垒到齐腰高",
-				"石堆垒到齐腰高，没有字。第二年春天，有人在石堆上放了一束干草。再后来，过路的人也会放一块石头，堆子一年比一年大。",
+				"pile_stones", "高坡立冢，堆石为祭祀之记",
+				"祖灵有归",
+				"高坡垒起石冢作为共同墓地，各氏族依例祭祀并传述先祖旧事，聚落工匠与礼俗传承皆有所进益。",
 				[
 					Shared.knowledge(3, 540),
 					Shared.manufacturing(2, 360),
 					Shared.bias(Ids.TAG_PEOPLE, 1.10, 540),
 				]),
 			Shared.option(
-				"bury_and_forget", "埋了就忘，省下力气",
-				"坑填平了",
-				"坑填平了，上面撒了把谷壳，怕人认出来。那年春耕多翻了两亩地，秋天多收了两担。后来没人记得石伯埋在哪，连他儿子也说不清。",
+				"bury_and_forget", "从简掩埋，省力以赴农事",
+				"简葬务农",
+				"丧仪一切从简，省下的青壮劳力尽数投入开荒耕作，当年田产略有盈余。但缺乏共同祭仪，部族记忆日渐淡薄。",
 				[
 					Shared.agriculture(2, 360),
 					Shared.knowledge(-3, 360),
 				]),
 			Shared.option(
-				"bury_at_the_crossroads", "葬在路口，让过路人看见",
-				"坟堆在路口",
-				"坟堆在路口，来往的人都要绕一步。办丧事那天吃了半扇猪，粮缸见了底。第二年春上，有人在坟边搭了个棚子卖水。",
+				"bury_at_the_crossroads", "筑坟于路口，宣示定居地权",
+				"路口示疆",
+				"隆重的丧祭耗去不少口粮储备，却让往来部族知晓此处已成定居之邦。氏族凝聚力增强，聚落人口趋于稳定。",
 				[
 					Shared.birth(3, 540),
 					Shared.staple(3, 360),
@@ -189,8 +190,8 @@ static func append(catalog) -> void:
 	# ═══ 泥人 ═════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_AGES_CLAY_FIGURE),
-		"title": "{settlement_name}·泥人",
-		"body_text": "老陶的小女儿在河边捏了个泥人，有鼻子有眼，晒干了摆在窗台上。过路的人看了，说这东西像个守门的。老陶把它放进窑里，烧了一夜。第二天出窑，泥人裂了一道纹，还是站着。街坊都来看，有人问能不能也捏一个，有人问烧这个有什么用。老陶把泥人放回窗台，没说话。",
+		"title": "{settlement_name}·陶俑与窑火",
+		"body_text": "{settlement_name}的陶窑近日烧制出一批人形陶偶，形态古拙却颇受各氏族追捧，甚至被视作护宅与祭祀之器。专司日用陶罐的匠师担忧，烧造无用玩物会耗费大量柴薪与窑位，挤压炊具与储粮器皿的供给。然而主持祭祀的群体认为，精致陶偶既可凝聚信仰，亦能作为稀缺礼器与邻部交换盐货。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A small fired clay figure with a crack, standing on a windowsill, neighbours gathered at a kiln",
 		"tags": ["ages", "craft"],
@@ -223,27 +224,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"fire_more_figures", "让他捏，烧成陶",
-				"窗台上摆了一排",
-				"窑里又烧了两回，窗台上摆了一排泥人，有守门的，有抱鱼的。柴用得比往年多，冬天屋里冷了一截。来换泥人的人带的是盐和皮子。",
+				"fire_more_figures", "准许专窑烧造礼器陶偶",
+				"窑火日精",
+				"陶窑分出专炉烧造陶偶，制陶控火技艺大进，精巧器物更吸引邻部前来易货。但额外柴薪消耗令冬日生计略显吃紧。",
 				[
 					Shared.manufacturing(4, 540),
 					Shared.knowledge(3, 540),
 					Shared.staple(3, 360),
 				]),
 			Shared.option(
-				"put_it_away", "收起来，别耽误活",
-				"泥人进了柜子",
-				"泥人收进柜子，上面压了一摞麻布。老陶照旧做他的盆和罐，只是收工前会往柜子看一眼。那年冬天，别处来的匠人带了一种带花纹的罐子，卖得比他的好。",
+				"put_it_away", "禁造玩物，专注日用陶器",
+				"严守实用",
+				"长老会下令陶窑只准烧制盆罐，部落秩序井然却错失工艺革新契机。不久后邻部精绘陶器流入，反令本地匠作相形见绌。",
 				[
 					Shared.manufacturing(-2, 360),
 					Shared.knowledge(-2, 360),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 360),
 				]),
 			Shared.option(
-				"let_everyone_make_one", "让全城都来捏",
-				"河边坐满了人",
-				"河边坐满了人，泥不够用，挖到别人家的地头上。有人捏了自家的牛，有人捏了死去的孩子。烧出来的东西摆了半条街，也有人在夜里偷偷把别人的泥人砸了。",
+				"let_everyone_make_one", "开放河泥与公窑，鼓励民创",
+				"百态陶风",
+				"各户纷纷塑像烧窑，聚落工艺审美与文化活力大振。然而争抢河泥与窑位引发多起纠纷，地方摩擦随之抬头。",
 				[
 					Shared.knowledge(5, 540),
 					Shared.birth(3, 540),
@@ -255,8 +256,8 @@ static func append(catalog) -> void:
 	# ═══ 迷路的商队 ═══════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_AGES_CARAVAN_LOST),
-		"title": "{settlement_name}·迷路的商队",
-		"body_text": "一支外邦商队在西边的岔路上走错了，二十几匹牲口在城外趴了两天。领队的阿卜会说几句本地话，比划着问去大集的路。他们的货是盐和一种没见过的布，包在油布里，没受潮。城里有人主张把货扣下，说外邦人不敢怎么样；也有人想请他们留下，在城南开一间铺子。甘棠蹲在车边看那匹病马，说再走三天，这队人得折一半。",
+		"title": "{settlement_name}·迷途商队",
+		"body_text": "一支满载精盐与异域织物的外邦商队在西境荒道迷途，疲敝不堪地滞留于{settlement_name}城外。地方官吏中有人主张借口盘查扣押货物充公，以充实国库；城内行会则担心外商落户会冲击本地布帛销路，力主将其礼送出境。亦有通商派建议拨给商栈准其常驻，借此开辟新的陆路货源。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "A foreign caravan resting outside a town wall, bales of salt and unfamiliar cloth, a sick horse in the traces",
 		"tags": ["ages", "market", "unrest"],
@@ -289,9 +290,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"guide_them_out", "引路出关",
-				"商队上路了",
-				"甘棠派了两个人带路，送到岔路口。阿卜留下一匹布和一袋盐，说下回还走这条道。第二年秋天，城外的车辙比往年深了一指。",
+				"guide_them_out", "官派向导护送，结好商路",
+				"商道渐通",
+				"朝廷拨款雇请向导护送商队重返正途，外邦商号感念信义，此后逐年遣队来贸，本国商路吞吐与域外见闻皆得增益。",
 				[
 					Shared.trade_capacity(6, 360),
 					Shared.cash_out(1.5, 360),
@@ -299,18 +300,18 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_FRONTIER, 1.10, 540),
 				]),
 			Shared.option(
-				"seize_the_goods", "扣下货，充公",
-				"货进了官仓",
-				"货进了官仓，盐和布都记了数。阿卜在城门口站了一天，第二天带着人走了。那年冬天，西边的岔路上多了几个骑马的人，专抢落单的车。",
+				"seize_the_goods", "扣押无凭商货，充入官库",
+				"商誉受损",
+				"精盐与织物被悉数没收充公，国库获一笔横财。但外商愤而远遁，西境商旅视本地为畏途，边道劫掠与地方不安随之滋生。",
 				[
 					Shared.cash_in(2.0, 360),
 					Shared.manufacturing(-3, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 				]),
 			Shared.option(
-				"ask_them_to_stay", "请他们留下开店",
-				"城南多了一间铺子",
-				"城南多了一间铺子，门口挂的招牌是两种字。阿卜的货比本地便宜一成，本地的布行联合起来不跟他做生意。他家的孩子在巷子里跟人打架，学话学得很快。",
+				"ask_them_to_stay", "特许留城设栈，引入外贸",
+				"异邦商栈",
+				"外商获准在城南开设货栈，带来新式织法与远方货源。本地行会不满外人夺利而屡起抵制，城中商贸摩擦与生活开销一时俱增。",
 				[
 					Shared.trade_capacity(4, 540),
 					Shared.knowledge(3, 540),
@@ -323,8 +324,8 @@ static func append(catalog) -> void:
 	# ═══ 针 ═══════════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_AGES_COMPASS_DOUBT),
-		"title": "{settlement_name}·针",
-		"body_text": "甘棠从外邦水手那里换来一枚针，装在一只木盒里，针总指着一个方向，不管盒子怎么转。他把盒子放在船头，说有了这个，出海不用再看星星。陆沉看了半天，说这东西要是错了，船就回不来。城里有人说是妖术，要求把盒子收走。甘棠把盒子盖上，又打开，针还在转，慢慢停住。",
+		"title": "{settlement_name}·磁针与海图",
+		"body_text": "{settlement_name}的海务司近日购得一具外邦磁针罗盘，无论船身如何转向，指针始终稳指一端。航海行会振奋不已，宣称凭此即可摆脱观星束缚，在阴云大雾中直航远海。但钦天学者警告，尚未校验磁偏误差便贸然远航极易船毁人亡，守旧教团更斥之为惑众异术，力主封禁。",
 		"image_key": "hydrology.water",
 		"ai_visual_prompt": "A needle in a wooden box on a ship's bow, a boatman and a star-gazer arguing over it, sailors watching",
 		"tags": ["ages", "knowledge", "unrest"],
@@ -357,35 +358,35 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.gamble(
-				"trust_the_needle", "信它，出海",
-				Shared.branch(39322, "船回来了", # 60%
-					"船出去了十一天，回来时船舷上多了一道白痕。甘棠把针盒擦干净，说这一趟没看星星。陆沉在岸上等着，第一句话问的是：针偏了没有。",
+				"trust_the_needle", "配发远洋试航，开拓新路",
+				Shared.branch(39322, "盲航凯旋", # 60%
+					"试航船队仅凭罗盘穿越连日阴雾并顺利返港，远洋航路图得以补全。尽管守旧派仍心怀忌惮，海务与学界已为之震动。",
 					[
 						Shared.trade_capacity(6, 360),
 						Shared.knowledge(4, 540),
 						Shared.research_signal("contact.maritime_vessel", "远洋航路"),
 						Shared.bias(Ids.TAG_UNREST, 1.10, 540),
 					]),
-				Shared.branch(26214, "船没回来", # 40%
-					"船没回来。半个月后，下游捞上来一块船板，漆还是新的。甘棠把针盒锁进柜子，陆沉再没提过看星星的事；城里有人说，那盒子本来就不该上船。",
+				Shared.branch(26214, "试航失联", # 40%
+					"远航船队因未修正磁偏误入暗礁区，逾期未归，仅余残骸漂回近海。舆论哗然，海务改革受挫，守旧之声一时大炽。",
 					[
 						Shared.manufacturing(-3, 540),
 						Shared.knowledge(-2, 360),
 						Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 					])),
 			Shared.option(
-				"test_it_on_the_river", "先在河上试",
-				"针盒上了小船",
-				"针盒上了一只小船，在河上走了三天。船老大说，盒子指的方向跟岸上的塔差了一点。陆沉把差的那一点记在纸上，说这一点，够船在海上偏出去很远。",
+				"test_it_on_the_river", "先于内河校验，测录误差",
+				"稳步勘校",
+				"学者与舵手在内河航道反复比对磁针与岸标，详录偏角数据。虽耗去一批仪具工料，却为日后远航奠定了可靠基准。",
 				[
 					Shared.knowledge(3, 540),
 					Shared.trade_capacity(2, 360),
 					Shared.tools(4, 360),
 				]),
 			Shared.option(
-				"lock_it_away", "收进库里，别惹事",
-				"盒子进了库房",
-				"盒子进了库房，钥匙交给陆沉。城里安静了，教门的人不再上门。三年后有外邦船停在港外，用的也是这样的盒子，甘棠在码头上一直看到日头偏西。",
+				"lock_it_away", "封存官库，平息教团非议",
+				"束之高阁",
+				"罗盘被锁入官库，教团与守旧派的攻讦随之平息。但数年后外邦商船凭同类仪具纵横近海，本国航海技艺已落后一筹。",
 				[
 					Shared.knowledge(-3, 360),
 					Shared.bias(Ids.TAG_FAITH, 1.15, 540),
@@ -397,8 +398,8 @@ static func append(catalog) -> void:
 	# ═══ 信号塔 ═══════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_AGES_SIGNAL_TOWER),
-		"title": "{settlement_name}·信号塔",
-		"body_text": "青背岭上立起一座木塔，塔顶挂一盏灯。麦芒说，船在海上看见灯，就知道港口在哪，不会撞上暗礁。塔要人守，灯要油，钱从哪儿出，还没定。郝梁算了一笔账：官家出钱，灯就归官家；商号出钱，灯就归商号，进港的船要交一份灯钱。麦芒把灯罩擦了一遍，说灯先点上，钱的事明天再说。",
+		"title": "{settlement_name}·导航信号塔",
+		"body_text": "随着夜间航运量激增，{settlement_name}港务局提议在高地兴建全天候电气导航信号塔，为进港货轮提供高频无线电信标。财政部门指出，公营建塔与常年电力运维是一笔不小的持续支出。工业资本与航运财团则愿全额出资承建，条件是取得特许经营权并按吨位向每艘进港船只征收导航费。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "A wooden signal tower with a lamp on a ridge above a harbour, a clerk and a merchant arguing at its base",
 		"tags": ["ages", "market", "unrest"],
@@ -431,27 +432,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"build_it_public", "官府出钱建",
-				"灯亮了",
-				"灯亮了，第一夜就有三条船顺着光进了港。守塔的人轮班，油钱从公账上走。郝梁在账本上添了一行，写完抬头看了看塔，说这灯太亮，费油。",
+				"build_it_public", "国家拨款公建，免费开放信标",
+				"公营信标启用",
+				"国有导航信号塔按期并网运行，全天候引导货轮安全靠泊，港口吞吐稳步提升。财政为此承担了持续的建设与运维开销。",
 				[
 					Shared.trade_capacity(5, 540),
 					Shared.cash_out(2.5, 360),
 					Shared.bias(Ids.TAG_LABOR, 1.10, 540),
 				]),
 			Shared.option(
-				"let_the_merchants_build", "让商号建，收他们的费",
-				"塔下多了一间小屋",
-				"塔下多了一间小屋，屋里坐着收灯钱的人。进港的船按吨位交钱，不交的就在外面等天亮。有船长把船停在光外，摸着黑进港，撞坏了一条。",
+				"let_the_merchants_build", "授予航运财团特许经营",
+				"私营收费信标",
+				"财团迅速建成高功率信号塔并上缴特许分成，港口运力大增。但高额导航费激怒了中小船东，偷航避费引发数起事故与抗议。",
 				[
 					Shared.trade_capacity(7, 540),
 					Shared.cash_in(2.0, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
-				"no_tower", "不建，省钱",
-				"塔基空着",
-				"塔基空着，长了一圈草。那年冬天，一条船在港外触礁，货漂了一夜。麦芒在岸上看着，没说话；郝梁把算过的账本翻出来，又合上。",
+				"no_tower", "搁置建塔计划，压缩基建开支",
+				"暗夜滞航",
+				"信号塔计划被无限期搁置，恶劣天气下货轮频频在外海滞留甚至触礁。供应链延误波及本地工厂，港务舆论一片哗然。",
 				[
 					Shared.manufacturing(-2, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.10, 540),
@@ -462,8 +463,8 @@ static func append(catalog) -> void:
 	# ═══ 机器听见 ═════════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_AGES_MACHINE_HEARS),
-		"title": "{settlement_name}·机器听见",
-		"body_text": "仓库里装了一台机器，能听见人说话，也能把谁干了多少记下来。麦芒说，装上它，夜里少点两个人，账也不会错。工人站在机器底下，说话的声音低了一截。有人问，机器听不听得见咳嗽；没人答。郝梁把机器上的灰擦掉，说这东西比人记得准。月底排班表出来，两个名字被挪到了夜班，其中一个上个月刚死了娘。",
+		"title": "{settlement_name}·全时监测系统",
+		"body_text": "{settlement_name}的大型仓储与工业园区率先试装了一套自动声纹与工效监测系统，可实时记录每名工人的交谈频次、停顿时长与分拣效率，并据此自动重排夜班表。工业资本盛赞其大幅压低管理损耗与差错率。劳工团体则痛斥这套算法监控侵犯人格尊严、令职场高压失控，要求内阁立即立法予以规制。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "Workers standing under a listening machine in a warehouse, a shift board with names moved to the night column",
 		"tags": ["ages", "labor", "unrest"],
@@ -496,27 +497,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"install_everywhere", "全城都装",
-				"排班表贴满了街",
-				"排班表贴满了街，名字后面跟着数目。夜里少点了两个人，货出得比上月快。有人开始在机器底下故意咳嗽，咳得很大声；机器没有反应。",
+				"install_everywhere", "全城工业区推广监测系统",
+				"算法高压",
+				"全时监测覆盖各大厂区，排班与物流效率大幅攀升。但无处不在的绩效压榨令劳工身心俱疲，生育意愿下滑，罢工暗流涌动。",
 				[
 					Shared.manufacturing(7, 540),
 					Shared.birth(-5, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.30, 540),
 				]),
 			Shared.option(
-				"warehouse_only", "只装在仓库",
-				"只有仓库听得见",
-				"只有仓库听得见。别处的工人照旧按班头走，仓库里的人开始自己记数，怕机器记错。麦芒说这样也好，至少夜里还有人说话。",
+				"warehouse_only", "限定仓储核验，禁止监控工位",
+				"分级规制",
+				"内阁颁布细则，将监测系统严格限定于货品核验环节并引入独立审计。生产效率稳步提高，数据治理经验亦得以积累。",
 				[
 					Shared.manufacturing(3, 540),
 					Shared.knowledge(4, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.05, 360),
 				]),
 			Shared.option(
-				"tear_it_out", "把机器拆掉",
-				"墙上留下四个孔",
-				"机器拆下来，墙上留下四个孔。仓库又回到靠嗓子喊的日子，账偶尔出错。那年冬天出了两次错，一次多发了工钱，一次少发了，少发的那次没人吭声。",
+				"tear_it_out", "全面拆除设备，保护劳工隐私",
+				"隐私立法",
+				"监测终端被悉数拆除，企业不得不回归人工排班与核账，工业效率短期回落。劳资对立随之缓和，人本治理赢得舆论赞誉。",
 				[
 					Shared.manufacturing(-4, 360),
 					Shared.knowledge(2, 360),
@@ -528,8 +529,8 @@ static func append(catalog) -> void:
 	# ═══ 最后的林子 ═══════════════════════════════════════════════════════
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_AGES_LAST_FOREST),
-		"title": "{settlement_name}·最后的林子",
-		"body_text": "城边最后一片林子，屈木守了三代。树砍到坡腰，再砍就要砍到水源头。城里要修新仓，木料不够，有人出价买这片林子，价钱够全城吃一冬。石伯站在坡上看着，屈木用袖子把青石上的土擦了一遍，石上的字快磨平了。他说，林子没了，水就没了；买树的人说，水是天上下的。两拨人站在坡上，谁也不让。",
+		"title": "{settlement_name}·水源林红线",
+		"body_text": "{settlement_name}近郊仅存的一片原生水源林正面临工业扩张的吞噬。随着新厂区与仓储扩建，木材原料严重短缺，工业资本与开发商联名请求放开林地采伐或整体拍卖，声称所得收益足以支撑全城数季建设。林务委员会则紧急呈报，该片林带维系着全流域地下水位，一旦越过生态红线，下游农田与城市供水都将付出长远代价。",
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "A forest reduced to the lower slope, a forester wiping a boundary stone, a timber buyer with a purse",
 		"tags": ["ages", "land", "unrest"],
@@ -570,9 +571,9 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"protect_the_forest", "划为禁伐",
-				"界石重新埋了一遍",
-				"青石重新埋了一遍，屈木在石面上刻了新字。新仓的木料从外县买，多花了两成钱。那年夏天雨下得匀，坡下的泉眼没有断。",
+				"protect_the_forest", "划定生态红线，严禁采伐",
+				"固本护源",
+				"原生林被划为永久禁伐区，本地建材供给趋紧，制造部门成本上升。但流域水源得以保全，生态研究与宜居环境惠及全城。",
 				[
 					Shared.knowledge(3, 540),
 					Shared.birth(3, 540),
@@ -580,18 +581,18 @@ static func append(catalog) -> void:
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 			Shared.option(
-				"cut_it_all", "全砍了，改田",
-				"坡上光了",
-				"坡上光了，木头堆在城门口，新仓当年就立起来。第二年春汛，坡下的田里盖了一层黄泥，渠里淤了半尺。屈木搬去了别的村，地界上的青石不知被谁挖走。",
+				"cut_it_all", "全面采伐林地，改作垦殖",
+				"竭泽而渔",
+				"林木被迅速伐尽并投入厂区建设，制造业短期大振。然而次年汛期水土严重流失，泥沙淤塞下游沟渠，农产减收且民怨四起。",
 				[
 					Shared.manufacturing(6, 540),
 					Shared.agriculture(-3, 540),
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 				]),
 			Shared.option(
-				"sell_the_timber", "卖给人，换钱",
-				"林子卖了",
-				"林子卖给了外县的木商，砍了三年才砍完。钱进了公账，当年冬天全城吃了顿饱饭。第四年，坡上的草长不起来，风一过就起土。",
+				"sell_the_timber", "拍卖林木采伐权，充实国库",
+				"变现林权",
+				"采伐特许权高价售予外地木业财团，国库进账可观并短暂带动加工业。但裸露山坡风沙渐起，环保团体与市民抗议不断。",
 				[
 					Shared.cash_in(2.0, 360),
 					Shared.manufacturing(2, 360),

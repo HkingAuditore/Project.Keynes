@@ -44,7 +44,7 @@ static func build(stage: int, profession_name: String, settlement_name: String,
 			_outcome(true, stage, action, success_prob),
 			_outcome(false, stage, action, failure_prob),
 		]
-		option.tooltip_hint = _tooltip(action, success_prob)
+		option.tooltip_hint = _tooltip(stage, action, success_prob)
 		def.options.append(option)
 	return def
 
@@ -167,7 +167,7 @@ static func _outcome_title(success: bool, stage: int, action: int) -> String:
 static func _outcome_narrative(success: bool, stage: int, action: int) -> String:
 	if not success:
 		if action == ACTION_REPRESS:
-			return "兵丁进了街，人群却没有散。有人从巷子里扔出第一块石头；再往后，事情就不由官府说了算了。"
+			return "兵丁进了街，人群却没有散。有人从巷子里扔出第一块石头；人被带走了几个，街上的怨气却没有消，反倒更沉了。"
 		if stage >= 4:
 			return "城里的旗换了颜色。旧日的官吏被请出衙门，仓房和城门落到了举事者手里。"
 		return "话没有谈拢。为首的人回去之后，来听的人反而更多了；衙门的告示贴在墙上，没人去撕，也没人去看。"
@@ -188,7 +188,7 @@ static func _outcome_narrative(success: bool, stage: int, action: int) -> String
 			return "事情暂时平息。"
 
 
-static func _tooltip(action: int, success_q16: int) -> String:
+static func _tooltip(stage: int, action: int, success_q16: int) -> String:
 	var percent := int(round(float(success_q16) * 100.0 / 65536.0))
 	match action:
 		ACTION_CONCEDE:
@@ -196,11 +196,13 @@ static func _tooltip(action: int, success_q16: int) -> String:
 		ACTION_BRIBE:
 			return "成功率约 %d%%；花钱分化，成则缓一缓" % percent
 		ACTION_REPRESS:
-			return "成功率约 %d%%；需驻军，败则可能直接独立" % percent
+			if stage >= 4:
+				return "成功率约 %d%%；败则此城脱离并进入战争" % percent
+			return "成功率约 %d%%；需驻军，败则组织度上涨" % percent
 		ACTION_IGNORE:
-			return "不掷骰；组织度与阶段都会前进"
+			return "不掷骰；组织度继续上涨"
 		ACTION_AMNESTY:
-			return "成功率约 %d%%；成则整条链终结" % percent
+			return "成功率约 %d%%；成则整条链终结，败则此城脱离" % percent
 		ACTION_ABANDON:
 			return "不掷骰；该地立即脱离并进入战争"
 		_:

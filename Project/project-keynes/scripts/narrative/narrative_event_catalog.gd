@@ -1,9 +1,9 @@
 class_name NarrativeEventCatalog
 extends Resource
 
-## 默认事件库。所有玩家可见文本只写事实与数值：
-## 标题 = 地点·事件，正文 ≤ 2 句（触发条件），选项 = 动作，结果 = 后果，
-## 效果标签 = 对象 + 幅度 + 时长。不写场景、修辞、感叹与人物对白。
+## 默认事件库。采用大战略政务叙事笔法：
+## 标题 = 地点·事件，正文以执政者高位视角交代局势、利益博弈与战略两难，
+## 选项 = 明确政令，结果 = 制度后果，效果标签 = 对象 + 幅度 + 时长。
 
 const NarrativeEventDefinitionScript = preload("res://scripts/narrative/narrative_event_definition.gd")
 const NarrativeConditionScript = preload("res://scripts/narrative/narrative_condition.gd")
@@ -94,7 +94,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.climate.severe_drought",
 		"title": "{settlement_name}·旱灾",
-		"body_text": "一个多月没下透雨，田里的土裂成一块一块，脚踩上去发脆。村口的水塘见了底，塘底的泥上留着几道鱼印。里正蹲在田埂上，把一棵旱死的苗连根拔起来，根上没带土。",
+		"body_text": "持续逾月的酷热与少雨令{settlement_name}周边土地龟裂，蓄水设施见底，当季农作物面临大面积减产。地方呈报的灾情日益紧迫：若不及时介入赈济与调水，粮食短缺将迅速演变为人口流失与社会动荡。",
 		"min_era_index": 1,
 		"image_key": "climate.sun",
 		"ai_visual_prompt": "Parched cracked farmland under a scorching sun in an ancient agrarian settlement, villagers digging irrigation ditches",
@@ -209,7 +209,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.climate.bitter_frost",
 		"title": "{settlement_name}·寒潮",
-		"body_text": "夜里起了北风，天亮时草叶上全是白霜。井台结了一层薄冰，打水的人先用石头把冰砸开。街上卖炭的车还没进城，柴铺门口已经排了人，有人把身上的旧袄又裹紧一层。",
+		"body_text": "骤降的强寒潮席卷{settlement_name}，霜冻封锁了水源与交通，燃料与御寒物资的供应骤然紧张。地方官员警告，若不尽快动用储备保障越冬，严寒不仅会令户外生产停摆，更将直接威胁底层民众的生存。",
 		"min_era_index": 0,
 		"image_key": "climate.weather",
 		"ai_visual_prompt": "Snowstorm hitting a settlement in winter, warm bonfires burning in the town square",
@@ -271,7 +271,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.ocean.upwelling_bonanza",
 		"title": "{settlement_name}·大渔汛",
-		"body_text": "海面上起了一层细密的泡，水色比往常深。老渔人把船撑到外海的浅滩，看见水里黑压压一片，鱼群挤着往上游。他回头朝岸上喊了一声，声音被风刮散，岸上的人只看见他挥手。",
+		"body_text": "冷暖洋流在{settlement_name}近海交汇，带来了罕见的特大渔汛，外海浅滩鱼群密布。地方商贾与渔业团体呼吁立刻组织大规模船队抢捕并扩建加工设施，而海务官员则建议划定轮捕区域，以防竭泽而渔。",
 		"min_era_index": 0,
 		"image_key": "hydrology.water",
 		"ai_visual_prompt": "Abundant coastal fishing fleet hauling overflowing nets in a vibrant bay with ocean currents",
@@ -349,7 +349,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.geography.river_flood",
 		"title": "{settlement_name}·春汛",
-		"body_text": "上游的雪化了，河水一天涨一尺。渡口的木桩先被淹了，接着是低处的田。水退下去以后，田里盖了一层黄泥，踩上去陷到脚踝。老农蹲下去抓了一把泥，说这泥肥，可今年的苗没了。",
+		"body_text": "上游融雪引发的春汛正猛烈冲击{settlement_name}沿河地带，低洼农田与渡口设施已遭漫灌。水利官员提出可趁势筑堰导流、引洪淤灌以肥沃来年土壤，但此举伴随堤坝溃决的风险；保守派则主张立刻组织民众撤往高地避险。",
 		"min_era_index": 1,
 		"image_key": "hydrology.water",
 		"ai_visual_prompt": "Swollen river flooding fertile alluvial plains near a settlement, workers building embankments",
@@ -418,7 +418,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.market.grain_panic",
 		"title": "{settlement_name}·物资短缺",
-		"body_text": "粮行的门开得比往常早，队伍已经排到街角。{good_name}的价牌一天换两回，掌柜说仓库里也没多少了。有人一次买走三袋，后面的人伸手去拦，被伙计挡开。",
+		"body_text": "{settlement_name}的市场上爆发了针对{good_name}的恐慌性抢购，货源告急且报价连日剧烈波动。囤积与争执已在各大市集蔓延，财政部门建议由国库出资平准补贴，商会则主张放开价格管制以高价吸引外地货源。",
 		"min_era_index": 1,
 		"image_key": "country.economy",
 		"ai_visual_prompt": "Bustling historical marketplace with merchants arguing over grain sacks and price boards",
@@ -500,7 +500,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.industry.artisan_innovation",
 		"title": "{settlement_name}·工匠改良",
-		"body_text": "老匠把凿子的角度改了改，又用一块硬木做了个卡子，把料卡住。同样的铁，他多打出一把锄头，刃口还更直。徒弟在旁边看，学着做了第二个卡子，做得歪，老匠没骂，拿过来重新削。",
+		"body_text": "{settlement_name}的工坊在工具成型与冶锻工艺上取得突破，借由新型夹具大幅降低了废料损耗并提升了出品精度。工务部门主张嘉奖发明者并向全城推广新法，财政官吏则看中其中的丰厚利差，提议收归官办专营。",
 		"min_era_index": 2,
 		"image_key": "map.construction",
 		"ai_visual_prompt": "Master craftsmen in a historical workshop demonstrating a new tool jig and pulley mechanism",
@@ -568,7 +568,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.society.livelihood_petition",
 		"title": "{settlement_name}·民生请愿",
-		"body_text": "二十来个人堵在衙门口，为首的手里捧着一只空碗。碗里没有粮，碗底沾着几粒去年的陈米。韦顺出来问话，人群里有人说，税再这么收，锅就揭不开了。后面的人跟着应，声音不高，也没人往前挤。",
+		"body_text": "{settlement_name}的生计压力已触及临界点，大批居民聚集在地方官署门前递交联名请愿，控诉赋役沉重、生计难以为继。虽然人群尚且克制，但地方治安部门警告，若不尽快在扶持民生与严明法度之间做出决断，怨气恐将演变为更大规模的骚乱。",
 		"min_era_index": 1,
 		"image_key": "family.house",
 		"ai_visual_prompt": "Town elders and workers presenting a scroll petition at the steps of a civic hall",
@@ -631,7 +631,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.chain.strange_outcrop",
 		"title": "{settlement_name}·矿脉露头（1/3）",
-		"body_text": "民夫在{landform_name}的断崖下歇脚，有人拿石块敲着玩，敲下一块发绿的石头。石头上有一道一道的纹，压手。领工的接过去看了看，又敲了两下，把石头揣进怀里，让民夫把这一段崖壁都清出来。",
+		"body_text": "工程队在{settlement_name}周边的{landform_name}断崖作业时，意外发现了质地致密、纹路奇特的富矿露头。矿务官吏查验样品后判断地底极可能蕴藏大型矿脉，建议拨款组建专业勘探队深掘，而保守派则倾向于仅开采地表以规避风险。",
 		"min_era_index": 2,
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "Ancient prospectors discovering a glowing metallic ore vein on a rocky cliffside",
@@ -711,7 +711,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.chain.subterranean_cavern",
 		"title": "{settlement_name}·地底矿洞（2/3）",
-		"body_text": "凿到第七天，岩壁透了，一股凉风从缝里出来。火把伸进去，照见一条暗河，水声在洞子里转。河边的石壁上全是黑亮的矿脉，有人伸手去摸，被领队的喝住。",
+		"body_text": "深层勘探队掘穿岩壁后，在{settlement_name}地底发现了一处规模惊人的天然溶洞，一条奔涌的暗河旁裸露着成片高品位矿脉。工务官员主张立刻引暗河水力就地兴建冶炼工坊，而学者团则呼吁先全面测绘地质与水文结构。",
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "Underground cavern with glowing mineral veins and a subterranean river, ancient miners holding torches",
 		"tags": ["chain", "prospecting", "discovery", "extractive"],
@@ -794,7 +794,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.chain.ancient_foundry_legacy",
 		"title": "{settlement_name}·矿冶重镇（3/3）",
-		"body_text": "水渠引到坡下，木轮带着风箱一进一出，炉火比从前旺。矿石从地底一筐一筐运上来，倒进炉口，铁水顺着槽流进范里。老匠用铁钩拨了拨浮渣，说这一炉能出三件家伙。",
+		"body_text": "随着暗河水力工坊全面投产，{settlement_name}的采掘与冶炼产能实现了跨越式增长，源源不断的矿石与金属制品正输往全国。这座曾经偏僻的聚落已然崛起为名副其实的矿冶枢纽，堪称我国工业与工程史上的典范。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "Grand prosperous foundry town with waterwheels, glowing furnaces and trade caravans",
 		"tags": ["chain", "prospecting", "industry", "prosperity"],

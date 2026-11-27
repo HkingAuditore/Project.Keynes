@@ -259,9 +259,21 @@ Dictionary NativeSimulationHost::resolve_narrative_choice(int64_t day, const Dic
         const int32_t option = record.get("chosen_option_index", -1);
         if (option >= 0 && option < actions.size()) {
             const bool success = int32_t(record.get("rolled_outcome_index", 1)) == 0;
-            narrative.finish_unrest_choice(economy_api::settle_narrative_unrest(
-                *_economy_production_runtime, meta.get("cell", -1),
-                meta.get("profession", -1), actions[option], success), effect_day);
+            const int32_t cell = meta.get("cell", -1);
+            const int32_t profession = meta.get("profession", -1);
+            const bool applied = economy_api::settle_narrative_unrest(
+                *_economy_production_runtime, cell, profession, actions[option], success);
+            bool independence_pending = false;
+            if (applied) {
+                std::vector<NarrativeUnrestRow> rows;
+                if (economy_api::narrative_unrest_rows(*_economy_production_runtime, cell, rows)) {
+                    independence_pending = std::any_of(rows.begin(), rows.end(),
+                        [profession](const auto &row) {
+                            return row.profession == profession && (row.flags & 8) != 0;
+                        });
+                }
+            }
+            narrative.finish_unrest_choice(applied, independence_pending, effect_day);
         }
     }
     return narrative.complete_choice(std::move(result));

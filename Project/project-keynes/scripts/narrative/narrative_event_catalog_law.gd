@@ -23,8 +23,7 @@ const PACK_ID := &"law"
 const PREFIX := "evt.law."
 
 const CAST := [
-	"郭原", "薛敬", "商九", "岑万", "卫仲", "屈寮", "甘丙", "邓四娘", "罗阿石", "雍平",
-	"竹简", "契纸", "朱印", "木枷", "铜锁", "证人名册", "界石", "赦书",
+	"法典", "官署", "契纸", "朱印", "卷宗", "证人名册", "地契", "赦书", "保人", "债狱",
 ]
 
 const MUL_115 := 75366
@@ -63,7 +62,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LAW_CODE),
 		"title": "{settlement_name}·法典",
-		"body_text": "郭原在西廊下抄了九天，竹简摊了一地，墨没干就被袖子蹭花。里正屈寮要把分水的旧例写进条文，还要在条下添一句立例的是谁。邓四娘抱着她男人的旧斗站在门口，说拾穗那一节不能少，她家三代靠秋后捡的穗子过冬。郭原翻到那一卷，字被虫蛀了一半，只剩一个人名，姓还认得，名看不清。薛敬从仓里回来，把朱印放在案角，说条文是要拿去逐乡念的，念的人只认名，不认理。风从廊下穿过，把最上面一卷吹开，露出底下密密麻麻的手印。",
+		"body_text": "官署正着手将历代沿袭的乡规旧例编纂为统一法典，以便盖上朱印颁行各地。地方豪强力主在分水条文中写明历代立例宗族的名号，借此确立世袭特权；而底层佃农与平民代表则要求保留秋后拾穗等传统生计条款。主理修律的法吏指出，旧档残缺且相互抵牾，若兼顾各方必将冗杂难行，若一刀切则恐激起强烈反弹。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A county office corridor with bamboo slips spread on the floor, a clerk copying old customs, a woman holding a worn grain measure, a seal set down on the desk",
 		"tags": ["law", "court"],
@@ -96,27 +95,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"leave_the_names_out", "照旧例写，不署人名",
-				"条文上没有名字",
-				"十四条抄完，发到各乡去念，念的人照着念，没有一个问这是谁立的。屈寮把原本收进匣里，匣底压着那卷被虫蛀过的老简。",
+				"leave_the_names_out", "统一入典，删去立例宗族名号",
+				"法不阿贵",
+				"统一法典颁行各乡，去除了地方豪强的世袭署名，明确了水利与农事权责。成文法威信大增，但特权被削的乡绅暗中制造了不少阻力。",
 				[
 					Shared.knowledge(4, 540),
 					Shared.agriculture(2, 360),
 					Shared.bias(Ids.TAG_UNREST, 1.15, 540),
 				]),
 			Shared.option(
-				"carve_the_elders_names", "把立例人的名字写进去",
-				"条下多了一行小字",
-				"每一条后面都添了一行小字，写的是当年立这条的人。邓四娘那一节也写了，写的是她公公的名字，她伸手摸了一遍，指头上沾了墨。",
+				"carve_the_elders_names", "保留旧名，兼顾各方传统惯例",
+				"兼容旧例",
+				"法典逐条附注了历代立例渊源与拾穗旧俗，虽然增印刊刻增加了地方摊派，但各阶层均感诉求受重视，社会秩序得以平稳过渡。",
 				[
 					Shared.knowledge(3, 540),
 					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（抄条与刻工的摊派）"),
 					Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 				]),
 			Shared.option(
-				"write_only_the_penalty", "只写罚，不写谁分水",
-				"条文只剩罚则",
-				"分水那几行划掉了，只剩罚几斗谷子。那年春天水不够，两家人在地头站了一夜，谁也没动手，谁也没让水过去。",
+				"write_only_the_penalty", "精简条文，仅颁布明确罚则",
+				"唯留刑罚",
+				"复杂的分水细则被全数删去，法典仅保留简明的违约罚则。司法体系虽因此高效统一，但春耕时节的水源争端却令农事蒙受损失。",
 				[
 					Shared.knowledge(5, 540),
 					Shared.agriculture(-3, 540),
@@ -129,7 +128,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LAW_ASSIZE),
 		"title": "{settlement_name}·审判",
-		"body_text": "那头黄牛在商九的圈里站了半个月，右角上有一道浅刻痕，是罗阿石家孩子小的时候刻的。商九说牛是在牛市上买的，钱当众给了，契没写；罗阿石说丢牛那天，有人看见商九的伙计牵着牛往西坡走。薛敬把证人名册摊开，两个证人的话对不上，一个说牛是黄的，一个说牛背上有一块黑。廊下摆着一副木枷，是给赖账的人备的，今天还没用上。商九的人在外头台阶上数钱，声音不小；罗阿石的媳妇抱着门框，一句话不说。薛敬把朱印拿起来又放下，说这案子再问也问不出新的了。",
+		"body_text": "一桩棘手的耕畜权属诉讼呈上官署：本地农户指认商行圈中的耕牛系自家失窃之物，商行则坚称系在公开市场合法购得，唯独未立契纸。调阅证人名册后，两名证人的证词竟自相矛盾，缺乏铁证。庭外商帮成员与周边农户各自聚集施压，此案判决不仅关乎一头耕牛，更将直接影响市场交易安全与小农产权信心，主审官手持朱印迟迟难断。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A county magistrate's bench with a witness roll and seal, an ox standing in a pen outside, two families waiting in the yard, a yoke leaning against the wall",
 		"tags": ["law", "unrest"],
@@ -162,34 +161,34 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"return_the_ox", "牛判给罗阿石，牛价按户摊还",
-				"牛回到了西坡",
-				"牛牵回西坡那天，罗阿石的孩子骑在牛背上。商九的买价按户摊还，屈寮拿着名册一户一户收，收到最后一家，天已经黑了。",
+				"return_the_ox", "判归农户，由地方摊还购牛款",
+				"原物归主",
+				"耕牛被判归原主，避免了农耕受损，商行的购置损失则由地方摊派补偿。此举维护了基层产权与司法公信，唯独加重了民众短期负担。",
 				[
 					Shared.agriculture(3, 540),
 					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（摊还商九的牛价）"),
 					Shared.knowledge(2, 360),
 				]),
 			Shared.option(
-				"award_to_the_buyer", "牛判给商九，市面照旧",
-				"牛被牵去了牛市",
-				"牛当天就被牵到牛市上转手，卖给了过路的人。罗阿石在西坡坐到天黑，回家把那根拴牛的桩拔了，扔进灶膛。",
+				"award_to_the_buyer", "判归商行，维护善意市场交易",
+				"保护商易",
+				"判决确立了公开市场交易优先的原则，商行与作坊信心大增，市场秩序趋稳。但失牛农户孤立无援，周边农业生产积极性受到打击。",
 				[
 					Shared.agriculture(-3, 540),
 					Shared.manufacturing(2, 360),
 					Shared.bias(Ids.TAG_MARKET, 0.90, 540),
 				]),
 			Shared.gamble(
-				"let_the_ox_walk", "放开牛，走到谁家算谁的",
-				Shared.branch(36045, "牛自己走回了西坡", # 55%
-					"牛出了圈，在岔口停了一停，径直往西坡走。罗阿石蹲在自家门口，看见牛过来，没有起身。",
+				"let_the_ox_walk", "当众放牛，以牲畜自择定归属",
+				Shared.branch(36045, "耕牛识途", # 55%
+					"耕牛出圈后径直返回农户家中，围观民众无不称奇，地方怨气随之消散。虽然缺乏法理依据令民生开销略有波动，但农事得以保全。",
 					[
 						Shared.agriculture(3, 540),
 						Shared.staple(3, 540),
 						Shared.bias(Ids.TAG_UNREST, 0.90, 540),
 					]),
-				Shared.branch(29491, "牛跟着伙计走了", # 45%
-					"牛在岔口停了很久，最后跟着商九的伙计走了。围在县门口的人散了，散了以后谁也没有再提这头牛。",
+				Shared.branch(29491, "牛随商去", # 45%
+					"耕牛在路口徘徊后跟随商行伙计离去，诉讼就此尘埃落定。这一带有赌博色彩的裁断虽留下了奇闻判例，却令基层生计压力雪上加霜。",
 					[
 						Shared.staple(6, 540),
 						Shared.knowledge(2, 360),
@@ -201,7 +200,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LAW_DEBT),
 		"title": "{settlement_name}·债狱",
-		"body_text": "甘丙欠岑万的钱，是去年春天借的，那年他下了两遍种，第二遍全烂在土里。契纸上按着他的手印，利钱一行添一行。今年开春，他把家里两口锅都卖了，还差一半。岑万在门口支了张凳坐着，说不关人，钱就再也收不回来。县里的牢只有三间，铜锁锈住，锁前要浇一勺油才转得动。郭原翻着旧簿子，说关一天要管一天的饭，做一天工能抵三天的利。甘丙的媳妇把契纸折了又折，塞进袖子，站在阶下等一句话。",
+		"body_text": "连年灾荒令大批农户无力偿还商人的高利借贷，债主手持按有手印的契纸涌向官署，要求将欠债者尽数投入债狱以儆效尤。司法官吏核算后回报，羁押债囚不仅耗费官府口粮，更会让田地彻底荒芜；但若放任违约，借贷信用体系将瞬间崩盘。是严执法度收监、强制劳役抵债，还是由地方公款担保展期，亟待定夺。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "A debtor's yard with a moneylender seated on a stool at the gate, a worn contract in a woman's sleeve, a rusted lock on a small jail door",
 		"tags": ["law", "market", "unrest"],
@@ -234,25 +233,25 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"lock_him_up", "关进牢里，等家里凑钱",
-				"牢门上了锁",
-				"牢门锁上的时候，甘丙的媳妇把契纸从袖子里抽出来，摊在膝上又看了一遍。第三天她回了娘家，第七天带回来半袋谷子。",
+				"lock_him_up", "依法收监，责令家属筹款赎人",
+				"债囚入狱",
+				"欠债者被关入债狱，严厉的履约信号保住了商业借贷信心与作坊资金链。但家属被迫变卖家产筹款，底层民众对严苛债法的怨愤迅速升级。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					Shared.manufacturing(2, 360),
 				]),
 			Shared.option(
-				"work_off_the_debt", "放出来，到窑上做工抵债",
-				"窑上多了一个人",
-				"甘丙第二天就上了窑，工钱一半记在岑万的账上，一半记在自己名下。他每天收工都要去看一眼那本账，账上的数比他想的小。",
+				"work_off_the_debt", "免于收监，发往官营工坊劳役",
+				"以工抵债",
+				"欠债者被编入窑场与工坊做工，工钱按比例划归债主。此举为制造业补充了廉价劳力，却因抽走青壮劳动力而导致本地农产下滑。",
 				[
 					Shared.manufacturing(3, 540),
 					Shared.agriculture(-3, 540),
 				]),
 			Shared.option(
-				"the_village_guarantees", "乡里先垫，从他工钱里扣",
-				"名册上多了一行保",
-				"屈寮让各户按人头凑了钱，先还岑万，甘丙做工还乡里。名册上新添的一行写着他的名，后面跟着一串按了手印的户主。",
+				"the_village_guarantees", "地方垫付，由其日后劳作分期偿还",
+				"公保展期",
+				"地方按户摊派资金先行清偿商债，再由债务人分期劳作归还公账。此举既安抚了底层情绪又稳住了生产，只是短期内加重了民众现金负担。",
 				[
 					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（先垫甘丙的债，再从工钱里扣）"),
 					Shared.manufacturing(2, 540),
@@ -265,7 +264,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LAW_DEED),
 		"title": "{settlement_name}·地契",
-		"body_text": "那张地契是三十年前写的，纸边被虫蛀成锯齿，四至只写了东到沟、西到柳。邓四娘说沟早就改了道，柳树前年也被风刮倒，如今凭这几个字，谁也说不清坡上那半亩归谁。卫仲还记得自己的笔。他说契是照坡上那块卧石写的，卧石埋在哪儿他也记得。罗阿石把它从土里刨出来，石上的刻痕磨平了，只剩一道浅坑。里正屈寮把契纸和石头并排放在案上，看了很久。天快黑的时候他才说，照契还是照石，今天得挑一个，挑完了就别再来找他。",
+		"body_text": "一份数十年前立下的残破地契引发了激烈的土地权属争端：契纸上的四至仅以早年河沟与古树为记，如今河道改移、树木枯死，根本无从核对。争议双方各执一词，一方主张严格依照旧地契文字划界，另一方则要求以泥土中挖出的古老石标为准。官署若不能给出清晰裁决，不仅这块良田将长期荒废，更会诱发全境的产权纠纷。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "An old land deed with worm-eaten edges beside a worn boundary stone on a clerk's desk, a farmer and a woman standing apart, dusk light",
 		"tags": ["law", "land"],
@@ -298,27 +297,27 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"follow_the_deed", "照契纸，沟以东归她",
-				"沟东那半亩归了她",
-				"丈量的人沿着旧沟走了一趟，把沟东那半亩划给了邓四娘。罗阿石把那块卧石抱回家，垫在猪圈的墙根下。",
+				"follow_the_deed", "严格依契，重丈田亩核发新证",
+				"依契重丈",
+				"官署派员重新丈量并核发清晰新契，确立了书面契约的最高效力。虽然丈量与登记费用由地方摊派，但农业生产与产权秩序双双受益。",
 				[
 					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（丈量与写新契的摊派）"),
 					Shared.agriculture(2, 360),
 					Shared.knowledge(2, 360),
 				]),
 			Shared.option(
-				"follow_the_stone", "照界石，坡上归村里公用",
-				"石头被重新埋了回去",
-				"那块卧石照原样埋回去，四周夯实，坡上那半亩划作村里的公用。那一年没人去种，草长到膝盖高，秋天被人放了一把火。",
+				"follow_the_stone", "采信旧标，争议土地收归公用",
+				"收归公地",
+				"争议地块被划为地方公用土地，暂时平息了私人间的土地争讼并丰富了判例档案。但缺乏明确经营主体的土地很快荒芜，拖累了农业产出。",
 				[
 					Shared.agriculture(-3, 540),
 					Shared.bias(Ids.TAG_LAND, 0.85, 540),
 					Shared.knowledge(2, 360),
 				]),
 			Shared.option(
-				"wait_a_year", "封起来，明年重写契",
-				"木桩围了一圈",
-				"木桩围了一圈，绳子拉了三道。第二年春天雨多，木桩倒了一半，绳子被人解去做担绳，那块地还是荒着。",
+				"wait_a_year", "暂行查封，延至来年重新勘定",
+				"封地待勘",
+				"争议田亩被官署拉绳封存，严禁双方耕种。搁置裁决虽为文吏赢得了核查时间，但无端荒废的农田与漫长的等待激起了民众普遍不满。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 					Shared.knowledge(2, 360),
@@ -331,7 +330,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LAW_WITNESS),
 		"title": "{settlement_name}·伪证",
-		"body_text": "证人名册上有七个手印，第三个是甘丙的。头一回问，他说那天夜里看见有人从仓后墙翻进来；第二回问，他说记错了，只看见一条狗。卫仲把两次的口供并排放在案上，字都是他自己写的，笔画一个样，只有日子差了两天。郭原问他这两天见过谁，甘丙低头看鞋，鞋帮上沾着新泥，是窑场那边的土。有人在他耳边提过一句，说岑万账上还记着他一笔，这笔不作数，别的事也就好说。卫仲把名册合上，说这一页要重抄，抄完了就再不能改。",
+		"body_text": "一桩仓储失窃案的审理陷入僵局：证人名册上的关键证人前后证词截然相反，初审时坚称目击窃贼翻墙入仓，复审时却突然改口否认。主审官比对两份卷宗后发现，证人近期曾与涉案债主私下接触，极可能因债务胁迫而作伪证。司法威信已受公然挑衅，究竟是顺水推舟速结此案、严惩伪证者，还是彻底推翻卷宗重新侦讯，亟待裁断。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "Two conflicting written statements side by side on a clerk's desk, a witness looking down at muddy shoes, a witness roll with fingerprint marks",
 		"tags": ["law", "unrest"],
@@ -363,25 +362,25 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"take_the_second_story", "照第二回的口供结案",
-				"案子当天就结了",
-				"案子当天就结了，卷宗压在柜子最底层。甘丙领了该领的钱，第二天就搬出窑场，走的时候没跟人打招呼。",
+				"take_the_second_story", "采信翻供，草草结案归档",
+				"草率结案",
+				"官署顺势采信了改口证词，案卷迅速封存，避免了作坊与商号的停业牵连。但公然姑息伪证重创了司法公信，民间对官商勾结的质疑四起。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.25, 540),
 					Shared.manufacturing(2, 360),
 				]),
 			Shared.option(
-				"lock_the_witness", "把改口的人关起来",
-				"他在牢里改回了原话",
-				"甘丙在牢里关了九天，第九天把原话一字不差地说了一遍。出来的时候卫仲问他往后还敢不敢改口，他没答。",
+				"lock_the_witness", "以伪证罪收监，逼其交代实情",
+				"严惩伪证",
+				"改口证人被立即投入羁押，数日后便吐露了受胁迫的实情。严厉打击伪证维护了法制尊严与文书严谨，代价是地方分摊了额外的司法开销。",
 				[
 					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（牢饭与差役的摊派）"),
 					Shared.knowledge(3, 540),
 				]),
 			Shared.option(
-				"copy_the_roll_again", "重抄名册，从头再问",
-				"七个手印要重新按",
-				"名册重抄了一遍，七个人一个一个叫来问，问到第三个，天已经亮了。市面上的货压在仓里不敢动，等消息等了半个月。",
+				"copy_the_roll_again", "推翻旧卷，逐一重审全部证人",
+				"全面复审",
+				"官署重录证人名册并逐一严密复核，最终还原了案件真相，大幅提升了司法权威与社会安定。然而冗长的复审冻结了涉案货物，令制造业受损。",
 				[
 					Shared.manufacturing(-3, 540),
 					Shared.knowledge(5, 540),
@@ -394,7 +393,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LAW_PARDON),
 		"title": "{settlement_name}·赦免",
-		"body_text": "新君登基的赦书是秋后到的，写在黄麻纸上，边上盖着朱印，一路被雨打湿了一角。雍平说这回要大赦，狱里关着的人一并放出去，好让天下看见新朝的宽。薛敬把狱簿摊开，指着头几行。甘丙欠岑万的钱，放出去，债主明天就堵在县门口。另几个伤了人，放了，苦主家还在等一个说法。卫仲在旁边磨墨，磨到一半停下，说先君登基那年也赦过，赦完第二年狱里又满了。木枷挂在墙上，锁孔里塞着陈年的灰。雍平把赦书推过来，笔搁在砚上，等一个人先开口。",
+		"body_text": "最高当局颁下盖有朱印的赦书，意在借政局更新之际推行大赦，向天下彰显宽仁以收拢人心。然而基层官署翻开卷宗后却陷入两难：羁押在册的不仅有因灾欠款的债囚，还包括数名伤人重犯。债权人警告，若将欠债者一并释放，商业信用将荡然无存；受害者家属亦强烈抗议赦免暴力罪犯。如何执行这道赦书，考验着仁政与法治的平衡。",
 		"image_key": "family.house",
 		"ai_visual_prompt": "A pardon edict on coarse paper with a red seal, a jail ledger open on the desk, a yoke hanging on the wall, an envoy waiting with a brush",
 		"tags": ["law", "court"],
@@ -427,26 +426,26 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"pardon_everyone", "全赦，连欠债的一并放",
-				"狱门开了一整天",
-				"狱门开了一整天，放出去的人站在县门口，眯着眼看太阳。当天夜里就有人在城外抢了一车布，第二天苦主来敲门，门房里的人说人已经走了。",
+				"pardon_everyone", "全面大赦，释放所有在押人员",
+				"全面开释",
+				"所有在押人员悉数获释，为本地作坊补充了急需的劳力。但未加甄别的宽纵很快引发治安反弹，商民与受害者对治安恶化的怨愤迅速蔓延。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					Shared.manufacturing(2, 360),
 				]),
 			Shared.option(
-				"pardon_only_debtors", "只放欠债的，伤人的照旧",
-				"债囚回了家",
-				"欠债的放了出来，当天就有人回家扛起锄头。伤人的那几个还关在里头，苦主家送来一篮鸡蛋，卫仲没敢收。",
+				"pardon_only_debtors", "区别对待，仅赦债囚严留重犯",
+				"分流特赦",
+				"欠债者获释返乡重拾农耕，暴力重犯则继续服刑以安抚受害者，社会情绪趋于缓和。但债主收回欠款无望，资金紧缩令本地制造业受挫。",
 				[
 					Shared.manufacturing(-3, 540),
 					Shared.bias(Ids.TAG_UNREST, 0.85, 540),
 					Shared.agriculture(2, 360),
 				]),
 			Shared.option(
-				"commute_not_pardon", "一个不赦，只减刑",
-				"狱里还是满的",
-				"一个也没放，只把几个人的役期减了半年。牢粮又添了一笔，郭原在簿子上记下这一笔，写完把笔搁在砚边。",
+				"commute_not_pardon", "不予释放，一律改为酌情减刑",
+				"减刑留押",
+				"官署顶住压力未放一人，仅按律缩减了部分刑期。严守法度提升了司法公信与行政素养，但维持满员羁押的日常开支仍需由地方承担。",
 				[
 					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（狱粮与修牢的摊派）"),
 					Shared.knowledge(3, 540),
@@ -458,7 +457,7 @@ static func append(catalog) -> void:
 	catalog.register_event(NarrativeEventDefinitionScript.from_dict({
 		"event_id": String(Ids.EVT_LAW_NOTARY),
 		"title": "{settlement_name}·公证",
-		"body_text": "岑万要往南边发一批铁器，货值不小，买主是外乡来的行商，人还没见过。契纸上写好了货、价、日子，只缺一个作保的人。卫仲的字在县里认，他肯保，但要抽三厘；商九替外乡行商说话，说三厘太重，宁可少发一半货。郭原把契纸摊在案上，保人那一行空着，空处比别处白。卫仲说保了就要赔，去年他替人保过一回，赔掉半年的工钱。廊下的朱印在太阳里发亮，谁按下去，名字就要跟着这张纸走十年。",
+		"body_text": "本地大商号拟向外地客商发运一批价值高昂的铁器，契纸上已写明货款与交割期限，却因买卖双方素未谋面而卡在公证担保环节。本地德高望重的专业保人愿意签字作保，但坚持抽取高额佣金以覆盖违约风险；客商代表嫌成本过高，宁可削减半数货量。官署的朱印就在案头，是否由政府直接介入担保以促成大宗贸易，成为摆在眼前的政策抉择。",
 		"image_key": "country.economy",
 		"ai_visual_prompt": "A contract on a desk with a blank guarantor line, a red seal in sunlight, iron goods loaded on a cart outside, a guarantor hesitating",
 		"tags": ["law", "market"],
@@ -491,26 +490,26 @@ static func append(catalog) -> void:
 		],
 		"options": [
 			Shared.option(
-				"pay_the_guarantor", "请卫仲作保，抽三厘",
-				"保人押了字",
-				"卫仲在保人那一行按下手印，三厘的保钱当场点清。货发出去那天，他在县门口站到车看不见了才回去。",
+				"pay_the_guarantor", "遵循商规，聘请专业保人公证",
+				"商保成交",
+				"专业保人正式签署担保契约，满载铁器的车队顺利启程，带动了本地贸易与制造活力。虽然佣金与契税摊派加重了短期成本，但风险得以隔离。",
 				[
 					Shared.trade_capacity(4, 360),
 					Shared.manufacturing(2, 360),
 					Shared.cash_in(1.0, 540, "向本地人数最多的{primary_profession}征收其现金的 1%（保钱与写契的摊派）"),
 				]),
 			Shared.option(
-				"ship_half", "不找保人，少发一半货",
-				"车队短了一半",
-				"车队短了一半，剩下的货压在仓里。岑万每天去仓里转一圈，把最上面那几捆铁件翻过来看看有没有生锈。",
+				"ship_half", "放弃担保，削减半数发货规模",
+				"缩量慎行",
+				"商号放弃担保并削减了半数货量，余货积压在库房中。此举虽规避了违约风险并稳住了市场秩序，却让本地冶铁制造业蒙受了订单损失。",
 				[
 					Shared.manufacturing(-3, 540),
 					Shared.bias(Ids.TAG_MARKET, 0.85, 540),
 				]),
 			Shared.option(
-				"let_the_county_stand", "官府作保，不收保钱",
-				"朱印盖在保人那一行",
-				"朱印盖在保人的空处，车队照原样发出去。到了秋天，外乡那批货出了事，行商跑了，赔钱的话递到县里，递话的人一天来一趟。",
+				"let_the_county_stand", "由官署加盖朱印，提供免费公证",
+				"官印兜底",
+				"官署直接以公信力作保，促成了全额交易并大幅提振了商运与制造。然而入秋后外地客商违约潜逃，追偿纠纷瞬间涌向官署，引发剧烈风波。",
 				[
 					Shared.bias(Ids.TAG_UNREST, 1.20, 540),
 					Shared.trade_capacity(6, 360),
