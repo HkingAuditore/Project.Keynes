@@ -1,4 +1,4 @@
-# 从源码构建（跨设备 / 新机器）
+﻿# 从源码构建（跨设备 / 新机器）
 
 本文是「换一台机器，从零把它跑起来 / 打出包」的唯一入口。
 `WebBuild/`、`Build/` 里的产物**不再进版本库**（见 §7），所以新设备要么自己构建，
@@ -21,7 +21,8 @@
 | Web 全流程（推荐） | `scripts/Build-Web.cmd` | `WebBuild/` |
 | Web 只重新导出 | `scripts/Build-Web.cmd skip-native` | `WebBuild/` |
 | 本地预览 WebBuild | `scripts/serve_web.bat` | `http://127.0.0.1:8060/ProjectKeynes.html` |
-| Windows PC 导出（推荐） | `scripts/Build-Windows.cmd`（`debug` / `release` / `skip-native`） | `Build/ProjectKeynes-{debug,release}/` |
+| 打包分发（一键编译 + 出 zip） | `scripts/Pack.cmd`（`-Mode debug`、`-Targets web` 等） | `Build/pack/<stamp>/` + `Build/dist/*.zip`，见 [packaging.md](./packaging.md) |
+| Windows PC 导出 | `scripts/Build-Windows.cmd`（`debug` / `release` / `skip-native`） | `Build/ProjectKeynes-{debug,release}/` |
 
 ---
 

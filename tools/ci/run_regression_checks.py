@@ -105,6 +105,7 @@ TESTS = (
     "tests/economy/economy_cadence_runtime_test.gd",
     "tests/economy/economy_fiscal_reservation_continuation_test.gd",
     "tests/economy/economy_stratum_save_restore_test.gd",
+    "tests/economy/stratum_chain_pacing_test.gd",
     "tests/economy/resource_visual_layer_test.gd",
     "tests/economy/resource_ground_cover_test.gd",
     "tests/economy/resource_visual_update_test.gd",

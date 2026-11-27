@@ -88,6 +88,10 @@ scripts/serve_web.bat          :: = python tools/serve_web.py --port 8060 --root
 （threads 变体需要 SharedArrayBuffer；nothreads 变体发也无害）。
 **不要用 `python -m http.server`**，那样浏览器会拒绝流式实例化 wasm。
 
+发布到自建 Windows/IIS 服务器：本机 `scripts\Deploy-Cloud.cmd`，服务器端一次性装
+`tools/remote/pk_web_receiver.ps1`（分块上传 + 原子换目录 + 旧版备份），
+步骤与排错见 [`web-deploy-cloud.md`](./web-deploy-cloud.md)。
+
 ## 3. 两个必须对齐的编译约束
 
 ### 3.1 threads 必须和导出预设一致

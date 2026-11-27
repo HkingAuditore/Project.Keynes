@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 One-shot Windows PC build & export helper for Project.Keynes.
 
@@ -42,6 +42,74 @@ $outputConsole = Join-Path $OutputDir $consoleName
 . (Join-Path $repoRoot 'tools\runtime\Resolve-GodotBin.ps1')
 $resolvedGodot = Resolve-GodotBin -GodotExe $GodotBin
 
+# On this machine `& $exe` does not reliably surface an exit code (and sometimes
+# does not run at all), and a crashed process lands as a large negative code that
+# `if errorlevel` cannot see. Everything here goes through Start-Process -Wait so
+# the code is always real, with stdout/stderr kept for the report.
+function Invoke-BuildExe {
+    param(
+        [string]$FilePath,
+        [string]$Arguments,
+        [string]$LogStem,
+        [string]$What = '',
+        [int]$TimeoutSec = 3600
+    )
+    $outLog = "$LogStem.out.log"
+    $errLog = "$LogStem.err.log"
+    $rcLog  = "$LogStem.rc"
+    $runner = "$LogStem.run.cmd"
+    $parent = Split-Path -Parent $LogStem
+    if ($parent -and -not (Test-Path -LiteralPath $parent)) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+    Remove-Item -LiteralPath $rcLog -Force -ErrorAction SilentlyContinue
+    if (-not $What) { $What = Split-Path -Leaf $FilePath }
+
+    # A generated runner file instead of a long /c string: quoting survives any
+    # path, and completion is signalled by a file. Waiting on the process itself
+    # is not an option here - scons is a shim whose process tree can outlive the
+    # build, and Start-Process -Wait then never returns even though the work is
+    # long finished.
+    $lines = @(
+        '@echo off',
+        ('"{0}" {1} 1> "{2}" 2> "{3}"' -f $FilePath, $Arguments, $outLog, $errLog),
+        ('> "{0}" echo %ERRORLEVEL%' -f $rcLog)
+    )
+    Set-Content -LiteralPath $runner -Value ($lines -join "`r`n") -Encoding ASCII
+
+    $proc = Start-Process -FilePath $env:ComSpec -ArgumentList ('/d /c "' + $runner + '"') -WindowStyle Hidden -PassThru
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    while (-not (Test-Path -LiteralPath $rcLog)) {
+        if ((Get-Date) -gt $deadline) {
+            try { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue } catch { }
+            throw ("{0} did not finish within {1}s (log: {2})" -f $What, $TimeoutSec, $outLog)
+        }
+        Start-Sleep -Milliseconds 400
+    }
+    Start-Sleep -Milliseconds 120
+
+    $code = -1
+    $rcText = ''
+    if (Test-Path -LiteralPath $rcLog) { $rcText = (Get-Content -LiteralPath $rcLog -Raw -ErrorAction SilentlyContinue) }
+    if ($rcText) {
+        $trimmed = $rcText.Trim()
+        if ($trimmed -match '^-?\d+$') { $code = [int]$trimmed }
+    }
+    $stdout = ''
+    if (Test-Path -LiteralPath $outLog) { $stdout = (Get-Content -LiteralPath $outLog -Raw -ErrorAction SilentlyContinue) }
+
+    return [pscustomobject]@{
+        ExitCode = [int]$code
+        StdOut   = [string]$stdout
+        OutLog   = $outLog
+        ErrLog   = $errLog
+        RcLog    = $rcLog
+        Runner   = $runner
+        What     = $What
+    }
+}
+
 function Resolve-SconsBin {
     $cmd = Get-Command scons -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
@@ -71,9 +139,11 @@ if (-not $SkipNative) {
     Write-Host "`n[1/4] Building dots_ext ($sconsTarget, -j$Jobs) ..."
     Push-Location $gdextDir
     try {
-        & $scons "platform=windows" "target=$sconsTarget" "dev_build=no" "-j$Jobs"
-        if ($LASTEXITCODE -ne 0) {
-            throw "SCons build failed with exit code $LASTEXITCODE"
+        $run = Invoke-BuildExe -FilePath $scons -What 'scons' `
+            -Arguments ("platform=windows target={0} dev_build=no -j{1}" -f $sconsTarget, $Jobs) `
+            -LogStem (Join-Path $repoRoot ("tmp\pack-win-{0}-scons" -f $Mode))
+        if ($run.ExitCode -ne 0) {
+            throw ("SCons build failed with exit code {0} (log: {1})" -f $run.ExitCode, $run.ErrLog)
         }
     } finally {
         Pop-Location
@@ -106,9 +176,11 @@ if ($hasFmodDll -and $hasBanks) {
 # 3. Import & export
 if (-not $SkipImport) {
     Write-Host "`n[3/4] Refreshing Godot resource import cache ..."
-    & $resolvedGodot --headless --path $projectDir --import
-    if ($LASTEXITCODE -ne 0) {
-        throw "Godot --import failed with exit code $LASTEXITCODE"
+    $run = Invoke-BuildExe -FilePath $resolvedGodot -What 'godot --import' `
+        -Arguments ("--headless --path `"{0}`" --import" -f $projectDir) `
+        -LogStem (Join-Path $repoRoot ("tmp\pack-win-{0}-import" -f $Mode))
+    if ($run.ExitCode -ne 0) {
+        throw ("Godot --import failed with exit code {0} (log: {1})" -f $run.ExitCode, $run.ErrLog)
     }
 } else {
     Write-Host "`n[3/4] Skipping Godot --import (-SkipImport)."
@@ -129,9 +201,11 @@ if (Test-Path -LiteralPath $outputExe -PathType Leaf) {
 
 $exportFlag = if ($Mode -eq 'debug') { '--export-debug' } else { '--export-release' }
 Write-Host "`n[4/4] Exporting Windows Desktop ($Mode) -> $outputExe ..."
-& $resolvedGodot --headless --path $projectDir $exportFlag 'Windows Desktop' $outputExe
-if ($LASTEXITCODE -ne 0) {
-    throw "Godot $exportFlag failed with exit code $LASTEXITCODE"
+$run = Invoke-BuildExe -FilePath $resolvedGodot -What ('godot ' + $exportFlag) `
+    -Arguments ("--headless --path `"{0}`" {1} `"Windows Desktop`" `"{2}`"" -f $projectDir, $exportFlag, $outputExe) `
+    -LogStem (Join-Path $repoRoot ("tmp\pack-win-{0}-export" -f $Mode))
+if ($run.ExitCode -ne 0) {
+    throw ("Godot {0} failed with exit code {1} (log: {2})" -f $exportFlag, $run.ExitCode, $run.ErrLog)
 }
 
 if (-not (Test-Path -LiteralPath $outputExe -PathType Leaf)) {
@@ -150,9 +224,10 @@ Get-ChildItem -LiteralPath $OutputDir -File | Format-Table Name, Length, LastWri
 if (-not $SkipSmoke) {
     $smokeBin = if (Test-Path -LiteralPath $outputConsole -PathType Leaf) { $outputConsole } else { $outputExe }
     Write-Host "Running headless startup smoke check: $smokeBin --headless --quit"
-    & $smokeBin --headless --quit
-    if ($LASTEXITCODE -ne 0) {
-        throw "Smoke check failed with exit code $LASTEXITCODE"
+    $run = Invoke-BuildExe -FilePath $smokeBin -What 'smoke' -Arguments '--headless --quit' `
+        -LogStem (Join-Path $repoRoot ("tmp\pack-win-{0}-smoke" -f $Mode))
+    if ($run.ExitCode -ne 0) {
+        throw ("Smoke check failed with exit code {0} (log: {1})" -f $run.ExitCode, $run.ErrLog)
     }
     Write-Host 'Smoke check passed (exit code 0).'
 }
