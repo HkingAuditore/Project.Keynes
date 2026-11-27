@@ -13,6 +13,9 @@ func _init() -> void:
 		int(config.country.starting_tax_rate_bp) == 500)
 	_expect("unicode country accepted", bool(config.validate().ok))
 	_expect("country trimmed", String(config.country.name) == "大河联邦")
+	config.world_controls.terrain_ruggedness = 30
+	config.world_controls.terrain_diversity = 75
+	config.world_controls.mineral_abundance = 65
 	var encoded := config.to_dictionary()
 	var decoded := NewGameConfig.from_dictionary(encoded)
 	_expect("round trip", bool(decoded.ok) and (decoded.config as NewGameConfig).to_dictionary() == encoded)

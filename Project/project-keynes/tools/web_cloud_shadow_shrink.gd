@@ -1,24 +1,21 @@
 extends SceneTree
-## [web-cloud-shadow 2026-11-11] Web 导出期把云影预烘纹理降一半，导出后还原。
+## Web 导出期把云影预烘纹理缩到 64×64，导出后还原。
 ##
 ## 为什么单独做一个工具：`assets/textures/cloud_shadow/*.res` 里存的是 **裸 Image**
 ## （ResourceSaver.save(image, ...)，1024^2 RGBA8 + mipmap ≈ 5.6 MB），不是导入纹理，
 ## 所以 web_tex_downgrade.py 那套 `.import` 参数对它完全无效 —— 它没有任何 import
 ## 设置可调，只能改内容本身。
 ##
-## 云影是低频的东西（预烘脚本自己的注释：每个云团直径约 62 texel），1080p 下
-## 512² 与 1024² 在屏幕上分辨不出，但字节数只有 1/4。
-##
 ## 用法（必须在仓库根、且项目路径指向 project-keynes）：
 ##   godot --headless --path Project/project-keynes \
-##     --script res://tools/web_cloud_shadow_shrink.gd -- shrink 512
+##     --script res://tools/web_cloud_shadow_shrink.gd -- shrink 64
 ##   ... -- restore
 ##
 ## `restore` 用同目录的 `<name>.<原宽>.bak` 还原；`shrink` 只在 .bak 不存在时备份，
 ## 所以重复调用是幂等的，中途被杀也不会把原图弄丢。
 
 const TARGET_DIR := "res://assets/textures/cloud_shadow"
-const DEFAULT_TARGET := 512
+const DEFAULT_TARGET := 64
 
 
 func _initialize() -> void:

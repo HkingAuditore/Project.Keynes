@@ -23,6 +23,7 @@
     bool adjust_market_stock(int32_t cell, int32_t good_id, int64_t delta,
                              std::string &error);
     bool publish_epoch_slice(int64_t &work_done, std::string &error);
+    void publish_commit_slice(int64_t &work_done);
     void reset_publish_state();
     bool compile_building_catalog(const godot::Dictionary &catalog, std::string &error);
     bool compile_carrying_catalog(const godot::Dictionary &catalog, std::string &error);

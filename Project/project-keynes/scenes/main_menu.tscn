@@ -6,17 +6,11 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/land_layout_card.tscn" id="4_layout_card"]
 [ext_resource type="PackedScene" path="res://scenes/ui/papercut_map_preview.tscn" id="5_preview"]
 [ext_resource type="Texture2D" uid="uid://dtq8g7ce702ij" path="res://assets/ui/dossier_shell/hinge.png" id="6_hinge"]
-[ext_resource type="Shader" uid="uid://dspdg0p4uwrfm" path="res://shaders/paper_folio_plaque.gdshader" id="8_folio_shader"]
+[ext_resource type="Texture2D" path="res://assets/ui/tabletop/scroll.webp" id="8_scroll"]
 [ext_resource type="Shader" uid="uid://cuehdjldca646" path="res://shaders/paper_command_slip.gdshader" id="9_slip_shader"]
 [ext_resource type="Texture2D" uid="uid://dbw72vpul2qsy" path="res://assets/ui/paper_aux_v1/torn_note_v1.png" id="10_grain"]
 [ext_resource type="PackedScene" path="res://scenes/ui/graphics_quality_options.tscn" id="11_graphics"]
 [ext_resource type="Script" path="res://scripts/ui/components/event_pause_options.gd" id="12_event_pause"]
-
-[sub_resource type="ShaderMaterial" id="FolioMat"]
-shader = ExtResource("8_folio_shader")
-shader_parameter/paper_grain_tex = ExtResource("10_grain")
-shader_parameter/panel_size = Vector2(396, 484)
-shader_parameter/motion_scale = 1.0
 
 [sub_resource type="ShaderMaterial" id="SlipMat0"]
 shader = ExtResource("9_slip_shader")
@@ -112,9 +106,10 @@ size_flags_horizontal = 0
 size_flags_vertical = 4
 theme_type_variation = &"PKCountryShell"
 
-[node name="FolioSurface" type="ColorRect" parent="PageMargin/PageStack/HomePage/HomeTomeShell" unique_id=1231861849]
+[node name="FolioSurface" type="TextureRect" parent="PageMargin/PageStack/HomePage/HomeTomeShell" unique_id=1231861849]
 unique_name_in_owner = true
-material = SubResource("FolioMat")
+texture = ExtResource("8_scroll")
+expand_mode = 1
 layout_mode = 2
 mouse_filter = 2
 
@@ -302,7 +297,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_type_variation = &"PKCountryPage"
+theme_type_variation = &"TabletopSpread"
 
 [node name="Workbench" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage" unique_id=211839821]
 layout_mode = 2
@@ -310,7 +305,8 @@ theme_override_constants/separation = 10
 
 [node name="HeaderBar" type="PanelContainer" parent="PageMargin/PageStack/NewGamePage/Workbench" unique_id=684263413]
 layout_mode = 2
-theme_type_variation = &"PKCountryHeader"
+size_flags_horizontal = 0
+theme_type_variation = &"PKArchivePanel"
 
 [node name="HeaderRow" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/HeaderBar" unique_id=730913831]
 layout_mode = 2
@@ -352,7 +348,7 @@ theme_override_constants/separation = 8
 [node name="SectionTitle" type="Label" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol" unique_id=2112304431]
 layout_mode = 2
 theme_type_variation = &"PKSectionTitle"
-text = "国家与开局"
+text = "建国手册"
 
 [node name="PolityGrid" type="GridContainer" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol" unique_id=1023569322]
 layout_mode = 2
@@ -674,7 +670,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_type_variation = &"PKCountryPage"
+theme_type_variation = &"TabletopSpread"
 
 [node name="Column" type="VBoxContainer" parent="PageMargin/PageStack/LoadGamePage" unique_id=545958521]
 layout_mode = 2
@@ -682,7 +678,8 @@ theme_override_constants/separation = 10
 
 [node name="HeaderBar" type="PanelContainer" parent="PageMargin/PageStack/LoadGamePage/Column" unique_id=1730274402]
 layout_mode = 2
-theme_type_variation = &"PKCountryHeader"
+size_flags_horizontal = 0
+theme_type_variation = &"PKArchivePanel"
 
 [node name="HeaderRow" type="HBoxContainer" parent="PageMargin/PageStack/LoadGamePage/Column/HeaderBar" unique_id=259026155]
 layout_mode = 2
@@ -725,7 +722,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_type_variation = &"PKCountryPage"
+theme_type_variation = &"TabletopSpread"
 
 [node name="Column" type="VBoxContainer" parent="PageMargin/PageStack/SettingsPage" unique_id=1803106616]
 layout_mode = 2
@@ -733,7 +730,8 @@ theme_override_constants/separation = 10
 
 [node name="HeaderBar" type="PanelContainer" parent="PageMargin/PageStack/SettingsPage/Column" unique_id=661375917]
 layout_mode = 2
-theme_type_variation = &"PKCountryHeader"
+size_flags_horizontal = 0
+theme_type_variation = &"PKArchivePanel"
 
 [node name="HeaderRow" type="HBoxContainer" parent="PageMargin/PageStack/SettingsPage/Column/HeaderBar" unique_id=587763515]
 layout_mode = 2

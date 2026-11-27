@@ -4,6 +4,8 @@
 
 class_name MapConfig
 
+const DEFAULT_GENERATION_LEVEL := 50
+
 # 地图尺寸（单位：地块数量）
 var width: int  = 80    # 横向地块数
 var height: int = 60    # 纵向地块数
@@ -12,6 +14,9 @@ var height: int = 60    # 纵向地块数
 var num_continents: int   = 3      # 大陆核心数（影响大陆中心点数量）
 var sea_level: float      = 0.64   # 高度图阈值；低于此值为海洋，调高→陆地增多
 var continent_size: float = 0.9   # 大陆核心影响半径系数 [0.3, 0.8]
+var terrain_ruggedness: int = DEFAULT_GENERATION_LEVEL
+var terrain_diversity: int = DEFAULT_GENERATION_LEVEL
+var mineral_abundance: int = DEFAULT_GENERATION_LEVEL
 
 # 河流参数
 # 注意：当前 native 生成不读取 river_count 作为输入；河流密度由
@@ -79,6 +84,12 @@ static func make(w: int, h: int) -> MapConfig:
 	cfg.height = h
 	return cfg
 
+func resource_density_multiplier() -> float:
+	if map_source != "procedural":
+		return 1.0
+	return pow(2.0, (mineral_abundance - DEFAULT_GENERATION_LEVEL) / 50.0)
+
+
 # --- 验证并修正参数到合法范围 ---
 func validate() -> void:
 	width          = clampi(width,          10, 500)
@@ -86,4 +97,7 @@ func validate() -> void:
 	num_continents = clampi(num_continents, 1,  8)
 	sea_level      = clampf(sea_level,      0.1, 0.8)
 	continent_size = clampf(continent_size, 0.2, 0.9)
+	terrain_ruggedness = clampi(terrain_ruggedness, 0, 100)
+	terrain_diversity = clampi(terrain_diversity, 0, 100)
+	mineral_abundance = clampi(mineral_abundance, 0, 100)
 	river_count    = clampi(river_count,    0,  30)

@@ -52,6 +52,11 @@ func _prepare_world_data(host) -> Dictionary:
 	cfg.sea_level = host.sea_level
 	cfg.river_count = host.river_count
 	cfg.seed = seed_override if seed_override >= 0 else host.initial_seed
+	var setup: Dictionary = host._world_setup_config()
+	var controls: Dictionary = setup.get("world_controls", setup.get("controls", {}))
+	cfg.terrain_ruggedness = int(controls.get("terrain_ruggedness", cfg.terrain_ruggedness))
+	cfg.terrain_diversity = int(controls.get("terrain_diversity", cfg.terrain_diversity))
+	cfg.mineral_abundance = int(controls.get("mineral_abundance", cfg.mineral_abundance))
 	host._apply_pkmap_override(cfg)
 
 	host._generator = MapGenerator.new()

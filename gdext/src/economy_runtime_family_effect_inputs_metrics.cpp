@@ -536,13 +536,23 @@ void NativeEconomyRuntime::refresh_neighbor_distinct_goods_metrics() {
         return hash;
     };
     source_hash = mix(source_hash, static_cast<uint64_t>(cells));
-    for (size_t index = 0; index < _building_cell_offsets.size(); ++index) {
+    const int32_t *offsets_data = _building_cell_offsets.data();
+    const size_t offsets_size = _building_cell_offsets.size();
+    for (size_t index = 0; index < offsets_size; ++index) {
         source_hash = mix(source_hash,
-            static_cast<uint64_t>(_building_cell_offsets[index]));
+            static_cast<uint64_t>(offsets_data[index]));
     }
-    for (const int32_t neighbor : _building_neighbors) {
+    const int32_t *neighbors_data = _building_neighbors.data();
+    const size_t neighbors_size = _building_neighbors.size();
+    for (size_t index = 0; index + 2 <= neighbors_size; index += 2) {
+        const uint64_t packed =
+            static_cast<uint64_t>(static_cast<uint32_t>(neighbors_data[index])) |
+            (static_cast<uint64_t>(static_cast<uint32_t>(neighbors_data[index + 1])) << 32);
+        source_hash = mix(source_hash, packed);
+    }
+    if ((neighbors_size & 1u) != 0) {
         source_hash = mix(source_hash,
-            static_cast<uint64_t>(static_cast<uint32_t>(neighbor)));
+            static_cast<uint64_t>(static_cast<uint32_t>(neighbors_data[neighbors_size - 1])));
     }
     // Hash the metric's actual inputs, not raw production magnitudes. A stable
     // mine can report a different last_output every day while still dominating
@@ -550,10 +560,11 @@ void NativeEconomyRuntime::refresh_neighbor_distinct_goods_metrics() {
     // depend on price noise. dominant_output_good_at() resolves ties and output
     // shares, so two equal dominant ids guarantee the distinct-neighbour answer
     // is unchanged.
-    std::vector<int32_t> dominant_goods(static_cast<size_t>(cells), -1);
+    _neighbor_dominant_goods_scratch.resize(static_cast<size_t>(cells));
+    int32_t *dominant_goods = _neighbor_dominant_goods_scratch.data();
     for (int32_t cell = 0; cell < cells; ++cell) {
         int32_t share_q16 = 0;
-        const int32_t good = _building_cell_offsets[cell] == _building_cell_offsets[cell + 1]
+        const int32_t good = offsets_data[cell] == offsets_data[cell + 1]
             ? -1 : dominant_output_good_at(cell, share_q16);
         dominant_goods[cell] = good;
         source_hash = mix(source_hash,
@@ -564,14 +575,14 @@ void NativeEconomyRuntime::refresh_neighbor_distinct_goods_metrics() {
             static_cast<size_t>(cells))
         return;
 
-    std::vector<int32_t> counts(static_cast<size_t>(cells), 0);
+    _epoch_cell_neighbor_distinct_goods.resize(static_cast<size_t>(cells));
+    int32_t *counts = _epoch_cell_neighbor_distinct_goods.data();
     for (int32_t cell = 0; cell < cells; ++cell) {
         int32_t distinct[6] = {-1, -1, -1, -1, -1, -1};
         int32_t distinct_count = 0;
+        const int32_t *cell_neighbors = neighbors_data + static_cast<size_t>(cell) * 6;
         for (int32_t direction = 0; direction < 6; ++direction) {
-            const int32_t neighbor = _building_neighbors[
-                static_cast<size_t>(cell) * 6 +
-                static_cast<size_t>(direction)];
+            const int32_t neighbor = cell_neighbors[direction];
             if (neighbor < 0 || neighbor >= cells) continue;
             const int32_t good = dominant_goods[neighbor];
             if (good < 0) continue;
@@ -588,7 +599,6 @@ void NativeEconomyRuntime::refresh_neighbor_distinct_goods_metrics() {
     }
     _neighbor_distinct_goods_rebuilds.fetch_add(
         1, std::memory_order_relaxed);
-    _epoch_cell_neighbor_distinct_goods = std::move(counts);
     _neighbor_distinct_goods_source_hash = source_hash;
 }
 

@@ -83,6 +83,7 @@ func _prepare_session(loading: WorldLoadingOverlay) -> bool:
 			String(result.get("code", "")))
 		return false
 	_push_visual_toggles()
+	loading.set_restoring(_session_request.get("kind") == "load_game")
 	_ui_manager.show_loading("正在生成世界...")
 	loading.set_layout_state(_runtime_host.session_config().get("base", {}))
 	return true

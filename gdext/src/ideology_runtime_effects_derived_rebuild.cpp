@@ -17,14 +17,19 @@ void NativeIdeologyRuntime::ensure_derived_program_sampler() {
                                       uint64_t source_country) -> double {
         (void)source_country;   // the program reads cell metrics; scope is the cell
         if (_economy_runtime == nullptr || _effect_runtime == nullptr) return 0.0;
-        // Every declared metric, not a narrowed mask: the program's own READ_METRIC
-        // decides what it needs, and a mask here would be a second, drifting copy of
-        // that knowledge.
+        // Sample only the metrics recorded in `metadata.metric_mask` during
+        // collection (single-sourced from EffectRuntime's bytecode scan), falling
+        // back to `all_declared` only if a test invoked the sampler directly.
         const int32_t count =
             static_cast<int32_t>(_derived_program_metric_scratch.size());
-        const pk::MetricMask all = pk::MetricMask::all_declared(count);
-        economy_api::sample_effect_metrics(*_economy_runtime, cell, count,
-            _derived_program_metric_scratch.data(), all);
+        const auto mask_it = _derived_program_metric_masks.find(program_key);
+        const pk::MetricMask mask = mask_it != _derived_program_metric_masks.end()
+            ? mask_it->second
+            : pk::MetricMask::all_declared(count);
+        if (mask.is_any()) {
+            economy_api::sample_effect_metrics(*_economy_runtime, cell, count,
+                _derived_program_metric_scratch.data(), mask);
+        }
         int64_t magnitude = 0;
         std::string error;
         if (!_effect_runtime->evaluate_program_magnitude_for_metrics(
@@ -178,8 +183,12 @@ bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day, std::string &error
                     ++collect_ideas;
             }
         }
-        _derived_collect_count =
-            static_cast<int64_t>(_derived_rebuild_contributions.size());
+        int64_t collect_count = 0;
+        for (const DerivedProgramContribution &contribution :
+                _derived_rebuild_contributions) {
+            collect_count += static_cast<int64_t>(contribution.cells.size());
+        }
+        _derived_collect_count = collect_count;
         _derived_collect_ideas = collect_ideas;
         {
             // A program emits one row per TARGET CELL, so the raw count above cannot

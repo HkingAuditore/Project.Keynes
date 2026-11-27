@@ -215,8 +215,15 @@ bool NativeIdeologyRuntime::collect_effect_activations(
                     kEconomyMetricCount, _effect_runtime->metric_count())), 0);
                 fill_ideology_scalars(country, state, condition_metrics);
             }
-            std::vector<DerivedProgramContribution> per_target;
-            per_target.reserve(targets.size());
+            // Pack targets sharing the same `magnitude_scale_q16` into one batched
+            // `DerivedProgramContribution` instead of allocating two vectors per
+            // cell. For kinds 12/14/15 every cell has Q16_ONE, so 6400 targets emit
+            // 1 contribution instead of 6400; for kind 16 (TAG_SOURCE_COUNT) there
+            // are at most `cap` distinct scales (typically 2-5).
+            const uint64_t prog_hash = effect_program_hash(program);
+            const double card_scale = derived_school_scale * derived_copy_scale;
+            std::vector<int32_t> group_scales;
+            std::vector<DerivedProgramContribution> groups;
             for (const EffectTarget &t : targets) {
                 if (!condition_metrics.empty()) {
                     const int32_t count =
@@ -232,42 +239,52 @@ bool NativeIdeologyRuntime::collect_effect_activations(
                             condition_error);
                     if (!condition_ok || !passes) continue;
                 }
-                DerivedProgramContribution single;
-                single.source_country = country.handle;
-                single.ideology_id = state.ideology_id;
-                single.level = contribution_level;
-                single.program_hash = effect_program_hash(program);
-                single.backend = CellProgramBackend::DerivedCell;
-                single.cells.push_back(static_cast<int32_t>(t.handle));
-                single.magnitude_scale =
-                    static_cast<double>(t.magnitude_scale_q16) /
-                    static_cast<double>(Q16_ONE) * derived_school_scale *
-                    derived_copy_scale;
-                per_target.push_back(std::move(single));
-            }
-            std::vector<DerivedProgramContribution::Term> fold_terms;
-            resolve_program_fold_terms(metadata, program, fold_terms, true);
-            for (const DerivedProgramContribution::Term &row : fold_terms) {
-                // A SUBTRACT term arrives as ADD with a negative value
-                // from the resolver, so a `.cut` card must fold its
-                // magnitude negatively rather than being dropped.
-                for (DerivedProgramContribution &single : per_target) {
-                    DerivedProgramContribution::Term scaled = row;
-                    // `magnitude_scale` is 1.0 for every selector except
-                    // TAG_SOURCE_COUNT, so this is a no-op for kinds 12/14/15.
-                    scaled.add *= single.magnitude_scale;
-                    if (scaled.operation != 0)
-                        scaled.factor = simulation_math::pow(scaled.factor,
-                            single.magnitude_scale);
-                    single.terms.push_back(scaled);
+                size_t group_idx = groups.size();
+                for (size_t gi = 0; gi < group_scales.size(); ++gi) {
+                    if (group_scales[gi] == t.magnitude_scale_q16) {
+                        group_idx = gi;
+                        break;
+                    }
                 }
+                if (group_idx == groups.size()) {
+                    group_scales.push_back(t.magnitude_scale_q16);
+                    DerivedProgramContribution batch;
+                    batch.source_country = country.handle;
+                    batch.ideology_id = state.ideology_id;
+                    batch.level = contribution_level;
+                    batch.program_hash = prog_hash;
+                    batch.backend = CellProgramBackend::DerivedCell;
+                    batch.magnitude_scale =
+                        static_cast<double>(t.magnitude_scale_q16) /
+                        static_cast<double>(Q16_ONE) * card_scale;
+                    batch.count_per_cell = true;
+                    if (groups.empty()) batch.cells.reserve(targets.size());
+                    groups.push_back(std::move(batch));
+                }
+                groups[group_idx].cells.push_back(static_cast<int32_t>(t.handle));
             }
-            // Hand to the caller's accumulator; `collect_effect_activations`
-            // stays a pure collector so `reconcile_effect_activations` (and the
-            // pod mirror) can decide when to materialise.
-            for (DerivedProgramContribution &single : per_target) {
-                out_derived->push_back(std::move(single));
-                ++_collect_derived_emitted;
+            if (!groups.empty()) {
+                _derived_program_metric_masks[program] = metadata.metric_mask;
+                std::vector<DerivedProgramContribution::Term> fold_terms;
+                resolve_program_fold_terms(metadata, program, fold_terms, true);
+                for (DerivedProgramContribution &batch : groups) {
+                    batch.terms.reserve(fold_terms.size());
+                    const double scale = batch.magnitude_scale;
+                    const bool unit_scale = (scale == 1.0);
+                    for (const DerivedProgramContribution::Term &row : fold_terms) {
+                        DerivedProgramContribution::Term scaled = row;
+                        if (!unit_scale) {
+                            scaled.add *= scale;
+                            if (scaled.operation != 0)
+                                scaled.factor = simulation_math::pow(
+                                    scaled.factor, scale);
+                        }
+                        batch.terms.push_back(scaled);
+                    }
+                    _collect_derived_emitted +=
+                        static_cast<int64_t>(batch.cells.size());
+                    out_derived->push_back(std::move(batch));
+                }
             }
             continue;  // no instance, no cap, no ACK
         }

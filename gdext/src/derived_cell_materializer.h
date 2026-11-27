@@ -74,6 +74,11 @@ struct DerivedProgramContribution {
     // derived path read 1.23999 where the instance path reads 1.12 -- one source
     // contribution too many (M4-2). Kind 12/14/15 always carry 1.0.
     double magnitude_scale = 1.0;
+    // When true, this batched contribution packs multiple target cells that share
+    // the same program and magnitude scale; diagnostic counters (`programs_seen`,
+    // `programs_derived`, `commands_folded`) still count per target cell so
+    // existing telemetry and oracle assertions keep identical semantics.
+    bool count_per_cell = false;
     // Resolved modifier terms, flattened across the program's commands. A
     // program with two commands contributes two groups and both must be folded.
     // How a term's magnitude is produced (plan §15.5, M3).
@@ -359,6 +364,8 @@ private:
     // implementation detail and the header is included by Godot-facing code.
     std::unique_ptr<Impl> _impl;
     size_t _index = 0;
+    size_t _term_index = 0;
+    size_t _cell_index = 0;
     size_t _total = 0;
     bool _started = false;
 };

@@ -478,6 +478,29 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
         out["terrain_detail"] = detail_data;
         out["edge_neighbor"] = edge_data;
         out["edge_distance"] = edge_distance_data;
+        if (bool(knobs.get("emit_surface_edge_neighbor_rgba", false))) {
+            const int pixel_count = W * H;
+            PackedByteArray edge_neighbor_rgba;
+            edge_neighbor_rgba.resize(pixel_count * 4);
+            uint8_t * const __restrict dst_rgba = edge_neighbor_rgba.ptrw();
+            const bool has_edge = edge_data.size() == pixel_count * 2;
+            const bool has_water = water_data.size() == pixel_count * 4;
+            const uint8_t * const __restrict src_edge = has_edge ? edge_data.ptr() : nullptr;
+            const uint8_t * const __restrict src_water = has_water ? water_data.ptr() : nullptr;
+            for (int i = 0; i < pixel_count; ++i) {
+                const int o = i * 4;
+                if (has_edge) {
+                    dst_rgba[o] = src_edge[i * 2];
+                    dst_rgba[o + 1] = src_edge[i * 2 + 1];
+                } else {
+                    dst_rgba[o] = 255;
+                    dst_rgba[o + 1] = 255;
+                }
+                dst_rgba[o + 2] = has_water ? src_water[o] : 0;
+                dst_rgba[o + 3] = 0;
+            }
+            out["edge_neighbor_rgba"] = edge_neighbor_rgba;
+        }
         // [cell-field warp 2026-11-18] tiled warp field：每 tile RG8（N*2），GDScript 侧
         //   VisualTileSet.FIELD_FORMATS 需登记 boundary_warp: FORMAT_RG8 才会上传成 tex 层。
         if (BW_W != nullptr) out["boundary_warp"] = boundary_warp_data;
@@ -582,10 +605,13 @@ godot::Dictionary DCWorldExt::run_resample_visual_horizon_layer_pass(godot::Dict
             bake_row_tasks(dst_h), /*seq_threshold=*/64, run_range);
     const auto t1 = std::chrono::high_resolution_clock::now();
 
-    uint64_t hash = 1469598103934665603ULL;
-    for (int i = 0; i < data.size(); ++i) {
-        hash ^= uint64_t(dst[i]);
-        hash *= 1099511628211ULL;
+    uint64_t hash = 0;
+    if (bool(knobs.get("include_hashes", true))) {
+        hash = 1469598103934665603ULL;
+        for (int i = 0; i < data.size(); ++i) {
+            hash ^= uint64_t(dst[i]);
+            hash *= 1099511628211ULL;
+        }
     }
     out["fallback"] = false;
     out["data"] = data;

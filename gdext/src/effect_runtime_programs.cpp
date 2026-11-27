@@ -327,22 +327,17 @@ bool EffectRuntime::evaluate_program_magnitude_for_metrics(
         error = "effect_magnitude_metrics_missing";
         return false;
     }
-    const Definition *definition = nullptr;
-    for (const Definition &candidate : _definitions) {
-        if (candidate.key == program_key) {
-            definition = &candidate;
-            break;
-        }
-    }
-    if (definition == nullptr) {
+    const int32_t id = definition_id_for_key(program_key);
+    if (id < 0 || id >= static_cast<int32_t>(_definitions.size())) {
         error = "effect_program_not_found";
         return false;
     }
+    const Definition &definition = _definitions[static_cast<size_t>(id)];
     // No runtime state is mutated: the accessor closes over the caller's samples.
     // An earlier version swapped `_metric_values` with a `const_cast`; that would
     // have been a data race under the worker path (plan §8.1).
     return run_program_machine(
-        *definition,
+        definition,
         [metric_values, metric_count](int32_t metric_id) -> int64_t {
             if (metric_id < 0 || metric_id >= metric_count) return 0;
             return metric_values[metric_id];

@@ -1,7 +1,7 @@
 extends PanelContainer
 class_name PapercutMapPreview
 
-const SeaChartShader := preload("res://shaders/sea_chart_astrolabe.gdshader")
+const CHART := preload("res://assets/ui/tabletop/chart.webp")
 
 var _state: Dictionary = {
 	"country_name": "",
@@ -26,8 +26,6 @@ var _state: Dictionary = {
 }
 
 var _canvas: Control
-var _sea_rect: ColorRect
-var _sea_mat: ShaderMaterial
 var _stage: PaperAtlasStage
 var _title_label: Label
 var _seed_badge: Label
@@ -50,33 +48,21 @@ func _ready() -> void:
 	_climate_val = get_node_or_null("Margin/Column/SummaryGrid/ClimateBox/Value") as Label
 	_polity_val = get_node_or_null("Margin/Column/SummaryGrid/PolityBox/Value") as Label
 	if _canvas != null:
-		_sea_rect = UIControlParts.color_rect()
-		_sea_rect.mouse_filter = MOUSE_FILTER_IGNORE
-		_sea_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		_sea_mat = ShaderMaterial.new()
-		_sea_mat.shader = SeaChartShader
-		_sea_mat.set_shader_parameter("compass_uv", Vector2(0.83, 0.25))
-		_sea_mat.set_shader_parameter("compass_scale", 0.22)
-		_sea_mat.set_shader_parameter("secondary_rose_uv", Vector2(0.18, 0.78))
-		_sea_mat.set_shader_parameter("show_neatline", 1.0)
-		_sea_rect.material = _sea_mat
-		_canvas.add_child(_sea_rect)
-		_canvas.resized.connect(_sync_canvas_shader)
+		var sheet := TextureRect.new()
+		sheet.texture = CHART
+		sheet.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		sheet.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		sheet.mouse_filter = MOUSE_FILTER_IGNORE
+		_canvas.add_child(sheet)
+		sheet.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 		_stage = PaperAtlasStage.new()
 		_stage.interactive_parallax = false
 		_canvas.add_child(_stage)
 		_stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		_sync_canvas_shader()
 
-	_sync_shader_params()
+	_sync_stage()
 	_refresh_labels()
-
-
-func _sync_canvas_shader() -> void:
-	if _sea_mat != null and _canvas != null:
-		_sea_mat.set_shader_parameter("viewport_size", _canvas.size.max(Vector2.ONE))
-		_sea_mat.set_shader_parameter("motion_scale", 0.0 if UIAnimation.reduced_motion() else 1.0)
 
 
 func set_preview_state(next_state: Dictionary, animate_reveal: bool = false) -> void:
@@ -97,31 +83,32 @@ func set_preview_state(next_state: Dictionary, animate_reveal: bool = false) -> 
 		_last_layout_signature = sig
 		_trigger_reveal()
 	else:
-		_sync_shader_params()
+		_sync_stage()
 	_refresh_labels()
 
 
 func _trigger_reveal() -> void:
-	_sync_shader_params()
+	_sync_stage()
 	if _stage == null:
 		return
 	if _reveal_tween != null and _reveal_tween.is_valid():
 		_reveal_tween.kill()
 	if UIAnimation.reduced_motion():
 		_stage.reveal = 1.0
+		_stage.scale.y = 1.0
 		return
+	_stage.pivot_offset = Vector2(0, _stage.size.y * 0.5)
+	_stage.scale.y = 0.68
 	_stage.reveal = 0.25
-	_reveal_tween = create_tween()
+	_reveal_tween = create_tween().set_parallel(true)
+	_reveal_tween.tween_property(_stage, "scale:y", 1.0, 0.35).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	_reveal_tween.tween_property(_stage, "reveal", 1.0, UITokens.MENU_PAGE_TRANSITION) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 
-func _sync_shader_params() -> void:
+func _sync_stage() -> void:
 	if _stage != null:
 		_stage.set_layout_state(_state)
-	if _sea_mat != null:
-		_sea_mat.set_shader_parameter("seed_offset", float(int(_state.get("seed", 1)) % 1000))
-		_sea_mat.set_shader_parameter("motion_scale", 0.0 if UIAnimation.reduced_motion() else 1.0)
 
 
 func _refresh_labels() -> void:

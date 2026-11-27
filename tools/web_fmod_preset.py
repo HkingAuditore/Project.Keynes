@@ -39,6 +39,7 @@ import json
 import pathlib
 import re
 import sys
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_PRESET = ROOT / "Project" / "project-keynes" / "export_presets.cfg"
@@ -51,6 +52,18 @@ THREAD_ON = "variant/thread_support=true"
 
 def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def replace_preset(preset: pathlib.Path, data: bytes) -> None:
+    # Godot can leave a mapped view of the previous preset on Windows.
+    with tempfile.NamedTemporaryFile(dir=preset.parent, suffix=".tmp", delete=False) as handle:
+        staged = pathlib.Path(handle.name)
+        try:
+            handle.write(data)
+            handle.close()
+            staged.replace(preset)
+        finally:
+            staged.unlink(missing_ok=True)
 
 
 def read_state(state: pathlib.Path) -> dict | None:
@@ -106,7 +119,6 @@ def begin(preset: pathlib.Path, state: pathlib.Path) -> int:
     backup = state.with_suffix(".bak")
     backup.parent.mkdir(parents=True, exist_ok=True)
     backup.write_bytes(raw)
-    preset.write_bytes(new_raw)
     state.parent.mkdir(parents=True, exist_ok=True)
     state.write_text(json.dumps({
         "preset": str(preset),
@@ -115,6 +127,7 @@ def begin(preset: pathlib.Path, state: pathlib.Path) -> int:
         "written_sha": sha(new_raw),
         "changes": changed,
     }, indent=2), encoding="utf-8")
+    replace_preset(preset, new_raw)
     print(f"[preset] begin: {', '.join(changed) if changed else 'no change'}; "
           f"sha {original_sha[:8]} -> {sha(new_raw)[:8]}")
     return 0
@@ -129,6 +142,10 @@ def end(preset: pathlib.Path, state: pathlib.Path) -> int:
         print(f"[preset] end: preset missing at {preset}")
         return 1
     cur = sha(preset.read_bytes())
+    if cur == st["original_sha"]:
+        state.unlink()
+        print("[preset] end: already restored")
+        return 0
     if cur != st["written_sha"]:
         print("[preset] WARNING: export_presets.cfg changed while the FMOD export was active; "
               "refusing to overwrite. Re-apply the FMOD shape manually if needed.")
@@ -142,7 +159,7 @@ def end(preset: pathlib.Path, state: pathlib.Path) -> int:
     if not backup.exists():
         print(f"[preset] end: backup missing at {backup}")
         return 1
-    preset.write_bytes(backup.read_bytes())
+    replace_preset(preset, backup.read_bytes())
     restored = sha(preset.read_bytes())
     if restored != st["original_sha"]:
         print(f"[preset] WARNING: restored sha {restored[:8]} != original {st['original_sha'][:8]}")

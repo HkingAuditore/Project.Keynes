@@ -303,7 +303,8 @@ static func configure_world_lighting_field(host) -> void:
 		host._wrap_period_x(),
 		host.visual_quality,
 		host._mobile_quality_tier_define,
-		host.hex_size)
+		host.hex_size,
+		_web_map_uses_shared_lighting(host))
 	sync_world_lighting_daylight(host)
 	host._world_lighting_field.set_horizon_params(
 		host.terrain_horizon_strength,
@@ -331,6 +332,16 @@ static func sync_world_lighting_daylight(host) -> void:
 		0.88 if sun_max_up == null else float(sun_max_up))
 
 
+static func _web_map_uses_shared_lighting(host) -> bool:
+	if not OS.has_feature("web"):
+		return false
+	for material in [host._shader_mat, host._water_mat]:
+		if material == null or material.shader == null \
+				or not material.shader.code.contains("#define PK_WORLD_LIGHTING_FIELD"):
+			return false
+	return true
+
+
 static func _push_world_lighting_to_material(material: ShaderMaterial,
 		tex: Texture2D, bound: bool, radiance_scale: float) -> void:
 	if material == null or material.shader == null:
@@ -347,11 +358,12 @@ static func push_world_lighting_material_inputs(host) -> void:
 	var tex: Texture2D = host._world_lighting_field.get_lighting_texture()
 	var bound: bool = bool(host._world_lighting_field.is_lighting_ready()) and tex != null
 	var radiance_scale: float = float(host._world_lighting_field.get_radiance_scale())
+	var map_bound := bound and (not OS.has_feature("web") or _web_map_uses_shared_lighting(host))
 	for material in [host._shader_mat, host._water_mat]:
 		if material == null or material.shader == null:
 			continue
 		if material.shader.code.contains("#define PK_WORLD_LIGHTING_FIELD"):
-			_push_world_lighting_to_material(material, tex, bound, radiance_scale)
+			_push_world_lighting_to_material(material, tex, map_bound, radiance_scale)
 	if host._building_visual_layer != null:
 		for mat_prop in ["_body_material", "_decal_material", "_macro_material"]:
 			var bmat = host._building_visual_layer.get(mat_prop) as ShaderMaterial

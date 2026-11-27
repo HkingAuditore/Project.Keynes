@@ -34,6 +34,7 @@ C++ 路径相对于 `gdext/src/`。
 | `rendering/resource_visual_layer.gd` | `rendering/resource_visual_chunk_inputs.gd`：首次未知可见格的区域准备计数 | 只限制新任务创建，不取消进行中的任务；当前区域准备完成即可推进，不等待整图 |
 | `rendering/bakers/terrain_baker.gd`、`terrain_index_baker.gd` | `geography/world_data.gd`：像素对象表、数值归属列与反向列表发布 | 原三处烘焙写入顺序与对象仍一致；数值列是可失效的显示派生数据，不进入存档 |
 | `world_ext_bake.cpp` | `world_ext_bake_encoders.cpp`、`world_ext_bake_visual_tiles.cpp` | 成员函数原样迁移；声明、绑定、slot、对象所有者不变；无状态局部 helper 可复制 |
+| `economy_runtime_publish.cpp` | `economy_runtime_publish_commit.cpp`：逐格提交及最后一片完成后的发布 | 同一 `NativeEconomyRuntime` 成员定义；分片游标、提交顺序和收尾边界沿用原实现，审计视图发布仍由原入口编排 |
 | `economy_runtime_persistence.cpp` | `economy_runtime_continuation_checkpoint.cpp` 汇集已有继续段；`economy_runtime_climate_checkpoint.cpp` 独占降雨继续段；`economy_runtime_restore_scratch.cpp` 清理读档候选所需的运行时暂存并使冻结输入缓存失效 | 继续段通过 `EconomyAuthorityTransfer` 访问 Economy 状态，解码和验证后再安装；scratch 仍是同一 `NativeEconomyRuntime` 的成员定义，安装与失败回滚顺序归原 persistence |
 | `economy_runtime_country_epoch_capture.cpp` | `economy_runtime_country_cache.cpp`：科技可用性、领土索引与拓扑 hash 的精确输入复用、重建及输入报告；`economy_runtime_internal_country_cache.h`：私有缓存身份与诊断计数 | 原 capture 保留采样和准备顺序；缓存及结果归同一运行时，完整比较输入，新世界/配置 reset 与读档准备使其失效，不进入存档或业务 hash |
 | `economy_runtime_family_buff.cpp` | `economy_runtime_family_effect_inputs.cpp`：领土查询、不可变标签快照、地理/家族/科技等指标准备、效果输入声明与测试输入覆盖 | 同一 `NativeEconomyRuntime` 成员定义；家族效果执行留在原文件，输入准备仍在原冻结边界，标签发布与读取的共享快照契约不变 |

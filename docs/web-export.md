@@ -6,25 +6,25 @@ Web 端现按 `DCFeatureFlags.is_mobile_web()` 区分 **PC 浏览器（PC-Web）
 
 | 档位 / 平台 | 地形 atlas 最长边 / 材质 | 光照、植被、建筑与分辨率 |
 | --- | --- | --- |
-| PC-Web 自动 / 高 | 2048 / 1024 材质数组 | 默认预热并启用 `PK_WEB_PC_HIGH`（PC 陆地与完整水面管线）、全量植被层与桌面散布密度、完整植被软阴影、建筑投影阴影与 horizon GI、军队/商队阴影、1024×512 云影、原生 HiDPI（DPR≤2.0） |
-| 移动 Web 自动 / 低 | 512 / 512 材质数组 | 既有 Blinn-Phong、远景简化植被、半数植被层与移动散布预算、DPR=1 |
-| 中 | 1024 / 1024（PC-Web）或 512（移动 Web） | 地形与紧凑水面 PBR、四类近景植被与法线着色 |
+| PC-Web 自动 / 高 | 2048 / 64×64 材质层 | 完整水陆程序与共享光图、全量植被及软阴影、建筑投影阴影与 horizon GI、军队和商队阴影、1024×512 云影、原生 HiDPI（DPR≤2.0） |
+| 移动 Web 自动 / 低 | 512 / 64×64 材质层 | 既有 Blinn-Phong、远景简化植被、半数植被层与移动散布预算、DPR=1 |
+| 中 | 1024 / 64×64 材质层 | 地形与紧凑水面 PBR、四类近景植被与法线着色 |
 
-PC-Web 启动菜单默认同时预热 `PK_WEB_PC_HIGH` 与低/中档共享程序（以及 `building_shadow`），无需再手写 `?quality=high`；游戏内打开画质设置（含「自定义」细分项：地图清晰度、水面细节、迷雾清晰度、植被密度、天气表现、地面云影、帧率上限）在低/中/高之间切换均直接命中已预热程序，不会在运行中触发 ANGLE 首次编译卡顿。若 URL 显式传 `?quality=low` 或 `?quality=medium`，或处于移动浏览器，则跳过 `_high` 变体预热以缩短首屏等待。完整高档 `PK_WEB_PC_HIGH` 不定义 `MOBILE_QUALITY_*`，直接复用 PC 的地形细节法线、
+PC-Web 启动菜单默认同时预热 `PK_WEB_PC_HIGH` 与低/中档共享程序（以及 `building_shadow`），无需再手写 `?quality=high`；游戏内打开画质设置（含「自定义」细分项：地图清晰度、水面细节、迷雾清晰度、植被密度、天气表现、地面云影、帧率上限）在低/中/高之间切换均直接命中已预热程序，不会在运行中触发 ANGLE 首次编译卡顿。显式传 `?quality=low`、`?quality=medium` 或在移动浏览器使用自动档时，跳过 `_high` 变体预热以缩短首屏等待。完整高档 `PK_WEB_PC_HIGH` 不定义 `MOBILE_QUALITY_*`，直接复用 PC 的地形细节法线、
 沟谷/沙丘/岩层、河流法线与动态水纹、GGX/Smith/Schlick、线性光与 ACES。
 水面复用 `water_pipeline.gdshaderinc`，保留完整波浪、Fresnel 天空反射、SSS 与岸线特效。
 陆地使用 `PK_WEB_SPLIT_WATER`，水面使用 `PK_WEB_WATER_ONLY`：两片调用同一份 PC
 管线，避免在一个 fragment 中联合编译水陆。高档植被也不走移动端宏，使用全部近景
 形态、PC 的 3px LOD 阈值及解析软阴影。低档、中档、高档实际程序全部进入菜单预热。
 
-两张高档地表程序各保持独立 sampler 预算（陆地 8、水面 6）。Web 高档会在地图生成时烘焙 horizon，
+带共享光图的两张高档地表程序各用 7 个材质采样器。Web 高档会在地图生成时烘焙 horizon，
 地形和普通近景植被读取真实投影遮蔽、天空可见度与 bent normal；为腾出这一槽位，
 高档地形保留距离场连续过渡，省略次级邻格索引。家族植被批次释放 horizon 槽，
-仍使用完整形态、地面法线和软阴影。GI 弹射仍受预算限制。
+仍使用完整形态、地面法线和软阴影。共享光图的 RGB 保存一次 PTT-GI 弹射，A 保存山体直射可见度。
 独立天气层仍使用 Web 简化云体（云量、晨昏色与云影保留）。这些差距不能靠高档标签消除。
 
-atlas 与材质数组尺寸在生成时选择；要获得对应静态精度，需要以所选画质重新生成地图。
-导出不再把 `material_1024_*.res` 替换成 256 占位，因为 Web 高档已实际使用这组资源。
+atlas 尺寸在生成时按画质选择。`Build-Web.cmd` 默认将 `material_512_*.res` 和
+`material_1024_*.res` 共八张材质临时缩为 64×64，保留各档原有资源路径，导出后恢复桌面材质。
 低/中档共享程序，通过 uniform 切换 PBR 与四类近景；跨入/退出高档则选择预热过的 PC
 变体并重新绑定材质输入，实例预算变化仍可能触发分帧重建。第一次预热开销相应增加。
 
@@ -69,11 +69,30 @@ scripts/Build-Web.cmd both            :: 两套都做
 scripts/Build-Web.cmd skip-native     :: 只重新导出（复用现有 .wasm）
 ```
 
+Web 的完整高档水陆变体默认启用共享光图，前提是启用 `PK_CELL_FIELD`。使用 `?web_lighting=0`
+让水陆切回逐片元路径，该开关随页面启动固定。移动浏览器的自动档仍使用低画质，显式
+`?quality=high` 才会预热完整高档变体。菜单预热和运行时使用同一前缀，水陆各声明 7 个材质采样器。
+合成纹理上限为 512×256，执行一次 GI gather，输入变化时最高 12 Hz 刷新。
+`web_lighting_ready` 表示已经完成第一次合成并可以绑定，`autotest_ready` 和
+`autotest_pass` 带有 `lighting_renders` 计数，可在固定地图和视角下做开关对照。
+
 脚本做三件事：
 
 1. `gdext/` 里按下面的固定 flag 编 wasm side module；
 2. 在独立 headless 进程里预烘加载目录快照（见 §8，失败即中止导出）；
 3. 用 Godot headless 导出 `Web` 预设到 `WebBuild/ProjectKeynes.html`。
+
+Web 预设排除 Android 构建中间产物。使用 `python tools/pck_audit.py` 审计时，
+导入资源优先按 PCK 内的 `.import` 映射归类，避免把正式资源误归到 Android 构建副本。
+Web 预设也排除三张未被理念面板引用的 `source_*_v2.png`，仓库中的美术源图可继续用于编辑。
+
+Web 导出的地表覆盖、树冠和动物图集默认使用原始边长的四分之一，颜色图和法线图同步缩放。
+构建机需要 Pillow。可用 `PK_WEB_RESOURCE_ART_SCALE=1` 导出原尺寸供画面对照。
+两张云影预烘贴图在导出时缩为 64×64 并保留 mipmap。云影渲染场的分辨率仍按画质档设置。
+正式 Web 导出使用 Godot/Vorbis。四首时代音乐和三段转场按包加载，和首包内音效的合计预算为 7 MB。
+改音乐母带后运行 `python tools/audio/build_web_audio.py --music-only`，从无损母带重编为 64 kbps、32 kHz。
+仅在进行 FMOD 诊断时设置 `PK_WEB_ENABLE_FMOD=1`。诊断版的 HTML5 音库使用 Vorbis 质量 10，
+由 `tools/audio/Build-FmodBanks.ps1 -Platforms HTML5` 重建。
 
 日志：`tmp/web_prebake.log`、`tmp/web_native_<target>.log`、`tmp/web_export_release.log`。
 

@@ -397,7 +397,16 @@ func _enter_world(now_msec: int) -> void:
 		"speed": _clock.speed_multiplier if _clock != null else 0.0,
 		"paused": _clock.paused if _clock != null else true,
 		"elapsed_ms": now_msec - _started_msec,
+		"lighting_renders": _lighting_render_count(),
 	})
+
+
+func _lighting_render_count() -> int:
+	if _host == null or not _host.has_method("get_renderer"):
+		return 0
+	var renderer := _host.call("get_renderer") as HexRenderer
+	var field := renderer.get_node_or_null("WorldLightingField") as WorldLightingField if renderer != null else null
+	return field.get_render_trigger_count() if field != null else 0
 
 
 ## 每 100ms 一次的验收循环：故障 → 已知弹窗 → 日推进看门狗 → 暂停看门狗 → pass → 进度。
@@ -685,6 +694,7 @@ func pass_soak(day: int) -> void:
 		"target_days": _target_days,
 		"wall_s": _wall_seconds(now_msec),
 		"days_per_s": _days_per_second(day, now_msec),
+		"lighting_renders": _lighting_render_count(),
 	})
 	set_process(false)
 

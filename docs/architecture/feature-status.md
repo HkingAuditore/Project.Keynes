@@ -1,5 +1,24 @@
 # 专项现状与验证记录
 
+## 共享光图默认策略与桌面二次弹射（2026-11-28）
+
+- Web 完整高档水陆变体默认编译并绑定共享光图，`?web_lighting=0` 切回逐片元路径。移动浏览器
+  自动档为低画质，显式 `?quality=high` 可预热完整高档变体。格界自检通过且水陆都带光图
+  变体时，等待第一次合成完成，再通过 `lighting_published` 绑定已发布纹理。
+- Forward+/Mobile 桌面高档把 PTT-GI gather 执行两次。第二次从第一阶段辐亮度纹理取样，按源地表
+  代表色和 `1/π` 近似反射，并与第一阶段结果累加。桌面低、中档、Compatibility、Web 和原生移动端
+  中高档使用一次 gather，原生移动低档停用共享光图。每日代表色刷新继续复用静态传输索引并触发重算。
+- 验证：`world_lighting_field_test.gd` 在 RTX 4080 的 D3D12/Mobile 为 69/0，Compatibility
+  为 64/0。GPU 回读覆盖第二次弹射量、反照率刷新和降档恢复。`ptt_gi_baker_test.gd` 43/0、
+  `web_pc_quality_policy_test.gd` 26/0、`terrain_shader_variant_test.gd` 387/0、
+  `web_water_pass_node_test.gd` 90/0；模块地图、脚本原生访问和 committed-view 静态护栏 0 违规。
+- Chromium WebGL2 独立导出探针覆盖默认、`?web_lighting=0`、模拟移动自动档和显式高档。
+  水陆各 7 个采样器，关闭光图后各 6 个。合成纹理 512×256，RGB 有一次弹射的颜色，
+  A 随主光方向从 0 切到 1。
+- 完整 Web 导出在 RTX 4080 / ANGLE D3D11 上以高档载入 40×28 地图，种子 `20260101`。
+  两日自动验收通过，随后收到首张 `web_lighting_ready`（512×256、`ptt=true`、
+  `horizon=true`）。启动日志另有 FMOD Web 动态库缺失提示。
+
 ## 最后一城叛乱处理（2026-11-27）
 
 - 方案 D：保留「最后一城不能独立」。`advance_independence` 在该国只剩 1 格时取消建国请求，

@@ -154,7 +154,7 @@ func _bootstrap_world_facades(map_ref, cfg) -> bool:
 	var signal_knobs: Dictionary = _generator._get_map_resource_initializer()._build_resource_signal_knobs(map_ref)
 	if signal_knobs.is_empty():
 		return false
-	var bio_knobs: Dictionary = _generator._bio_occupancy_base_knobs(map_ref)
+	var bio_knobs: Dictionary = _generator._bio_occupancy_base_knobs(map_ref, true)
 	if not bool(bio_knobs.get("ok", false)):
 		return false
 	# 融合路径里 MapData 的 reserve 字段还没写入（矿藏与生态在同一次 native 调用

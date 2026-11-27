@@ -64,6 +64,7 @@ func _run() -> void:
 	_test_reserve_scale_configuration(profiles)
 	_test_reserve_scale_application(profiles)
 	_test_geology_fields(profiles)
+	_test_mineral_abundance(profiles)
 	_test_landmass_deposit_quota()
 	_test_script_fallback_landmass_quota(profiles)
 
@@ -358,6 +359,71 @@ func _test_geology_fields(profiles: Array) -> void:
 	_expect("geology generation changes with map seed", copper != copper_other_seed)
 	_expect("same hydrothermal family shares provinces/belts",
 		_correlation(copper, gold) > 0.15)
+
+
+func _test_mineral_abundance(profiles: Array) -> void:
+	var gen := MapGenerator.new()
+	var cfg := MapConfig.make(32, 8)
+	cfg.seed = 73021
+	for use_native in [false, true]:
+		if use_native and gen._ensure_generation_world_ext() == null:
+			_expect("native mineral abundance pass available", false)
+			return
+		var standard := _build_flat_geology_map(256)
+		var poor := _build_flat_geology_map(256)
+		var rich := _build_flat_geology_map(256)
+		var authored := _build_flat_geology_map(256)
+		cfg.map_source = "procedural"
+		cfg.mineral_abundance = 50
+		_seed_mineral_test_map(gen, standard, cfg, use_native)
+		cfg.mineral_abundance = 0
+		_seed_mineral_test_map(gen, poor, cfg, use_native)
+		cfg.mineral_abundance = 100
+		_seed_mineral_test_map(gen, rich, cfg, use_native)
+		cfg.map_source = "pkmap"
+		_seed_mineral_test_map(gen, authored, cfg, use_native)
+		var baseline := _res_arr(standard, profiles, "flint")
+		var lean := _res_arr(poor, profiles, "flint")
+		var abundant := _res_arr(rich, profiles, "flint")
+		var lean_count := _deposit_cells(lean)
+		var standard_count := _deposit_cells(baseline)
+		var abundant_count := _deposit_cells(abundant)
+		print("[mineral-density] native=%s flint=%d/%d/%d" % [
+			use_native, lean_count, standard_count, abundant_count])
+		_expect("flint deposit cells increase across the density range",
+			0 < lean_count and lean_count < standard_count and standard_count < abundant_count)
+		_expect("flint reserve budget stays stable across the density range",
+			is_equal_approx(_reserve_total(lean), _reserve_total(baseline))
+			and is_equal_approx(_reserve_total(baseline), _reserve_total(abundant)))
+		_expect("mineral density preserves agricultural capacity",
+			_res_arr(poor, profiles, "arable_land") == _res_arr(rich, profiles, "arable_land"))
+		_expect("authored maps use standard mineral deposits",
+			_res_arr(authored, profiles, "flint") == baseline)
+
+
+func _deposit_cells(reserves: PackedFloat32Array) -> int:
+	var count := 0
+	for reserve in reserves:
+		count += int(reserve > 0.0)
+	return count
+
+
+func _reserve_total(reserves: PackedFloat32Array) -> float:
+	var total := 0.0
+	for reserve in reserves:
+		total += reserve
+	return total
+
+
+func _seed_mineral_test_map(gen: MapGenerator, map: MapData, cfg: MapConfig, use_native: bool) -> void:
+	if use_native:
+		var initializer := gen._get_map_resource_initializer()
+		var habitat: PackedByteArray = initializer._collect_resource_habitat_mask(map)
+		var estuary: PackedFloat32Array = initializer._collect_estuary_strength(map)
+		_expect("native reserve generation succeeds",
+			gen._try_bootstrap_natural_resources_native(map, cfg, habitat, estuary))
+	else:
+		gen._bootstrap_natural_resource_deposits(map, cfg)
 
 
 func _test_landmass_deposit_quota() -> void:

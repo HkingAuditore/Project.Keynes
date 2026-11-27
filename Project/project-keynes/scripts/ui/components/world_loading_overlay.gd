@@ -7,6 +7,7 @@ signal retry_requested
 signal return_requested
 
 var _failed := false
+var _restoring := false
 
 # ─── 失败诊断 UI（mapgen-diagnostics）────────────────────────────────────
 # 需求（问题 3/3）：安卓上"点创建地图直接失败"只显示 map_generator_failed，
@@ -50,7 +51,6 @@ const ABSOLUTE_STAGES := ["bind", "visual"]
 
 var _backdrop: Control
 var _card: PanelContainer
-var _compass_dial: Control
 var _title_label: Label
 var _stage_label: Label
 var _percent_label: Label
@@ -58,7 +58,6 @@ var _progress: ProgressBar
 var _active_tween: Tween
 var _last_stage: String = ""
 var _last_fraction: float = 0.0
-var _anim_fraction: float = 0.0
 var _spin_time: float = 0.0
 
 
@@ -67,7 +66,6 @@ func _ready() -> void:
 		return
 	_backdrop = get_node_or_null("AtlasBackdrop") as Control
 	_card = get_node_or_null("Center/Card") as PanelContainer
-	_compass_dial = get_node_or_null("Center/Card/Content/CompassDial") as Control
 	_title_label = get_node_or_null("Center/Card/Content/Title") as Label
 	_stage_label = get_node_or_null("Center/Card/Content/StageRow/Stage") as Label
 	_percent_label = get_node_or_null("Center/Card/Content/StageRow/Percent") as Label
@@ -78,11 +76,10 @@ func _ready() -> void:
 		push_error("WorldLoadingOverlay 必须通过 world_loading_overlay.tscn 实例化。")
 		return
 	icon.set_semantic(&"country.world", UITokens.ACCENT)
-	if _compass_dial != null:
-		_compass_dial.draw.connect(_draw_compass_dial)
 	if _progress != null:
 		_progress.draw.connect(_draw_progress_shimmer)
-	resized.connect(func() -> void: _card.custom_minimum_size.x = minf(640.0, maxf(240.0,size.x-64.0)))
+	resized.connect(_size_card)
+	_size_card()
 	get_node("Center/Card/Content/FailureActions/Retry").pressed.connect(func() -> void: retry_requested.emit())
 	get_node("Center/Card/Content/FailureActions/Return").pressed.connect(func() -> void: return_requested.emit())
 	# 失败详情区：可滚动 + 可全选 + 一键复制（安卓无 Ctrl+C，只能靠按钮）。
@@ -99,68 +96,21 @@ func _ready() -> void:
 	set_process(is_visible_in_tree())
 
 
+func _size_card() -> void:
+	_card.custom_minimum_size.x = minf(640.0, maxf(240.0, size.x - 64.0))
+	if _failure_detail_edit != null:
+		_failure_detail_edit.custom_minimum_size.y = clampf(size.y * 0.25, 60.0, 160.0)
+	_set_failure_card_expanded(_failed)
+
+
 func _process(delta: float) -> void:
 	if not visible:
 		return
 	if _failed or UIAnimation.reduced_motion():
 		return
 	_spin_time += delta
-	var target_anim := maxf(_last_fraction, minf(0.12, _spin_time * 0.045))
-	_anim_fraction = lerpf(_anim_fraction, target_anim, minf(delta * 6.0, 1.0))
-
-	if _backdrop != null and _backdrop.has_method("set_loading_progress"):
-		_backdrop.call("set_loading_progress", _anim_fraction)
-	if _compass_dial != null:
-		_compass_dial.queue_redraw()
 	if _progress != null:
 		_progress.queue_redraw()
-
-
-func _draw_compass_dial() -> void:
-	if _compass_dial == null:
-		return
-	var c := _compass_dial.size * 0.5
-	var r := minf(c.x, c.y) - 3.0
-	if r <= 4.0:
-		return
-	var brass := UITokens.DOSSIER_BRASS
-	var oxblood := UITokens.DOSSIER_OXBLOOD
-	var ink_soft := Color(0.28, 0.19, 0.12, 0.32)
-
-	# 底盘与外环
-	_compass_dial.draw_circle(c, r, Color(0.95, 0.90, 0.78, 0.85))
-	_compass_dial.draw_arc(c, r, 0.0, TAU, 48, ink_soft, 1.5, true)
-	_compass_dial.draw_arc(c, r * 0.76, 0.0, TAU, 40, Color(brass, 0.45), 1.2, true)
-
-	# 进度圆弧
-	var sweep := clampf(maxf(_anim_fraction, 0.08), 0.0, 1.0) * TAU
-	_compass_dial.draw_arc(c, r, -PI * 0.5, -PI * 0.5 + sweep, 48, oxblood, 2.6, true)
-
-	# 旋转刻度环
-	for i in range(12):
-		var a := _spin_time * 0.85 + float(i) * TAU / 12.0
-		var dir := Vector2(cos(a), sin(a))
-		var inner_r := r * (0.80 if i % 3 == 0 else 0.86)
-		_compass_dial.draw_line(c + dir * inner_r, c + dir * (r - 1.5), brass, 1.4 if i % 3 == 0 else 1.0)
-
-	# 旋转罗盘指针
-	var needle_a := _spin_time * 2.1
-	var n_dir := Vector2(cos(needle_a), sin(needle_a))
-	var n_perp := Vector2(-n_dir.y, n_dir.x)
-	var north_poly := PackedVector2Array([
-		c + n_dir * (r * 0.64),
-		c + n_perp * 3.8,
-		c - n_perp * 3.8,
-	])
-	var south_poly := PackedVector2Array([
-		c - n_dir * (r * 0.56),
-		c + n_perp * 3.2,
-		c - n_perp * 3.2,
-	])
-	_compass_dial.draw_colored_polygon(north_poly, oxblood)
-	_compass_dial.draw_colored_polygon(south_poly, Color(0.36, 0.25, 0.16, 0.75))
-	_compass_dial.draw_circle(c, 3.2, brass)
-	_compass_dial.draw_circle(c, 1.5, Color(0.99, 0.95, 0.84, 1.0))
 
 
 func _draw_progress_shimmer() -> void:
@@ -181,6 +131,13 @@ func _draw_progress_shimmer() -> void:
 		)
 
 
+func set_restoring(value: bool) -> void:
+	_restoring = value
+	var art := get_node("AtlasBackdrop")
+	art.restoring = value
+	art.queue_redraw()
+
+
 func show_message(message: String) -> void:
 	if _card == null:
 		_ready()
@@ -198,15 +155,15 @@ func show_message(message: String) -> void:
 	set_process(true)
 	modulate = Color.WHITE
 	_card.modulate = Color.WHITE
-	_title_label.text = message
+	_card.scale = Vector2.ONE
+	_title_label.text = "正在重开旧图" if _restoring else message
 	_stage_label.text = "准备中"
 	_percent_label.text = "0%"
 	_progress.value = 0.0
 	_last_stage = ""
 	_last_fraction = 0.0
-	_anim_fraction = 0.0
 	if _backdrop != null and _backdrop.has_method("set_loading_progress"):
-		_backdrop.call("set_loading_progress", _anim_fraction)
+		_backdrop.call("set_loading_progress", 0.0)
 
 
 func set_progress(stage: String, fraction: float) -> void:
@@ -226,9 +183,8 @@ func set_progress(stage: String, fraction: float) -> void:
 		completed = clamped
 	# 单调闸门：任何阶段都只能前进不能后退（hide_completed 仍是唯一的 100%）。
 	_last_fraction = maxf(_last_fraction,minf(completed,.99))
-	_anim_fraction = maxf(_anim_fraction, _last_fraction)
 	var percent := clampi(int(round(_last_fraction * 100.0)), 0, 100)
-	_title_label.text = "正在生成世界"
+	_title_label.text = "正在重开旧图" if _restoring else "正在展开新图"
 	_percent_label.text = "%d%%" % percent
 	_progress.value = percent
 	if _backdrop != null and _backdrop.has_method("set_loading_progress"):
@@ -242,12 +198,15 @@ func hide_completed() -> void:
 	if not visible:
 		return
 	_kill_tween()
-	_title_label.text = "世界生成完成"
+	_title_label.text = "存档恢复完成" if _restoring else "世界生成完成"
 	_stage_label.text = "正在进入世界"
 	_percent_label.text = "100%"
 	_progress.value = 100.0
 	_last_fraction = 1.0
-	_anim_fraction = 1.0
+	_backdrop.call("set_loading_progress", 1.0)
+	if UIAnimation.reduced_motion():
+		hide()
+		return
 	_active_tween = create_tween()
 	_active_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	_active_tween.tween_property(_card, "modulate", Color(1.06, 1.03, 0.94, 1.0), 0.12)

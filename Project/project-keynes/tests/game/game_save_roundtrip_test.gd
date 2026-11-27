@@ -5,6 +5,11 @@ var _game_flow: Node
 var _game_save: Node
 var _saved_paused := true
 var _extension = preload("res://tests/game/fixtures/extension_state_module.gd").new()
+const GENERATION_CONTROLS := {
+	"terrain_ruggedness": 60,
+	"terrain_diversity": 70,
+	"mineral_abundance": 65,
+}
 
 
 func _ready() -> void:
@@ -45,6 +50,7 @@ func _run() -> void:
 	config.base.continent_size = 0.9
 	config.base.sea_level = 0.42
 	config.base.river_count = 8
+	config.world_controls = GENERATION_CONTROLS.duplicate()
 	var previous_scene := get_tree().current_scene
 	var begin: Dictionary = _game_flow.call("begin_new_game", config)
 	_expect("new game request accepted", bool(begin.get("ok", false)))
@@ -53,6 +59,7 @@ func _run() -> void:
 	if first_host == null:
 		_finish()
 		return
+	_expect("new game applies the generation controls", _has_generation_controls(first_host))
 
 	var first_scene := first_host.get_parent() as PlayerGame
 	var first_clock: WorldClock = first_scene.get_node("WorldClock")
@@ -160,6 +167,7 @@ func _run() -> void:
 	_expect("load reached ready runtime", loaded_host != null)
 	_expect("scene replacement closes the previous world before release", previous_session.report().state == "CLOSED")
 	if loaded_host != null:
+		_expect("load restores the generation controls", _has_generation_controls(loaded_host))
 		_expect("loaded world has a distinct session generation",
 			int(loaded_host.session_report().generation) != previous_generation)
 		_expect("the loaded scene starts with the overlays closed",
@@ -415,6 +423,14 @@ func _advance_to_first_settlement(host: WorldRuntimeHost, clock: WorldClock) -> 
 	print("[save-roundtrip] first settlement not reached economy=%s" % JSON.stringify(
 		generator.get_economy_report()))
 	return false
+
+
+func _has_generation_controls(host: WorldRuntimeHost) -> bool:
+	var cfg: MapConfig = host.generator()._last_cfg
+	return cfg != null \
+		and cfg.terrain_ruggedness == GENERATION_CONTROLS.terrain_ruggedness \
+		and cfg.terrain_diversity == GENERATION_CONTROLS.terrain_diversity \
+		and cfg.mineral_abundance == GENERATION_CONTROLS.mineral_abundance
 
 
 func _wait_for_runtime(previous_scene) -> WorldRuntimeHost:

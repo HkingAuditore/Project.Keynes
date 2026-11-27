@@ -190,6 +190,7 @@ func _queue_player_scene() -> Error:
 	# （表现为：只打了 autotest_start，之后什么都没有，停在菜单）。
 	var overlay := overlay_scene.instantiate() as WorldLoadingOverlay
 	_transition_layer.add_child(overlay)
+	overlay.set_restoring(_pending_request.get("kind") == "load_game")
 	overlay.show_message("正在创建世界")
 	overlay.set_layout_state((_pending_request.get("config",{}) as Dictionary).get("base",{}))
 	overlay.return_requested.connect(return_to_main_menu)

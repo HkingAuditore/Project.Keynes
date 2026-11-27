@@ -526,8 +526,8 @@ func _generate_static_research_signals(map: MapData) -> void:
 	_get_terrain_generator()._generate_static_research_signals(map)
 func _append_natural_resource_research_signals(map: MapData) -> void:
 	_get_terrain_generator()._append_natural_resource_research_signals(map)
-func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
-	return _get_terrain_generator()._bio_occupancy_base_knobs(map_ref)
+func _bio_occupancy_base_knobs(map_ref: MapData, for_seeding: bool = false) -> Dictionary:
+	return _get_terrain_generator()._bio_occupancy_base_knobs(map_ref, for_seeding)
 func _bio_occupancy_daily_knobs(map_ref: MapData) -> Dictionary:
 	return _get_terrain_generator()._bio_occupancy_daily_knobs(map_ref)
 func _bio_reserve_column(map_ref: MapData, resource_id: String, n: int,

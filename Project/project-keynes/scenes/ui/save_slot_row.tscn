@@ -1,10 +1,27 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/ui/main_menu_button.tscn" id="1_button"]
 
+[ext_resource type="Script" path="res://scripts/ui/components/save_slot_paper.gd" id="2_paper"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/torn_note_v1.png" id="3_note"]
+
 [node name="SaveSlotRow" type="PanelContainer"]
 custom_minimum_size = Vector2(0, 86)
-theme_type_variation = &"PKArchivePanel"
+theme_type_variation = &"PKMenuOpenPage"
+script = ExtResource("2_paper")
+
+[node name="Locator" type="ColorRect" parent="."]
+visible = false
+mouse_filter = 2
+color = Color(0.56, 0.16, 0.10, 1)
+
+[node name="Slip" type="NinePatchRect" parent="."]
+mouse_filter = 2
+texture = ExtResource("3_note")
+patch_margin_left = 28
+patch_margin_top = 24
+patch_margin_right = 28
+patch_margin_bottom = 24
 
 [node name="Margin" type="MarginContainer" parent="."]
 layout_mode = 2
@@ -16,6 +33,13 @@ theme_override_constants/margin_bottom = 4
 [node name="Row" type="HBoxContainer" parent="Margin"]
 layout_mode = 2
 theme_override_constants/separation = 14
+
+[node name="SlotBadge" type="Label" parent="Margin/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+vertical_alignment = 1
+theme_type_variation = &"PKDossierKicker"
+text = "手动存档 1"
 
 [node name="PreviewFrame" type="PanelContainer" parent="Margin/Row"]
 custom_minimum_size = Vector2(124, 68)
@@ -45,15 +69,16 @@ size_flags_horizontal = 3
 size_flags_vertical = 4
 theme_override_constants/separation = 3
 
+[node name="TitleLabel" type="Label" parent="Margin/Row/InfoColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierSectionTitle"
+text = "空槽位"
+
 [node name="HeaderRow" type="HBoxContainer" parent="Margin/Row/InfoColumn"]
 layout_mode = 2
 theme_override_constants/separation = 10
-
-[node name="SlotBadge" type="Label" parent="Margin/Row/InfoColumn/HeaderRow"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"PKDossierKicker"
-text = "手动存档 1"
 
 [node name="SavedAtLabel" type="Label" parent="Margin/Row/InfoColumn/HeaderRow"]
 unique_name_in_owner = true
@@ -61,15 +86,10 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKDossierMuted"
 text = ""
-horizontal_alignment = 2
+horizontal_alignment = 0
+text_overrun_behavior = 3
 
-[node name="TitleLabel" type="Label" parent="Margin/Row/InfoColumn"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"PKDossierSectionTitle"
-text = "空槽位"
-
-[node name="Description" type="Label" parent="Margin/Row/InfoColumn"]
+[node name="Description" type="Label" parent="Margin/Row/InfoColumn/HeaderRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3

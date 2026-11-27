@@ -8,6 +8,7 @@ void NativeEconomyRuntime::prepare_restore_candidate_scratch() {
     _country_availability_cache.invalidate();
     _country_territory_cache.invalidate();
     _demand_basis_cache = {};
+    _tag_snapshot_static_cache.valid = false;
     // Candidate rebuild surface only. Callers must already hold a validated
     // ECP2 backup (or be on the explicit migrate helper path).
     _restore.scratch_prepared = true;

@@ -160,8 +160,8 @@ EXTRA_SAFE_CHARS = (
 )
 
 # 冗余白名单（第三层）：只放"运行期会拼出来、但源码里查不到"的汉字。
-# 目前游戏文本全部来自 .gd/.tscn/.tres/data/*.json，扫描已经覆盖；留空即可。
-EXTRA_SAFE_HANZI = ""
+# 保留叙事用字「祇」，即使当前文本版本没有用到它。
+EXTRA_SAFE_HANZI = "\u7947"
 
 # 冗余白名单（第四层，默认开）：GB2312 一级汉字（3755 个常用字）。
 # 这是给"玩家自己输入的文字"兜底的：主菜单的国名输入框（main_menu.gd 的 %CountryEdit）、
@@ -346,6 +346,10 @@ class FontEntry:
     dest_res: str  # res://.godot/imported/<name>.fontdata
     dest: Path  # 绝对路径
     md5_file: Path
+    # Some shipped WOFF2 files are pre-subsets of the full source TTF.  Use the
+    # paired source TTF for the Web subset when it contains glyphs absent from
+    # the WOFF2, while keeping the original import path and output format.
+    subset_source: Path | None = None
     keep_full: bool = False
     keep_full_reason: str = ""
 
@@ -515,6 +519,11 @@ def discover_fonts(project: Path) -> list[FontEntry]:
                 continue
             dest_res = "res://" + match.group(1)
             dest = project / match.group(1)
+            subset_source: Path | None = None
+            if src.suffix.lower() in {".woff", ".woff2"}:
+                candidate = src.parent / "source" / f"{src.stem}.ttf"
+                if candidate.is_file():
+                    subset_source = candidate
             entries.append(
                 FontEntry(
                     src=src,
@@ -524,6 +533,7 @@ def discover_fonts(project: Path) -> list[FontEntry]:
                     dest_res=dest_res,
                     dest=dest,
                     md5_file=dest.with_suffix(".md5"),
+                    subset_source=subset_source,
                 )
             )
     entries.sort(key=lambda e: e.rel)
@@ -544,13 +554,18 @@ def load_cmap(path: Path) -> set[int]:
         font.close()
 
 
+def subset_input(entry: FontEntry) -> Path:
+    """Return the fullest local source for Web subsetting."""
+    return entry.subset_source or entry.src
+
+
 def decide_keep_full(entry: FontEntry) -> None:
     if entry.src.name in KEEP_FULL_FONT_NAMES:
         entry.keep_full = True
         entry.keep_full_reason = "icon font (PUA codepoints referenced numerically)"
         return
     try:
-        cmap = load_cmap(entry.src)
+        cmap = load_cmap(subset_input(entry))
     except Exception:  # noqa: BLE001
         return
     if not cmap:
@@ -598,7 +613,7 @@ def run_subset(entry: FontEntry, charset: str, out_path: Path, flavor: str | Non
     from fontTools.ttLib import TTFont
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    font = TTFont(str(entry.src), fontNumber=0)
+    font = TTFont(str(subset_input(entry)), fontNumber=0)
     try:
         options = subset_options(flavor)
         subsetter = __import__("fontTools.subset", fromlist=["Subsetter"]).Subsetter(options=options)
@@ -632,7 +647,7 @@ def build_font_plans(project: Path, cache: Path, charset: set[str], force: bool)
         )
 
         try:
-            orig_cmap = load_cmap(entry.src)
+            orig_cmap = load_cmap(subset_input(entry))
         except Exception as exc:  # noqa: BLE001
             die(f"cannot read cmap of {entry.rel}: {exc}")
         plan.orig_cmap_size = len(orig_cmap)
@@ -647,7 +662,7 @@ def build_font_plans(project: Path, cache: Path, charset: set[str], force: bool)
             plans.append(plan)
             continue
 
-        fingerprint = font_cache_fingerprint(entry.src, plan.charset, flavor)
+        fingerprint = font_cache_fingerprint(subset_input(entry), plan.charset, flavor)
         meta_path = cache / "fonts" / (entry.rel + ".json")
         cached = False
         if not force and meta_path.is_file() and out_path.is_file():

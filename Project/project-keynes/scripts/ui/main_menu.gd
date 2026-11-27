@@ -30,6 +30,8 @@ const WEB_PROGRESS_MIN_WIDTH := 280.0
 @onready var _volume_value_label: Label = %VolumeValueLabel
 var _settings_controls: Dictionary = {}
 var _current_page_key := "home"
+var _page_revision := 0
+var _waiting_for_warmup := false
 
 ## Web 预热进度条。**桌面上永远是 null**（不创建任何节点）。
 var _shader_progress: Control = null
@@ -251,7 +253,10 @@ func _safe_area_insets(scaling: Node) -> Dictionary:
 
 func _show_page(page: Control, page_key: String = "home", animate: bool = true) -> void:
 	_status_label.text = ""
+	if _waiting_for_warmup:
+		_finish_warmup_feedback()
 	_current_page_key = page_key
+	_page_revision += 1
 	if _backdrop != null and _backdrop.has_method("set_page_mode"):
 		_backdrop.call("set_page_mode", page_key)
 	for candidate in get_tree().get_nodes_in_group("main_menu_pages"):
@@ -261,8 +266,6 @@ func _show_page(page: Control, page_key: String = "home", animate: bool = true) 
 	if animate and is_inside_tree():
 		var offset := Vector2(-20.0, 0.0) if page_key == "home" else Vector2(24.0, 0.0)
 		UIAnimation.crossfade(page, 0.12) if UIAnimation.reduced_motion() else UIAnimation.page_flip_in(page, offset, UITokens.MENU_PAGE_TRANSITION)
-	if page_key == "home" and animate and not UIAnimation.reduced_motion():
-		UIAnimation.stagger_children_in(%NewGameButton.get_parent(),.035,8,.24)
 	call_deferred("_apply_responsive_layout")
 	call_deferred("_focus_default_for_page", page_key)
 
@@ -341,7 +344,7 @@ func _add_save_slot(slot: Dictionary, save_service) -> void:
 		title_label.text = "空槽位"
 		saved_at_label.text = ""
 		description.text = ""
-		empty_seal.visible = true
+		empty_seal.visible = false
 	var load_button := row.get_node("%LoadButton") as Button
 	_configure_button(load_button, "加载", "history", func() -> void: _load_slot(slot_id), 14)
 	load_button.disabled = not bool(slot.get("loadable", false))
@@ -526,23 +529,34 @@ func _configure_button(button: Button, text_value: String, icon: String,
 	button.pressed.connect(callback)
 
 
+func _finish_warmup_feedback() -> void:
+	_waiting_for_warmup = false
+	if is_instance_valid(_shader_progress):
+		_shader_progress.call("release_pending_button")
+	else:
+		%StartButton.disabled = false
+
+
 func _start_new_game() -> void:
+	if _waiting_for_warmup:
+		return
 	# Web：预热在后台跑，玩家可能先点了开始。这里等它就绪：按钮换成
 	# 「正在准备着色器 n/N…」并禁用，左下角那条同样的进度继续走。
 	# await 的是 WebShaderWarmup.await_ready()，内部逐帧 await process_frame，
 	# 所以等待期间 UI 照常重绘（不是忙等），进度条也照常按已完成张数推进。
 	# 桌面：is_finished() 恒为 true，整段跳过，行为与改动前完全一致。
 	if not WebShaderWarmup.is_finished():
+		_waiting_for_warmup = true
+		var revision := _page_revision
 		var start_button: Button = %StartButton
 		if is_instance_valid(_shader_progress) and _shader_progress.has_method("bind_pending_button"):
 			_shader_progress.call("bind_pending_button", start_button)
 		elif start_button != null:
 			start_button.disabled = true
 		await WebShaderWarmup.await_ready(self)
-		if is_instance_valid(_shader_progress) and _shader_progress.has_method("release_pending_button"):
-			_shader_progress.call("release_pending_button")
-		elif start_button != null and is_instance_valid(start_button):
-			start_button.disabled = false
+		if revision != _page_revision:
+			return
+		_finish_warmup_feedback()
 	var config := NewGameConfig.new()
 	config.country.name = _country_edit.text
 	config.country.foreign_count = int(_foreign_count_box.value)
@@ -566,6 +580,9 @@ func _start_new_game() -> void:
 		"lake_density": int((_advanced_controls.lake_density as SpinBox).value),
 		"river_density": int((_advanced_controls.river_density as SpinBox).value),
 		"volcano_amount": int((_advanced_controls.volcano_amount as SpinBox).value),
+		"terrain_ruggedness": int((_advanced_controls.terrain_ruggedness as SpinBox).value),
+		"terrain_diversity": int((_advanced_controls.terrain_diversity as SpinBox).value),
+		"mineral_abundance": int((_advanced_controls.mineral_abundance as SpinBox).value),
 	}
 	var result := GameFlow.begin_new_game(config)
 	if not bool(result.get("ok", false)):

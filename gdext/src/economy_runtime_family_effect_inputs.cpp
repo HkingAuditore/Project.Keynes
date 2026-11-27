@@ -157,6 +157,8 @@ void NativeEconomyRuntime::set_target_tags(const TargetTagTable &tags) {
         _tag_snapshot_concurrent_writes.fetch_add(1, std::memory_order_relaxed);
     }
     _target_tags = tags;
+    ++_target_tags_generation;
+    _tag_snapshot_static_cache.valid = false;
     // Any published snapshot was derived from the previous table, so it is stale
     // even if the cell columns have not moved.
     std::atomic_store_explicit(&_tag_snapshot,
@@ -296,10 +298,7 @@ void NativeEconomyRuntime::rebuild_epoch_tag_snapshot() {
     if (tags > 0 && cells > 0) {
         const int32_t words = (cells + 63) / 64;
         snapshot->tag_words = words;
-        snapshot->tag_bits.assign(
-            static_cast<size_t>(tags) * static_cast<size_t>(words), uint64_t{0});
         const int32_t metric_count = static_cast<int32_t>(FAMILY_METRIC_COUNT);
-        std::array<int64_t, FAMILY_METRIC_COUNT> values{};
         // Tags with NO rows can never match: `matches()` returns false immediately
         // (`target_tag.h:203`). Precomputing the active set turns a `cells x tags`
         // sweep into `cells x active_tags`, and the shipped catalogue declares far
@@ -323,122 +322,217 @@ void NativeEconomyRuntime::rebuild_epoch_tag_snapshot() {
         const std::vector<int32_t> *consumed =
             (consumers == nullptr || force_all_tags)
                 ? nullptr : &consumers->tag_ids;
-        std::vector<int32_t> active_tags;
-        if (consumed != nullptr && !consumed->empty()) {
-            active_tags.reserve(consumed->size());
-            for (const int32_t tag : *consumed) {
-                if (tag < 0 || tag >= tags) continue;          // stale id
-                if (_target_tags.end(tag) <= _target_tags.begin(tag)) continue;
-                active_tags.push_back(tag);
+        const auto metric_overrides = std::atomic_load_explicit(
+            &_effect_metric_override_snapshot, std::memory_order_acquire);
+        const uint64_t consumers_gen = consumers == nullptr ? 0 : consumers->generation;
+        const bool has_consumers = consumers != nullptr;
+        const uint64_t override_gen =
+            metric_overrides == nullptr ? 0 : metric_overrides->generation;
+
+        auto hash_byte_column = [](uint64_t h, const std::vector<uint8_t> &col) -> uint64_t {
+            constexpr uint64_t kPrime = 1099511628211ull;
+            h ^= static_cast<uint64_t>(col.size());
+            h *= kPrime;
+            const uint8_t *p = col.data();
+            size_t n = col.size();
+            size_t i = 0;
+            for (; i + 8 <= n; i += 8) {
+                uint64_t chunk = 0;
+                std::memcpy(&chunk, p + i, sizeof(chunk));
+                h ^= chunk;
+                h *= kPrime;
             }
-        } else {
-            active_tags.reserve(static_cast<size_t>(tags));
-            for (int32_t tag = 0; tag < tags; ++tag) {
-                if (_target_tags.end(tag) > _target_tags.begin(tag))
-                    active_tags.push_back(tag);
+            for (; i < n; ++i) {
+                h ^= static_cast<uint64_t>(p[i]);
+                h *= kPrime;
             }
+            return h;
+        };
+        uint64_t terrain_landform_hash = 14695981039346656037ull;
+        terrain_landform_hash = hash_byte_column(terrain_landform_hash, _building_terrain);
+        terrain_landform_hash = hash_byte_column(terrain_landform_hash, _building_landform);
+
+        auto &cache = _tag_snapshot_static_cache;
+        const bool cache_hit =
+            cache.valid &&
+            cache.cells == cells &&
+            cache.tag_count == tags &&
+            cache.tag_table_generation == _target_tags_generation &&
+            cache.has_consumers == has_consumers &&
+            cache.consumers_generation == consumers_gen &&
+            cache.metric_override_generation == override_gen &&
+            cache.force_all_tags == force_all_tags &&
+            cache.terrain_landform_hash == terrain_landform_hash;
+
+        if (!cache_hit) {
+            cache.active_tags.clear();
+            if (consumed != nullptr && !consumed->empty()) {
+                cache.active_tags.reserve(consumed->size());
+                for (const int32_t tag : *consumed) {
+                    if (tag < 0 || tag >= tags) continue;          // stale id
+                    if (_target_tags.end(tag) <= _target_tags.begin(tag)) continue;
+                    cache.active_tags.push_back(tag);
+                }
+            } else {
+                cache.active_tags.reserve(static_cast<size_t>(tags));
+                for (int32_t tag = 0; tag < tags; ++tag) {
+                    if (_target_tags.end(tag) > _target_tags.begin(tag))
+                        cache.active_tags.push_back(tag);
+                }
+            }
+
+            // Index category rules by the actual map byte. A cell only visits tags it matches.
+            using CategoryTags = std::array<std::vector<int32_t>, 256>;
+            CategoryTags terrain_tags, landform_tags;
+            bool any_static_category_tag = false;
+            cache.single_row_tags.clear();
+            cache.compound_tags.clear();
+            MetricMask requested_mask;
+            cache.sample_mask = MetricMask{};
+            std::array<int64_t, FAMILY_METRIC_COUNT> values{};
+
+            for (const int32_t tag : cache.active_tags) {
+                const auto first = _target_tags.rows.begin() + _target_tags.begin(tag);
+                const auto last = _target_tags.rows.begin() + _target_tags.end(tag);
+                for (auto row = first; row != last; ++row)
+                    requested_mask.set(row->metric_id);
+                const int32_t id = first->metric_id;
+                const bool categorical = id == FAMILY_METRIC_CELL_TERRAIN ||
+                                         id == FAMILY_METRIC_CELL_LANDFORM;
+                if (categorical && (metric_overrides == nullptr || !metric_overrides->set[id]) &&
+                        std::all_of(first, last, [id](const auto &row) { return row.metric_id == id; })) {
+                    // A pure terrain/landform rule has the same answer for every
+                    // cell of that category, including the missing-column value 0.
+                    auto &by_value = id == FAMILY_METRIC_CELL_TERRAIN ? terrain_tags : landform_tags;
+                    for (size_t value = 0; value < by_value.size(); ++value) {
+                        values[id] = static_cast<int64_t>(value) * Q16_ONE;
+                        if (_target_tags.matches(tag, values.data(), metric_count)) {
+                            by_value[value].push_back(tag);
+                            any_static_category_tag = true;
+                        }
+                    }
+                } else {
+                    if (last - first == 1 && id >= 0 && id < metric_count)
+                        cache.single_row_tags.push_back({tag, *first});
+                    else
+                        cache.compound_tags.push_back(tag);
+                    for (auto row = first; row != last; ++row)
+                        cache.sample_mask.set(row->metric_id);
+                }
+            }
+
+            MetricMask catalog_mask;
+            _target_tags.collect_metric_mask(catalog_mask);
+            cache.catalog_metric_count = catalog_mask.count(metric_count);
+            cache.requested_metric_count = requested_mask.count(metric_count);
+
+            cache.valid_country_slot_count = 0;
+            cache.valid_country_slots.clear();
+            cache.valid_country_slot_tags.clear();
+            for (int32_t slot = 0; slot < kCountryTagCountSlotCount; ++slot) {
+                const char *wanted = kCountryTagCountSlots[slot].tag_name;
+                for (int32_t tag = 0; tag < tags; ++tag) {
+                    if (_target_tags.names[static_cast<size_t>(tag)] == wanted) {
+                        cache.valid_country_slots.push_back(slot);
+                        cache.valid_country_slot_tags.push_back(tag);
+                        ++cache.valid_country_slot_count;
+                        break;
+                    }
+                }
+            }
+
+            cache.static_tag_bits.assign(
+                static_cast<size_t>(tags) * static_cast<size_t>(words), uint64_t{0});
+            if (any_static_category_tag) {
+                const size_t terrain_size = _building_terrain.size();
+                const size_t landform_size = _building_landform.size();
+                const uint8_t *terrain_data = _building_terrain.data();
+                const uint8_t *landform_data = _building_landform.data();
+                uint64_t *static_bits = cache.static_tag_bits.data();
+                for (size_t index = 0; index < static_cast<size_t>(cells); ++index) {
+                    const size_t word = index / 64u;
+                    const uint64_t bit = uint64_t{1} << (index % 64u);
+                    const uint8_t tv = index < terrain_size ? terrain_data[index] : 0;
+                    for (const int32_t tag : terrain_tags[tv])
+                        static_bits[static_cast<size_t>(tag) * words + word] |= bit;
+                    const uint8_t lv = index < landform_size ? landform_data[index] : 0;
+                    for (const int32_t tag : landform_tags[lv])
+                        static_bits[static_cast<size_t>(tag) * words + word] |= bit;
+                }
+            }
+
+            cache.cells = cells;
+            cache.tag_count = tags;
+            cache.tag_table_generation = _target_tags_generation;
+            cache.has_consumers = has_consumers;
+            cache.consumers_generation = consumers_gen;
+            cache.metric_override_generation = override_gen;
+            cache.force_all_tags = force_all_tags;
+            cache.terrain_landform_hash = terrain_landform_hash;
+            cache.valid = true;
         }
-        _tag_active_tag_count = static_cast<int64_t>(active_tags.size());
+
+        _tag_active_tag_count = static_cast<int64_t>(cache.active_tags.size());
         _tag_consumed_tag_count = consumed == nullptr
             ? 0 : static_cast<int64_t>(consumed->size());
         _tag_declared_tag_count = tags;
-        const int32_t active = static_cast<int32_t>(active_tags.size());
-        // The selected tags also define the metric work. Collecting the whole
-        // catalog here sampled unrelated employment, resource and production
-        // metrics on every cell even when only a terrain tag was consumed.
-        // Unknown/empty consumer sets already select all tags above. Direct
-        // metric queries keep their own mask and are not narrowed by this pass.
-        // Index category rules by the actual map byte. A cell only visits tags it matches.
-        using CategoryTags = std::array<std::vector<int32_t>, 256>;
-        CategoryTags terrain_tags, landform_tags;
-        struct SingleRowTag { int32_t tag; TargetTagRow row; };
-        std::vector<SingleRowTag> single_row_tags;
-        std::vector<int32_t> compound_tags;
-        MetricMask requested_mask;
-        MetricMask sample_mask;
-        const auto metric_overrides = std::atomic_load_explicit(
-            &_effect_metric_override_snapshot, std::memory_order_acquire);
-        for (const int32_t tag : active_tags) {
-            const auto first = _target_tags.rows.begin() + _target_tags.begin(tag);
-            const auto last = _target_tags.rows.begin() + _target_tags.end(tag);
-            for (auto row = first; row != last; ++row)
-                requested_mask.set(row->metric_id);
-            const int32_t id = first->metric_id;
-            const bool categorical = id == FAMILY_METRIC_CELL_TERRAIN ||
-                                     id == FAMILY_METRIC_CELL_LANDFORM;
-            if (categorical && (metric_overrides == nullptr || !metric_overrides->set[id]) &&
-                    std::all_of(first, last, [id](const auto &row) { return row.metric_id == id; })) {
-                // A pure terrain/landform rule has the same answer for every
-                // cell of that category, including the missing-column value 0.
-                auto &by_value = id == FAMILY_METRIC_CELL_TERRAIN ? terrain_tags : landform_tags;
-                for (size_t value = 0; value < by_value.size(); ++value) {
-                    values[id] = static_cast<int64_t>(value) * Q16_ONE;
-                    if (_target_tags.matches(tag, values.data(), metric_count))
-                        by_value[value].push_back(tag);
-                }
-            } else {
-                if (last - first == 1 && id >= 0 && id < metric_count)
-                    single_row_tags.push_back({tag, *first});
-                else
-                    compound_tags.push_back(tag);
-                for (auto row = first; row != last; ++row)
-                    sample_mask.set(row->metric_id);
-            }
-        }
-        MetricMask catalog_mask;
-        _target_tags.collect_metric_mask(catalog_mask);
+        const int32_t active = static_cast<int32_t>(cache.active_tags.size());
         _tag_catalog_metrics.store(
-            catalog_mask.count(metric_count), std::memory_order_relaxed);
+            cache.catalog_metric_count, std::memory_order_relaxed);
         _tag_snapshot_requested_metrics.store(
-            requested_mask.count(metric_count), std::memory_order_relaxed);
+            cache.requested_metric_count, std::memory_order_relaxed);
         _tag_snapshot_sampled_cells.store(
             active > 0 ? cells : 0, std::memory_order_relaxed);
-        std::vector<int32_t> overridden_metrics;
-        if (metric_overrides != nullptr) {
-            for (int32_t id = 0; id < metric_count; ++id)
-                if (metric_overrides->set[id]) overridden_metrics.push_back(id);
-        }
+
+        // Seed from cached static terrain/landform bits (single memcpy instead of
+        // zero-fill + per-cell category lookups).
+        snapshot->tag_bits = cache.static_tag_bits;
+
         if (active > 0) {
-            // Give each task whole words of every tag. Metric sampling reads
-            // frozen inputs, and each task owns its value scratch and bit writes.
-            pk::parallel_for_range("pk_economy_tag_words", words,
-                parallel_default_n_tasks(cells), 32, [&](int begin, int end) {
-                std::array<int64_t, FAMILY_METRIC_COUNT> sampled_values{};
-                const auto end_cell = std::min(static_cast<size_t>(cells),
-                                               static_cast<size_t>(end) * 64u);
-                for (size_t index = static_cast<size_t>(begin) * 64u; index < end_cell; ++index) {
-                    const auto cell = static_cast<int32_t>(index);
-                    const size_t word = index / 64u;
-                    const uint64_t bit = uint64_t{1} << (index % 64u);
-                    const auto set_bit = [&](int32_t tag) {
-                        snapshot->tag_bits[static_cast<size_t>(tag) * words + word] |= bit;
-                    };
-                    for (const int32_t tag : terrain_tags[index < _building_terrain.size()
-                            ? _building_terrain[index] : 0]) set_bit(tag);
-                    for (const int32_t tag : landform_tags[index < _building_landform.size()
-                            ? _building_landform[index] : 0]) set_bit(tag);
-                    if (!single_row_tags.empty() || !compound_tags.empty()) {
+            if (!cache.single_row_tags.empty() || !cache.compound_tags.empty()) {
+                std::vector<int32_t> overridden_metrics;
+                if (metric_overrides != nullptr) {
+                    for (int32_t id = 0; id < metric_count; ++id)
+                        if (metric_overrides->set[id]) overridden_metrics.push_back(id);
+                }
+                const auto &single_row_tags = cache.single_row_tags;
+                const auto &compound_tags = cache.compound_tags;
+                const MetricMask sample_mask = cache.sample_mask;
+                // Give each task whole words of every tag. Metric sampling reads
+                // frozen inputs, and each task owns its value scratch and bit writes.
+                // Use min_chunk=8 (512 cells/task) so 2400-6400 cell worlds fan out
+                // across worker threads instead of running single-threaded.
+                pk::parallel_for_range("pk_economy_tag_words", words,
+                    parallel_default_n_tasks(cells), 8, [&](int begin, int end) {
+                    std::array<int64_t, FAMILY_METRIC_COUNT> sampled_values{};
+                    const auto end_cell = std::min(static_cast<size_t>(cells),
+                                                   static_cast<size_t>(end) * 64u);
+                    uint64_t *bits = snapshot->tag_bits.data();
+                    for (size_t index = static_cast<size_t>(begin) * 64u; index < end_cell; ++index) {
+                        const auto cell = static_cast<int32_t>(index);
+                        const size_t word = index / 64u;
+                        const uint64_t bit = uint64_t{1} << (index % 64u);
                         fill_family_behavior_metrics(-1, -1, cell, sampled_values.data(),
                                                      metric_count, sample_mask);
                         for (const int32_t id : overridden_metrics)
                             sampled_values[id] = metric_overrides->values[id];
                         for (const auto &entry : single_row_tags) {
                             if (TargetTagTable::row_matches(entry.row, sampled_values[entry.row.metric_id]))
-                                set_bit(entry.tag);
+                                bits[static_cast<size_t>(entry.tag) * words + word] |= bit;
                         }
                         for (const int32_t tag : compound_tags) {
                             if (_target_tags.matches(tag, sampled_values.data(), metric_count))
-                                set_bit(tag);
+                                bits[static_cast<size_t>(tag) * words + word] |= bit;
                         }
                     }
-                }
-            });
+                });
+            }
             // Overrides affect selected tags even when their rule did not match.
             if (tag_overrides != nullptr) {
                 for (const auto &[cell, overrides] : tag_overrides->cells) {
                     if (cell < 0 || cell >= cells) continue;
                     const uint64_t bit = uint64_t{1} << (cell % 64);
-                    for (const int32_t tag : active_tags) {
+                    for (const int32_t tag : cache.active_tags) {
                         if (static_cast<size_t>(tag) >= overrides.size()) continue;
                         auto &word = snapshot->tag_bits[static_cast<size_t>(tag) * words + cell / 64];
                         if (overrides[tag].force_true) word |= bit;
@@ -454,41 +548,42 @@ void NativeEconomyRuntime::rebuild_epoch_tag_snapshot() {
     if (snapshot->tag_words > 0 && cells > 0 &&
         _epoch_cell_country.size() >= static_cast<size_t>(cells)) {
         int32_t countries = _epoch_country_count;
+        const int32_t *cell_countries = _epoch_cell_country.data();
         for (int32_t cell = 0; cell < cells; ++cell) {
-            const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
+            const int32_t country = cell_countries[cell];
             if (country >= countries) countries = country + 1;
         }
         if (countries > 0) {
-            int32_t tag_index[kCountryTagCountSlotCount];
-            for (int32_t slot = 0; slot < kCountryTagCountSlotCount; ++slot) {
-                tag_index[slot] = -1;
-                const std::string wanted = kCountryTagCountSlots[slot].tag_name;
-                for (int32_t tag = 0; tag < tags; ++tag) {
-                    if (_target_tags.names[static_cast<size_t>(tag)] == wanted) {
-                        tag_index[slot] = tag;
-                        break;
-                    }
-                }
-            }
             snapshot->country_count = countries;
             snapshot->country_tag_counts.assign(
                 static_cast<size_t>(countries) *
                     static_cast<size_t>(kCountryTagCountSlotCount), 0);
-            for (int32_t cell = 0; cell < cells; ++cell) {
-                const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
-                if (country < 0 || country >= countries) continue;
-                const size_t word = static_cast<size_t>(cell / 64);
-                const uint64_t bit = uint64_t{1} << (cell % 64);
-                const size_t row = static_cast<size_t>(country) *
-                    static_cast<size_t>(kCountryTagCountSlotCount);
-                for (int32_t slot = 0; slot < kCountryTagCountSlotCount; ++slot) {
-                    const int32_t tag = tag_index[slot];
-                    if (tag < 0) continue;
-                    const size_t index = static_cast<size_t>(tag) *
-                        static_cast<size_t>(snapshot->tag_words) + word;
-                    if (index >= snapshot->tag_bits.size()) continue;
-                    if ((snapshot->tag_bits[index] & bit) == 0) continue;
-                    ++snapshot->country_tag_counts[row + static_cast<size_t>(slot)];
+            const auto &cache = _tag_snapshot_static_cache;
+            const int32_t valid_slots = cache.valid ? cache.valid_country_slot_count : 0;
+            if (valid_slots > 0) {
+                const size_t tag_words = static_cast<size_t>(snapshot->tag_words);
+                const uint64_t *bits = snapshot->tag_bits.data();
+                const size_t bits_size = snapshot->tag_bits.size();
+                int32_t *counts = snapshot->country_tag_counts.data();
+                std::array<size_t, kCountryTagCountSlotCount> slot_tag_bases{};
+                for (int32_t i = 0; i < valid_slots; ++i) {
+                    slot_tag_bases[static_cast<size_t>(i)] =
+                        static_cast<size_t>(cache.valid_country_slot_tags[static_cast<size_t>(i)]) *
+                        tag_words;
+                }
+                for (int32_t cell = 0; cell < cells; ++cell) {
+                    const int32_t country = cell_countries[cell];
+                    if (country < 0 || country >= countries) continue;
+                    const size_t word = static_cast<size_t>(cell) >> 6;
+                    const uint64_t bit = uint64_t{1} << (cell & 63);
+                    const size_t row = static_cast<size_t>(country) *
+                        static_cast<size_t>(kCountryTagCountSlotCount);
+                    for (int32_t i = 0; i < valid_slots; ++i) {
+                        const size_t index = slot_tag_bases[static_cast<size_t>(i)] + word;
+                        if (index < bits_size && (bits[index] & bit) != 0) {
+                            ++counts[row + static_cast<size_t>(cache.valid_country_slots[static_cast<size_t>(i)])];
+                        }
+                    }
                 }
             }
         }

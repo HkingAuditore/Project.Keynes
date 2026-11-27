@@ -36,22 +36,14 @@ grow_vertical = 0
 mouse_filter = 2
 
 [node name="Card" type="PanelContainer" parent="Center" unique_id=2121466307]
-custom_minimum_size = Vector2(620, 176)
+custom_minimum_size = Vector2(240, 120)
 layout_mode = 2
-theme_type_variation = &"PKCountryPage"
+theme_type_variation = &"PKArchivePanel"
 
 [node name="Content" type="VBoxContainer" parent="Center/Card" unique_id=110747042]
 layout_mode = 2
 theme_override_constants/separation = 7
 alignment = 1
-
-[node name="CompassDial" type="Control" parent="Center/Card/Content" unique_id=1756594000]
-visible = true
-unique_name_in_owner = true
-custom_minimum_size = Vector2(44, 44)
-layout_mode = 2
-size_flags_horizontal = 4
-mouse_filter = 2
 
 [node name="Title" type="Label" parent="Center/Card/Content" unique_id=135557739]
 layout_mode = 2
@@ -93,7 +85,7 @@ layout_mode = 2
 theme_override_constants/separation = 6
 
 [node name="DetailText" type="TextEdit" parent="Center/Card/Content/FailureDetail"]
-custom_minimum_size = Vector2(560, 200)
+custom_minimum_size = Vector2(0, 160)
 layout_mode = 2
 theme_override_colors/font_readonly_color = Color(0.16, 0.12, 0.08, 1)
 theme_override_font_sizes/font_size = 12

@@ -215,14 +215,23 @@ class Pck:
 # 把 pck 内路径折回源资源（.import → source_file）
 # --------------------------------------------------------------------------
 class SourceIndex:
-    """扫工程目录的所有 *.import，建立 dest → source 的反查表。"""
+    """用包内 .import 反查源路径，工程目录只补充导入参数等信息。"""
 
-    def __init__(self, project_dir: str) -> None:
+    def __init__(self, project_dir: str, pck: Pck) -> None:
         self.project_dir = project_dir
         self.dest_to_source: dict[str, str] = {}
         # 导出转换产物 `.godot/exported/<n>/export-<hash>-<name>.<ext>` 的 basename → 源
         self.basename_to_source: dict[str, str] = {}
         self.import_params: dict[str, dict[str, str]] = {}
+        for entry in pck.entries:
+            if entry.path.endswith(".import"):
+                source = "res://" + entry.path[:-len(".import")]
+                metadata = pck._mm[entry.offset:entry.offset + entry.size].decode("utf-8", "replace")
+                for line in metadata.splitlines():
+                    key, _, value = line.strip().partition("=")
+                    destination = value.strip('"')
+                    if (key == "path" or key.startswith("path.")) and destination.startswith("res://"):
+                        self.dest_to_source.setdefault(destination, source)
         self._scan()
 
     def _scan(self) -> None:
@@ -230,7 +239,8 @@ class SourceIndex:
             return
         for root, dirs, files in os.walk(self.project_dir):
             # 跳过 .git / .godot / 构建产物，但 .godot 下的 *.import 不需要（没有）
-            dirs[:] = [d for d in dirs if d not in (".git", ".godot", "__pycache__")]
+            dirs[:] = [d for d in dirs if d not in (".git", ".godot", "__pycache__")
+                       and not os.path.isfile(os.path.join(root, d, ".gdignore"))]
             for fn in files:
                 if not fn.endswith(".import"):
                     continue
@@ -455,7 +465,7 @@ def main(argv: list[str]) -> int:
         return 2
 
     pck = Pck(args.pck)
-    index = SourceIndex(args.project)
+    index = SourceIndex(args.project, pck)
     rows = build_rows(pck, index, max_params=1 if args.detail else 0)
 
     sink = sys.stdout

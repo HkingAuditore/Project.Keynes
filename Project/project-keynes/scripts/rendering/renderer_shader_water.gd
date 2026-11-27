@@ -516,7 +516,8 @@ static func _apply_water_uniforms(host) -> void:
 				var value = host._shader_mat.get_shader_parameter(key)
 				if value != null:
 					host._water_mat.set_shader_parameter(key, value)
-	if ShaderVariants._world_lighting_field_active(host):
+	if ShaderVariants._world_lighting_field_active(host) \
+			or host._water_variant_prefix.contains(ShaderVariants.WORLD_LIGHTING_DEFINE):
 		host._push_world_lighting_field_inputs()
 
 

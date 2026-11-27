@@ -47,6 +47,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -76,10 +77,6 @@ RULES: list[tuple[str, dict[str, str], int]] = [
 
     # 图标集：屏幕显示尺寸小（1080p 下 32~64 px）
     ("res://assets/icons/**", {"compress/mode": "1", "compress/lossy_quality": "0.55"}, 0),
-
-    # 地形材质：1024^2 平铺细节图，铺满整张地图，质量给高一些
-    ("res://assets/textures/terrain_materials/**",
-     {"compress/mode": "1", "compress/lossy_quality": "0.80"}, 0),
 
     # 2D 数组纹理（地面覆盖 / 树冠，按 sprite 采样）。法线一旦出块状伪影会毁掉受光，
     # 近景地图精灵保持高压缩质量（q=0.90），mipmaps 保留（远处 minify 靠它）。
@@ -119,6 +116,7 @@ KEEP: list[tuple[str, str]] = [
     ("res://assets/fonts/**", "字体：子集化由 Build-Web 另一条钩子负责，这里不碰"),
     ("res://assets/textures/loading_prebaked_v1/**",
      "预烘焙 .res 由 export_presets 的 exclude_filter 处理（见报告 §5）"),
+    ("res://assets/textures/terrain_materials/**", "Web 预设排除原图，运行时读预烘焙材质"),
     ("res://assets/textures/resource_art/source/**", "原图源，游戏不直接引用"),
     ("res://**.svg", "矢量图标：光栅化后是锐利线稿，lossy 反而出振铃，且单文件 < 2 KB"),
 ]
@@ -180,16 +178,15 @@ MAX_DIM_RULES: list[tuple[str, int]] = [
 ]
 
 # ---- 按倍率缩放（web-only，单张整图）---------------------------------------
-# 默认保留地图精灵（地表覆盖层 / 树冠 / 动物 / 贸易车船）的桌面原尺寸（scale=1.0），
-# 保证 PC-Web 近景锐度与 PC 一致；需要极限压包时可设环境变量（如 =0.5）启用降采样：
-#   PK_WEB_RESOURCE_ART_SCALE=1.0  不缩（默认）
-#   PK_WEB_RESOURCE_ART_SCALE=0.5  各边减半
+# Web 的地表覆盖、树冠和动物图集默认缩至原图边长的 1/4；车船图集保持原尺寸。
+# 设置 PK_WEB_RESOURCE_ART_SCALE=1 可恢复 Web 的原图尺寸。
+RESOURCE_ART_SCALE = 0.25
 SCALE_RULES: list[tuple[str, str, float]] = [
-    ("assets/textures/resource_art/cover_albedo.png", "PK_WEB_RESOURCE_ART_SCALE", 1.0),
-    ("assets/textures/resource_art/cover_normal.png", "PK_WEB_RESOURCE_ART_SCALE", 1.0),
-    ("assets/textures/resource_art/crown_atlas.png", "PK_WEB_RESOURCE_ART_SCALE", 1.0),
-    ("assets/textures/resource_art/crown_normal.png", "PK_WEB_RESOURCE_ART_SCALE", 1.0),
-    ("assets/textures/resource_art/fauna_atlas.png", "PK_WEB_RESOURCE_ART_SCALE", 1.0),
+    ("assets/textures/resource_art/cover_albedo.png", "PK_WEB_RESOURCE_ART_SCALE", RESOURCE_ART_SCALE),
+    ("assets/textures/resource_art/cover_normal.png", "PK_WEB_RESOURCE_ART_SCALE", RESOURCE_ART_SCALE),
+    ("assets/textures/resource_art/crown_atlas.png", "PK_WEB_RESOURCE_ART_SCALE", RESOURCE_ART_SCALE),
+    ("assets/textures/resource_art/crown_normal.png", "PK_WEB_RESOURCE_ART_SCALE", RESOURCE_ART_SCALE),
+    ("assets/textures/resource_art/fauna_atlas.png", "PK_WEB_RESOURCE_ART_SCALE", RESOURCE_ART_SCALE),
     ("assets/vfx/trade/vehicles_topdown_v2.png", "PK_WEB_TRADE_VEHICLE_SCALE", 1.0),
 ]
 
@@ -519,24 +516,18 @@ def _resize_source(img, target: tuple[int, int], tiled: bool):
     return img.resize(target, Image.BOX if tiled else Image.LANCZOS)
 
 
-def _backup_and_resize_sources(project: str, backup_root: str) -> list[dict[str, Any]]:
-    """把命中上限的源图临时缩到 max_dim（备份 + sha 校验），供 begin 阶段的重导入使用。
-
-    桌面 import 状态由 cmd_end 还原（`_restore_resized_sources` + 重导入），
-    所以这里不需要、也不允许改任何 .import 之外的东西。
-    """
+def _stage_resized_sources(project: str, backup_root: str) -> list[dict[str, Any]]:
+    """在备份目录准备缩小后的源图，写入恢复清单后才替换工程文件。"""
     targets = _collect_resize_targets(project)
     if not targets:
-        return []
-    try:
-        from PIL import Image  # noqa: PLC0415 - 构建机才需要 Pillow
-    except ImportError:
-        print("[tex] !! Pillow 未安装，跳过源图缩放（pip install pillow）；"
-              "或设 PK_WEB_SKIP_SOURCE_RESIZE=1 消除本提示", file=sys.stderr)
         return []
     if os.environ.get("PK_WEB_SKIP_SOURCE_RESIZE") == "1":
         print("[tex] PK_WEB_SKIP_SOURCE_RESIZE=1 -> 跳过源图缩放")
         return []
+    try:
+        from PIL import Image  # noqa: PLC0415 - 构建机才需要 Pillow
+    except ImportError as exc:
+        raise RuntimeError("源图缩放需要 Pillow：python -m pip install pillow") from exc
 
     entries: list[dict[str, Any]] = []
     total_before = total_after = 0
@@ -569,9 +560,10 @@ def _backup_and_resize_sources(project: str, backup_root: str) -> list[dict[str,
             work = img.convert("RGBA") if img.mode not in ("RGBA", "RGB") else img.copy()
         tiled = any(fnmatch.fnmatch(t["rel"], pat) for pat in TILED_PATTERNS)
         work = _resize_source(work, target, tiled)
-        work.save(src, format="PNG", optimize=True)
+        resized_path = dst + ".resized.png"
+        work.save(resized_path, format="PNG", optimize=True)
         entry.update({"resized": True, "dims_after": list(target),
-                      "size_after": os.path.getsize(src)})
+                      "size_after": os.path.getsize(resized_path), "resized_path": resized_path})
         total_before += entry["size_before"]
         total_after += entry["size_after"]
         print(f"[tex] 源图缩小 {t['rel']} {before} -> {target} "
@@ -719,7 +711,7 @@ def cmd_begin(args: Any, state: str) -> int:
             raise RuntimeError(f"备份校验失败: {src}")
 
     res_entries = _backup_res_stubs(project, backup_root)
-    resized_sources = _backup_and_resize_sources(project, backup_root)
+    resized_sources = _stage_resized_sources(project, backup_root)
 
     def save_manifest(totals: dict[str, int] | None = None) -> None:
         payload: dict[str, Any] = {
@@ -740,6 +732,9 @@ def cmd_begin(args: Any, state: str) -> int:
     print(f"[tex] 已备份 {len(entries)} 个 .import + {len(res_entries)} 个 .res -> {backup_root}")
 
     try:
+        for entry in resized_sources:
+            if entry["resized"]:
+                shutil.copy2(entry["resized_path"], entry["abspath"])
         for path, data in to_write:
             with open(path, "wb") as fh:
                 fh.write(data)
@@ -788,7 +783,7 @@ def cmd_begin(args: Any, state: str) -> int:
                 b = sum(max(0, v) for v in e["dest_sizes_before"].values())
                 a = sum(max(0, v) for v in e["dest_sizes_after"].values())
                 print(f"       {e['res_path'].replace('res://', '')}: {human(b)} -> {human(a)}")
-                shutil.copy2(e["backup"], e["import_abspath"])
+                _restore_import_bytes(e["backup"], e["import_abspath"])
                 e["reverted"] = True
             # 退回 .import 之后缓存里还是 web 规格的 ctex，必须再导一遍把产物也换回来；
             # 否则 pck 里装的是"web 参数生成的图"，而我们声明的是"保留原图"。
@@ -831,12 +826,23 @@ def cmd_begin(args: Any, state: str) -> int:
                   f"{human(b):>10s} {human(a):>10s} {human(b - a):>10s}")
         return 0
     except BaseException:
-        # 任何失败：立刻还原，绝不把半改状态留给导出
+        # 还原源文件和导入缓存。还原失败时保留清单供下次恢复。
         print("[tex] !! 降规格失败，立刻还原", file=sys.stderr)
-        _restore_files(entries)
-        _restore_res_stubs(res_entries)
-        _drop_manifest(manifest_path)
+        if cmd_end(args, state) != 0:
+            print("[tex] !! 自动还原未完成，请运行 restore", file=sys.stderr)
         raise
+
+
+def _restore_import_bytes(backup: str, path: str) -> None:
+    # Replace the directory entry instead of truncating a file Godot just mapped.
+    fd, staged = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as destination, open(backup, "rb") as original:
+            destination.write(original.read())
+        os.replace(staged, path)
+    finally:
+        if os.path.exists(staged):
+            os.remove(staged)
 
 
 def _restore_files(entries: list[dict[str, Any]]) -> None:
@@ -861,7 +867,8 @@ def _restore_files(entries: list[dict[str, Any]]) -> None:
             raise RuntimeError(f"缺少 .import 备份，拒绝继续（状态未知）: {path}")
         if not expected or sha256_file(backup) != expected:
             raise RuntimeError(f"备份文件自身不完整/已损坏，拒绝写回: {backup}")
-        shutil.copy2(backup, path)
+        if not os.path.isfile(path) or sha256_file(path) != expected:
+            _restore_import_bytes(backup, path)
         got = sha256_file(path)
         if got != expected:
             raise RuntimeError(
@@ -872,14 +879,6 @@ def _restore_files(entries: list[dict[str, Any]]) -> None:
         restored += 1
     if restored:
         print(f"[tex] 已整文件还原 {restored} 个 .import（每个都用 sha256 校验过）")
-
-
-def _drop_manifest(manifest_path: str) -> None:
-    try:
-        if os.path.exists(manifest_path):
-            os.remove(manifest_path)
-    except OSError:
-        pass
 
 
 def cmd_end(args: Any, state: str) -> int:

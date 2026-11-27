@@ -5,6 +5,10 @@ extends "res://scripts/simulation/generator_context.gd"
 const RESOURCE_SCALAR_STRIDE := 32
 const MIN_DEPOSIT_QUOTA_LANDMASS_CELLS := 8
 
+func _mineral_density_multiplier(cfg) -> float:
+	return cfg.resource_density_multiplier() if cfg is MapConfig else 1.0
+
+
 func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = false) -> void:
 	if map_ref == null:
 		return
@@ -61,10 +65,12 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 		base_seed = int(cfg.get("seed"))
 	var province_noises: Dictionary = {}
 	var belt_noises: Dictionary = {}
+	var mineral_multiplier := _mineral_density_multiplier(cfg)
 	for p in ResourceProfileRegistry.ordered():
 		var field: String = ResourceProfileRegistry.reserve_map_field(p)
 		if field == "":
 			continue
+		var coverage_multiplier := 1.0 if p.geology_family_id.is_empty() else mineral_multiplier
 		var arr: PackedFloat32Array = map_ref.get(field)
 		if arr.size() < n_cells:
 			arr.resize(n_cells)
@@ -108,12 +114,13 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 		var use_province := have_pos and not family_id.is_empty() and absf(p.init_province) > 0.0
 		var use_belt := have_pos and not family_id.is_empty() and absf(p.init_belt) > 0.0
 		var ranked_cells := []
-		var target_coverage := clampf(float(p.init_target_coverage), 0.0, 1.0)
+		var target_coverage := clampf(float(p.init_target_coverage) * coverage_multiplier, 0.0, 1.0)
+		var min_coverage := clampf(float(p.init_min_coverage) * coverage_multiplier, 0.0, 1.0)
 		var use_ranked_distribution := target_coverage > 0.0
 		var use_landmass_quota: bool = not landmass_labels.is_empty() \
 			and p.init_continent_floor_cells > 0 and p.init_min_reserve > 0.0
 		var collect_ranked: bool = use_ranked_distribution or use_landmass_quota \
-			or (p.init_min_coverage > 0.0 and p.init_min_reserve > 0.0)
+			or (min_coverage > 0.0 and p.init_min_reserve > 0.0)
 		# 噪声按「资源」独立创建（map seed ⊕ 资源 id hash），保证可复现且各资源斑块互不重合。
 		var noise: FastNoiseLite = null
 		if use_noise:
@@ -205,7 +212,7 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 				float(ranked_cells.size()) * target_coverage))
 		else:
 			target_cells = mini(ranked_cells.size(), ceili(
-				float(ranked_cells.size()) * clampf(float(p.init_min_coverage), 0.0, 1.0)))
+				float(ranked_cells.size()) * min_coverage))
 		if target_cells > 0:
 			ranked_cells.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 				if not is_equal_approx(float(a.suit), float(b.suit)):
@@ -217,7 +224,7 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 				var micro_target := mini(
 					ranked_cells.size() - target_cells,
 					ceili(float(ranked_cells.size()) * clampf(
-						float(p.init_micro_coverage), 0.0, 1.0)))
+						float(p.init_micro_coverage) * coverage_multiplier, 0.0, 1.0)))
 				var micro_cells := _select_micro_deposit_cells(
 					ranked_cells, target_cells, micro_target,
 					neighbor_indices, have_neighbors)
@@ -406,22 +413,24 @@ func _build_resource_deposit_knobs(map_ref, cfg) -> Dictionary:
 	var belt_refs: Array = []
 	var province_noises: Dictionary = {}
 	var belt_noises: Dictionary = {}
+	var mineral_multiplier := _mineral_density_multiplier(cfg)
 
 	for r in range(resource_count):
 		var p = rows[r]
 		var base: int = r * RESOURCE_SCALAR_STRIDE
+		var coverage_multiplier := 1.0 if p.geology_family_id.is_empty() else mineral_multiplier
 		scalars[base + 0] = float(p.init_base)
 		scalars[base + 1] = float(p.init_temp)
 		scalars[base + 2] = float(p.init_moisture)
 		scalars[base + 3] = float(p.init_reserve_scale)
 		scalars[base + 4] = float(p.init_floor_reserve)
-		scalars[base + 5] = float(p.init_min_coverage)
+		scalars[base + 5] = float(p.init_min_coverage) * coverage_multiplier
 		scalars[base + 6] = float(p.init_min_reserve)
-		scalars[base + 7] = float(p.init_target_coverage)
+		scalars[base + 7] = float(p.init_target_coverage) * coverage_multiplier
 		scalars[base + 8] = float(p.init_target_reserve_density)
 		scalars[base + 9] = float(p.init_target_mean_reserve)
 		scalars[base + 10] = float(p.init_richness_exponent)
-		scalars[base + 11] = float(p.init_micro_coverage)
+		scalars[base + 11] = float(p.init_micro_coverage) * coverage_multiplier
 		scalars[base + 12] = float(p.init_micro_reserve_share)
 		scalars[base + 13] = float(p.init_micro_min_reserve)
 		scalars[base + 14] = float(p.init_elevation)

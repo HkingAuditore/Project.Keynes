@@ -87,6 +87,8 @@ rem   Build-Web.cmd skip-native-debug  export debug only, reuse the debug wasm
 rem ===========================================================================
 
 set "ROOT=%~dp0..\"
+rem Web runtime uses portable Vorbis; opt into bundling FMOD for diagnostics.
+if /i not "%PK_WEB_ENABLE_FMOD%"=="1" set "PK_WEB_SKIP_FMOD=1"
 set "MODE=%~1"
 if "%MODE%"=="" set "MODE=release"
 
@@ -209,14 +211,11 @@ if errorlevel 1 (
 echo [prebake] ok
 
 rem --- 3.5 web texture downgrade (web only, temporary import-cache swap) -------
-rem The pck ships .godot\imported\*.ctex, so the only lever is what they contain:
-rem every 2D texture is currently lossless WebP (compress/mode=0). This re-imports
-rem UI/icon textures as lossy WebP (q=0.55) while keeping 1024/512 terrain material
-rem .res sets and map sprites (resource_art / trade vehicles) at full desktop resolution.
-rem Resolution is untouched; desktop state is restored byte-for-byte afterwards
-rem (also on the failure path). Measured with textures only: 282.75 -> 132.17 MiB.
-rem Skipping is a supported fallback: PK_WEB_SKIP_TEXTURE_DOWNGRADE=1.
+rem Reimport Web textures and resize both terrain material prebake sets.
+rem The texture tool restores the desktop inputs after the export.
 set "TEX_DOWNGRADE_ACTIVE="
+if not defined PK_WEB_SHRINK_TERRAIN_MATERIALS set "PK_WEB_SHRINK_TERRAIN_MATERIALS=1"
+if not defined PK_WEB_TERRAIN_STUB_1024 set "PK_WEB_TERRAIN_STUB_1024=64"
 if defined PK_WEB_SKIP_TEXTURE_DOWNGRADE (
     echo [tex] skipped ^(PK_WEB_SKIP_TEXTURE_DOWNGRADE=1^): pck keeps lossless WebP textures
 ) else (
@@ -233,24 +232,21 @@ if defined PK_WEB_SKIP_TEXTURE_DOWNGRADE (
 )
 
 rem --- 3.6 cloud-shadow prebake shrink (web only) ------------------------------
-rem assets\textures\cloud_shadow\*.res 存的是**裸 Image**（1024^2 RGBA8 + mipmap，
-rem 各 5.33 MB），不是导入纹理，所以上面那套 .import 参数对它完全无效 —— 只能改
-rem 内容本身。云影是低频的（云团直径约 62 texel），1080p 下 512 与 1024 看不出
-rem 差别，字节数只有 1/4。脚本自己备份成 <name>.1024.bak，restore 用 md5 可验。
-rem Skipping is a supported fallback: PK_WEB_SKIP_CLOUD_SHRINK=1.
+rem Resize the two pre-baked cloud shadow Images from 1024 to 64 per axis.
+rem Set PK_WEB_SKIP_CLOUD_SHRINK=1 to export the original prebakes.
 set "CLOUD_SHRINK_ACTIVE="
 if defined PK_WEB_SKIP_CLOUD_SHRINK (
     echo [cloud] skipped ^(PK_WEB_SKIP_CLOUD_SHRINK=1^): cloud shadows stay at 1024
 ) else (
-    echo [cloud] shrinking cloud-shadow prebake to 512 ^(1024 -^> 512 per axis^) ...
+    set "CLOUD_SHRINK_ACTIVE=1"
+    echo [cloud] shrinking cloud-shadow prebakes to 64x64 ...
     "%GODOT%" --headless --path "%ROOT%Project\project-keynes" ^
-        --script res://tools/web_cloud_shadow_shrink.gd -- shrink 512 >"%LOG_DIR%\web_cloud_shadow.log" 2>&1
+        --script res://tools/web_cloud_shadow_shrink.gd -- shrink 64 >"%LOG_DIR%\web_cloud_shadow.log" 2>&1
     if errorlevel 1 (
         echo === ERROR: cloud-shadow shrink FAILED ^(see "%LOG_DIR%\web_cloud_shadow.log"^) ===
         echo === Skip it with: set PK_WEB_SKIP_CLOUD_SHRINK=1 ===
         goto :fail
     )
-    set "CLOUD_SHRINK_ACTIVE=1"
 )
 
 
@@ -350,6 +346,7 @@ call :fmod_disable
 if errorlevel 1 goto :fail
 
 call :cloud_end
+if errorlevel 1 goto :fail
 call :font_subset_restore
 call :tex_end
 if errorlevel 1 goto :fail
@@ -383,7 +380,7 @@ echo [cloud] restoring the 1024 cloud-shadow prebake ...
 if errorlevel 1 (
     echo === WARNING: cloud-shadow restore FAILED ===
     echo Run: "%GODOT%" --headless --path Project\project-keynes --script res://tools/web_cloud_shadow_shrink.gd -- restore
-    echo Until then the editor/desktop builds use the 512 cloud-shadow textures.
+    echo Until then the editor/desktop builds use the 64x64 cloud-shadow textures.
     exit /b 1
 )
 set "CLOUD_SHRINK_ACTIVE="
@@ -450,15 +447,8 @@ rem .godot\extension_list.cfg lists it, and verify. Must happen BEFORE the expor
 rem (runtime load_extension deadlocks the browser main thread) and BEFORE
 rem :bank_begin (the .bank importer only exists while FmodGodot is registered).
 rem
-rem PK_WEB_SKIP_FMOD=1 -> leave the addon out entirely (silent package).
-rem 2026-11-23: the only web binary FmodGodot ships is the pthreads one, and the
-rem pthreads side module is exactly what traps at boot ("operation does not
-rem support unaligned accesses" out of dynamic-linking + pthreads). Until
-rem gdext\fmod_godot is rebuilt single-threaded there is nothing to register:
-rem registering it only bakes "No GDExtension library found (web.wasm32)" into
-rem the package. Audio is off on web either way in that configuration.
 if defined PK_WEB_SKIP_FMOD (
-    echo [fmod] skipped ^(PK_WEB_SKIP_FMOD=1^): package ships without FMOD ^(no audio^)
+    echo [fmod] skipped: Web audio uses Godot/Vorbis
     exit /b 0
 )
 rem FMOD_ENABLED is set before the call so the failure path still tries to restore.

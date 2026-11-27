@@ -384,7 +384,7 @@ static func log_seed(knobs: Dictionary, seed_res: Dictionary, landmass_count: in
 	var landmass_ids := PackedInt32Array()
 	var classes_out := PackedStringArray()
 	var foods_out := PackedStringArray()
-	generator._bio_landmass_summary_gdscript(
+	generator._get_terrain_generator()._bio_landmass_summary_gdscript(
 		seed_res.get("occupancy_bits", PackedInt32Array()),
 		knobs.get("landmass_ids", PackedInt32Array()),
 		knobs, landmass_ids, classes_out, foods_out)
@@ -408,7 +408,7 @@ static func ensure_after_boot(generator, map_ref, seed_res: Dictionary) -> Dicti
 			break
 	if not missing:
 		return {}
-	var knobs: Dictionary = generator._bio_occupancy_base_knobs(map_ref)
+	var knobs: Dictionary = generator._bio_occupancy_base_knobs(map_ref, true)
 	if not bool(knobs.get("ok", false)):
 		return {"ok": false, "reason": "knobs_unavailable"}
 	knobs["landmass_ids"] = map_ref.landmass_id_arr

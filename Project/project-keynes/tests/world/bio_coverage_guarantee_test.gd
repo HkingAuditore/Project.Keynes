@@ -58,16 +58,42 @@ func _run() -> void:
 		var repeat_ok := second.get("map", null) is MapData \
 			and (second.map as MapData).bio_occupancy_bits_arr == initial_occupancy
 		_expect("%s occupancy is deterministic for one seed" % str(size), repeat_ok)
+	await _test_initial_density(catalog)
 	print("=== bio coverage guarantee: %d checks, %d failures ===" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 
 
-func _generate(size: Vector2i) -> Dictionary:
+func _test_initial_density(catalog: Dictionary) -> void:
+	var occupancies := PackedInt32Array()
+	for density in [0, 50, 100]:
+		var result := await _generate(Vector2i(60, 40), density)
+		var map: MapData = result.get("map")
+		_expect("density %d generates a world" % density, map != null)
+		if map == null:
+			return
+		var counts := _species_counts(map, catalog)
+		_expect("density %d preserves species coverage and stack limits" % density,
+			not counts.is_empty() and counts.count(0) == 0 and _max_stack(map) <= 3)
+		var total := 0
+		for count in counts:
+			total += count
+		occupancies.append(total)
+		var generator: MapGenerator = result.generator
+		var daily := generator._bio_occupancy_base_knobs(map)
+		_expect("density %d preserves daily species fill parameters" % density,
+			daily.species_fill_keep == catalog.research_bio_fill_keep)
+	print("[species-density] species-cell pairs at 0/50/100: %s" % str(occupancies))
+	_expect("higher density produces more species-cell pairs",
+		occupancies[0] < occupancies[1] and occupancies[1] < occupancies[2])
+
+
+func _generate(size: Vector2i, density: int = MapConfig.DEFAULT_GENERATION_LEVEL) -> Dictionary:
 	var profile: ClimateProfile = load("res://data/world/earth_like.tres").duplicate(true)
 	profile.native_generation_mode = ClimateProfile.NATIVE_MODE_ACTIVE
 	profile.native_environment_runtime_enabled = false
 	var cfg := MapConfig.make(size.x, size.y)
 	cfg.seed = SEED
+	cfg.mineral_abundance = density
 	cfg.num_continents = 1
 	cfg.sea_level = 0.45
 	cfg.continent_size = 0.82

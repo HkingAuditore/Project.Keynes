@@ -120,6 +120,10 @@
     // valid for the runtime's lifetime. Interning also collapses the per-cell key
     // construction the collector would otherwise repeat.
     mutable std::unordered_set<std::string> _program_key_pool;
+    // Cached exact metric mask per derived program key, populated from
+    // `FamilyEffectMetadataPod::metric_mask` during collection so the ramp
+    // sampler only pulls metrics the program actually reads.
+    mutable std::unordered_map<std::string, MetricMask> _derived_program_metric_masks;
     const std::string *intern_program_key(const std::string &key) const;
 
     DerivedProgramMagnitudeSampler _derived_program_sampler;

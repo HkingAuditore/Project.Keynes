@@ -65,6 +65,8 @@ const CLIMATE_GROUPS := [
 	{
 		"title": "山脉与地形",
 		"fields": [
+			{"name": "terrain_ruggedness", "label": "地形崎岖度", "hint": "调高会加强山脊与高低起伏。程序生成时生效。", "type": "int", "default": MapConfig.DEFAULT_GENERATION_LEVEL, "min": 0, "max": 100, "step": 1},
+			{"name": "terrain_diversity", "label": "地貌与生态多样性", "hint": "调高会拉大局部干湿差异，让台地、裂谷和干旱荒地更易形成。程序生成时生效。", "type": "int", "default": MapConfig.DEFAULT_GENERATION_LEVEL, "min": 0, "max": 100, "step": 1},
 			{"name": "relief_amount", "label": "地形起伏", "hint": "调大：高地/盆地更明显，河流流域更大；调小：更平坦", "type": "int", "default": 55, "min": 0, "max": 100, "step": 1},
 			{"name": "mountain_amount", "label": "山脉强度", "hint": "调大：山更高更连片；调小：山脉更弱", "type": "int", "default": 60, "min": 0, "max": 100, "step": 1},
 			{"name": "valley_amount", "label": "河谷切割", "hint": "调大：河谷更深、河道更清晰；调小：侵蚀更弱", "type": "int", "default": 45, "min": 0, "max": 100, "step": 1},
@@ -96,6 +98,12 @@ const CLIMATE_GROUPS := [
 		"title": "特殊地貌",
 		"fields": [
 			{"name": "volcano_amount", "label": "火山数量", "hint": "调大：火山更多、间距更近；调小：火山更少", "type": "int", "default": 40, "min": 0, "max": 100, "step": 1},
+		],
+	},
+	{
+		"title": "资源与物种",
+		"fields": [
+			{"name": "mineral_abundance", "label": "矿产与物种密度", "hint": "调高会让矿点更密，野生动植物在适生地分布更广。程序生成时生效。", "type": "int", "default": MapConfig.DEFAULT_GENERATION_LEVEL, "min": 0, "max": 100, "step": 1},
 		],
 	},
 ]

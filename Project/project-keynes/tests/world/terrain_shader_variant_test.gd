@@ -2,6 +2,7 @@ extends SceneTree
 
 const SHADER_PATH := "res://shaders/world_map.gdshader"
 const RendererShaderWaterScript = preload("res://scripts/rendering/renderer_shader_water.gd")
+const ShaderVariants = preload("res://scripts/rendering/renderer_shader_variants.gd")
 const TERRAIN_RELIEF_UNIFORMS := [
 	"tod_terrain_relief_slope_gain",
 	"terrain_erosion_strength",
@@ -20,6 +21,7 @@ func _init() -> void:
 	source = source.replace("\r\n", "\n")
 	_expect(not source.is_empty(), "world shader source loads")
 	_check_native_shared_lighting_variants()
+	_check_web_shared_lighting_variants(source)
 	# [cell-field 2026-11-18] 两份**展开后**的源码，后面两组断言共用（只算一次）：
 	#   cf_off_expanded = 关（只带 PK_LAND_ONLY，即桌面 / 移动的陆地 program，今日行为）
 	#   cf_land_expanded = 开（+ PK_CELL_FIELD）
@@ -853,11 +855,15 @@ func _init() -> void:
 	_expect(HexRenderer.cell_field_setting_enabled(),
 		"the project setting is back to the shipped default (enabled) after the matrix")
 	# 既有结构不变量（与 W6 无关，保留）：两条 PC-HIGH 分支必须调同一个判定口。
-	_expect(renderer_variant_source.contains(
-			"+ WORLD_MAP_WEB_HIGH_PREFIX + high_cell_field + shader.code")
+	_expect(renderer_variant_source.contains("else _cell_field_prefix(host)")
 		and renderer_variant_source.contains(
-			"return prefix + WATER_WEB_HIGH_PREFIX + _cell_field_prefix(host)"),
-		"both PC-HIGH branches still consult the same predicate (no half-defined program)")
+			"web_high_program_prefix(false, high_cell_field, not tiled and web_lighting_boot_enabled())")
+		and renderer_variant_source.contains(
+			"web_high_program_prefix(true, _cell_field_prefix(host),")
+		and renderer_variant_source.contains("not tiled and web_lighting_boot_enabled())")
+		and renderer_variant_source.contains("web_high_program_prefix(false, high_cell_field, high_lighting)")
+		and renderer_variant_source.contains("web_high_program_prefix(true, high_cell_field, high_lighting)"),
+		"PC-HIGH land, water and warmup share the cell-field predicate and lighting prefix")
 	# 关 = 空串这条不变量只能有一个实现口：_cell_field_prefix() 的三元式。
 	_expect(renderer_variant_source.contains(
 			"return CELL_FIELD_DEFINE if _cell_field_active(host) else \"\""),
@@ -1347,6 +1353,24 @@ class FakeShaderHost extends RefCounted:
 		SPLIT_LAND_ONLY_DEFINE = water_impl.SPLIT_LAND_ONLY_DEFINE
 		SPLIT_WATER_ONLY_DEFINE = water_impl.SPLIT_WATER_ONLY_DEFINE
 		CloudShadowFieldScript = preload("res://scripts/rendering/cloud_shadow_field.gd")
+
+
+func _check_web_shared_lighting_variants(source: String) -> void:
+	var cell_field := ShaderVariants.CELL_FIELD_DEFINE
+	for water in [false, true]:
+		var off := ShaderVariants.web_high_program_prefix(water, cell_field, false)
+		var on := ShaderVariants.web_high_program_prefix(water, cell_field, true)
+		var legacy := ShaderVariants.web_high_program_prefix(water, "", true)
+		var shader := Shader.new()
+		shader.code = on + source
+		var census := _sampler_census(on + source)
+		_expect(census.count == 7 and census.names.has("world_lighting_tex")
+			and shader.get_shader_uniform_list().any(
+				func(entry: Dictionary) -> bool: return entry.name == "world_lighting_tex"),
+			"Web High %s compiles with 7 samplers, including shared lighting" % ("water" if water else "land"))
+		_expect(_count_samplers(off + source) == 6 and _count_samplers(legacy + source) == 8
+			and not legacy.contains(ShaderVariants.WORLD_LIGHTING_DEFINE),
+			"Web High %s keeps the exact off and legacy sampler budgets" % ("water" if water else "land"))
 
 
 func _check_native_shared_lighting_variants() -> void:

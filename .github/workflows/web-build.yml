@@ -47,8 +47,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install SCons
-        run: python -m pip install --disable-pip-version-check scons
+      - name: Install Web build dependencies
+        run: python -m pip install --disable-pip-version-check scons pillow fonttools brotli
 
       # emsdk 装到仓库根的 emsdk/，因为 scripts\Build-Web.cmd 就是从那里 source 的。
       - name: Cache Emscripten SDK

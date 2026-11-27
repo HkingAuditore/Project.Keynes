@@ -46,7 +46,7 @@ func native_generation_cfg_dict(cfg: MapConfig) -> Dictionary:
 		"swamp_water_band": 2,                # 湿地沿湖/大河成带的距水格宽（0=仅 1 格邻接）
 	}
 
-func native_generation_profile_dict() -> Dictionary:
+func native_generation_profile_dict(cfg: MapConfig = null) -> Dictionary:
 	var cp: ClimateProfile = _generator._c()
 	if cp == null:
 		return {"native_generation_mode": 0}
@@ -190,6 +190,20 @@ func native_generation_profile_dict() -> Dictionary:
 	for k in keys:
 		if cp.get(k) != null:
 			out[k] = cp.get(k)
+	if cfg != null and cfg.map_source == "procedural":
+		var ruggedness := (cfg.terrain_ruggedness - MapConfig.DEFAULT_GENERATION_LEVEL) / 50.0
+		var diversity := (cfg.terrain_diversity - MapConfig.DEFAULT_GENERATION_LEVEL) / 50.0
+		if ruggedness != 0.0:
+			out["macro_relief_weight"] *= 1.0 + 0.6 * ruggedness
+			out["ridge_boost_amp"] *= 1.0 + 0.8 * ruggedness
+			out["spl_uplift_rate"] *= 1.0 + 0.45 * ruggedness
+		if diversity != 0.0:
+			out["moisture_noise_amp"] *= pow(3.0, diversity)
+			out["moisture_smooth"] *= 1.0 - 0.6 * diversity
+			out["plateau_min_land_h"] *= 1.0 - 0.3 * diversity
+			out["rift_min_wall"] *= 1.0 - 0.4 * diversity
+			out["rift_min_axis"] *= 1.0 - 0.4 * diversity
+			out["badlands_min_relief"] *= 1.0 - 0.4 * diversity
 	out["veg_ideal_temp"] = _generator._gdext_vegdyn_ideal_temp_cached
 	out["veg_ideal_moist"] = _generator._gdext_vegdyn_ideal_moist_cached
 	out["veg_temp_tol"] = _generator._gdext_vegdyn_temp_tol_cached
@@ -248,7 +262,7 @@ func native_smoke(w: int = 16, h: int = 12) -> Dictionary:
 	var cfg := MapConfig.make(w, h)
 	cfg.seed = 12345
 	var cfg_dict := native_generation_cfg_dict(cfg)
-	var profile_dict := native_generation_profile_dict()
+	var profile_dict := native_generation_profile_dict(cfg)
 	var t0 := Time.get_ticks_usec()
 	var res: Dictionary = ext.run_native_world_generate_base_pass(cfg.seed, cfg_dict, profile_dict)
 	var ms := float(Time.get_ticks_usec() - t0) / 1000.0
@@ -397,7 +411,7 @@ func generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 		return null
 
 	var cfg_dict := native_generation_cfg_dict(cfg)
-	var profile_dict := native_generation_profile_dict()
+	var profile_dict := native_generation_profile_dict(cfg)
 	var expected_n: int = int(cfg.width) * int(cfg.height)
 
 	# dots-total-cpp step4（2026-06-25）：base + post_base 融合单次调用——base 的 10×n_cells

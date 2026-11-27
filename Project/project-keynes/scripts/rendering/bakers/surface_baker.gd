@@ -232,6 +232,7 @@ static func _bake_legacy_static_surface(baker: MapBaker, map: MapData, world: Wo
 		"size_y": world.world_bounds.size.y,
 		"relief_supersample": 1,
 		"algorithm_halo_px": 8,
+		"emit_surface_edge_neighbor_rgba": true,
 	}, true)
 	var t0 := Time.get_ticks_msec()
 	var bundle: Dictionary = await NativeLoadingTasks.compute(baker._world_ext, "visual_tile", knobs, baker._loading_frames)
@@ -369,29 +370,32 @@ static func _make_surface_edge_layers(baker: MapBaker, bundle: Dictionary, size:
 		layer4 = Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, distance_data)
 	else:
 		layer4 = baker._make_neutral_surface_edge_image(size)
-	# layer5：一次循环把 RG8 的次生 id 与 water_depth.R 交织成 RGBA8。
-	# [surface-array-edge 2026-11-02] 分片写 + 每片 await 一帧：桌面 1024×762 实测
-	# 全量一次跑是 58 ms，wasm 按 3–5× 估会到 200–300 ms —— 那会把加载主线程卡穿
-	# （cooperative_world_generation_test 的 100 ms 心跳断言）。分片后单片 ≈ 8–12 ms。
-	var layer5_data := PackedByteArray()
-	layer5_data.resize(n * 4)
-	var has_depth := water_data.size() == water_expected and water_expected > 0
-	var slice_pixels := 65536
-	for slice_start in range(0, n, slice_pixels):
-		var slice_end: int = mini(slice_start + slice_pixels, n)
-		for i in range(slice_start, slice_end):
-			var o := i * 4
-			if has_neighbor:
-				layer5_data[o] = neighbor_data[i * 2]
-				layer5_data[o + 1] = neighbor_data[i * 2 + 1]
-			else:
-				layer5_data[o] = 255
-				layer5_data[o + 1] = 255
-			layer5_data[o + 2] = water_data[o] if has_depth else 0
-			layer5_data[o + 3] = 0
-		if slice_end < n:
-			await baker._yield_generation_frame()
-	var layer5 := Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, layer5_data)
+	# layer5：优先直接使用 native pass 在后台线程交织好的 RGBA8（<0.5 ms，0 帧主线程阻塞）；
+	# 旧 DLL 或缺失时回退到分片 GDScript 交织循环。
+	var native_layer5_data: PackedByteArray = bundle.get("edge_neighbor_rgba", PackedByteArray())
+	var layer5: Image
+	if native_layer5_data.size() == n * 4:
+		layer5 = Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, native_layer5_data)
+	else:
+		var layer5_data := PackedByteArray()
+		layer5_data.resize(n * 4)
+		var has_depth := water_data.size() == water_expected and water_expected > 0
+		var slice_pixels := 65536
+		for slice_start in range(0, n, slice_pixels):
+			var slice_end: int = mini(slice_start + slice_pixels, n)
+			for i in range(slice_start, slice_end):
+				var o := i * 4
+				if has_neighbor:
+					layer5_data[o] = neighbor_data[i * 2]
+					layer5_data[o + 1] = neighbor_data[i * 2 + 1]
+				else:
+					layer5_data[o] = 255
+					layer5_data[o + 1] = 255
+				layer5_data[o + 2] = water_data[o] if has_depth else 0
+				layer5_data[o + 3] = 0
+			if slice_end < n:
+				await baker._yield_generation_frame()
+		layer5 = Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, layer5_data)
 	return [layer4, layer5,
 		distance_bytes if has_distance else 0, neighbor_bytes if has_neighbor else 0]
 
@@ -486,32 +490,11 @@ static func _make_surface_detail_layer(baker: MapBaker, world: WorldData, size: 
 	var H := src.get_height()
 	if W <= 0 or H <= 0:
 		return baker._make_neutral_rgba_image(size, 128)
-	var fmt := src.get_format()
-	var sdata := src.get_data()
-	var rgba := PackedByteArray()
-	rgba.resize(W * H * 4)
-	if fmt == Image.FORMAT_RG8:
-		for i in range(W * H):
-			var o := i * 4
-			rgba[o] = sdata[i * 2]
-		# GBA 保持 0（只 R 通道有语义）。
-	elif fmt == Image.FORMAT_R8 or fmt == Image.FORMAT_L8:
-		for i in range(W * H):
-			rgba[i * 4] = sdata[i]
-	elif fmt == Image.FORMAT_RGBA8:
-		for i in range(W * H):
-			rgba[i * 4] = sdata[i * 4]
-	else:
-		# 未知格式：转 RGBA8 兜底（detail 是低频噪声，格式转换的精度损失可接受）。
-		var tmp := src.duplicate() as Image
-		tmp.convert(Image.FORMAT_RGBA8)
-		W = tmp.get_width()
-		H = tmp.get_height()
-		sdata = tmp.get_data()
-		rgba.resize(W * H * 4)
-		for i in range(W * H):
-			rgba[i * 4] = sdata[i * 4]
-	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, rgba)
+	# 只 R 通道有语义；使用引擎原生 C++ Image.convert 替代逐像素 GDScript 循环，
+	# 保留精确的 R 通道字节并消除加载主线程尖峰。
+	var img := src.duplicate() as Image
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img.convert(Image.FORMAT_RGBA8)
 	if W != size.x or H != size.y:
 		# detail 是连续噪声，双线性放大即可（Godot 4 枚举名是 BILINEAR，没有 LINEAR）。
 		img.resize(size.x, size.y, Image.INTERPOLATE_BILINEAR)

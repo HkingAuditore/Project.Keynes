@@ -73,6 +73,12 @@ func _configure_new_game_form() -> void:
 	_add_advanced_spin("湖泊密度", "lake_density", 0, 100, 45)
 	_add_advanced_spin("河流密度", "river_density", 0, 100, 55)
 	_add_advanced_spin("火山数量", "volcano_amount", 0, 100, 40)
+	_add_advanced_spin("地形崎岖度", "terrain_ruggedness", 0, 100, MapConfig.DEFAULT_GENERATION_LEVEL, 1,
+		"调高会加强山脊与高低起伏。")
+	_add_advanced_spin("地貌与生态多样性", "terrain_diversity", 0, 100, MapConfig.DEFAULT_GENERATION_LEVEL, 1,
+		"调高会拉大局部干湿差异，让台地、裂谷和干旱荒地更易形成。")
+	_add_advanced_spin("矿产与物种密度", "mineral_abundance", 0, 100, MapConfig.DEFAULT_GENERATION_LEVEL, 1,
+		"调高会让矿点更密，野生动植物在适生地分布更广。")
 	for key in ["num_continents", "continent_size", "sea_level", "continent_spacing", "island_amount"]:
 		(_advanced_controls[key] as SpinBox).value_changed.connect(
 			func(_value: float) -> void: _on_layout_spin_changed())
@@ -124,14 +130,17 @@ func _configure_dimension_box(box: SpinBox, minimum: int, maximum: int, value: i
 
 
 func _add_advanced_spin(label_text: String, key: String, minimum: float,
-		maximum: float, value: float, step: float = 1.0) -> void:
+		maximum: float, value: float, step: float = 1.0, hint: String = "") -> void:
 	var label := AdvancedLabelScene.instantiate() as Label
 	label.text = label_text
+	label.tooltip_text = hint
 	_advanced_grid.add_child(label)
 
 	var wrap := SetupSliderSpinScene.instantiate() as HBoxContainer
 	var slider := wrap.get_node("Slider") as HSlider
 	var box := wrap.get_node("Spin") as SpinBox
+	slider.tooltip_text = hint
+	box.tooltip_text = hint
 	slider.min_value = minimum
 	slider.max_value = maximum
 	slider.step = step
@@ -275,7 +284,8 @@ func _refresh_map_source_ui() -> void:
 	else:
 		_set_custom_size_enabled(_size_option.selected == MAP_PRESETS.size() - 1)
 	for key in ["num_continents", "continent_size", "sea_level", "continent_spacing",
-			"island_amount", "lake_density", "river_density", "volcano_amount"]:
+			"island_amount", "lake_density", "river_density", "volcano_amount",
+			"terrain_ruggedness", "terrain_diversity", "mineral_abundance"]:
 		if _advanced_controls.has(key):
 			(_advanced_controls[key] as SpinBox).editable = not pkmap
 		if _advanced_sliders.has(key):
@@ -384,14 +394,19 @@ func _apply_pkmap_path(path: String) -> void:
 		_sync_map_preview(false)
 		return
 	var peeked: Dictionary = PkmapIO.peek_pkmap(path)
-	if not bool(peeked.get("ok", false)):
-		_status_label.text = String(peeked.get("message", "无法读取作者地图。"))
-		_pkmap_meta_label.text = ""
-		return
 	var header: Dictionary = peeked.get("header", {})
-	if String(header.get("generator_hash", "")) != SaveRepository.compatibility_hash():
-		_status_label.text = "该作者地图与当前生成器不兼容。"
-		_pkmap_meta_label.text = ""
+	var error := ""
+	if not bool(peeked.get("ok", false)):
+		error = String(peeked.get("message", "无法读取作者地图。"))
+	elif String(header.get("generator_hash", "")) != SaveRepository.compatibility_hash():
+		error = "该作者地图与当前生成器不兼容。"
+	if not error.is_empty():
+		_pkmap_path = ""
+		_pkmap_path_label.text = path.get_file()
+		_pkmap_path_label.tooltip_text = path
+		_pkmap_meta_label.text = error
+		_status_label.text = error
+		_sync_map_preview(false)
 		return
 	_pkmap_path = path
 	_pkmap_path_label.text = path.get_file()

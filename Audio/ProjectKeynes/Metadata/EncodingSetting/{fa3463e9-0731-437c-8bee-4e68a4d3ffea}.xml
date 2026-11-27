@@ -10,5 +10,8 @@
 		<relationship name="platform">
 			<destination>{c9f35dc9-139f-472b-8888-8ad9fad5168c}</destination>
 		</relationship>
+		<relationship name="encodable">
+			<destination>{c9f35dc9-139f-472b-8888-8ad9fad5168c}</destination>
+		</relationship>
 	</object>
 </objects>

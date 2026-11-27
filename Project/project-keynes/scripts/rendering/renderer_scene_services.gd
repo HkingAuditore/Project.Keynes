@@ -127,6 +127,7 @@ static func _ready(host) -> void:
 	host._world_lighting_field.name = "WorldLightingField"
 	host.add_child(host._world_lighting_field)
 	host._world_lighting_field.process_priority = 1000
+	host._world_lighting_field.lighting_published.connect(host._push_world_lighting_field_inputs)
 	host._cloud_shadow_field = host.CloudShadowFieldScript.new()
 	host._cloud_shadow_field.name = "CloudShadowField"
 	host.add_child(host._cloud_shadow_field)

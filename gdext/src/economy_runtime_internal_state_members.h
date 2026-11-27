@@ -239,6 +239,34 @@
     std::shared_ptr<const CellTagOverrideSet> _cell_tag_override_snapshot;
     uint64_t _tag_override_published_generation = 0;
     uint64_t _tag_snapshot_override_generation = 0;
+    uint64_t _target_tags_generation = 0;
+    struct TagSnapshotStaticCache {
+        struct SingleRowTag {
+            int32_t tag = -1;
+            TargetTagRow row{};
+        };
+        uint64_t tag_table_generation = 0;
+        uint64_t consumers_generation = 0;
+        uint64_t metric_override_generation = 0;
+        uint64_t terrain_landform_hash = 0;
+        int32_t cells = -1;
+        int32_t tag_count = -1;
+        int32_t catalog_metric_count = 0;
+        int32_t requested_metric_count = 0;
+        int32_t valid_country_slot_count = 0;
+        bool force_all_tags = false;
+        bool has_consumers = false;
+        bool valid = false;
+
+        std::vector<int32_t> active_tags;
+        std::vector<SingleRowTag> single_row_tags;
+        std::vector<int32_t> compound_tags;
+        MetricMask sample_mask{};
+        std::vector<int32_t> valid_country_slots;
+        std::vector<int32_t> valid_country_slot_tags;
+        std::vector<uint64_t> static_tag_bits;
+    };
+    TagSnapshotStaticCache _tag_snapshot_static_cache;
     // Last published digests, used only by the digest pass itself (single writer,
     // single thread) to decide what moved.
     std::array<uint64_t, FAMILY_METRIC_COUNT> _effect_metric_published{};

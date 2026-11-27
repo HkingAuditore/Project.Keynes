@@ -1,8 +1,9 @@
 """Build portable Vorbis assets from the lossless FMOD sources (no API calls).
 
 Requires ffmpeg on PATH or `python -m pip install imageio-ffmpeg`.
-Music stems are summed at unity gain, without normalization or resampling.
+Music stems are summed at unity gain, without normalization.
 """
+import argparse
 from pathlib import Path
 import shutil
 import subprocess
@@ -12,11 +13,11 @@ SOURCE = ROOT / "Audio/ProjectKeynes/Assets"
 OUTPUT = ROOT / "Project/project-keynes/assets/audio/native"
 
 
-MUSIC_Q = 4          # [2026-11-24] 音乐档：q7(实测 186.6 kbps) -> q4(实测 113.3 kbps)
+MUSIC_BITRATE = "64k"
 SFX_Q = 7              # 音效保持原档（ui+events 合计仅 423,039 B，降档省不到 0.16 MB）
 
 
-def encode(ffmpeg, inputs, target, quality=SFX_Q):
+def encode(ffmpeg, inputs, target, *, music=False):
     target.parent.mkdir(parents=True, exist_ok=True)
     args = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
     for source in inputs:
@@ -25,12 +26,17 @@ def encode(ffmpeg, inputs, target, quality=SFX_Q):
         args += ["-i", str(source)]
     if len(inputs) > 1:
         args += ["-filter_complex", f"amix=inputs={len(inputs)}:normalize=0"]
-    args += ["-c:a", "libvorbis", "-q:a", str(quality), str(target)]
+    args += ["-c:a", "libvorbis"]
+    args += ["-ar", "32000", "-b:a", MUSIC_BITRATE] if music else ["-q:a", str(SFX_Q)]
+    args.append(str(target))
     subprocess.run(args, check=True)
     print(f"{target.relative_to(ROOT)}: {target.stat().st_size:,} bytes", flush=True)
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--music-only", action="store_true", help="rebuild era music and transitions only")
+    args = parser.parse_args()
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         import imageio_ffmpeg
@@ -42,10 +48,12 @@ def main():
         ("empire", "stem_emp_", ["base_core", "pulse", "theme", "color", "impact"]),
     ]:
         encode(ffmpeg, [SOURCE / f"{prefix}{role}.wav" for role in roles],
-               OUTPUT / "music" / f"{era}.ogg", quality=MUSIC_Q)
+               OUTPUT / "music" / f"{era}.ogg", music=True)
     for transition in ["stone_to_agrarian", "agrarian_to_kingdom", "kingdom_to_empire"]:
         encode(ffmpeg, [SOURCE / f"trans_{transition}.wav"],
-               OUTPUT / "music" / f"trans_{transition}.ogg", quality=MUSIC_Q)
+               OUTPUT / "music" / f"trans_{transition}.ogg", music=True)
+    if args.music_only:
+        return
     for cue in ["click", "page", "open", "close", "confirm", "toggle_on", "toggle_off", "tick"]:
         encode(ffmpeg, [SOURCE / "UI" / f"{cue}.wav"], OUTPUT / "ui" / f"{cue}.ogg")
     progression = {"tech_start", "tech_research", "tech_cancel", "ideology_draw", "ideology_use",

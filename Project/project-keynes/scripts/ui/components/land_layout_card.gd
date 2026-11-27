@@ -1,13 +1,11 @@
 extends Button
 class_name LandLayoutCard
 
-const SeaChartShader := preload("res://shaders/sea_chart_astrolabe.gdshader")
+const CHART := preload("res://assets/ui/tabletop/chart.webp")
 
 var layout_id: String = "two"
 var _emblem: Control
 var _caption: Label
-var _sea_rect: ColorRect
-var _sea_mat: ShaderMaterial
 var _stage: PaperAtlasStage
 
 
@@ -15,21 +13,13 @@ func _ready() -> void:
 	_emblem = get_node_or_null("Margin/VBox/Emblem") as Control
 	_caption = get_node_or_null("Margin/VBox/Caption") as Label
 	if _emblem != null:
-		_sea_rect = UIControlParts.color_rect()
-		_sea_rect.mouse_filter = MOUSE_FILTER_IGNORE
-		_sea_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		_sea_mat = ShaderMaterial.new()
-		_sea_mat.shader = SeaChartShader
-		_sea_mat.set_shader_parameter("compact_mode", 1.0)
-		_sea_mat.set_shader_parameter("show_neatline", 0.0)
-		_sea_mat.set_shader_parameter("compass_uv", Vector2(0.82, 0.28))
-		_sea_mat.set_shader_parameter("compass_scale", 0.24)
-		_sea_rect.material = _sea_mat
-		_emblem.add_child(_sea_rect)
-		_emblem.resized.connect(func() -> void:
-			if _sea_mat != null and _emblem != null:
-				_sea_mat.set_shader_parameter("viewport_size", _emblem.size.max(Vector2.ONE))
-		)
+		var sheet := TextureRect.new()
+		sheet.texture = CHART
+		sheet.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		sheet.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		sheet.mouse_filter = MOUSE_FILTER_IGNORE
+		_emblem.add_child(sheet)
+		sheet.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 		_stage = PaperAtlasStage.new()
 		_stage.cache_size = Vector2i(192, 128)
@@ -84,5 +74,3 @@ func _refresh_visual() -> void:
 			"font_color",
 			UITokens.DOSSIER_OXBLOOD if button_pressed else UITokens.DOSSIER_INK
 		)
-	if _sea_mat != null:
-		_sea_mat.set_shader_parameter("motion_scale", 0.0 if UIAnimation.reduced_motion() else 0.5)

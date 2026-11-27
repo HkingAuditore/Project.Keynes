@@ -258,6 +258,7 @@
     // cell's dominant output) that can change the answer. A hash miss rebuilds
     // the column and advances the counter; an unchanged idle day does neither.
     std::vector<int32_t> _epoch_cell_neighbor_distinct_goods;
+    std::vector<int32_t> _neighbor_dominant_goods_scratch;
     uint64_t _neighbor_distinct_goods_source_hash = 0;
     std::atomic<uint64_t> _neighbor_distinct_goods_rebuilds{0};
     // A+Y N5/N9: unbound fallback for the live resource lanes. While a store is

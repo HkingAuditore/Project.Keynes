@@ -1,13 +1,16 @@
 class_name WorldLightingField
 extends Node2D
 
-## Low-frequency shared dynamic lighting field (Node2D + 3 SubViewports):
+## Low-frequency shared dynamic lighting field (Node2D + up to 4 SubViewports):
 ##   Pass 1 (gi_size):        Direct exitant radiance D on coarse PTT-GI grid
 ##   Pass 2 (gi_size):        K=8 PTT-GI indirect bounce gather
-##   Pass 3 (composite_size): Composite world_lighting_tex
+##   Optional pass (gi_size): Second bounce, accumulated with the first
+##   Final pass (composite_size): Composite world_lighting_tex
 ##                            RGB = PTT-GI indirect irradiance / RADIANCE_SCALE (LINEAR)
 ##                            A   = dynamic terrain direct-sun visibility [0, 1]
 ## Updated on-demand via dirty flag throttled to UPDATE_HZ; 0 GPU cost when idle/paused.
+
+signal lighting_published
 
 const RADIANCE_SCALE := 2.0
 const UPDATE_HZ := 12.0
@@ -28,6 +31,11 @@ var _visual_quality := 1
 var _mobile_tier := ""
 var _shader_tiled := false
 var _configured := false
+var _web_shared_lighting := false
+var _composite_drawn := false
+var _composite_generation := 0
+var _pending_composite_draw := -1
+var _bounce_pass_count := 1
 var _map_drawn := true
 
 var _gi_size := DEFAULT_GI_SIZE
@@ -60,7 +68,7 @@ var _eternal_max_hour_angle_rad := 1.22173048
 var _horizon_strength := DEFAULT_HORIZON_STRENGTH
 var _horizon_softness := DEFAULT_HORIZON_SOFTNESS
 
-# 3-pass SubViewport chain (added in strict execution order: 1 -> 2 -> 3)
+# SubViewport chain in dependency order
 var _direct_viewport: SubViewport
 var _direct_quad: ColorRect
 var _direct_material: ShaderMaterial
@@ -70,6 +78,9 @@ var _gather_viewport: SubViewport
 var _gather_quad: ColorRect
 var _gather_material: ShaderMaterial
 var _gather_texture: ViewportTexture
+var _bounce2_viewport: SubViewport
+var _bounce2_material: ShaderMaterial
+var _bounce2_texture: ViewportTexture
 
 var _composite_viewport: SubViewport
 var _composite_quad: ColorRect
@@ -118,13 +129,15 @@ func _ready() -> void:
 
 
 func configure(world: WorldData, bounds: Rect2, wrap_period_x: float,
-		visual_quality: int, mobile_tier: String, hex_size: float = 0.0) -> void:
+		visual_quality: int, mobile_tier: String, hex_size: float = 0.0,
+		web_shared_lighting: bool = false) -> void:
 	if world == null:
 		clear_inputs()
 		return
 
-	_mobile_tier = mobile_tier
-	var next_quality := quality_for_tier(visual_quality, mobile_tier)
+	# Web's compiled LOW tier is fixed for warmup. The shared field uses the live preset.
+	_mobile_tier = "" if web_shared_lighting else mobile_tier
+	var next_quality := quality_for_tier(visual_quality, _mobile_tier)
 	if not OS.has_feature("web") and _is_limited_platform() and next_quality == 0:
 		world.ptt_albedo_refresh_suspended = true
 		clear_inputs()
@@ -143,6 +156,10 @@ func configure(world: WorldData, bounds: Rect2, wrap_period_x: float,
 	var world_changed := _world != world
 	var tiled := _is_world_tiled(world)
 	var shader_changed := _composite_material == null or _shader_tiled != tiled
+	var mode_changed := _web_shared_lighting != web_shared_lighting
+	_web_shared_lighting = web_shared_lighting
+	if world_changed or shader_changed or mode_changed:
+		_invalidate_composite()
 
 	if world_changed:
 		_disconnect_albedo()
@@ -152,23 +169,34 @@ func configure(world: WorldData, bounds: Rect2, wrap_period_x: float,
 	_wrap_period_x = maxf(wrap_period_x, 0.0)
 	_visual_quality = next_quality
 	_direct_shadow_enabled = direct_shadow_enabled_for_quality(
-		visual_quality, _is_limited_platform(), mobile_tier
+		visual_quality, _is_limited_platform(), _mobile_tier
 	)
 
 	if shader_changed:
 		_shader_tiled = tiled
 		_configure_shaders()
 
+	_bounce_pass_count = 1
+	if next_quality == 2 and not web_shared_lighting \
+			and not OS.has_feature("web") and not _is_limited_platform() \
+			and not DCFeatureFlags.is_compatibility_renderer():
+		_ensure_second_bounce()
+		if _bounce2_material != null:
+			_bounce_pass_count = 2
+	elif _bounce2_viewport != null:
+		_bounce2_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	_set_viewport_dependencies()
+
 	_sync_ptt_inputs()
 	_resize_viewports()
 	_push_static_inputs()
+	if _web_shared_lighting and not (_ptt_gi_ready or _has_horizon_source):
+		_invalidate_composite()
 	_push_daylight_uniforms()
 	_push_horizon_uniforms()
 
 	_configured = true
 	set_process(true)
-	if world_changed or shader_changed:
-		_needs_initial_refresh = true
 	_dirty = true
 
 
@@ -179,7 +207,7 @@ func clear_inputs() -> void:
 	_ptt_gi_ready = false
 	_has_horizon_source = false
 	_dirty = false
-	_needs_initial_refresh = true
+	_invalidate_composite()
 	set_process(false)
 	_disable_all_viewports()
 
@@ -258,7 +286,8 @@ func get_lighting_texture() -> Texture2D:
 
 func is_lighting_ready() -> bool:
 	return _configured and _world != null and get_lighting_texture() != null \
-		and (_ptt_gi_ready or _has_horizon_source)
+		and (_ptt_gi_ready or _has_horizon_source) \
+		and (not _web_shared_lighting or _composite_drawn)
 
 
 func get_radiance_scale() -> float:
@@ -273,6 +302,10 @@ func get_gi_resolution() -> Vector2i:
 	return _gi_size
 
 
+func get_bounce_pass_count() -> int:
+	return _bounce_pass_count
+
+
 func is_dirty() -> bool:
 	return _dirty
 
@@ -284,7 +317,7 @@ func get_render_trigger_count() -> int:
 func _process(delta: float) -> void:
 	if not _configured or _world == null or not _map_drawn:
 		return
-	if not _dirty:
+	if not _dirty or (_web_shared_lighting and not (_ptt_gi_ready or _has_horizon_source)):
 		return
 	_update_accum += maxf(delta, 0.0)
 	if _needs_initial_refresh or _update_accum >= 1.0 / UPDATE_HZ:
@@ -297,14 +330,42 @@ func _process(delta: float) -> void:
 func _trigger_render_passes() -> void:
 	if _direct_viewport == null or _gather_viewport == null or _composite_viewport == null:
 		return
-	if _ptt_gi_ready:
-		_direct_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
-		_gather_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
-	else:
-		_direct_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
-		_gather_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	var gather_mode := SubViewport.UPDATE_ONCE if _ptt_gi_ready else SubViewport.UPDATE_DISABLED
+	_direct_viewport.render_target_update_mode = gather_mode
+	_gather_viewport.render_target_update_mode = gather_mode
+	if _bounce2_viewport != null:
+		_bounce2_viewport.render_target_update_mode = gather_mode if _bounce_pass_count == 2 \
+			else SubViewport.UPDATE_DISABLED
 	_composite_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	_render_trigger_count += 1
+	if _web_shared_lighting and not _composite_drawn \
+			and _pending_composite_draw != _composite_generation:
+		_pending_composite_draw = _composite_generation
+		RenderingServer.frame_post_draw.connect(
+			_on_composite_drawn.bind(_composite_generation), CONNECT_ONE_SHOT)
+
+
+func _invalidate_composite() -> void:
+	if _pending_composite_draw == _composite_generation:
+		_disable_all_viewports()
+	_composite_generation += 1
+	_composite_drawn = false
+	_needs_initial_refresh = true
+
+
+func _on_composite_drawn(generation: int) -> void:
+	if _pending_composite_draw == generation:
+		_pending_composite_draw = -1
+	if generation != _composite_generation or not _web_shared_lighting or not _configured \
+			or not _map_drawn or _composite_drawn or not (_ptt_gi_ready or _has_horizon_source):
+		return
+	_composite_drawn = true
+	WebTelemetry.emit("web_lighting_ready", {
+		"width": _composite_size.x, "height": _composite_size.y,
+		"ptt": _ptt_gi_ready, "horizon": _has_horizon_source,
+		"renders": _render_trigger_count,
+	})
+	lighting_published.emit()
 
 
 func _disable_all_viewports() -> void:
@@ -312,6 +373,8 @@ func _disable_all_viewports() -> void:
 		_direct_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	if _gather_viewport != null:
 		_gather_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	if _bounce2_viewport != null:
+		_bounce2_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	if _composite_viewport != null:
 		_composite_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 
@@ -320,6 +383,8 @@ func _sync_map_visibility(map_renderer: CanvasItem) -> void:
 	_map_drawn = map_renderer.is_visible_in_tree()
 	if not _map_drawn:
 		_disable_all_viewports()
+		if _pending_composite_draw == _composite_generation:
+			_invalidate_composite()
 	elif _configured and _world != null:
 		_dirty = true
 
@@ -359,6 +424,35 @@ func _ensure_nodes() -> void:
 		_composite_viewport.add_child(_composite_quad)
 
 
+func _ensure_second_bounce() -> void:
+	if _bounce2_material != null or _gather_material == null:
+		return
+	var shader := _gather_material.shader.duplicate() as Shader
+	shader.code = "#define PK_PTT_SECOND_BOUNCE\n" + shader.code
+	_bounce2_viewport = _create_pass_viewport("WorldGIBounce2Viewport", _gi_size)
+	add_child(_bounce2_viewport)
+	_bounce2_texture = _bounce2_viewport.get_texture()
+	var quad := _create_pass_quad("Bounce2Quad")
+	_bounce2_viewport.add_child(quad)
+	_bounce2_material = ShaderMaterial.new()
+	_bounce2_material.shader = shader
+	_bounce2_material.set_shader_parameter("source_radiance_tex", _gather_texture)
+	quad.material = _bounce2_material
+
+
+func _set_viewport_dependencies() -> void:
+	# Godot draws child viewports before their parent. Each pass must see
+	# this update's input, including when High is enabled after the first draw.
+	var composite_rid := _composite_viewport.get_viewport_rid()
+	var gather_parent := composite_rid
+	if _bounce_pass_count == 2:
+		RenderingServer.viewport_set_parent_viewport(_bounce2_viewport.get_viewport_rid(), composite_rid)
+		gather_parent = _bounce2_viewport.get_viewport_rid()
+	RenderingServer.viewport_set_parent_viewport(_gather_viewport.get_viewport_rid(), gather_parent)
+	RenderingServer.viewport_set_parent_viewport(_direct_viewport.get_viewport_rid(),
+		_gather_viewport.get_viewport_rid())
+
+
 static func _create_pass_viewport(vp_name: String, vp_size: Vector2i) -> SubViewport:
 	var vp := SubViewport.new()
 	vp.name = vp_name
@@ -394,7 +488,7 @@ func _configure_shaders() -> void:
 	if gather_shader != null:
 		_gather_material = ShaderMaterial.new()
 		_gather_material.shader = gather_shader
-		_gather_material.set_shader_parameter("direct_radiance_tex", _direct_texture)
+		_gather_material.set_shader_parameter("source_radiance_tex", _direct_texture)
 		_gather_quad.material = _gather_material
 
 	var composite_shader := ResourceLoader.load(
@@ -406,7 +500,6 @@ func _configure_shaders() -> void:
 			composite_shader.code = "#define MAP_VISUAL_TILED\n" + composite_shader.code
 		_composite_material = ShaderMaterial.new()
 		_composite_material.shader = composite_shader
-		_composite_material.set_shader_parameter("indirect_light_tex", _gather_texture)
 		_composite_quad.material = _composite_material
 
 
@@ -438,16 +531,25 @@ func _sync_ptt_inputs() -> void:
 		_direct_material.set_shader_parameter("radiance_scale", RADIANCE_SCALE)
 		_direct_material.set_shader_parameter("ptt_gi_ready", _ptt_gi_ready)
 
-	if _gather_material != null:
-		_gather_material.set_shader_parameter("direct_radiance_tex", _direct_texture)
-		_gather_material.set_shader_parameter("ptt_transfer_idx_tex", ptt_transfer)
-		_gather_material.set_shader_parameter("ptt_coupling_tex", ptt_coupling)
-		_gather_material.set_shader_parameter("gi_size", Vector2(_gi_size))
-		_gather_material.set_shader_parameter("ptt_gi_ready", _ptt_gi_ready)
+	_bind_gather_inputs(_gather_material, ptt_transfer, ptt_coupling)
+	if _bounce_pass_count == 2:
+		_bind_gather_inputs(_bounce2_material, ptt_transfer, ptt_coupling)
+		_bounce2_material.set_shader_parameter("ptt_albedo_tex", ptt_albedo)
 
 	if _composite_material != null:
-		_composite_material.set_shader_parameter("indirect_light_tex", _gather_texture)
+		_composite_material.set_shader_parameter("indirect_light_tex",
+			_bounce2_texture if _bounce_pass_count >= 2 else _gather_texture)
 		_composite_material.set_shader_parameter("ptt_gi_ready", _ptt_gi_ready)
+
+
+func _bind_gather_inputs(material: ShaderMaterial, transfer: Texture2DArray,
+		coupling: Texture2D) -> void:
+	if material == null:
+		return
+	material.set_shader_parameter("ptt_transfer_idx_tex", transfer)
+	material.set_shader_parameter("ptt_coupling_tex", coupling)
+	material.set_shader_parameter("gi_size", Vector2(_gi_size))
+	material.set_shader_parameter("ptt_gi_ready", _ptt_gi_ready)
 
 
 func _resize_viewports() -> void:
@@ -455,13 +557,17 @@ func _resize_viewports() -> void:
 		_direct_viewport.size = _gi_size
 	if _gather_viewport != null and _gather_viewport.size != _gi_size:
 		_gather_viewport.size = _gi_size
+	if _bounce2_viewport != null and _bounce2_viewport.size != _gi_size:
+		_bounce2_viewport.size = _gi_size
 	var hm_size := _world.hm_size if _world != null else Vector2i.ZERO
 	var next_comp := composite_resolution_for_quality(
-		_visual_quality, _is_limited_platform(), hm_size
+		_visual_quality, _web_shared_lighting or _is_limited_platform(), hm_size
 	)
 	if _composite_viewport != null and (_composite_size != next_comp or _composite_viewport.size != next_comp):
 		_composite_size = next_comp
 		_composite_viewport.size = next_comp
+		if _web_shared_lighting:
+			_invalidate_composite()
 
 
 func _push_static_inputs() -> void:

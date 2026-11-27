@@ -42,11 +42,6 @@ static func _apply_responsive_layout(host) -> void:
 		var shell_w := minf(host.HOME_PANEL_WIDTH, avail_w)
 		var shell_h := minf(avail_h - 8.0, clampf(host.size.y * 0.56, 368.0 if short_h else 428.0, 472.0))
 		host._home_tome_shell.custom_minimum_size = Vector2(shell_w, shell_h)
-		var folio_surface := host._home_tome_shell.get_node_or_null("FolioSurface") as ColorRect
-		if folio_surface != null and folio_surface.material is ShaderMaterial:
-			var fmat := folio_surface.material as ShaderMaterial
-			fmat.set_shader_parameter("panel_size", Vector2(shell_w, shell_h))
-			fmat.set_shader_parameter("motion_scale", 0.0 if UIAnimation.reduced_motion() else 1.0)
 		var folio_margin := host._home_tome_shell.get_node_or_null("TomeRow/FrontispiecePage/FolioMargin") as MarginContainer
 		if folio_margin != null:
 			folio_margin.add_theme_constant_override("margin_top", 16 if short_h else 26)

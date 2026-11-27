@@ -712,8 +712,8 @@ func _append_natural_resource_research_signals(map: MapData) -> void:
 
 
 
-func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
-	return TerrainBioPublication._bio_occupancy_base_knobs(self, map_ref)
+func _bio_occupancy_base_knobs(map_ref: MapData, for_seeding: bool = false) -> Dictionary:
+	return TerrainBioPublication._bio_occupancy_base_knobs(self, map_ref, for_seeding)
 
 
 

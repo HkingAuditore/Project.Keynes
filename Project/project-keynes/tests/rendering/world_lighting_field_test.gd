@@ -50,11 +50,16 @@ func _run() -> void:
 		await root.ready
 	_test_shader_compilation()
 	_test_resolution_tiers()
+	_test_bounce_quality_gates()
 	_test_dirty_and_throttling()
 	_test_mobile_low_lifecycle()
 	_test_tiled_variant_and_fallback()
 	if DisplayServer.get_name() != "headless":
 		await _test_shadow_light_direction_on_gpu()
+		await _test_web_lighting_publication_on_gpu()
+		if not DCFeatureFlags.is_limited_render_platform() and not OS.has_feature("web") \
+				and not DCFeatureFlags.is_compatibility_renderer():
+			await _test_second_bounce_on_gpu()
 	print("=== world_lighting_field_test: %d checks, %d failures ===" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 
@@ -86,11 +91,20 @@ func _test_shader_compilation() -> void:
 		"Pass 1 shader compiles and exposes daylight + PTT uniforms (count=%d)" % direct_uniforms.size())
 
 	var gather_uniforms := _uniform_names(gather_shader)
-	_check(gather_uniforms.has("direct_radiance_tex")
+	_check(gather_uniforms.has("source_radiance_tex")
 		and gather_uniforms.has("ptt_transfer_idx_tex")
 		and gather_uniforms.has("ptt_coupling_tex")
 		and gather_uniforms.has("gi_size"),
 		"Pass 2 shader compiles and exposes gather uniforms (count=%d)" % gather_uniforms.size())
+
+	var second_bounce_shader := gather_shader.duplicate() as Shader
+	second_bounce_shader.code = "#define PK_PTT_SECOND_BOUNCE\n" + second_bounce_shader.code
+	var second_bounce_uniforms := _uniform_names(second_bounce_shader)
+	_check(second_bounce_uniforms.has("source_radiance_tex")
+		and second_bounce_uniforms.has("ptt_albedo_tex")
+		and second_bounce_uniforms.has("ptt_transfer_idx_tex")
+		and second_bounce_uniforms.has("ptt_coupling_tex"),
+		"Pass 2 second-bounce variant compiles and binds first-bounce source + albedo")
 
 	var comp_uniforms := _uniform_names(comp_shader)
 	_check(comp_uniforms.has("indirect_light_tex")
@@ -150,6 +164,26 @@ func _test_resolution_tiers() -> void:
 		"desktop LOW keeps direct shadow enabled")
 
 
+func _test_bounce_quality_gates() -> void:
+	var field := WorldLightingFieldScript.new()
+	root.add_child(field)
+	var world := WorldData.new()
+	world.hm_size = Vector2i(64, 32)
+	world.world_bounds = Rect2(0.0, 0.0, 640.0, 320.0)
+	world.terrain_horizon_tex = _make_solid_tex(Vector2i(16, 8), Color(0, 0, 0, 0))
+
+	field.configure(world, world.world_bounds, 640.0, 0, "")
+	_check(field.get_bounce_pass_count() == 1,
+		"desktop LOW keeps one GI bounce pass")
+	field.configure(world, world.world_bounds, 640.0, 1, "")
+	_check(field.get_bounce_pass_count() == 1,
+		"desktop MID keeps one GI bounce pass")
+	field.configure(world, world.world_bounds, 640.0, 2, "MOBILE_QUALITY_MID")
+	_check(field.get_bounce_pass_count() == 1,
+		"mobile MID keeps one GI bounce pass even when visual quality is HIGH")
+	field.queue_free()
+
+
 func _test_dirty_and_throttling() -> void:
 	var field := WorldLightingFieldScript.new()
 	root.add_child(field)
@@ -160,31 +194,43 @@ func _test_dirty_and_throttling() -> void:
 	world.terrain_horizon_tex = _make_solid_tex(Vector2i(16, 8), Color(0, 0, 0, 0))
 	field.configure(world, world.world_bounds, 1000.0, 2, "")
 	var vps: Array[Node] = field.get_children()
-	_check(vps.size() == 3
-		and vps[0] is SubViewport and vps[1] is SubViewport and vps[2] is SubViewport,
-		"WorldLightingField creates 3 SubViewport children in pass order")
-	for i in range(3):
-		var vp := vps[i] as SubViewport
-		_check(vp.transparent_bg and vp.disable_3d
+	var desktop_high := not DCFeatureFlags.is_limited_render_platform() and not OS.has_feature("web") \
+		and not DCFeatureFlags.is_compatibility_renderer()
+	_check(vps.size() == (4 if desktop_high else 3),
+		"only unrestricted native desktop HIGH creates a fourth SubViewport")
+	for node in vps:
+		var vp := node as SubViewport
+		_check(vp != null and vp.transparent_bg and vp.disable_3d
 			and vp.render_target_clear_mode == SubViewport.CLEAR_MODE_ALWAYS
 			and vp.render_target_update_mode == SubViewport.UPDATE_DISABLED,
-			"Pass %d SubViewport configured with transparent_bg, disable_3d, CLEAR_MODE_ALWAYS, UPDATE_DISABLED" % (i + 1))
+			"pass %s starts disabled with a transparent 2D render target" % node.name)
 
 	_check(field.is_lighting_ready(), "is_lighting_ready() is true when horizon source is bound")
 	_check(field.get_lighting_texture() != null, "get_lighting_texture() returns non-null ViewportTexture")
 	_check(is_equal_approx(field.get_radiance_scale(), 2.0), "get_radiance_scale() returns 2.0")
-	_check(field.get_composite_resolution() == Vector2i(1024, 512),
-		"desktop HIGH configures composite viewport to 1024x512")
+	_check(field.get_bounce_pass_count() == (2 if desktop_high else 1),
+		"HIGH enables two GI bounce passes only on unrestricted native backends")
+	var bounce2_material := field.get("_bounce2_material") as ShaderMaterial
+	var composite_material := field.get("_composite_material") as ShaderMaterial
+	if desktop_high:
+		_check(bounce2_material != null
+			and bounce2_material.get_shader_parameter("source_radiance_tex") == field.get("_gather_texture")
+			and composite_material.get_shader_parameter("indirect_light_tex") == field.get("_bounce2_texture"),
+			"desktop HIGH chains second gather from first-bounce texture into composite")
+	var expected_resolution := Vector2i(512, 256) if DCFeatureFlags.is_limited_render_platform() \
+		else Vector2i(1024, 512)
+	_check(field.get_composite_resolution() == expected_resolution, "HIGH uses the platform composite resolution")
 	_check(field.is_dirty(), "configure() marks field dirty for initial refresh")
 
 	# First _process forces initial refresh immediately even with small delta
 	field._process(0.001)
 	_check(field.get_render_trigger_count() == 1 and not field.is_dirty(),
 		"first _process() immediately triggers initial refresh and clears dirty")
-	_check((vps[0] as SubViewport).render_target_update_mode == SubViewport.UPDATE_DISABLED
-		and (vps[1] as SubViewport).render_target_update_mode == SubViewport.UPDATE_DISABLED
-		and (vps[2] as SubViewport).render_target_update_mode == SubViewport.UPDATE_ONCE,
-		"without PTT-GI ready, Pass 1 & 2 stay UPDATE_DISABLED and only Pass 3 runs")
+	var composite := field.get("_composite_viewport") as SubViewport
+	_check(vps.all(func(node: SubViewport) -> bool:
+		var mode := SubViewport.UPDATE_ONCE if node == composite else SubViewport.UPDATE_DISABLED
+		return node.render_target_update_mode == mode),
+		"without PTT-GI ready only composite runs")
 
 	# Idle / paused: no changes -> 0 updates
 	field._process(0.5)
@@ -320,6 +366,121 @@ func _test_shadow_light_direction_on_gpu() -> void:
 	_check(east_vis < 0.1 and west_vis > 0.9,
 		"shared visibility follows the BRDF global light override (east=%.3f, west=%.3f)"
 		% [east_vis, west_vis])
+	field.queue_free()
+
+
+func _test_web_lighting_publication_on_gpu() -> void:
+	var field := WorldLightingFieldScript.new()
+	root.add_child(field)
+	var world := WorldData.new()
+	world.hm_size = Vector2i(1024, 512)
+	world.derived_size = world.hm_size
+	world.world_bounds = Rect2(0, 0, 160, 80)
+	world.terrain_horizon_tex = _make_solid_tex(Vector2i(16, 8), Color(240.0 / 255.0, 0, 0, 0))
+	world.ptt_gi_ready = true
+	world.ptt_gi_size = Vector2i(3, 3)
+	world.ptt_albedo_tex = _make_solid_tex(world.ptt_gi_size, Color(1, 0, 0, 1))
+	world.ptt_coupling_tex = _make_solid_tex(world.ptt_gi_size, Color(1, 0.5, 0.5, 1))
+	var center_index := 1.0 / 255.0
+	world.ptt_transfer_idx_tex = _make_solid_array_tex(world.ptt_gi_size, 4,
+		Color(center_index, center_index, center_index, center_index))
+	var publications := [0]
+	field.lighting_published.connect(func() -> void: publications[0] += 1)
+	field.configure(world, world.world_bounds, 160.0, 2, "MOBILE_QUALITY_LOW", 10.0, true)
+	field.set_daylight_params(0.5, 1.0, 0.4091, true, Vector3(1, 0, 0.45), false,
+		Vector2(0.5, 0.5), 1.0, 0.1745, 1.2217, false)
+	field._process(1.0)
+	_check(field.get_bounce_pass_count() == 1,
+		"Web shared lighting keeps one GI bounce pass")
+	_check(field.get_composite_resolution() == Vector2i(512, 256)
+		and not field.is_lighting_ready() and publications[0] == 0,
+		"Web High ignores the compile tier and waits for the first draw")
+	field.clear_inputs()
+	await RenderingServer.frame_post_draw
+	_check(not field.is_lighting_ready() and publications[0] == 0,
+		"a canceled Web draw cannot publish lighting")
+
+	field.configure(world, world.world_bounds, 160.0, 2, "MOBILE_QUALITY_LOW", 10.0, true)
+	field._process(1.0)
+	await RenderingServer.frame_post_draw
+	var first := field.get_lighting_texture().get_image().get_pixel(256, 128)
+	_check(field.is_lighting_ready() and publications[0] == 1 and first.a < 0.1
+		and first.r > 0.005 and first.g < 0.005,
+		"Web High first publication has both shadow alpha and colored bounce (%s)" % first)
+	field.set_daylight_params(0.5, 1.0, 0.4091, true, Vector3(-1, 0, 0.45), false,
+		Vector2(0.5, 0.5), 1.0, 0.1745, 1.2217, false)
+	field._process(1.0)
+	await RenderingServer.frame_post_draw
+	var second := field.get_lighting_texture().get_image().get_pixel(256, 128)
+	_check(publications[0] == 1 and second.a > 0.9 and is_equal_approx(first.r, second.r),
+		"Web High updates shadow without republishing the same texture or tinting bounce")
+	field.queue_free()
+
+
+func _test_second_bounce_on_gpu() -> void:
+	var field := WorldLightingFieldScript.new()
+	root.add_child(field)
+	var world := WorldData.new()
+	var size := Vector2i(4, 4)
+	world.hm_size = size
+	world.world_bounds = Rect2(0, 0, 40, 40)
+	world.ptt_gi_ready = true
+	world.ptt_gi_size = size
+	var albedo := Image.create(size.x, size.y, false, Image.FORMAT_RGBA8)
+	var transfer := Image.create(size.x, size.y, false, Image.FORMAT_RGBA8)
+	var coupling := Image.create(size.x, size.y, false, Image.FORMAT_RGBA8)
+	coupling.fill(Color(0, 0.5, 0.5, 1))
+	for y in range(size.y):
+		albedo.set_pixel(0, y, Color(1, 0, 0, 1))
+		albedo.set_pixel(1, y, Color(0.8, 0, 0, 1))
+		# Column 0 supplies direct light to 1, which reflects it into 2.
+		coupling.set_pixel(1, y, Color(1, 0.5, 0.5, 1))
+		coupling.set_pixel(2, y, Color(1, 0.5, 0.5, 1))
+		transfer.set_pixel(1, y, Color(0, 1.0 / 255.0, 0, 1.0 / 255.0))
+		transfer.set_pixel(2, y, Color(1, 1, 1, 1) / 255.0)
+	world.ptt_albedo_tex = ImageTexture.create_from_image(albedo)
+	world.ptt_coupling_tex = ImageTexture.create_from_image(coupling)
+	world.ptt_transfer_idx_tex = Texture2DArray.new()
+	world.ptt_transfer_idx_tex.create_from_images([transfer, transfer, transfer, transfer])
+	field.set_daylight_params(0.25, 1.0, 0.4091, false, Vector3(0, 0, 1), true,
+		Vector2(0.5, 0.5), 1.0, 0.1745, 1.2217)
+
+	field.configure(world, world.world_bounds, 40.0, 1, "")
+	field._process(1.0)
+	await RenderingServer.frame_post_draw
+	var once := field.get_lighting_texture().get_image()
+	field.configure(world, world.world_bounds, 40.0, 2, "")
+	field._process(1.0)
+	await RenderingServer.frame_post_draw
+	var twice := field.get_lighting_texture().get_image()
+	var receiver := Vector2i(2, 1)
+	var first := once.get_pixel(1, 1).r
+	var delta := twice.get_pixelv(receiver).r - once.get_pixelv(receiver).r
+	var expected := first * Color(0.8, 0, 0).srgb_to_linear().r / PI
+	_check(first > 0.05 and delta > 0.01 and absf(delta - expected) <= 2.0 / 255.0,
+		"HIGH adds transferred first-bounce light in its first draw (delta=%.4f, expected=%.4f)"
+		% [delta, expected])
+
+	for y in range(size.y):
+		albedo.set_pixel(1, y, Color(0.8, 0, 0, 0))
+	world.ptt_albedo_tex.update(albedo)
+	world.ptt_albedo_changed.emit()
+	field._process(1.0)
+	await RenderingServer.frame_post_draw
+	var masked := field.get_lighting_texture().get_image()
+	_check(masked.get_pixelv(receiver).r < 1.0 / 255.0
+		and absf(masked.get_pixel(1, 1).r - first) < 1.0 / 255.0,
+		"a refreshed water mask stops re-emitting light while keeping incident first bounce")
+	for y in range(size.y):
+		albedo.set_pixel(1, y, Color(0.8, 0, 0, 1))
+	world.ptt_albedo_tex.update(albedo)
+	world.ptt_albedo_changed.emit()
+	field.configure(world, world.world_bounds, 40.0, 1, "")
+	field._process(1.0)
+	await RenderingServer.frame_post_draw
+	var reverted := field.get_lighting_texture().get_image()
+	_check(reverted.get_data() == once.get_data(),
+		"downgrading immediately restores the one-bounce output")
 	field.queue_free()
 
 

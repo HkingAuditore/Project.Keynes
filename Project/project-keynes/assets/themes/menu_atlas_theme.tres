@@ -1123,7 +1123,15 @@ corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
 
+[sub_resource type="StyleBoxEmpty" id="DeskPage"]
+content_margin_left = 20.0
+content_margin_top = 12.0
+content_margin_right = 20.0
+content_margin_bottom = 12.0
+
 [resource]
+TabletopSpread/base_type = &"PanelContainer"
+TabletopSpread/styles/panel = SubResource("DeskPage")
 default_font = SubResource("SansMedium")
 default_font_size = 20
 Button/colors/font_color = Color(0.16, 0.09, 0.045, 1)

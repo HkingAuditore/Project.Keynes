@@ -160,15 +160,15 @@ static func web_warmup_program_prefixes() -> Dictionary:
 	# 反过来就等于把判定写两遍，那正是 §3.7 禁止的分叉。
 	var water_field_segment := "" if cell_field_prefix_for_variant(
 			true, false, enabled).is_empty() else WATER_FIELD_MATCHES_LAND_DEFINE
+	var high_cell_field := cell_field_prefix_for_variant(true, false, enabled)
+	var high_lighting := web_lighting_boot_enabled()
 	return {
 		"world_map": web_map_web_prefix_active() \
 			+ cell_field_prefix_for_variant(true, true, enabled),
 		# 顺序必须与 _create_water_quad 一致：载荷宏在 WATER_PASS_PREFIX **之前**。
 		"world_water_web": water_field_segment + WATER_PASS_PREFIX,
-		"world_map_high": WORLD_MAP_WEB_HIGH_PREFIX \
-			+ cell_field_prefix_for_variant(true, false, enabled),
-		"world_water_high": WATER_WEB_HIGH_PREFIX \
-			+ cell_field_prefix_for_variant(true, false, enabled),
+		"world_map_high": web_high_program_prefix(false, high_cell_field, high_lighting),
+		"world_water_high": web_high_program_prefix(true, high_cell_field, high_lighting),
 	}
 
 ## HIGH uses the PC surface code, with only WebGL sampler limits and split draws.
@@ -178,6 +178,29 @@ const WORLD_MAP_WEB_HIGH_BASE := PK_WEB_TEXTURE_BUDGET_DEFINE + "#define PK_WEB_
 const WORLD_MAP_WEB_HIGH_PREFIX := WORLD_MAP_WEB_HIGH_BASE + "#define PK_WEB_SPLIT_WATER\n" \
 	+ WORLD_MAP_WEB_LAND_ONLY_DEFINE + WORLD_MAP_WEB_HORIZON_DEFINE
 const WATER_WEB_HIGH_PREFIX := WORLD_MAP_WEB_HIGH_BASE + "#define PK_WEB_WATER_ONLY\n"
+const WORLD_LIGHTING_DEFINE := "#define PK_WORLD_LIGHTING_FIELD\n"
+
+
+static func web_high_program_prefix(water: bool, cell_field: String, shared_lighting: bool) -> String:
+	var prefix := WATER_WEB_HIGH_PREFIX if water else WORLD_MAP_WEB_HIGH_PREFIX
+	prefix += cell_field
+	if shared_lighting and not cell_field.is_empty():
+		prefix += WORLD_LIGHTING_DEFINE
+	return prefix
+
+
+static func web_lighting_boot_enabled() -> bool:
+	if not OS.has_feature("web") or not web_pc_high_boot_enabled():
+		return false
+	if not Engine.has_meta("pk_web_lighting_boot"):
+		var enabled := true
+		if Engine.has_singleton("JavaScriptBridge"):
+			var bridge: Object = Engine.get_singleton("JavaScriptBridge")
+			if bridge != null:
+				enabled = String(bridge.call("eval",
+					"new URLSearchParams(window.location.search).get('web_lighting') || ''")).strip_edges() != "0"
+		Engine.set_meta("pk_web_lighting_boot", enabled)
+	return bool(Engine.get_meta("pk_web_lighting_boot"))
 
 
 static func web_pc_high_boot_enabled() -> bool:
@@ -190,7 +213,8 @@ static func web_pc_high_boot_enabled() -> bool:
 		var bridge: Object = Engine.get_singleton("JavaScriptBridge")
 		if bridge != null:
 			raw = String(bridge.call("eval", "new URLSearchParams(window.location.search).get('quality') || ''")).strip_edges().to_lower()
-	var enabled := true if raw == "high" else (false if (raw == "low" or raw == "medium") else not DCFeatureFlags.is_mobile_web())
+	var enabled := true if raw == "high" else (false if raw == "low" or raw == "medium"
+		else not DCFeatureFlags.is_mobile_web())
 	Engine.set_meta("pk_web_pc_high_boot", enabled)
 	return enabled
 
@@ -504,7 +528,8 @@ static func _resolved_water_program_kind(host) -> String:
 ## + "#define PK_WATER_ONLY\n" 拼装（与陆地变体同一套顺序，便于测试逐段断言）。
 static func _water_program_prefix(host, kind: String) -> String:
 
-	var prefix = "#define MAP_VISUAL_TILED\n" if _visual_tiles_active(host) else ""
+	var tiled := _visual_tiles_active(host)
+	var prefix := "#define MAP_VISUAL_TILED\n" if tiled else ""
 	if kind == "high":
 		# [cell-field 2026-11-18] 与陆地 HIGH 变体（_apply_shader_variant_prefix 的
 		# pc_high 提前返回分支）用**同一段**后缀，所以两边永远同源。
@@ -512,7 +537,8 @@ static func _water_program_prefix(host, kind: String) -> String:
 		# 这条排除已解除（见 cell_field_variant_allowed 的注释①），这里现在**真的**可能
 		# 拼出 PK_CELL_FIELD。载荷宏仍是陆地那份 CELL_FIELD_DEFINE：HIGH 水面 pass 走的是
 		# world_map.gdshader 里的水面代码，不是紧凑的 world_water_web。
-		return prefix + WATER_WEB_HIGH_PREFIX + _cell_field_prefix(host)
+		return prefix + web_high_program_prefix(true, _cell_field_prefix(host),
+			not tiled and web_lighting_boot_enabled())
 	if kind == "web_min":
 		# 紧凑水面程序：MAP_VISUAL_TILED 之外只有 WATER_PASS_PREFIX（_create_water_quad 追加）。
 		# [cell-field-web 2026-11-18 / W3] 载荷宏 PK_WATER_FIELD_MATCHES_LAND 必须在这里
@@ -596,8 +622,10 @@ static func _apply_shader_variant_prefix(host, shader: Shader, source_path: Stri
 		# 这条排除解除，`high_cell_field` 现在真的可能非空（见 cell_field_variant_allowed）。
 		var high_cell_field := "" if not _is_world_map_shader_path(host, source_path) \
 			else _cell_field_prefix(host)
-		high_shader.code = ("#define MAP_VISUAL_TILED\n" if _visual_tiles_active(host) else "") \
-			+ WORLD_MAP_WEB_HIGH_PREFIX + high_cell_field + shader.code
+		var tiled := _visual_tiles_active(host)
+		high_shader.code = ("#define MAP_VISUAL_TILED\n" if tiled else "") \
+			+ web_high_program_prefix(false, high_cell_field, not tiled and web_lighting_boot_enabled()) \
+			+ shader.code
 		WebTelemetry.note_variant("world_map_high", high_shader.code)
 		return high_shader
 	var prefix = ""

@@ -1,7 +1,8 @@
 extends RefCounted
 
 
-static func _bio_occupancy_base_knobs(owner: Variant, map_ref: MapData) -> Dictionary:
+static func _bio_occupancy_base_knobs(owner: Variant, map_ref: MapData,
+		for_seeding: bool = false) -> Dictionary:
 	var build_started_usec := Time.get_ticks_usec()
 	if map_ref == null:
 		return {"ok": false, "reason": "map_missing"}
@@ -115,6 +116,19 @@ static func _bio_occupancy_base_knobs(owner: Variant, map_ref: MapData) -> Dicti
 		"_knob_cache_hit": cache_hit,
 		"_knob_cache_build_ms": (Time.get_ticks_usec() - build_started_usec) / 1000.0,
 	})
+	var cfg: MapConfig = owner._generator._last_cfg
+	if for_seeding and cfg != null:
+		var density := cfg.resource_density_multiplier()
+		if density != 1.0:
+			# 只调整播种请求，日常扩散与保底分别沿用各自的参数。
+			var fill: PackedFloat32Array = out["species_fill_keep"].duplicate()
+			var max_cost: PackedInt32Array = out["species_max_cost"].duplicate()
+			var radius_scale := sqrt(density)
+			for i in range(fill.size()):
+				fill[i] = minf(1.0, fill[i] * density)
+				max_cost[i] = maxi(1, roundi(max_cost[i] * radius_scale))
+			out["species_fill_keep"] = fill
+			out["species_max_cost"] = max_cost
 	return out
 
 
@@ -181,7 +195,7 @@ static func _seed_bio_occupancy(owner: Variant, map_ref: MapData) -> void:
 	if map_ref == null or owner._generator._data_core_world_ext == null:
 		push_error("[bio-occupancy] native province/seed pass unavailable")
 		return
-	var knobs = owner._generator._bio_occupancy_base_knobs(map_ref)
+	var knobs = owner._generator._bio_occupancy_base_knobs(map_ref, true)
 	if not bool(knobs.get("ok", false)):
 		push_error("[bio-occupancy] species knobs failed: %s" % String(knobs.get("reason", "unknown")))
 		return

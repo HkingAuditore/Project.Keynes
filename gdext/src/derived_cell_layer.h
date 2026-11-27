@@ -240,6 +240,40 @@ public:
         return true;
     }
 
+    // Fast path for pre-folded, strictly ascending cells belonging to one stat.
+    // Avoids per-cell `_row()` hash lookups and repeated vector reallocations
+    // when emitting thousands of cells in `DerivedCellMaterializeJob::finish()`.
+    bool add_sorted_stat_row(
+            int32_t stat_id,
+            std::vector<int32_t> &&cells,
+            std::vector<DerivedCellContribution> &&contributions) {
+        if (!_open || stat_id < 0 || cells.size() != contributions.size())
+            return false;
+        if (cells.empty()) return true;
+        auto it = _index.find(stat_id);
+        if (it == _index.end()) {
+            const size_t position = _front.rows.size();
+            DerivedCellStatRow row;
+            row.stat_id = stat_id;
+            row.cells = std::move(cells);
+            row.contributions = std::move(contributions);
+            _front.rows.push_back(std::move(row));
+            _index[stat_id] = position;
+            _dirty = true;
+            return true;
+        }
+        // Fallback if this stat was already populated via `add()`.
+        for (size_t i = 0; i < cells.size(); ++i) {
+            const DerivedCellContribution &c = contributions[i];
+            if (!add(stat_id, cells[i], c.source_country, c.sum_add,
+                     c.zero_factor_count > 0 ? 0.0 : c.product_nonzero,
+                     c.contributor_count)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     // Marks a stat's version as changed. Called once per stat that received any
     // contribution, so the front's per-stat version reflects real content change
     // rather than "the builder ran".
