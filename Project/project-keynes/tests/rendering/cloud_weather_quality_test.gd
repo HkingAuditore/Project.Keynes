@@ -1,5 +1,7 @@
 extends SceneTree
 # 运行中切档必须重建 shader，并恢复天气/风场绑定；防止只改 uniform 而仍执行高档。
+const WindSource = preload("res://scripts/rendering/weather_wind_source.gd")
+
 var failures := 0
 func _initialize() -> void:
 	call_deferred("run")
@@ -29,6 +31,10 @@ func run() -> void:
 	map.wind_x_arr = PackedFloat32Array([1.0])
 	map.wind_y_arr = PackedFloat32Array([0.0])
 	map.wind_speed_arr = PackedFloat32Array([1.0])
+	var padded_wind := WindSource.build_bytes(map, Vector2i(2, 2))
+	check(padded_wind == PackedByteArray([255, 127, 12, 255,
+		127, 127, 0, 255, 127, 127, 0, 255, 127, 127, 0, 255]),
+		"wind image preserves the real cell and all neutral padding bytes")
 	var weather := WeatherLayer.new()
 	root.add_child(weather)
 	weather.set_world_ref(world)
