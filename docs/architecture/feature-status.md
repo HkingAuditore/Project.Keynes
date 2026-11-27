@@ -9,8 +9,10 @@
 - 玩家保留城市，不进入零领土/游戏结束；链条停在当前阶，读档后不再反复排队或建国。
   独立入队同时收口为「只认原生 `flags & 8`」：`finish_unrest_choice` 不再根据动作和成败自行推断。
 - 修复前该分支静默丢弃请求，行可能永久停在 stage 4/flags&8，事件文案与实际结果相反。
+- 全链最后一城场景暂无自动化覆盖：当前引擎在玩家失去起始格（首都）后第 4 天仍会堆损坏崩溃，
+  去掉叛乱事实也能复现，属既有的起始格/首都丢失问题；本次只做了原生清位契约测试，该崩溃未修复。
 - 验证：`tests/economy/stratum_chain_pacing_test.gd` 72/0（新增清位契约与第 4 阶招安失败规则）、
-  `economy_stratum_save_restore_test` 107/0、`stratum_unrest_service_test` 15/0、
+  `economy_stratum_save_restore_test` 107/0、`stratum_unrest_service_test` 28/0、
   `narrative_event_runtime_test` 89/0、`golden_day_hash_test` 203/0、`politics_parse_probe` PASS；
   `check_world_ext_bindings` 等静态护栏通过（`check_size_ratchet` 仍报 6 个既有超长 UI 文件）。
 
