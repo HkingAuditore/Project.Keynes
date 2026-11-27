@@ -54,6 +54,9 @@ SurfaceParams compute_land_base_surface(
 #ifdef PK_CELL_FIELD
 		, HexCellField field, vec4 fcls0, vec4 fcls1, vec4 fcls2
 #endif
+#ifdef PK_READ_LAND_BASE
+		, vec2 land_base_uv
+#endif
 		) {
 	// LAND 1.1: hard primary state with screen-space static material edge AA.
 	// [cell-field 2026-11-18] 静态材质换 3-way 版本（方案 §3.6）：色调走三格、
@@ -748,6 +751,9 @@ vec3 render_land_pipeline(
 #ifdef PK_CELL_FIELD
 	, HexCellField field, vec4 fcls0, vec4 fcls1, vec4 fcls2
 #endif
+#ifdef PK_READ_LAND_BASE
+	, vec2 land_base_uv
+#endif
 	) {
 	// 15 = 河流层之前的静态材质底色。与 12（底色全部叠加完、光照前）成对使用：
 	// 15 正常而 12 发蓝，说明是 compute_land_base_surface 里的河流 flow 层把陆地刷成了水色。
@@ -770,6 +776,9 @@ vec3 render_land_pipeline(
 			mixed_micro_strength
 #ifdef PK_CELL_FIELD
 			, field, fcls0, fcls1, fcls2
+#endif
+#ifdef PK_READ_LAND_BASE
+			, land_base_uv
 #endif
 			);
 #endif // PK_PROBE_NO_LAND_BASE

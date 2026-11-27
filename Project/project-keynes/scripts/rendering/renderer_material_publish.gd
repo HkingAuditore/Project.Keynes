@@ -271,13 +271,9 @@ static func _apply_uniforms(host) -> void:
 	host._push_gi_uniforms(sm, tiled, visual_tiles)
 	if not tiled:
 		sm.set_shader_parameter("map_index_atlas", host._world.enum_atlas_tex)
-	# [height-flow-pack 2026-08-06] Legacy/Tiled flow 都在 height*.B，不再绑独立 flow sampler。
-	# has_flow_tex：height 纹理就绪且 flow_buffer 齐 = 已打包。
-	sm.set_shader_parameter("has_flow_tex",
-		DCFeatureFlags.water_flowmap_enabled()
-		and (visual_tiles.height != null if tiled else host._world.height_tex != null)
-		and host._world.flow_buffer.size() >= host._world.hm_size.x * host._world.hm_size.y
-		and host._world.hm_size.x > 0 and host._world.hm_size.y > 0)
+	var height_bound := (visual_tiles.height != null if tiled else host._world.height_tex != null)
+	sm.set_shader_parameter("has_flow_tex", flow_channel_ready(
+		height_bound, host._world.flow_buffer.size(), host._world.hm_size))
 	# [water-depth-tex 2026-06-26] 海/湖统一水深 R8：绑定后 shader 每水像素 1 次采样取代旧"海洋 5×5
 	# height 邻域 + 湖泊 16× biome-atlas 多半径"两套深浅估算；未绑定时 has_water_depth_tex=false →
 	# water_pipeline 回退旧逐邻域算法。
@@ -622,6 +618,12 @@ static func set_vegetation_tex_only(host, world: WorldData) -> void:
 
 	# 同上：vegetation 通道与 biome 共用 enum_atlas。
 	set_biome_tex_only(host, world)
+
+
+static func flow_channel_ready(height_ready: bool, flow_size: int, hm_size: Vector2i) -> bool:
+	if not height_ready or hm_size.x <= 0 or hm_size.y <= 0:
+		return false
+	return flow_size >= hm_size.x * hm_size.y
 
 
 # ─── [sea-ice-render-source-unify 阶段 A] 海冰单源诊断探针 ────────────────

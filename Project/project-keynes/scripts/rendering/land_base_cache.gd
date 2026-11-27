@@ -41,7 +41,7 @@ func parameter_changed(key: StringName, value: Variant) -> void:
 
 
 func _enter_tree() -> void:
-	if not OS.has_feature("web") and RenderingServer.get_rendering_device() != null:
+	if not OS.has_feature("web") and not OS.has_feature("mobile") and RenderingServer.get_rendering_device() != null:
 		RenderingServer.frame_pre_draw.connect(_prepare)
 
 

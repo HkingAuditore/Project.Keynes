@@ -13,7 +13,6 @@ render_mode blend_mix, unshaded;
 #ifdef PK_READ_LAND_BASE
 uniform sampler2D land_base_color : filter_nearest, repeat_disable;
 uniform sampler2D land_base_normal : filter_nearest, repeat_disable;
-varying vec2 land_base_uv;
 #endif
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -419,9 +418,6 @@ void vertex() {
 }
 
 void fragment() {
-#ifdef PK_READ_LAND_BASE
-	land_base_uv = SCREEN_UV;
-#endif
 	// ═══════════════════════════════════════════════════════════════════════
 	// SETUP 0：Atlas 采样 / 通道解码
 	// ───────────────────────────────────────────────────────────────────────
@@ -876,6 +872,9 @@ void fragment() {
 				wind_v, dyn_snow, dyn_valid, dyn_vitality, pixel_noise, shore_frac, terrain_edge
 #ifdef PK_CELL_FIELD
 				, cell_field, cell_e0, cell_e1, cell_e2
+#endif
+#ifdef PK_READ_LAND_BASE
+				, SCREEN_UV
 #endif
 				);
 #else

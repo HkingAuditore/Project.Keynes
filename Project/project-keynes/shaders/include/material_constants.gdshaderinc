@@ -33,12 +33,6 @@
 #define USE_PBR_BRDF (visual_quality >= 1)
 #define USE_LINEAR_LIGHTING (visual_quality >= 1)
 #define USE_FILMIC_TONEMAP (visual_quality >= 1)
-#elif defined(PK_MOBILE_ANY)
-// 移动端全档位需要优先稳帧：保留 stylized 光照，但跳过手机 GPU 上发热明显的
-// Cook-Torrance + linear/filmic 路径。
-const bool USE_PBR_BRDF        = false;
-const bool USE_LINEAR_LIGHTING = false;
-const bool USE_FILMIC_TONEMAP  = false;
 #else
 const bool USE_PBR_BRDF        = true;
 const bool USE_LINEAR_LIGHTING = true;
