@@ -82,6 +82,11 @@
     int32_t labor_signal_index(int32_t cell, int32_t profession) const;
     int64_t living_cost_for_signature(int32_t cell, int32_t signature_id,
                                       int32_t plan_override, int64_t &sat) const;
+    int64_t essential_living_cost_for_signature(int32_t cell, int32_t signature_id,
+                                                int32_t plan_override, int64_t &sat) const;
+    int64_t living_cost_for_signature_impl(int32_t cell, int32_t signature_id,
+                                           int32_t plan_override, bool essentials_only,
+                                           int64_t &sat) const;
     void compute_cell_living_costs_from_basis(
         int32_t cell, const std::vector<int64_t> &variant_scores,
         const std::vector<int64_t> &variant_prices,

@@ -7,7 +7,10 @@ const MIN_SEED := 1
 const MAX_SEED := 2147483647
 const MIN_FOREIGN_COUNT := 0
 const MAX_FOREIGN_COUNT := 12
-const DEFAULT_FOREIGN_COUNT := 5
+const DEFAULT_FOREIGN_COUNT := 10
+const MIN_STARTING_TAX_RATE_BP := -100000
+const MAX_STARTING_TAX_RATE_BP := 10000
+const DEFAULT_STARTING_TAX_RATE_BP := 500
 const CUSTOM_LAND_LAYOUT := "custom"
 const DEFAULT_LAND_LAYOUT := "two"
 const MAP_SOURCE_PROCEDURAL := "procedural"
@@ -70,6 +73,7 @@ const LAND_LAYOUT_PRESETS := [
 var country: Dictionary = {
 	"name": "新国家",
 	"foreign_count": DEFAULT_FOREIGN_COUNT,
+	"starting_tax_rate_bp": DEFAULT_STARTING_TAX_RATE_BP,
 }
 var base: Dictionary = {
 	"map_width": 60,
@@ -151,6 +155,13 @@ func validate() -> Dictionary:
 		return _error("foreign_count_out_of_range",
 			"外国数量必须在 %d 到 %d 之间。" % [MIN_FOREIGN_COUNT, MAX_FOREIGN_COUNT])
 	country.foreign_count = foreign_count
+	var starting_tax_rate_bp := int(country.get(
+		"starting_tax_rate_bp", DEFAULT_STARTING_TAX_RATE_BP))
+	if starting_tax_rate_bp < MIN_STARTING_TAX_RATE_BP \
+			or starting_tax_rate_bp > MAX_STARTING_TAX_RATE_BP:
+		return _error("starting_tax_rate_out_of_range",
+			"初始税率必须在 -1000% 到 100% 之间。")
+	country.starting_tax_rate_bp = starting_tax_rate_bp
 
 	var map_bind := _bind_map_source()
 	if not bool(map_bind.get("ok", false)):
@@ -288,6 +299,7 @@ static func from_dictionary(value: Dictionary) -> Dictionary:
 	config.country = (value.get("country", {}) as Dictionary).duplicate(true)
 	if source_version == LEGACY_SCHEMA_VERSION:
 		config.country.foreign_count = 0
+		config.country.starting_tax_rate_bp = 0
 	config.base = (value.get("base", {}) as Dictionary).duplicate(true)
 	config.world_controls = (value.get("world_controls", {}) as Dictionary).duplicate(true)
 	config.climate = (value.get("climate", {}) as Dictionary).duplicate(true)

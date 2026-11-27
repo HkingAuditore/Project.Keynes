@@ -190,6 +190,17 @@ NativeEconomyRuntime::LivingCostMemoScope::~LivingCostMemoScope() {
 
 int64_t NativeEconomyRuntime::living_cost_for_signature(
         int32_t cell, int32_t signature_id, int32_t plan_override, int64_t &sat) const {
+    return living_cost_for_signature_impl(cell, signature_id, plan_override, false, sat);
+}
+
+int64_t NativeEconomyRuntime::essential_living_cost_for_signature(
+        int32_t cell, int32_t signature_id, int32_t plan_override, int64_t &sat) const {
+    return living_cost_for_signature_impl(cell, signature_id, plan_override, true, sat);
+}
+
+int64_t NativeEconomyRuntime::living_cost_for_signature_impl(
+        int32_t cell, int32_t signature_id, int32_t plan_override,
+        bool essentials_only, int64_t &sat) const {
     if (cell < 0 || cell >= _cell_count.get() || signature_id < 0 ||
         signature_id >= static_cast<int32_t>(_signatures.size())) return 0;
     const Signature &signature = _signatures[signature_id];
@@ -199,7 +210,7 @@ int64_t NativeEconomyRuntime::living_cost_for_signature(
     // quantity modifiers cannot change. Cohort funds/ownership are not inputs.
     const std::array<int32_t, 3> memo_key{cell, plan_id, signature.ethnicity_id};
     auto &memo = living_cost_memo_state();
-    const bool memo_active = memo.depth > 0 && memo.owner == this;
+    const bool memo_active = !essentials_only && memo.depth > 0 && memo.owner == this;
     // Cached once: getenv scans the process environment per call and the
     // memo-hit path runs thousands of times per simulated day.
     static const bool verify_living_cost_memo = [] {
@@ -227,17 +238,45 @@ int64_t NativeEconomyRuntime::living_cost_for_signature(
     }
     const int64_t saturation_before = sat;
     const int32_t market = market_store().cell_to_market[cell];
+    const int32_t country = cell < static_cast<int32_t>(_epoch_cell_country.size())
+        ? _epoch_cell_country[static_cast<size_t>(cell)] : -1;
+    const bool has_survival_essentials =
+        !_survival_food_need_stable_ids.empty() || _survival_clothing_need_stable_id >= 0;
     const Plan &plan = _plans[plan_id];
     int64_t total = 0;
     for (int32_t n = 0; n < plan.need_count; ++n) {
         const int32_t need_index = plan.need_begin + n;
         const Need &need = _needs[need_index];
         if (need.living_cost_weight_q16 <= 0) continue;
+        if (essentials_only && has_survival_essentials) {
+            const bool is_survival_food = need.stable_id >= 0 &&
+                static_cast<size_t>(need.stable_id) < _survival_food_need_mask.size() &&
+                _survival_food_need_mask[static_cast<size_t>(need.stable_id)] != 0;
+            const bool is_survival_clothing =
+                need.stable_id == _survival_clothing_need_stable_id;
+            if (!is_survival_food && !is_survival_clothing) continue;
+        }
         int64_t score_sum = 0;
         int64_t weighted_price = 0;
         for (int32_t v = 0; v < need.variant_count; ++v) {
             const int32_t variant_id = need.variant_begin + v;
             const VariantChoice &variant = _variants[variant_id];
+            const size_t availability_index =
+                static_cast<size_t>(std::max(0, country)) * _variants.size() +
+                static_cast<size_t>(variant_id);
+            const bool technology_available = country >= 0 &&
+                country < _epoch_country_count &&
+                availability_index < _epoch_country_variant_available.size()
+                ? _epoch_country_variant_available[availability_index] != 0
+                : [&]() {
+                    for (int32_t c = 0; c < variant.component_count; ++c) {
+                        const NeedComponent &component =
+                            _components[variant.component_begin + c];
+                        if (!good_available(market, component.good_id, true)) return false;
+                    }
+                    return true;
+                }();
+            if (!technology_available) continue;
             const int64_t unit_price = variant_unit_price(market, variant_id, sat);
             const int64_t price_ratio = mul_div_sat(
                 variant.reference_unit_price, Q16_ONE, unit_price, sat);

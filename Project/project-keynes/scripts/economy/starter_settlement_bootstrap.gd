@@ -280,7 +280,7 @@ static func _fallback_start(start_cell: int, precious_resource: String) -> Dicti
 		"pending_knowledge_building_id": "early_knowledge_institution",
 		"starter_building_ids": buildings,
 		"starter_food_good_ids": PackedStringArray(["gathered_plants", "game_meat"]),
-		"starter_clothing_good_id": "clothing",
+		"starter_clothing_good_id": "fur",
 		"starter_construction_good_id": "logs",
 		"starter_knowledge_good_id": "technology_points",
 		"starter_food_resource_ids": PackedStringArray(["fertile_soil", "wild_game"]),

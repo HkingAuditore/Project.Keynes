@@ -129,6 +129,8 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
         packed_i32(packet, "research_weights_bp");
     const std::vector<uint8_t> research_auto_purchase =
         packed_u8(packet, "research_auto_purchase");
+    const std::vector<int32_t> tax_defaults_bp =
+        packed_i32(packet, "tax_defaults_bp");
 
     _countries = {};
     _starting_country_slot = -1;
@@ -234,6 +236,15 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
             (!research_auto_purchase.empty() &&
              research_auto_purchase.size() != ids.size()))
             return fail("country_bootstrap_research_shape_invalid");
+        if (!tax_defaults_bp.empty()) {
+            if (tax_defaults_bp.size() != static_cast<size_t>(TAX_KIND_COUNT) &&
+                tax_defaults_bp.size() != ids.size() * static_cast<size_t>(TAX_KIND_COUNT))
+                return fail("country_bootstrap_tax_policy_invalid");
+            for (int32_t rate : tax_defaults_bp) {
+                if (!tax_value_valid(TAX_MODE_PERCENT_BP, rate))
+                    return fail("country_bootstrap_tax_policy_invalid");
+            }
+        }
 		if (!regime_ids.empty()) {
 			for (const std::string &regime_key : regime_ids)
 				if (_political_regime_index.find(regime_key) == _political_regime_index.end())
@@ -321,6 +332,17 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
                     return fail("country_bootstrap_research_policy_invalid");
                 _country_research_auto_purchase[slot] =
                     research_auto_purchase[slot];
+            }
+            if (!tax_defaults_bp.empty()) {
+                const size_t src_offset =
+                    tax_defaults_bp.size() == static_cast<size_t>(TAX_KIND_COUNT)
+                        ? 0u
+                        : slot * static_cast<size_t>(TAX_KIND_COUNT);
+                for (int32_t kind = 0; kind < TAX_KIND_COUNT; ++kind) {
+                    _country_tax_defaults[slot * static_cast<size_t>(TAX_KIND_COUNT) +
+                                          static_cast<size_t>(kind)] =
+                        tax_defaults_bp[src_offset + static_cast<size_t>(kind)];
+                }
             }
             if (!research_signal_offsets.empty()) {
                 std::vector<uint64_t> &observed_cells =

@@ -107,7 +107,7 @@ static func _compile_search_context(candidates: Array[Dictionary], map: MapData,
 		"ok": true,
 		"food_categories": food_categories,
 		"clothing_good_id": String(starter_route.get(
-			"starter_clothing_good_id", "clothing")),
+			"starter_clothing_good_id", "fur")),
 		"clothing_demand": StarterInputs._clothing_demand(map, cell_idx),
 		"buffered_goods": StarterInputs._starter_buffered_goods(starter_route),
 		"resource_limits": resource_limits,

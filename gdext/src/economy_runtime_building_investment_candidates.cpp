@@ -50,11 +50,11 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
         const size_t key = static_cast<size_t>(signature.plan_id) * _ethnicity_ids.size() +
             static_cast<size_t>(signature.ethnicity_id);
         if (key >= investment_living_cost_cache.size())
-            return living_cost_for_signature(cell, signature_id, -1, sat);
+            return essential_living_cost_for_signature(cell, signature_id, -1, sat);
         int64_t &cached = investment_living_cost_cache[key];
         if (cached >= 0) return cached;
         const int64_t saturation_before = sat;
-        const int64_t value = living_cost_for_signature(cell, signature_id, -1, sat);
+        const int64_t value = essential_living_cost_for_signature(cell, signature_id, -1, sat);
         // Saturation diagnostics are per evaluation. Exceptional values are
         // recomputed, preserving their original event counts as well.
         if (sat == saturation_before) cached = value;
@@ -192,8 +192,8 @@ bool NativeEconomyRuntime::investment_evaluate_cell_types(
                 }
             }
             const int64_t owner_livelihood = saturating_mul(
-                living_cost_for_signature(cell, group.owner_signature_id,
-                    -1, _saturation_count),
+                investment_living_cost(group.owner_signature_id,
+                    _saturation_count),
                 std::max<int64_t>(0, group.filled_owner), _saturation_count);
             const int64_t period_livelihood = saturating_mul(
                 owner_livelihood, epoch_days, _saturation_count);

@@ -104,7 +104,7 @@ func _run() -> void:
 		_expect("regional route declares food, knowledge, precious metal and trade",
 			not (country_start.get("starter_food_good_ids", PackedStringArray()) as
 				PackedStringArray).is_empty()
-			and String(country_start.get("starter_clothing_good_id", "")) == "clothing"
+			and String(country_start.get("starter_clothing_good_id", "")) == "fur"
 			and String(country_start.get("starter_construction_good_id", "")) == "logs"
 			and String(country_start.get("starter_knowledge_good_id", "")) ==
 				"technology_points"
@@ -215,6 +215,10 @@ func _run() -> void:
 			String(player.get("country_id", "")) == "country.player")
 		_expect("player starts with exactly 10000 currency",
 			int(country.treasury_snapshot(int(start_summary.country_handle)).get("cash", -1)) == 100000000)
+		var player_tax: Dictionary = country.tax_policy_snapshot(int(start_summary.country_handle))
+		_expect("player starts with 5% domestic default tax rates",
+			(player_tax.get("default_rates_basis_points", PackedInt32Array()) as PackedInt32Array)
+				== PackedInt32Array([500, 500, 500, 0, 0]))
 		var minimum_distance := int(start.get("minimum_country_distance", 0))
 		_expect("country distance uses the reduced map-scale requirement",
 			minimum_distance == StartLocationPolicy.minimum_country_distance(60, 40)

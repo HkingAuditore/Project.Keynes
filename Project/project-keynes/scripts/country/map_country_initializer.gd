@@ -523,7 +523,10 @@ func _build_gameplay_country_packet() -> Dictionary:
 	if _generator._country_facade == null or _generator._gameplay_start_context.is_empty():
 		return {}
 	var config: Dictionary = _generator._gameplay_start_context.get("config", {})
+	var country_config: Dictionary = config.get("country", {})
 	var research_config: Dictionary = config.get("research", {})
+	var starting_tax_bp := int(country_config.get(
+		"starting_tax_rate_bp", NewGameConfig.DEFAULT_STARTING_TAX_RATE_BP))
 	var country_starts: Array = _generator._gameplay_start_context.get("country_starts", [])
 	if country_starts.is_empty():
 		return {}
@@ -639,6 +642,9 @@ func _build_gameplay_country_packet() -> Dictionary:
 		"treasury_quantities": treasury_quantities,
 		"research_weights_bp": research_weights,
 		"research_auto_purchase": research_auto_purchase,
+		"tax_defaults_bp": PackedInt32Array([
+			starting_tax_bp, starting_tax_bp, starting_tax_bp, 0, 0,
+		]),
 	}
 
 

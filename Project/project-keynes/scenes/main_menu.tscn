@@ -409,7 +409,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
 max_value = 12.0
-value = 5.0
+value = 10.0
 
 [node name="ForeignCount" type="SpinBox" parent="PageMargin/PageStack/NewGamePage/Workbench/DualSpread/NewLeftScroll/Body/PolityCard/PolityCol/PolityGrid/ForeignField/ForeignRow" unique_id=118129080]
 unique_name_in_owner = true

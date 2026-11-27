@@ -8,7 +8,9 @@ func _init() -> void:
 	var config := NewGameConfig.create_default()
 	_expect("starting treasury is 10000 currency", int(config.research.starting_country_cash) == 10000 * 10000)
 	config.country.name = "  大河联邦  "
-	_expect("foreign default", int(config.country.foreign_count) == 5)
+	_expect("foreign default", int(config.country.foreign_count) == 10)
+	_expect("starting tax rate default is 5%",
+		int(config.country.starting_tax_rate_bp) == 500)
 	_expect("unicode country accepted", bool(config.validate().ok))
 	_expect("country trimmed", String(config.country.name) == "大河联邦")
 	var encoded := config.to_dictionary()
@@ -17,14 +19,20 @@ func _init() -> void:
 	var legacy := encoded.duplicate(true)
 	legacy.version = 2
 	(legacy.country as Dictionary).erase("foreign_count")
+	(legacy.country as Dictionary).erase("starting_tax_rate_bp")
 	var migrated := NewGameConfig.from_dictionary(legacy)
 	_expect("v2 migrates to single-country opening", bool(migrated.ok)
 		and int((migrated.config as NewGameConfig).country.foreign_count) == 0
+		and int((migrated.config as NewGameConfig).country.starting_tax_rate_bp) == 0
 		and int(migrated.migrated_from_version) == 2)
 	config.country.foreign_count = 13
 	_expect("foreign count rejected",
 		String(config.validate().code) == "foreign_count_out_of_range")
 	config.country.foreign_count = 5
+	config.country.starting_tax_rate_bp = 10001
+	_expect("starting tax rate out of range rejected",
+		String(config.validate().code) == "starting_tax_rate_out_of_range")
+	config.country.starting_tax_rate_bp = 500
 	config.country.name = "bad\nname"
 	_expect("control character rejected", String(config.validate().code) == "country_name_control_character")
 	config.country.name = "ok"

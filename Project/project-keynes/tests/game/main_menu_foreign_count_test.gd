@@ -23,7 +23,7 @@ func _run() -> void:
 	if box is SpinBox:
 		_expect("foreign count minimum", int(box.min_value) == 0)
 		_expect("foreign count maximum", int(box.max_value) == 12)
-		_expect("foreign count default", int(box.value) == 5)
+		_expect("foreign count default", int(box.value) == 10)
 	var scrolls := current_scene.find_children("*", "ScrollContainer", true, false)
 	_expect("new-game form remains scrollable", not scrolls.is_empty())
 	_finish()

@@ -74,11 +74,13 @@ STARTER_FOOD_ANCHORS = {
     "freshwater_fishery", "shoreline_shellfish_camp",
 }
 
-# Stone-age opening food collectors were originally tuned for 1.5x global efficiency.
-# Compensating food outputs only (1.45x, leaving hide/fur/byproducts untouched) prevents
-# Stone Age starvation after rolling building_output_efficiency_q16 back from 1.5x to 1.0x,
-# while staying below old 1.5x effective output and strictly below Agrarian era food yield.
+# Stone-age opening collectors (food + non-food starter anchors) were originally tuned for 1.5x global efficiency.
+# Compensating their outputs (1.45x) prevents Stone Age starvation and opening logs/fur/gold shortages
+# after rolling building_output_efficiency_q16 back from 1.5x to 1.0x, while staying below old 1.5x.
 STARTER_FOOD_COMPENSATION = 1.45
+STARTER_NONFOOD_ANCHORS = {
+    "deadwood_gathering_camp", "placer_gold_working",
+}
 
 # Era-based food output scale (reversing legacy 2x food scaling gently without breaking stone start)
 FOOD_ERA_SCALE = {
@@ -493,13 +495,22 @@ def rebalance_buildings(goods, tech_eras, profs, plan_daily_cost, apply_changes:
     for b in buildings:
         if not b["out_goods"] or b["state_role"] != "none":
             continue
+        if b["id"] in STARTER_NONFOOD_ANCHORS:
+            new_out = [
+                max(1, int(round(q * STARTER_FOOD_COMPENSATION)))
+                for q in b["out_qty"]
+            ]
+            if new_out != b["out_qty"]:
+                b["out_qty"] = new_out
+                food_scaled += 1
+            continue
         if any(g in ("gold", "silver", "technology_points") for g in b["out_goods"]):
             continue
         if b["id"] in STARTER_FOOD_ANCHORS:
             if b["id"] != "communal_hearth":
                 new_out = [
                     max(1, int(round(q * STARTER_FOOD_COMPENSATION)))
-                    if b["out_goods"][i] in FOOD_EQUIVALENT_GOODS else q
+                    if (b["out_goods"][i] in FOOD_EQUIVALENT_GOODS or b["id"] == "stone_age_hunting_camp") else q
                     for i, q in enumerate(b["out_qty"])
                 ]
                 if new_out != b["out_qty"]:
