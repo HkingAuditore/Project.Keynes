@@ -734,7 +734,7 @@
 	"res://data/military/military_catalog.json": "c375f702c90723961d0ef7a11f58b64136e82cda2948a475f741b83d43499204",
 	"res://data/military/military_visual_catalog.json": "f628bd69d3781251850f75fae107e7fae06da723d328108e1d71f0dd5c52137e",
 	"res://data/modifiers/default_modifier_catalog.tres": "a8e64582c262bbf6eab5d7327b9f588e0c6814f5ab2b87710be492e3328447c8",
-	"res://data/native_binding_manifest.json": "6cff89dea05338d18a0d5324672b666262feea3bf77f970e5f51f68b570df554",
+	"res://data/native_binding_manifest.json": "d81c18cf4529755fe4f8e12cb1a611a5ce74f92a13863de97bf2f1f5a923b5da",
 	"res://data/rendering/building_visual_families.tres": "217ef7507e79052c81be6688dbc8c7462d922d53ce731b1db2fa971c771ae6c1",
 	"res://data/resources/arable_land.tres": "43f47b9769365dce6aa39268cfe2037ae399d42a6495a16e4c0c74d4f47a9f56",
 	"res://data/resources/bauxite.tres": "85b6e3d8feb4887fcb055907b04389c5a404739f6ca9b5178dc958a1be5f4534",
