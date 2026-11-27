@@ -150,3 +150,6 @@ gdext/src/pk_build_id_generated.h
 /Project/project-keynes/addons/*/bin/
 /Project/project-keynes/export_presets.cfg.bak.*
 *.bak.*
+
+# 本地 Web 回滚归档（导出产物的历史副本，单个约 800 MB），不入库。
+/_archive/
