@@ -47,7 +47,7 @@ bool NativeEconomyRuntime::capture_worker_day_input(
     if (_epoch_active || input.day < 0 || input.cell_count != count ||
         input.reserves.size() != _resource_ids.size() ||
         input.changes.size() != input.reserves.size() ||
-        input.neighbors.size() != count * 6) {
+        !input.neighbors || input.neighbors->size() != count * 6) {
         error = "economy_worker_input_shape_invalid";
         return false;
     }
@@ -95,7 +95,7 @@ bool NativeEconomyRuntime::capture_worker_day_input(
     if (needs_building_context_capture(input.day) &&
         !capture_building_context(input.day, input.fields[7].data(),
             input.geography[0].data(), input.geography[1].data(), input.geography[2].data(),
-            input.geography[3].data(), input.geography[4].data(), input.neighbors.data(),
+            input.geography[3].data(), input.geography[4].data(), input.neighbors->data(),
             reserves, changes, _cell_count.get(), error)) return false;
     return !worker_natural_resources_configured() ||
         advance_worker_resource_reserves(input, error);
