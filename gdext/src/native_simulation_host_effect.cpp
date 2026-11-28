@@ -362,77 +362,112 @@ bool NativeSimulationHost::restore_effect_pod_save(
 }
 
 bool NativeSimulationHost::queue_effect_pod_instance(
-        const RuntimeEffectPodInstanceInput &input, std::string &error) {
-    if (!_effect_pod_configured) {
-        error = "effect_pod_not_configured";
-        return false;
-    }
+        const RuntimeEffectPodInstanceInput &input, std::string &error,
+        int64_t worker_effective_day) {
+    return queue_effect_pod_instance_batch({input}, error, worker_effective_day);
+}
+
+bool NativeSimulationHost::queue_effect_pod_instance_batch(
+        const std::vector<RuntimeEffectPodInstanceInput> &inputs,
+        std::string &error,
+        int64_t worker_effective_day) {
+    error.clear();
+    if (!_effect_pod_configured) { error = "effect_pod_not_configured"; return false; }
+    if (inputs.empty()) return true;
+    const bool from_worker = on_worker_thread();
+    const bool seal_active =
+        _world_environment != nullptr ||
+        _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE;
+    int64_t admitted_day =
+        (from_worker || !seal_active) ? 0 : std::max<int64_t>(0, command_seal_day());
+    const RuntimeCommandAdmission admission =
+        from_worker ? RuntimeCommandAdmission(true) : admit_command(admitted_day);
+    if (!admission.accepted()) { error = "effect_transport_not_admitted"; return false; }
+    if (!from_worker && seal_active)
+        admitted_day = std::max<int64_t>(admitted_day, command_seal_day());
+    const auto resolve_day = [&](const RuntimeEffectPodInstanceInput &in) -> int64_t {
+        if (!from_worker) return admitted_day;
+        return worker_effective_day >= 0 ? worker_effective_day
+                                         : std::max<int64_t>(0, in.next_due_day);
+    };
     std::lock_guard<std::mutex> lock(_effect_transport_mutex);
-    // Coalesce only with the queue tail, and only when that tail is still the
-    // newest arrival. Re-ENSUREing the same identity several times per frame
-    // must keep the newest payload (a stale level / next_due_day here is exactly
-    // the "present=0, queued>0" class of bug). But if a retire landed after the
-    // tail -- it lives in the *other* deque, so the tail alone cannot tell --
-    // folding this upsert into the tail would replay it before the retire and
-    // the instance would never come back.
+    bool first_coalesces = false;
     if (!_effect_instance_queue.empty()) {
-        EffectPodInstanceQueueItem &tail = _effect_instance_queue.back();
-        if (tail.sequence == _effect_transport_sequence &&
-            tail.input.instance_id == input.instance_id &&
-            tail.input.generation == input.generation) {
-            tail.input = input;
-            return true;
-        }
+        const auto &tail = _effect_instance_queue.back();
+        const int64_t first_day = resolve_day(inputs.front());
+        first_coalesces = tail.sequence == _effect_transport_sequence && tail.effective_day == first_day &&
+            tail.input.instance_id == inputs.front().instance_id && tail.input.generation == inputs.front().generation;
     }
-    if (_effect_instance_queue.size() >= RUNTIME_COMMAND_QUEUE_CAPACITY) {
+    const size_t additions = inputs.size() - (first_coalesces ? 1u : 0u);
+    if (additions > RUNTIME_COMMAND_QUEUE_CAPACITY ||
+        _effect_instance_queue.size() > RUNTIME_COMMAND_QUEUE_CAPACITY - additions) {
         error = "effect_instance_capacity_exceeded";
         return false;
     }
-    EffectPodInstanceQueueItem item;
-    item.sequence = ++_effect_transport_sequence;
-    item.input = input;
-    _effect_instance_queue.push_back(item);
+    for (RuntimeEffectPodInstanceInput input : inputs) {
+        const int64_t effective_day = resolve_day(input);
+        if (!from_worker) input.next_due_day = std::max(input.next_due_day, admitted_day);
+        // Coalesce only with the queue tail when it is the newest arrival and shares effective_day.
+        if (!_effect_instance_queue.empty()) {
+            auto &tail = _effect_instance_queue.back();
+            if (tail.sequence == _effect_transport_sequence && tail.effective_day == effective_day &&
+                tail.input.instance_id == input.instance_id && tail.input.generation == input.generation) {
+                tail.input = input;
+                continue;
+            }
+        }
+        _effect_instance_queue.push_back({++_effect_transport_sequence, effective_day, input});
+    }
     return true;
 }
 
 bool NativeSimulationHost::queue_effect_pod_metric(
         int64_t instance_id, uint32_t generation, int32_t metric_id,
         int64_t revision, int64_t value, std::string &error) {
-    if (!_effect_pod_configured) {
-        error = "effect_pod_not_configured";
-        return false;
-    }
+    error.clear();
+    if (!_effect_pod_configured) { error = "effect_pod_not_configured"; return false; }
+    const bool from_worker = on_worker_thread();
+    const bool seal_active =
+        _world_environment != nullptr ||
+        _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE;
+    int64_t effective_day =
+        (from_worker || !seal_active) ? 0 : std::max<int64_t>(0, command_seal_day());
+    const RuntimeCommandAdmission admission =
+        from_worker ? RuntimeCommandAdmission(true) : admit_command(effective_day);
+    if (!admission.accepted()) { error = "effect_transport_not_admitted"; return false; }
+    if (!from_worker && seal_active)
+        effective_day = std::max<int64_t>(effective_day, command_seal_day());
     std::lock_guard<std::mutex> lock(_effect_transport_mutex);
     if (_effect_metric_queue.size() >= RUNTIME_COMMAND_QUEUE_CAPACITY) {
         error = "effect_metric_capacity_exceeded";
         return false;
     }
-    EffectPodMetricQueueItem item;
-    item.instance_id = instance_id;
-    item.generation = generation;
-    item.metric_id = metric_id;
-    item.revision = revision;
-    item.value = value;
-    _effect_metric_queue.push_back(item);
+    _effect_metric_queue.push_back(
+        {++_effect_transport_sequence, effective_day, instance_id, generation, metric_id, revision, value});
     return true;
 }
 
 bool NativeSimulationHost::queue_effect_pod_remove(
         int64_t instance_id, uint32_t generation, std::string &error) {
-    if (!_effect_pod_configured) {
-        error = "effect_pod_not_configured";
-        return false;
-    }
+    error.clear();
+    if (!_effect_pod_configured) { error = "effect_pod_not_configured"; return false; }
+    const bool from_worker = on_worker_thread();
+    const bool seal_active =
+        _world_environment != nullptr ||
+        _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE;
+    int64_t effective_day =
+        (from_worker || !seal_active) ? 0 : std::max<int64_t>(0, command_seal_day());
+    const RuntimeCommandAdmission admission =
+        from_worker ? RuntimeCommandAdmission(true) : admit_command(effective_day);
+    if (!admission.accepted()) { error = "effect_transport_not_admitted"; return false; }
+    if (!from_worker && seal_active)
+        effective_day = std::max<int64_t>(effective_day, command_seal_day());
     std::lock_guard<std::mutex> lock(_effect_transport_mutex);
     if (_effect_remove_queue.size() >= RUNTIME_COMMAND_QUEUE_CAPACITY) {
         error = "effect_remove_capacity_exceeded";
         return false;
     }
-    EffectPodRemoveQueueItem item;
-    item.sequence = ++_effect_transport_sequence;
-    item.instance_id = instance_id;
-    item.generation = generation;
-    _effect_remove_queue.push_back(item);
+    _effect_remove_queue.push_back({++_effect_transport_sequence, effective_day, instance_id, generation});
     return true;
 }
 
@@ -466,162 +501,124 @@ bool NativeSimulationHost::submit_effect_pod_ack(
 
 #include "native_simulation_host_effect_section_country_peers.inc"
 
-bool NativeSimulationHost::drain_effect_transport_queues(std::string &error) {
+bool NativeSimulationHost::drain_effect_transport_queues(int64_t day,
+                                                         std::string &error) {
     error.clear();
-    if (!_effect_pod_configured) {
-        error = "effect_pod_not_configured";
-        return false;
-    }
-    std::deque<EffectPodInstanceQueueItem> instances;
-    std::deque<EffectPodMetricQueueItem> metrics;
-    std::deque<EffectPodRemoveQueueItem> removes;
+    if (!_effect_pod_configured) { error = "effect_pod_not_configured"; return false; }
+    std::vector<EffectPodInstanceQueueItem> instances;
+    std::vector<EffectPodMetricQueueItem> metrics;
+    std::vector<EffectPodRemoveQueueItem> removes;
     std::vector<RuntimeDomainAck> acks;
+    const auto split_due = [day](auto &queue, auto &due) {
+        std::remove_reference_t<decltype(queue)> deferred;
+        while (!queue.empty()) {
+            auto item = queue.front();
+            queue.pop_front();
+            if (item.effective_day <= day) due.push_back(item);
+            else deferred.push_back(item);
+        }
+        queue.swap(deferred);
+    };
     {
         std::lock_guard<std::mutex> lock(_effect_transport_mutex);
-        instances.swap(_effect_instance_queue);
-        metrics.swap(_effect_metric_queue);
-        removes.swap(_effect_remove_queue);
+        split_due(_effect_instance_queue, instances);
+        split_due(_effect_metric_queue, metrics);
+        split_due(_effect_remove_queue, removes);
         acks.assign(_effect_acks.begin(), _effect_acks.end());
         _effect_acks.clear();
     }
 
-    auto restore_remaining =
-        [this](std::deque<EffectPodInstanceQueueItem> &left,
-               std::deque<EffectPodMetricQueueItem> &metrics_left,
-               std::deque<EffectPodRemoveQueueItem> &removes_left) {
-            std::lock_guard<std::mutex> lock(_effect_transport_mutex);
-            while (!left.empty()) {
-                _effect_instance_queue.push_front(left.back());
-                left.pop_back();
-            }
-            while (!metrics_left.empty()) {
-                _effect_metric_queue.push_front(metrics_left.back());
-                metrics_left.pop_back();
-            }
-            while (!removes_left.empty()) {
-                _effect_remove_queue.push_front(removes_left.back());
-                removes_left.pop_back();
-            }
-        };
+    struct LifecycleOp {
+        bool is_remove = false;
+        int64_t effective_day = 0;
+        int64_t instance_id = 0;
+        uint64_t sequence = 0;
+        size_t index = 0;
+    };
+    std::vector<LifecycleOp> ops;
+    ops.reserve(instances.size() + removes.size());
+    for (size_t i = 0; i < instances.size(); ++i)
+        ops.push_back({false, instances[i].effective_day, instances[i].input.instance_id, instances[i].sequence, i});
+    for (size_t i = 0; i < removes.size(); ++i)
+        ops.push_back({true, removes[i].effective_day, removes[i].instance_id, removes[i].sequence, i});
+    // K3/K4 canonical replay order: (effective_day, instance_id, sequence).
+    const auto by_canonical = [](const auto &a, const auto &b) {
+        if (a.effective_day != b.effective_day) return a.effective_day < b.effective_day;
+        if (a.instance_id != b.instance_id) return a.instance_id < b.instance_id;
+        return a.sequence < b.sequence;
+    };
+    std::stable_sort(ops.begin(), ops.end(), by_canonical);
+    std::stable_sort(metrics.begin(), metrics.end(), by_canonical);
 
-    // Replay retires and upserts strictly in arrival order. Draining either
-    // deque wholesale reorders "submit then retire" into "retire then submit",
-    // and the retired instance comes back on the next plan.
-    while (!removes.empty() || !instances.empty()) {
-        const bool take_remove =
-            !removes.empty() &&
-            (instances.empty() ||
-             removes.front().sequence < instances.front().sequence);
-        if (take_remove) {
-            const EffectPodRemoveQueueItem item = removes.front();
-            removes.pop_front();
-            if (_effect_pod_authority.remove_instance(item.instance_id,
-                                                       item.generation, error)) {
+    auto restore_remaining = [&](size_t op_pos, size_t metric_pos) {
+        std::lock_guard<std::mutex> lock(_effect_transport_mutex);
+        for (size_t i = ops.size(); i > op_pos; --i) {
+            const LifecycleOp &op = ops[i - 1];
+            if (op.is_remove) _effect_remove_queue.push_front(removes[op.index]);
+            else _effect_instance_queue.push_front(instances[op.index]);
+        }
+        for (size_t i = metrics.size(); i > metric_pos; --i)
+            _effect_metric_queue.push_front(metrics[i - 1]);
+    };
+
+    for (size_t op_pos = 0; op_pos < ops.size(); ++op_pos) {
+        const LifecycleOp &op = ops[op_pos];
+        if (op.is_remove) {
+            const auto &item = removes[op.index];
+            if (_effect_pod_authority.remove_instance(item.instance_id, item.generation, error))
                 continue;
-            }
-            // EffectRuntime::retire_instance_pod returns true when no instance
-            // matches: nothing was ever installed, so nothing Effect-owned can
-            // be left behind. The worker authority reports "absent" and
-            // "generation superseded" through the same token, and both are
-            // benign here -- the queued retire simply has nothing to retire.
             if (error == "effect_pod_instance_stale_generation") {
                 const auto &known = _effect_pod_authority.snapshot().instances;
-                const bool id_present = std::any_of(
-                    known.begin(), known.end(),
-                    [&item](const RuntimeEffectPodInstance &instance) {
-                        return instance.instance_id == item.instance_id;
-                    });
-                if (id_present)
-                    _effect_retire_stale_count.fetch_add(
-                        1, std::memory_order_release);
-                else
-                    _effect_retire_absent_count.fetch_add(
-                        1, std::memory_order_release);
+                const bool id_present = std::any_of(known.begin(), known.end(),
+                    [&item](const RuntimeEffectPodInstance &inst) { return inst.instance_id == item.instance_id; });
+                (id_present ? _effect_retire_stale_count : _effect_retire_absent_count)
+                    .fetch_add(1, std::memory_order_release);
                 error.clear();
                 continue;
             }
-            removes.push_front(item);
-            restore_remaining(instances, metrics, removes);
+            restore_remaining(op_pos, 0);
             return false;
         }
-        const EffectPodInstanceQueueItem queued = instances.front();
-        instances.pop_front();
+        auto &queued = instances[op.index];
         RuntimeEffectPodInstanceInput input = queued.input;
-        // Queue may have waited across Effect soft-skips / climate parks.
-        // Never-fired technology installs must land on the next plan day.
         const int64_t committed = _effect_pod_authority.snapshot().committed_day;
-        // 负数 due day 是「还没排期」，不是非法值：声明式注册在地图生成阶段就跑过
-        // 一遍，那时主线程时钟还是 day -1，于是整批 ENSURE 带着 next_due_day=-1
-        // 进队。validate_instance 只能拒绝它，而这个拒绝又会把 host 日钉死
-        // （新开局冻在 day 2 的直接原因）。这里和其它「已过期」的情形一起归一到
-        // 下一个计划日。
-        if (input.next_due_day < 0) {
-            input.next_due_day = std::max<int64_t>(0, committed + 1);
-        } else if (committed >= 0 && input.next_due_day <= committed) {
-            input.next_due_day = committed + 1;
-        }
+        if (input.next_due_day < 0) input.next_due_day = std::max<int64_t>(0, committed + 1);
+        else if (committed >= 0 && input.next_due_day <= committed) input.next_due_day = committed + 1;
         if (!_effect_pod_authority.upsert_instance(input, error)) {
-            // `effect_pod_instance_invalid` 是队列行自身的属性（program 越界 /
-            // target_generation 为 0 / next_due_day 为负 / id 非正），排队再久也
-            // 不会变合法。以前这里一律回插 + 返回 false：Effect 阶段每天在同一行
-            // 失败，host 日再也提交不了，十二域 grant 一个都不授，新开局就冻在
-            // 第 2 天。丢弃 + 记账 + 留字段快照，让游戏继续跑到能修产生端。
-            // capacity / not_configured 仍然是暂态，保留回插。
             if (error == "effect_pod_instance_invalid") {
-                _effect_instance_rejected_count.fetch_add(
-                    1, std::memory_order_release);
+                _effect_instance_rejected_count.fetch_add(1, std::memory_order_release);
                 char detail[96];
-                std::snprintf(detail, sizeof(detail),
-                    "id=%lld gen=%u prog=%d th=%llu tg=%u due=%lld",
-                    static_cast<long long>(input.instance_id),
-                    static_cast<unsigned>(input.generation),
-                    static_cast<int>(input.program_id),
-                    static_cast<unsigned long long>(input.target_handle),
-                    static_cast<unsigned>(input.target_generation),
-                    static_cast<long long>(input.next_due_day));
+                std::snprintf(detail, sizeof(detail), "id=%lld gen=%u prog=%d th=%llu tg=%u due=%lld",
+                    static_cast<long long>(input.instance_id), static_cast<unsigned>(input.generation),
+                    static_cast<int>(input.program_id), static_cast<unsigned long long>(input.target_handle),
+                    static_cast<unsigned>(input.target_generation), static_cast<long long>(input.next_due_day));
                 for (size_t i = 0; i + 1 < _effect_instance_reject_detail.size(); ++i) {
-                    const char value = detail[i];
-                    _effect_instance_reject_detail[i].store(
-                        value, std::memory_order_release);
-                    if (value == '\0') break;
+                    _effect_instance_reject_detail[i].store(detail[i], std::memory_order_release);
+                    if (detail[i] == '\0') break;
                 }
-                _effect_instance_reject_detail[
-                    _effect_instance_reject_detail.size() - 1].store(
-                        '\0', std::memory_order_release);
+                _effect_instance_reject_detail.back().store('\0', std::memory_order_release);
                 error.clear();
                 continue;
             }
-            EffectPodInstanceQueueItem retry = queued;
-            retry.input = input;
-            instances.push_front(retry);
-            restore_remaining(instances, metrics, removes);
+            queued.input = input;
+            restore_remaining(op_pos, 0);
             return false;
         }
     }
-    while (!metrics.empty()) {
-        const EffectPodMetricQueueItem item = metrics.front();
-        metrics.pop_front();
+    for (size_t metric_pos = 0; metric_pos < metrics.size(); ++metric_pos) {
+        const auto &item = metrics[metric_pos];
         if (!_effect_pod_authority.set_metric(
-                item.instance_id, item.generation, item.metric_id,
-                item.revision, item.value, error)) {
-            // 实例已被换掉/丢弃，这条指标永远落不上去。回插会让 Effect 阶段
-            // 每天同一处失败，与 ENSURE 的 effect_pod_instance_invalid 是同一类
-            // 毒丸；丢弃并计数。
+                item.instance_id, item.generation, item.metric_id, item.revision, item.value, error)) {
             if (error == "effect_pod_metric_stale_generation") {
-                _effect_instance_rejected_count.fetch_add(
-                    1, std::memory_order_release);
+                _effect_instance_rejected_count.fetch_add(1, std::memory_order_release);
                 error.clear();
                 continue;
             }
-            metrics.push_front(item);
-            restore_remaining(instances, metrics, removes);
+            restore_remaining(ops.size(), metric_pos);
             return false;
         }
     }
-    if (!acks.empty() &&
-        !_effect_pod_authority.apply_acks(acks, error)) {
-        return false;
-    }
+    if (!acks.empty() && !_effect_pod_authority.apply_acks(acks, error)) return false;
     return true;
 }
 
@@ -638,7 +635,7 @@ bool NativeSimulationHost::execute_effect_worker_stage(
         return false;
     }
 
-    if (!drain_effect_transport_queues(error)) return false;
+    if (!drain_effect_transport_queues(day, error)) return false;
 
     const auto plan_started = std::chrono::steady_clock::now();
     RuntimeEffectPodPlan plan;

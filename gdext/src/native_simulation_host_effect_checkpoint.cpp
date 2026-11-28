@@ -3,11 +3,12 @@
 
 namespace pk {
 namespace {
-constexpr uint32_t EFFECT_TRANSPORT_MARKER = 0x31515445u; // ETQ1
+constexpr uint32_t EFFECT_TRANSPORT_MARKER = 0x32515445u; // ETQ2
 
 constexpr auto instance_fields = [](auto &io, auto &entry) {
     auto &value = entry.input;
-    return io.field(entry.sequence) && io.field(value.instance_id) &&
+    return io.field(entry.sequence) && io.field(entry.effective_day) &&
+        io.field(value.instance_id) &&
         io.field(value.generation) && io.field(value.program_id) &&
         io.field(value.source_type) && io.field(value.source_id) &&
         io.field(value.source_handle) && io.field(value.target_handle) &&
@@ -18,12 +19,14 @@ constexpr auto instance_fields = [](auto &io, auto &entry) {
 };
 
 constexpr auto metric_fields = [](auto &io, auto &entry) {
-    return io.field(entry.instance_id) && io.field(entry.generation) &&
+    return io.field(entry.sequence) && io.field(entry.effective_day) &&
+        io.field(entry.instance_id) && io.field(entry.generation) &&
         io.field(entry.metric_id) && io.field(entry.revision) && io.field(entry.value);
 };
 
 constexpr auto removal_fields = [](auto &io, auto &entry) {
-    return io.field(entry.sequence) && io.field(entry.instance_id) && io.field(entry.generation);
+    return io.field(entry.sequence) && io.field(entry.effective_day) &&
+        io.field(entry.instance_id) && io.field(entry.generation);
 };
 
 constexpr auto ack_fields = [](auto &io, auto &entry) {
@@ -47,7 +50,9 @@ std::vector<uint8_t> NativeSimulationHost::encode_effect_transport() const {
     return std::move(out.bytes);
 }
 
-void NativeSimulationHost::restore_effect_transport(const std::vector<uint8_t> &bytes) {
+bool NativeSimulationHost::try_restore_effect_transport(
+        const std::vector<uint8_t> &bytes, std::string &error) {
+    error.clear();
     CheckpointReader in{bytes.data(), bytes.size()};
     uint32_t marker = 0;
     uint64_t sequence = 0;
@@ -55,16 +60,48 @@ void NativeSimulationHost::restore_effect_transport(const std::vector<uint8_t> &
     decltype(_effect_metric_queue) metrics;
     decltype(_effect_remove_queue) removals;
     decltype(_effect_acks) acks;
-    const bool saved = in.field(marker) && marker == EFFECT_TRANSPORT_MARKER &&
+    bool valid = in.field(marker) && marker == EFFECT_TRANSPORT_MARKER &&
         in.field(sequence) && in.rows(instances, instance_fields) &&
         in.rows(metrics, metric_fields) && in.rows(removals, removal_fields) &&
         in.rows(acks, ack_fields) && in.cursor == in.size;
+    if (valid) {
+        for (const auto &entry : instances) {
+            if (entry.effective_day < 0) { valid = false; break; }
+        }
+    }
+    if (valid) {
+        for (const auto &entry : metrics) {
+            if (entry.effective_day < 0) { valid = false; break; }
+        }
+    }
+    if (valid) {
+        for (const auto &entry : removals) {
+            if (entry.effective_day < 0) { valid = false; break; }
+        }
+    }
+    if (!valid) {
+        error = "effect_transport_continuation_invalid";
+        return false;
+    }
     std::lock_guard<std::mutex> lock(_effect_transport_mutex);
-    _effect_transport_sequence = saved ? sequence : 0;
-    _effect_instance_queue = saved ? std::move(instances) : decltype(instances){};
-    _effect_metric_queue = saved ? std::move(metrics) : decltype(metrics){};
-    _effect_remove_queue = saved ? std::move(removals) : decltype(removals){};
-    _effect_acks = saved ? std::move(acks) : decltype(acks){};
+    _effect_transport_sequence = sequence;
+    _effect_instance_queue = std::move(instances);
+    _effect_metric_queue = std::move(metrics);
+    _effect_remove_queue = std::move(removals);
+    _effect_acks = std::move(acks);
+    _effect_intents.clear();
+    return true;
+}
+
+void NativeSimulationHost::restore_effect_transport(const std::vector<uint8_t> &bytes) {
+    std::string error;
+    if (try_restore_effect_transport(bytes, error)) return;
+    std::lock_guard<std::mutex> lock(_effect_transport_mutex);
+    _effect_transport_sequence = 0;
+    _effect_instance_queue.clear();
+    _effect_metric_queue.clear();
+    _effect_remove_queue.clear();
+    _effect_acks.clear();
     _effect_intents.clear();
 }
 } // namespace pk

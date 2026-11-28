@@ -131,6 +131,8 @@
     RuntimeEffectSnapshotRing _effect_snapshots;
     bool _effect_pod_configured = false;
     struct EffectPodMetricQueueItem {
+        uint64_t sequence = 0;
+        int64_t effective_day = 0;
         int64_t instance_id = 0;
         uint32_t generation = 0;
         int32_t metric_id = 0;
@@ -144,10 +146,12 @@
     // silently resurrects the very instance the caller retired.
     struct EffectPodInstanceQueueItem {
         uint64_t sequence = 0;
+        int64_t effective_day = 0;
         RuntimeEffectPodInstanceInput input;
     };
     struct EffectPodRemoveQueueItem {
         uint64_t sequence = 0;
+        int64_t effective_day = 0;
         int64_t instance_id = 0;
         uint32_t generation = 0;
     };

@@ -299,7 +299,7 @@ bool NativeSimulationHost::effect_pod_transport_queue_self_test(
         !queue_effect_pod_instance(make_input(11, 1, 4), error)) {
         return fail("effect_transport_upsert_queue_failed");
     }
-    if (!drain_effect_transport_queues(error))
+    if (!drain_effect_transport_queues(0, error))
         return fail("effect_transport_upsert_drain_failed");
     {
         const RuntimeEffectPodInstance *instance = find_instance(11, 1);
@@ -317,7 +317,7 @@ bool NativeSimulationHost::effect_pod_transport_queue_self_test(
         !queue_effect_pod_remove(21, 1, error)) {
         return fail("effect_transport_retire_queue_failed");
     }
-    if (!drain_effect_transport_queues(error))
+    if (!drain_effect_transport_queues(0, error))
         return fail("effect_transport_retire_drain_failed");
     {
         const RuntimeEffectPodInstance *instance = find_instance(21, 1);
@@ -335,7 +335,7 @@ bool NativeSimulationHost::effect_pod_transport_queue_self_test(
         !queue_effect_pod_instance(make_input(31, 1, 7), error)) {
         return fail("effect_transport_reinstall_queue_failed");
     }
-    if (!drain_effect_transport_queues(error))
+    if (!drain_effect_transport_queues(0, error))
         return fail("effect_transport_reinstall_drain_failed");
     {
         const RuntimeEffectPodInstance *instance = find_instance(31, 1);
@@ -352,7 +352,7 @@ bool NativeSimulationHost::effect_pod_transport_queue_self_test(
         const uint64_t stale_before = stale_count();
         if (!queue_effect_pod_remove(41, 1, error))
             return fail("effect_transport_absent_queue_failed");
-        if (!drain_effect_transport_queues(error))
+        if (!drain_effect_transport_queues(0, error))
             return fail("effect_transport_absent_drain_failed");
         if (absent_count() != absent_before + 1u)
             return fail("effect_transport_absent_not_counted");
@@ -372,7 +372,7 @@ bool NativeSimulationHost::effect_pod_transport_queue_self_test(
             !queue_effect_pod_remove(51, 1, error)) {
             return fail("effect_transport_stale_queue_failed");
         }
-        if (!drain_effect_transport_queues(error))
+        if (!drain_effect_transport_queues(0, error))
             return fail("effect_transport_stale_drain_failed");
         if (stale_count() != stale_before + 1u)
             return fail("effect_transport_stale_not_counted");
@@ -381,6 +381,116 @@ bool NativeSimulationHost::effect_pod_transport_queue_self_test(
         const RuntimeEffectPodInstance *instance = find_instance(51, 2);
         if (instance == nullptr) return fail("effect_transport_stale_lost_newer");
         if (instance->active == 0) return fail("effect_transport_stale_retired_newer");
+    }
+
+    // F. K3 day seal + ETQ2 checkpoint: post-seal enqueues (instance/metric/remove)
+    // must stay out of sealed day 0, survive ETQ2 roundtrip, reject ETQ1 & negative
+    // effective_day fail-closed, and take effect on day 1.
+    {
+        auto sealed = std::make_unique<NativeSimulationHost>();
+        RuntimeEffectPodCatalog emit_catalog = catalog;
+        emit_catalog.definitions[0].instruction_count = 2;
+        emit_catalog.definitions[0].command_count = 1;
+        RuntimeEffectPodCommandDefinition cmd;
+        cmd.action = RuntimeEffectPodAction::MODIFIER_COMMAND;
+        cmd.domain = 0;
+        cmd.opcode = 1;
+        cmd.target_resolver = RuntimeEffectPodTargetResolver::INSTANCE;
+        cmd.value_mode = RuntimeEffectPodValueMode::STACK_TOP;
+        cmd.duration_days = -1;
+        cmd.stacks = 1;
+        cmd.command_key_hash = RuntimeEffectPodAuthority::hash_text("k3.seal.cmd");
+        cmd.payload = {0, 0, 2, 0};
+        emit_catalog.commands.push_back(cmd);
+        RuntimeEffectPodInstruction c_inst{};
+        c_inst.op = static_cast<RuntimeEffectPodInstructionOp>(1);
+        c_inst.value = 65536;
+        RuntimeEffectPodInstruction e_inst{};
+        e_inst.op = RuntimeEffectPodInstructionOp::EMIT_COMMAND;
+        emit_catalog.instructions.push_back(c_inst);
+        emit_catalog.instructions.push_back(e_inst);
+
+        if (!sealed->configure_effect_pod(emit_catalog, error)) return fail("k3_seal_configure_failed");
+        if (!sealed->queue_effect_pod_instance(make_input(61, 1, 1), error)) return fail("k3_seal_seed_queue_failed");
+        sealed->_mode.store(RuntimeSimulationMode::ACTIVE, std::memory_order_release);
+        sealed->_requested_authority_mask.store(
+            runtime_domain_mask(RuntimeDomainId::CLIMATE) | runtime_domain_mask(RuntimeDomainId::EFFECT),
+            std::memory_order_release);
+        sealed->_environment_day.store(0, std::memory_order_release);
+        if (!sealed->try_freeze_command_inputs(0)) return fail("k3_seal_freeze_day0_failed");
+        if (sealed->command_seal_day() != 1) return fail("k3_seal_day_not_advanced");
+        // Post-seal upsert for same (61, 1) must NOT coalesce into day-0 tail.
+        if (!sealed->queue_effect_pod_instance(make_input(61, 1, 8), error) ||
+            !sealed->queue_effect_pod_instance(make_input(62, 1, 5), error) ||
+            !sealed->queue_effect_pod_metric(62, 1, 0, 1, 99, error) ||
+            !sealed->queue_effect_pod_remove(61, 1, error)) {
+            return fail("k3_seal_post_freeze_queue_failed");
+        }
+        RuntimeDayCommit commit0;
+        if (!sealed->execute_effect_worker_stage(0, 1, commit0, error)) return fail("k3_seal_day0_stage_failed");
+        if (sealed->_effect_day_intents.size() != 1u || sealed->_effect_day_intents.front().source_id != 61u)
+            return fail("k3_seal_day0_consumed_post_seal_item");
+        const auto &snap0 = sealed->_effect_pod_authority.snapshot();
+        if (snap0.instances.size() != 1u || snap0.instances.front().instance_id != 61 ||
+            snap0.instances.front().level != 1 || snap0.instances.front().active == 0) {
+            return fail("k3_seal_day0_state_contaminated");
+        }
+        const std::vector<uint8_t> etq2_bytes = sealed->encode_effect_transport();
+        if (etq2_bytes.size() < 32 || etq2_bytes[0] != 'E' || etq2_bytes[1] != 'T' ||
+            etq2_bytes[2] != 'Q' || etq2_bytes[3] != '2') return fail("k3_etq2_marker_mismatch");
+        std::vector<uint8_t> legacy_etq1 = etq2_bytes;
+        legacy_etq1[3] = '1';
+        if (sealed->try_restore_effect_transport(legacy_etq1, error)) return fail("k3_etq1_not_rejected");
+        std::vector<uint8_t> neg_day = etq2_bytes;
+        for (size_t b = 24; b < 32; ++b) neg_day[b] = 0xFFu;
+        if (sealed->try_restore_effect_transport(neg_day, error)) return fail("k3_negative_effective_day_not_rejected");
+        if (!sealed->try_restore_effect_transport(etq2_bytes, error)) return fail("k3_etq2_roundtrip_failed");
+
+        RuntimeDayCommit commit1;
+        if (!sealed->execute_effect_worker_stage(1, 2, commit1, error)) return fail("k3_seal_day1_stage_failed");
+        if (sealed->_effect_day_intents.size() != 1u || sealed->_effect_day_intents.front().source_id != 62u)
+            return fail("k3_seal_day1_missing_deferred_intent");
+        const auto &snap1 = sealed->_effect_pod_authority.snapshot();
+        bool found61_retired = false, found62_active = false;
+        for (const auto &inst : snap1.instances) {
+            if (inst.instance_id == 61 && inst.active == 0) found61_retired = true;
+            if (inst.instance_id == 62 && inst.active != 0 && inst.level == 5) found62_active = true;
+        }
+        if (!found61_retired || !found62_active) return fail("k3_seal_day1_state_mismatch");
+    }
+
+    // G. K3 batch admission shares one effective_day; drain replays in canonical
+    // (effective_day, instance_id, sequence) order preserving same-instance causality.
+    {
+        auto batch_host = std::make_unique<NativeSimulationHost>();
+        if (!batch_host->configure_effect_pod(catalog, error)) return fail("k3_batch_configure_failed");
+        batch_host->_mode.store(RuntimeSimulationMode::ACTIVE, std::memory_order_release);
+        batch_host->_requested_authority_mask.store(
+            runtime_domain_mask(RuntimeDomainId::CLIMATE) | runtime_domain_mask(RuntimeDomainId::EFFECT),
+            std::memory_order_release);
+        batch_host->_environment_day.store(2, std::memory_order_release);
+        if (!batch_host->queue_effect_pod_instance_batch({make_input(82, 1, 2), make_input(81, 1, 4)}, error) ||
+            !batch_host->queue_effect_pod_remove(81, 1, error) ||
+            !batch_host->queue_effect_pod_instance(make_input(81, 1, 9), error)) {
+            return fail("k3_batch_queue_failed");
+        }
+        {
+            std::lock_guard<std::mutex> lock(batch_host->_effect_transport_mutex);
+            if (batch_host->_effect_instance_queue.size() != 3u ||
+                batch_host->_effect_instance_queue[0].effective_day != 3 ||
+                batch_host->_effect_instance_queue[1].effective_day != 3) {
+                return fail("k3_batch_effective_day_split");
+            }
+        }
+        if (!batch_host->drain_effect_transport_queues(2, error)) return fail("k3_batch_drain_early_failed");
+        if (!batch_host->_effect_pod_authority.snapshot().instances.empty())
+            return fail("k3_batch_drained_before_effective_day");
+        if (!batch_host->drain_effect_transport_queues(3, error)) return fail("k3_batch_drain_due_failed");
+        const auto &insts = batch_host->_effect_pod_authority.snapshot().instances;
+        if (insts.size() != 2u || insts[0].instance_id != 81 || insts[0].level != 9 ||
+            insts[0].active == 0 || insts[1].instance_id != 82 || insts[1].level != 2) {
+            return fail("k3_batch_canonical_order_mismatch");
+        }
     }
 
     // A stopped session rejects player input immediately, while a day
@@ -483,7 +593,7 @@ bool NativeSimulationHost::modifier_effect_adapter_self_test(
         input.active = true;
         if (!queue_effect_pod_instance(input, error))
             return fail("modifier_adapter_effect_queue_failed");
-        if (!drain_effect_transport_queues(error))
+        if (!drain_effect_transport_queues(0, error))
             return fail("modifier_adapter_effect_drain_failed");
     }
     constexpr int32_t kAdapterGeneric = 0;

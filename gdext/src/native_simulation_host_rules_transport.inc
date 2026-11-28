@@ -90,7 +90,12 @@
     // authority; these queues only mirror declarative POD-expressible state
     // and expose worker intents/ACKs for diagnostics and Modifier E7.
     bool queue_effect_pod_instance(const RuntimeEffectPodInstanceInput &input,
-                                   std::string &error);
+                                   std::string &error,
+                                   int64_t worker_effective_day = -1);
+    bool queue_effect_pod_instance_batch(
+            const std::vector<RuntimeEffectPodInstanceInput> &inputs,
+            std::string &error,
+            int64_t worker_effective_day = -1);
     bool queue_effect_pod_metric(int64_t instance_id, uint32_t generation,
                                  int32_t metric_id, int64_t revision,
                                  int64_t value, std::string &error);

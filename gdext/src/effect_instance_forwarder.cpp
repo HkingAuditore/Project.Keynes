@@ -235,6 +235,7 @@ Dictionary EffectInstanceForwarder::submit_batch(const Dictionary &batch) {
         // read different columns than the forwarding path.
         const PackedInt64Array accepted_ids = result.get("instance_ids",
                                                          PackedInt64Array());
+        std::vector<RuntimeEffectPodInstanceInput> mirror_batch;
         int32_t mirrored = 0;
         int32_t mirror_rejected = 0;
         for (int i = 0; i < ids.size() && i < program_keys.size(); ++i) {
@@ -270,11 +271,14 @@ Dictionary EffectInstanceForwarder::submit_batch(const Dictionary &batch) {
             input.latched = i >= 0 && i < latched_column.size()
                 && latched_column[i] != 0 ? 1 : 0;
             input.active = i >= active.size() || active[i] != 0;
+            mirror_batch.push_back(input);
+        }
+        if (!mirror_batch.empty()) {
             std::string mirror_error;
-            if (_host->queue_effect_pod_instance(input, mirror_error))
-                ++mirrored;
+            if (_host->queue_effect_pod_instance_batch(mirror_batch, mirror_error))
+                mirrored = static_cast<int32_t>(mirror_batch.size());
             else
-                ++mirror_rejected;
+                mirror_rejected += static_cast<int32_t>(mirror_batch.size());
         }
         result["effect_pod_mirrored"] = mirrored;
         result["effect_pod_mirror_rejected"] = mirror_rejected;
@@ -295,6 +299,7 @@ Dictionary EffectInstanceForwarder::submit_batch(const Dictionary &batch) {
         return forwarder_failure(result_token(Result::WORKER_TRANSPORT_NOT_READY));
 
     PackedInt64Array accepted_ids;
+    std::vector<RuntimeEffectPodInstanceInput> queued_batch;
     int32_t rejected = 0;
     const char *reject_reason = nullptr;
     std::string result_reason;
@@ -340,11 +345,15 @@ Dictionary EffectInstanceForwarder::submit_batch(const Dictionary &batch) {
         input.latched = i >= 0 && i < latched_column.size()
             && latched_column[i] != 0 ? 1 : 0;
         input.active = row_active;
+        queued_batch.push_back(input);
+    }
+    if (!queued_batch.empty()) {
         std::string queue_error;
-        if (_host->queue_effect_pod_instance(input, queue_error)) {
-            accepted_ids.push_back(ids[i]);
+        if (_host->queue_effect_pod_instance_batch(queued_batch, queue_error)) {
+            for (const RuntimeEffectPodInstanceInput &input : queued_batch)
+                accepted_ids.push_back(input.instance_id);
         } else {
-            ++rejected;
+            rejected += static_cast<int32_t>(queued_batch.size());
             if (!queue_error.empty())
                 result_reason = queue_error;
             else

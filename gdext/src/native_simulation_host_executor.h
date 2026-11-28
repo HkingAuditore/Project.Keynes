@@ -102,12 +102,15 @@
     bool execute_effect_worker_stage(int64_t day, uint64_t input_generation,
                                      RuntimeDayCommit &commit,
                                      std::string &error);
-    // Apply queued instance/metric/remove/ACK transport without planning a day.
-    // Soft-skip and climate-park paths must call this so main-thread ENSURE
-    // registrations are not stranded in `_effect_instance_queue`.
-    bool drain_effect_transport_queues(std::string &error);
+    // Apply queued instance/metric/remove/ACK transport due on or before `day`
+    // without planning a day. Soft-skip and climate-park paths must call this
+    // so main-thread ENSURE registrations are not stranded in
+    // `_effect_instance_queue`.
+    bool drain_effect_transport_queues(int64_t day, std::string &error);
     std::vector<uint8_t> encode_effect_transport() const;
     void restore_effect_transport(const std::vector<uint8_t> &bytes);
+    bool try_restore_effect_transport(const std::vector<uint8_t> &bytes,
+                                      std::string &error);
     // E8: shared Modifier POD stage for SHADOW diagnostics and ACTIVE
     // production. authority_plan is non-null only on SHADOW (fixture ACK /
     // domain-runner commit). ACTIVE passes nullptr. Failure isolates

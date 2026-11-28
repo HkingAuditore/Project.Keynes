@@ -22,7 +22,7 @@ bool NativeSimulationHost::stage_effect(DayExecution &day, RuntimeDomainPlan &st
             // Still absorb ENSURE registrations so technology instances are
             // present when Climate unblocks the Effect plan lane.
             std::string drain_error;
-            drain_effect_transport_queues(drain_error);
+            drain_effect_transport_queues(plan.context.day, drain_error);
             note_day_park(runtime_domain_mask(RuntimeDomainId::EFFECT),
                           "effect_parked_climate_input");
             stage.completed = 0;
@@ -59,7 +59,7 @@ bool NativeSimulationHost::stage_effect(DayExecution &day, RuntimeDomainPlan &st
                 queued_before = _effect_instance_queue.size();
             }
             std::string drain_error;
-            drain_effect_transport_queues(drain_error);
+            drain_effect_transport_queues(plan.context.day, drain_error);
             const uint32_t nudged =
                 _effect_pod_authority.reschedule_unfired_due_instances(
                     effect_committed);

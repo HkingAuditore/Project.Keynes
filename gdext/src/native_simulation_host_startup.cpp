@@ -725,8 +725,16 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     if (restore_pending && !restore_trigger_transport(_pending_restore_bundle.trigger_transport_bytes, ecp2_apply_error, true)) {
         set_fault(ecp2_apply_error.c_str()); return false;
     }
-    if (restore_pending)
-        restore_effect_transport(_pending_restore_bundle.effect_transport_bytes);
+    if (restore_pending) {
+        if (_pending_restore_bundle.effect_transport_bytes.empty()) {
+            restore_effect_transport(_pending_restore_bundle.effect_transport_bytes);
+        } else if (!try_restore_effect_transport(
+                _pending_restore_bundle.effect_transport_bytes, ecp2_apply_error)) {
+            set_fault(ecp2_apply_error.c_str());
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+    }
     if (restore_pending && _world_environment && _economy_production_runtime &&
         _economy_production_runtime->worker_resource_seeded()) {
         std::lock_guard<std::mutex> display(_resource_display_mutex);

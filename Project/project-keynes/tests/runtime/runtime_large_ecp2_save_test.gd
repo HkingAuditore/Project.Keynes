@@ -48,10 +48,10 @@ func _run() -> void:
 	var section_mask := base.decode_u32(PKSR_SECTION_MASK_OFFSET)
 	var effect_transport := PackedByteArray()
 	if (section_mask & PKSR_EFFECT_TRANSPORT_SECTION) != 0:
-		# ETQ1 is the last PKSR section. The idle fixture has no entries in
+		# ETQ2 is the last PKSR section. The idle fixture has no entries in
 		# its four queues, so insert the synthetic ECP2 before this tail.
 		var tail_offset := base.size() - EMPTY_EFFECT_TRANSPORT_SIZE
-		var empty_tail := tail_offset >= 0 and base.decode_u32(tail_offset) == 0x31515445
+		var empty_tail := tail_offset >= 0 and base.decode_u32(tail_offset) == 0x32515445
 		for offset in range(tail_offset + 12, base.size(), 4):
 			empty_tail = empty_tail and base.decode_u32(offset) == 0
 		_expect("idle save has an empty Effect transport tail", empty_tail)

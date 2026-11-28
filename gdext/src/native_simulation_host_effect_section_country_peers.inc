@@ -118,7 +118,10 @@ bool NativeSimulationHost::ensure_effect_pod_technology_instance(
     // Effect POD authority: worker plan_day/commit/ack run concurrently and a
     // same-turn upsert races them (instances stuck fire_seq=0 / never fire).
     // Effect stage drain_effect_transport_queues installs before plan/soft-skip.
-    if (!queue_effect_pod_instance(input, error)) return false;
+    // Pass current execution day as worker_effective_day so same-day soft-skip
+    // retry drains this ENSURE immediately while keeping next_due_day = effect_day + 1
+    // for catchup_fire_never_fired_instances.
+    if (!queue_effect_pod_instance(input, error, std::max<int64_t>(0, day))) return false;
     return true;
 }
 
