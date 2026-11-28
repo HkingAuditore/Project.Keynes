@@ -562,23 +562,11 @@ static func _paper_building_texture(kind: String, product_id: StringName,
 	if _paper_building_textures.has(cache_key):
 		return _paper_building_textures[cache_key] as Texture2D
 	# 只在首次显示时合成纸贴；按建筑类型和产物缓存，不进入每日刷新热路径。
-	var canvas := Image.create(128, 128, false, Image.FORMAT_RGBA8)
-	var base := (PAPER_TEXTURES[base_key] as Texture2D).get_image()
-	# 纸贴图集按 VRAM 压缩导入（compress/mode=1）。压缩 Image 上 convert /
-	# resize / blend_rect 全部被引擎拒绝，图层会被静默丢弃并把坏贴图写进缓存，
-	# 必须先解压再合成。
-	if base != null and base.is_compressed():
-		base.decompress()
-	base.convert(Image.FORMAT_RGBA8)
-	base.resize(108, 108, Image.INTERPOLATE_LANCZOS)
-	canvas.blend_rect(base, Rect2i(0, 0, 108, 108), Vector2i.ZERO)
-	var product := texture_for_key(good_semantic(String(product_id))).get_image()
-	if product != null and product.is_compressed():
-		product.decompress()
-	product.convert(Image.FORMAT_RGBA8)
-	product.resize(66, 66, Image.INTERPOLATE_LANCZOS)
-	canvas.blend_rect(product, Rect2i(0, 0, 66, 66), Vector2i(62, 62))
-	var texture := ImageTexture.create_from_image(canvas)
+	var base := PAPER_TEXTURES[base_key] as Texture2D
+	var product := texture_for_key(good_semantic(String(product_id)))
+	var texture := PaperBuildingIcon.compose(base, product)
+	if texture == null:
+		return base
 	_paper_building_textures[cache_key] = texture
 	return texture
 

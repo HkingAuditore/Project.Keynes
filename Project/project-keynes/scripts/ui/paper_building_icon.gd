@@ -21,7 +21,7 @@ static func compose(base_texture: Texture2D, product_texture: Texture2D) -> Text
 static func _read_layer(texture: Texture2D, size: int) -> Image:
 	if texture == null:
 		return null
-	var pixels := texture.get_image()
+	var pixels := _read_pixels(texture)
 	if pixels == null or pixels.is_empty():
 		return null
 	# Imported paper textures may use VRAM compression, which cannot be blended directly.
@@ -30,6 +30,27 @@ static func _read_layer(texture: Texture2D, size: int) -> Image:
 	pixels.convert(Image.FORMAT_RGBA8)
 	pixels.resize(size, size, Image.INTERPOLATE_LANCZOS)
 	return pixels
+
+
+static func _read_pixels(texture: Texture2D) -> Image:
+	var slice := texture as AtlasTexture
+	if slice == null or not (slice.atlas is CompressedTexture2D):
+		return texture.get_image()
+	var pixels := slice.atlas.get_image()
+	if pixels == null or pixels.is_empty():
+		return null
+	if pixels.is_compressed() and pixels.decompress() != OK:
+		return null
+	# Web 缩图保留逻辑尺寸，CPU 裁切要换算到实际图集像素。
+	var ratio := Vector2(pixels.get_size()) / slice.atlas.get_size()
+	var region := slice.region
+	if region.size.x == 0.0:
+		region.size.x = slice.atlas.get_width()
+	if region.size.y == 0.0:
+		region.size.y = slice.atlas.get_height()
+	var start := Vector2i((region.position * ratio).round())
+	var end := Vector2i(((region.position + region.size.floor()) * ratio).round())
+	return pixels.get_region(Rect2i(start, end - start))
 
 
 static func _paper_building_base(kind: String, product_id: StringName,

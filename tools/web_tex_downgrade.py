@@ -45,6 +45,7 @@ import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -68,15 +69,10 @@ from typing import Any
 #   "compress/lossy_quality" 仅 mode=1 生效（WebP 质量）
 #   "process/size_limit"     0=原尺寸；>0 按最长边缩到该值
 #   "mipmaps/generate"       数组/3D 用途要保留，UI 图本来是 false 就别开
+DEFAULT_2D_QUALITY = "0.18"
 RULES: list[tuple[str, dict[str, str], int]] = [
-    # 基线：所有 2D 纹理 无损 -> lossy
+    # 默认 WebP 压缩。普通 2D 的质量由 policy_for 统一设置。
     ("res://assets/**", {"compress/mode": "1", "compress/lossy_quality": "0.55"}, 0),
-
-    # 大头：手绘 UI 纸面/面板（assets/ui 占 97.9 MB），观感容错最高
-    ("res://assets/ui/**", {"compress/mode": "1", "compress/lossy_quality": "0.55"}, 0),
-
-    # 图标集：屏幕显示尺寸小（1080p 下 32~64 px）
-    ("res://assets/icons/**", {"compress/mode": "1", "compress/lossy_quality": "0.55"}, 0),
 
     # 2D 数组纹理（地面覆盖 / 树冠，按 sprite 采样）。法线一旦出块状伪影会毁掉受光，
     # 近景地图精灵保持高压缩质量（q=0.90），mipmaps 保留（远处 minify 靠它）。
@@ -99,17 +95,25 @@ RULES: list[tuple[str, dict[str, str], int]] = [
     ("res://assets/vfx/**", {"compress/mode": "1", "compress/lossy_quality": "0.90"}, 0),
 ]
 
-# ⚠️ 2026-11-11 撤回：这里曾经有三条 `process/size_limit`（ui 1152 / icons 1024 /
-# military 1152），想在 lossy 之外再省一份分辨率。**这是错的，已删除。**
-#
-# 原因：这套 UI 的图集尺寸是**布局输入**，不是单纯的显示素材。
-#   * `scripts/ui/icon_catalog.gd` 用 `texture.get_size()` 反算图集单元格，
-#     图集一缩，每个图标的绘制矩形全错，表现为图标重叠、大小不一。
-#   * `assets/themes/*.tres` 里的 `texture_margin_*`（如 24.0）是**像素**，
-#     贴图缩小后九宫格边距与内容区不再对应，面板边框变形、文字溢出。
-# 实测后果：新开局面板与 HUD 大面积错位，事件弹窗文字压到纸边上。
-# 结论：这几类图只能改压缩质量（lossy_quality），**任何情况下都不要动分辨率**。
-# 要再省体积，只能从压缩质量或"不打包无用资源"下手。
+# Web 2D 最长边上限，首条匹配的规则生效。图集和九切片沿用桌面逻辑尺寸。
+WEB_2D_SIZE_LIMITS = [
+    ("res://assets/icons/paper/*", 512),
+    ("res://assets/icons/era/*", 128),
+    ("res://assets/military/*", 1024),
+    ("res://assets/ui/annual_chronicle/chronicle_chapter_emblems.png", 512),
+    ("res://assets/ui/annual_chronicle/chronicle_pencil_badge.png", 512),
+    ("res://assets/ui/annual_chronicle/annual_seal.png", 384),
+    ("res://assets/ui/annual_chronicle/*", 768),
+    ("res://assets/ui/ideology_*/*", 512),
+    ("res://assets/ui/tabletop/desk.webp", 896),
+    ("res://assets/ui/tabletop/harbour.webp", 896),
+    ("res://assets/ui/tabletop/*", 512),
+    ("res://assets/ui/menu_atlas_v1/*", 640),
+    ("res://assets/ui/family_workspace/*", 512),
+    ("res://assets/ui/dossier_shell/*", 512),
+    ("res://assets/ui/country_status/*", 192),
+    ("res://assets/vfx/*", 512),
+]
 
 # 明确不动的路径。命中即跳过并给出理由。
 KEEP: list[tuple[str, str]] = [
@@ -117,14 +121,14 @@ KEEP: list[tuple[str, str]] = [
     ("res://assets/textures/loading_prebaked_v1/**",
      "预烘焙 .res 由 export_presets 的 exclude_filter 处理（见报告 §5）"),
     ("res://assets/textures/terrain_materials/**", "Web 预设排除原图，运行时读预烘焙材质"),
+    ("res://assets/textures/terrain_micro_data.png", "着色器读取 RGBA 数据通道"),
     ("res://assets/textures/resource_art/source/**", "原图源，游戏不直接引用"),
     ("res://**.svg", "矢量图标：光栅化后是锐利线稿，lossy 反而出振铃，且单文件 < 2 KB"),
 ]
 
-# 体积门槛：当前导入产物小于这个值的资源一律不动。
-# 理由：这些要么是 1~64 px 的小图标（省不到 100 KB，但 lossy 会糊边），
-# 要么是 alpha 遮罩小图；动它们的性价比为负。
-MIN_BYTES = 128 * 1024
+# 给小型资源保留原导入格式，纹理数组沿用既有门槛。
+MIN_2D_BYTES = 16 * 1024
+MIN_ARRAY_BYTES = 128 * 1024
 
 # ---- 预烘焙材质 .res（默认保留 1024 / 512 原尺寸，仅在显式开启时缩小）------
 # PC-Web 中/高画质使用 material_1024_*.res，低画质与移动浏览器使用 material_512_*.res。
@@ -339,8 +343,20 @@ def policy_for(res_path: str, params: dict[str, str], importer: str,
     if not resolved:
         return {}, "无规则命中"
 
-    if 0 <= current_bytes < max(MIN_BYTES, min_bytes):
-        return {}, f"当前产物只有 {current_bytes // 1024} KB，低于门槛，性价比为负"
+    size_limit = 0
+    if importer == "texture":
+        size_limit = next((limit for pattern, limit in WEB_2D_SIZE_LIMITS
+                           if fnmatch.fnmatchcase(res_path, pattern)), 0)
+        resolved["compress/lossy_quality"] = DEFAULT_2D_QUALITY
+
+    threshold = MIN_2D_BYTES if importer == "texture" else MIN_ARRAY_BYTES
+    if 0 <= current_bytes < max(threshold, min_bytes):
+        resolved.clear()
+    desktop_limit = int(params.get("process/size_limit", "0")) if size_limit else 0
+    if size_limit and (desktop_limit == 0 or size_limit < desktop_limit):
+        resolved["process/size_limit"] = str(size_limit)
+    if not resolved:
+        return {}, f"当前产物只有 {current_bytes // 1024} KB，低于门槛"
 
     if imp is not None and is_vram_variant(imp):
         resolved = {k: v for k, v in resolved.items() if k == "process/size_limit"}
@@ -371,6 +387,27 @@ def dest_size(project: str, res_dest: str) -> int:
         return os.path.getsize(p)
     except OSError:
         return -1
+
+
+def ctex_dimensions(stream: Any) -> tuple[tuple[int, int], tuple[int, int]]:
+    header = stream.read(44)
+    if len(header) != 44 or header[:8] != b"GST2\x01\0\0\0":
+        raise RuntimeError(f"不支持的 Godot 2D 纹理格式: {stream.name}")
+    return struct.unpack_from("<II", header, 8), struct.unpack_from("<HH", header, 40)
+
+
+def preserve_ctex_coordinates(project: str, entry: dict[str, Any]) -> None:
+    cap = int(entry["params_changed"]["process/size_limit"])
+    for dest, (logical, original_pixels) in entry["ctex_before"].items():
+        path = os.path.join(project, dest.removeprefix("res://"))
+        with open(path, "r+b") as stream:
+            current_logical, web_pixels = ctex_dimensions(stream)
+            if min(web_pixels) <= 0 or max(web_pixels) > cap or max(web_pixels) >= max(original_pixels):
+                raise RuntimeError(f"{dest}: 缩图尺寸不符 {original_pixels} -> {web_pixels}，上限 {cap}")
+            if current_logical != tuple(logical):
+                # GST2 分开存放 Texture2D 布局尺寸和实际上传的 Image 像素尺寸。
+                stream.seek(8)
+                stream.write(struct.pack("<II", *logical))
 
 
 def human(n: int) -> str:
@@ -408,7 +445,8 @@ def collect_imports(project: str) -> list[ImportFile]:
     out: list[ImportFile] = []
     skip_dirs = {".git", ".godot", "__pycache__", "tmp", "test_output", "docs", "android"}
     for root, dirs, files in os.walk(project):
-        dirs[:] = [d for d in dirs if d not in skip_dirs]
+        dirs[:] = [d for d in dirs if d not in skip_dirs
+                   and not os.path.isfile(os.path.join(root, d, ".gdignore"))]
         rel = os.path.relpath(root, project).replace("\\", "/")
         for fn in files:
             if not fn.endswith(".import"):
@@ -634,7 +672,8 @@ def cmd_plan(args: Any, state: str) -> int:
     for imp, changes, why, before in sorted(rows, key=lambda r: -r[3]):
         def fmt(d: dict[str, str]) -> str:
             return (f"mode={d.get('compress/mode', '-')} "
-                    f"q={d.get('compress/lossy_quality', '-')}")
+                    f"q={d.get('compress/lossy_quality', '-')} "
+                    f"最长边={d.get('process/size_limit', '0')}")
         print(f"| `{imp.res_path}` | {fmt(imp.params)} | {fmt({**imp.params, **changes})} | "
               f"{human(before)} | {why} |")
     print(f"\n合计 {len(rows)} 项，当前 {human(sum(r[3] for r in rows))}。")
@@ -673,12 +712,32 @@ def cmd_begin(args: Any, state: str) -> int:
     entries: list[dict[str, Any]] = []
     to_write: list[tuple[str, bytes]] = []
 
-    for imp in collect_imports(project):
+    imports = collect_imports(project)
+    if not args.no_import and any(
+        imp.importer == "texture"
+        and any(dest_size(project, dest) < 0 for dest in imp.dests)
+        and policy_for(imp.res_path, imp.params, imp.importer, imp)[0]
+        for imp in imports
+    ):
+        run_import(godot, project, os.path.join(state, "import_baseline.log"))
+        imports = collect_imports(project)
+
+    for imp in imports:
         if args.only and not any(fnmatch.fnmatch(imp.res_path, g) for g in args.only):
             continue
         before = {d: dest_size(project, d) for d in imp.dests}
         cur = sum(max(0, v) for v in before.values())
         changes, why = policy_for(imp.res_path, imp.params, imp.importer, imp, cur)
+        ctex_before = {}
+        if "process/size_limit" in changes and not args.no_import:
+            cap = int(changes["process/size_limit"])
+            for dest in imp.dests:
+                with open(os.path.join(project, dest.removeprefix("res://")), "rb") as stream:
+                    logical, pixels = ctex_dimensions(stream)
+                if max(pixels) > cap:
+                    ctex_before[dest] = (logical, pixels)
+            if not ctex_before:
+                del changes["process/size_limit"]
         if not changes:
             continue
         entries.append({
@@ -689,6 +748,7 @@ def cmd_begin(args: Any, state: str) -> int:
             "params_changed": changes,
             "dests": imp.dests,
             "dest_sizes_before": before,
+            "ctex_before": ctex_before,
             "why": why,
         })
         to_write.append((imp.abspath, imp.patched(changes)))
@@ -802,6 +862,8 @@ def cmd_begin(args: Any, state: str) -> int:
 
         total_before = total_after = 0
         for e in entries:
+            if e["ctex_before"] and not e.get("reverted"):
+                preserve_ctex_coordinates(project, e)
             total_before += sum(max(0, v) for v in e["dest_sizes_before"].values())
             total_after += sum(max(0, v) for v in e["dest_sizes_after"].values())
 

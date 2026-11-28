@@ -234,7 +234,7 @@ func _apply_model() -> void:
 	_reward.visible = complete and available
 	_score.visible = complete
 	_art.texture = _cover_texture()
-	if _art.texture != null:
+	if _art.texture != null and not (_art.texture is AtlasTexture):
 		# The generated illustration has an irregular transparent silhouette.
 		# Use its actual alpha bounds rather than stretching its square canvas.
 		var image := _art.texture.get_image()
@@ -243,7 +243,8 @@ func _apply_model() -> void:
 			if bounds.size.x > 1 and bounds.size.y > 1:
 				var clipped := AtlasTexture.new()
 				clipped.atlas = _art.texture
-				clipped.region = Rect2(bounds)
+				var ratio := _art.texture.get_size() / Vector2(image.get_size())
+				clipped.region = Rect2(Vector2(bounds.position) * ratio, Vector2(bounds.size) * ratio)
 				_art.texture = clipped
 	var items: Array = _model.get("kpis", [])
 	for i in _numerals.size():
