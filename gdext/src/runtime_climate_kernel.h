@@ -269,6 +269,9 @@ public:
     std::shared_ptr<const pk_async_physics::RuntimeClimatePhysicsState>
         copy_physics_writeback(const RuntimeClimateStore &store) const;
     static void commit(RuntimeClimateStore &current, RuntimeClimateStore &next);
+    // Worker-local views valid until the next climate plan.
+    const uint32_t *research_cyclone_tags(int64_t day, uint32_t &generation) const;
+    const float *research_cyclone_wind(int64_t day) const;
     // 只由 Authority 在成功交换提交后确认；任何丢弃/恢复都会撤销复用资格。
     void accept_committed_physics(const RuntimeClimateStore &store);
     void invalidate_committed_physics();
@@ -292,6 +295,7 @@ public:
     const std::vector<uint8_t> &weather_field_init() const {
         return _weather_field_init_scratch;
     }
+    bool weather_committed_on(int64_t day) const { return day >= 0 && _weather_commit_day == day; }
 
     // pass_a 的日照/热量输出，同样没有 store 成员、同样在 ACTIVE 下失去主线程写者。
     // 直接给 _round_out 的引用：这些 lane 每天被共享 round 重写，不跨天累积。
@@ -334,6 +338,8 @@ private:
     mutable std::vector<float> _weather_prev_cloud_water;
     mutable std::vector<float> _weather_prev_cloud;
     mutable std::vector<float> _weather_prev_convergence;
+    mutable std::vector<float> _weather_classification_anomaly;
+    mutable int64_t _weather_commit_day = -1;
     // conv_inhib 与 field_init 没有 store 成员：前者每天从生产记录播种、输出丢弃，
     // 后者是"这格初始化过没有"的一次性标记，经 snapshot extras 回灌 MapData。
     mutable std::vector<float> _weather_conv_inhib;
@@ -356,6 +362,8 @@ private:
     mutable std::vector<float> _cyclone_force_y;
     mutable std::vector<float> _cyclone_lift;
     mutable uint32_t _cyclone_force_generation = 0;
+    mutable int64_t _research_cyclone_day = -1;
+    mutable std::vector<float> _research_cyclone_captured_wind;
     mutable uint64_t _cyclone_next_stable_id = 1;
     mutable bool _cyclone_seeded = false;
     // staged next buffer：生产 weather_advance → weather_commit 两步之间的中转。

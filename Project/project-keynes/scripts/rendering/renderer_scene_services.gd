@@ -523,6 +523,8 @@ static func update_building_visual_intel(host, intel: BuildingVisualIntelCache,
 	if host._building_visual_layer != null:
 		host._building_visual_layer.update_intel(intel, changed_cells)
 	var core_buckets = intel.settlement_core_buckets()
+	if host._forest_canopy_layer != null and is_instance_valid(host._forest_canopy_layer):
+		host._forest_canopy_layer.set_settlement_core_buckets(core_buckets, changed_cells)
 	host._for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		if layer.has_method("set_settlement_core_buckets"):
 			layer.set_settlement_core_buckets(core_buckets)

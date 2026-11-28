@@ -141,6 +141,7 @@ var _fog_early_out: bool = false
 # @export profile；配置 decoration_manifest 后按其 layers 数组生成 N 层。
 var _detail_layers: Array = []
 var _detail_family_layer = null
+var _forest_canopy_layer = null
 var _detail_family_dirty_chunks: Dictionary = {}
 var _detail_refresh_queue: Array = []
 var _detail_refresh_indices: PackedInt32Array = PackedInt32Array()

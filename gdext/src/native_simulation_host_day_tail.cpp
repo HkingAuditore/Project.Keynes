@@ -228,8 +228,40 @@ std::shared_ptr<const RuntimeClimateSnapshot> NativeSimulationHost::latest_clima
     return latest && latest->day_tail ? latest->day_tail->climate : nullptr;
 }
 
+std::shared_ptr<const RuntimeValleyFogFrame> NativeSimulationHost::latest_valley_fog_display() const {
+    const auto latest = std::atomic_load(&_latest_commit);
+    return latest && latest->day_tail ? latest->day_tail->valley_fog : nullptr;
+}
+
+void NativeSimulationHost::publish_initial_valley_fog(bool restored) {
+    if (!_world_environment) return;
+    const auto &climate = _climate_authority.store();
+    const bool use_committed = restored && climate.committed_day >= 0;
+    const auto live_physics = use_committed ? _climate_authority.copy_committed_physics() : nullptr;
+    const auto *physics = live_physics.get();
+    pk_async_physics::RuntimeClimatePhysicsState checkpoint_physics;
+    if (!physics && use_committed && !climate.physics_state.empty()) {
+        std::string error;
+        if (pk_async_physics::restore_physics_state(climate.physics_state.data(),
+                climate.physics_state.size(), checkpoint_physics, error)) physics = &checkpoint_physics;
+    }
+    auto fog = _world_environment->publish_valley_fog(use_committed ? &climate : nullptr,
+        physics, true);
+    if (!fog) return;
+    const auto latest = std::atomic_load(&_latest_commit);
+    if (!latest) return;
+    auto initial = std::make_shared<RuntimeCommit>(*latest);
+    auto tail = latest->day_tail ? std::make_shared<RuntimeDayTail>(*latest->day_tail)
+                                 : std::make_shared<RuntimeDayTail>();
+    tail->valley_fog = std::move(fog);
+    initial->day_tail = std::move(tail);
+    std::atomic_store(&_latest_commit, std::shared_ptr<const RuntimeCommit>(std::move(initial)));
+}
+
 void NativeSimulationHost::publish_cell_lut_changes(RuntimeDayTail &tail, const RuntimeDayTail *previous) {
     const auto &state = tail.climate->payload;
+    tail.valley_fog = _world_environment->publish_valley_fog(&state,
+        tail.climate->physics_writeback.get(), _climate_authority.weather_committed_on(state.committed_day));
     const size_t count = state.cell_count;
     if (state.terrain.size() != count || state.vegetation.size() != count ||
         state.cover.size() != count || state.weather_type.size() != count) return;

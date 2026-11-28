@@ -7,6 +7,9 @@ namespace pk {
 
 using namespace godot;
 
+void append_valley_fog_world_layout(Dictionary &config, Object *map,
+        const RuntimeEnvironmentSnapshot &snapshot);
+
 static inline String runtime_state_name(RuntimeWorkerState state) {
     switch (state) {
         case RuntimeWorkerState::STOPPED: return "STOPPED";

@@ -94,6 +94,7 @@ func _run() -> void:
 		"field path consumes the shared cell-field overlay glue")
 
 	_check_sampler_census(source)
+	_check_valley_fog_sampler_census(source)
 	_check_expanded_symbols()
 	_check_declaration_source_guards(source)
 	_check_web_min_include()
@@ -161,6 +162,37 @@ func _check_sampler_census(source: String) -> void:
 		_expect(int(mobile_legacy["count"]) == expected_off.size(),
 			"%s legacy path keeps %d samplers (got %d)"
 				% [label, expected_off.size(), int(mobile_legacy["count"])])
+
+
+func _check_valley_fog_sampler_census(source: String) -> void:
+	var fog := "#define PK_VALLEY_FOG\n"
+	for quality_prefix in [MOBILE_PREFIXES["mobile_low"], MOBILE_PREFIXES["mobile_mid"], PREFIX_WEB]:
+		for table_prefix in ["", "#define PK_CELL_FIELD\n"]:
+			var active: String = quality_prefix + table_prefix
+			var baseline := _sampler_census(active + source)
+			var disabled := _sampler_census(active + fog + source)
+			_expect(not Array(disabled["uniforms"]).is_empty() and disabled["uniforms"] == baseline["uniforms"],
+				"low, mid and Web-min strip valley fog even when requested (%s)" % active.strip_edges().replace("\n", ", "))
+	for table_prefix in ["", "#define PK_CELL_FIELD\n"]:
+		for tiled_prefix in ["", "#define MAP_VISUAL_TILED\n"]:
+			var active: String = PREFIX_DESKTOP + table_prefix + tiled_prefix
+			var baseline := _sampler_census(active + source)
+			var enabled := _sampler_census(active + fog + source)
+			var expected := Array(baseline["names"])
+			expected.append_array(["valley_fog_table", "valley_fog_noise",
+				"height_tex" if tiled_prefix.is_empty() else "visual_height_tiles"])
+			if table_prefix.is_empty():
+				expected.append("cell_table")
+			_expect(PackedStringArray(enabled["names"]) == _sorted(expected),
+				"high valley fog uses the fog data, noise, cell attributes and matched height samplers (got %s)"
+					% str(enabled["names"]))
+	var endpoints := _sampler_census(PREFIX_DESKTOP + fog + "#define PK_CELL_FIELD\n#define PK_WEATHER_CELL_ENDPOINTS\n" + source)
+	_expect(PackedStringArray(endpoints["names"]) == _sorted([
+		"cell_table", "height_tex", "valley_fog_noise", "valley_fog_table", "weather_endpoints", "weather_table",
+	]), "the high RenderingDevice weather endpoint variant compiles with six samplers")
+	var expanded := _expand_shader(SHADER_PATH, {"PK_WEATHER_HIGH": true, "PK_CELL_FIELD": true, "PK_VALLEY_FOG": true})
+	_expect(expanded.contains("wx_sample_valley_fog(") and not expanded.contains("wx_biome_mountain_weight("),
+		"valley fog replaces the cloud-dependent mountain weighting in the high variant")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -700,7 +732,7 @@ func _expand_into(path: String, defines: Dictionary, out: Array, depth: int) -> 
 	var raw := FileAccess.get_file_as_string(path)
 	if raw.is_empty():
 		return
-	var text := _strip_shader_comments(raw.replace("\r\n", "\n").replace("\r", "\n"))
+	var text := _strip_shader_comments(raw.replace("\r\n", "\n").replace("\r", "\n").replace("\\\n", " "))
 	var stack: Array = []
 	for line in text.split("\n"):
 		var trimmed := String(line).strip_edges()
@@ -796,7 +828,7 @@ var _cond_pos := 0
 
 
 func _eval_cond(expr: String, defines: Dictionary) -> int:
-	_cond_text = expr.replace(" ", "")
+	_cond_text = expr.replace(" ", "").replace("\t", "")
 	_cond_pos = 0
 	var value := _cond_or(defines)
 	if value >= 0 and _cond_pos < _cond_text.length():

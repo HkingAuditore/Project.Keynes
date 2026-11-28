@@ -23,7 +23,6 @@ const PK_WEB_VEG_NEAR_FULL_FORMS = Material_inputs.PK_WEB_VEG_NEAR_FULL_FORMS
 const _SHADOW_BUFFER_STRIDE = Chunk_nodes._SHADOW_BUFFER_STRIDE
 const DECORATION_VEG_RESIDUAL = ShrubScatter.DECORATION_VEG_RESIDUAL
 
-
 const _WT_RAIN := 1
 const _WT_STORM := 2
 const _WT_BLIZZARD := 3
@@ -192,6 +191,7 @@ var _active_instance_count_cache: int = 0
 var _active_instance_count_valid: bool = false
 var _active_instance_count_scans: int = 0
 var _defer_initial_rebuild := false
+var _static_canopy_enabled := true
 var _chunk_dormant_since_msec: Dictionary = {}
 var _chunk_wrap_nodes: Dictionary = {}
 var _chunk_instance_counts: Dictionary = {}
@@ -262,6 +262,16 @@ func setup(map: MapData, world: WorldData, bounds: Rect2, hex_size: float, visua
 
 func set_defer_initial_rebuild(value: bool) -> void:
 	return Lifecycle.set_defer_initial_rebuild(self, value)
+
+func set_static_canopy_enabled(value: bool) -> void:
+	_static_canopy_enabled = value
+
+func is_static_canopy_layer() -> bool:
+	return Family_materials.is_static_canopy_layer(self)
+
+func set_vegetation_ao_tuning(ground_ao: float, ground_radius: float,
+		floor_shadow: float, contact_ao: float) -> void:
+	Family_materials.set_vegetation_ao_tuning(self, ground_ao, ground_radius, floor_shadow, contact_ao)
 
 func clear() -> void:
 	return Lifecycle.clear(self)

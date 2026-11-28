@@ -516,6 +516,7 @@ bool RuntimeEnvironmentSnapshot::ClimatePhysicsKnobs::validate(std::string &erro
 
 #include "runtime_climate_kernel_stage_order.inc"
 void RuntimeClimateKernel::reset(uint32_t) {
+    _weather_commit_day = -1;
     invalidate_committed_physics();
     // 换图 / authority reset 后，weather field_init 的"已播种"标记必须一起清掉。
     _weather_field_init_seeded = false;
@@ -561,6 +562,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                                     RuntimeClimateKernelReport &report,
                                     bool compute_state_hash,
                                     bool validate_input, bool reuse_committed_history) const {
+    _weather_commit_day = -1;
 #include "runtime_climate_kernel_seed_state.inc"
 #include "runtime_climate_kernel_physical_inputs.inc"
 #include "runtime_climate_kernel_daily_round.inc"
@@ -693,6 +695,18 @@ RuntimeClimateKernel::copy_physics_writeback(const RuntimeClimateStore &store) c
 void RuntimeClimateKernel::commit(RuntimeClimateStore &current, RuntimeClimateStore &next) {
     using std::swap;
     swap(current, next);
+}
+
+const uint32_t *RuntimeClimateKernel::research_cyclone_tags(
+        int64_t day, uint32_t &generation) const {
+    generation = _cyclone_force_generation;
+    return _research_cyclone_day == day ? _cyclone_force_tag.data() : nullptr;
+}
+
+const float *RuntimeClimateKernel::research_cyclone_wind(int64_t day) const {
+    if (_research_cyclone_day != day) return nullptr;
+    return _research_cyclone_captured_wind.empty()
+        ? _physics.wind_speed.data() : _research_cyclone_captured_wind.data();
 }
 
 void RuntimeClimateKernel::invalidate_committed_physics() {

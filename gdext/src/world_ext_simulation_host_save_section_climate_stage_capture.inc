@@ -336,32 +336,37 @@
                 // B8-2：cyclone 冷启动种子 + 推进参数。genesis 仍在主线程，所以
                 // 这里搬的是"当前活跃条目"，worker 接管后自行推进/衰减/stamp。
                 snapshot.cyclone_seed_blob = runtime_cyclone_state_blob();
-                snapshot.cyclone_enabled =
-                    kb("native_tropical_cyclone_enabled", false);
+                // Cyclone settings are world configuration. The worker's
+                // field-solve dictionary may omit them.
+                const auto cyclone_setting = [&](const char *key, const Variant &fallback) {
+                    return d.has(key) ? d[key] : _native_runtime_config.get(key, fallback);
+                };
+                snapshot.cyclone_enabled = bool(cyclone_setting(
+                    "native_tropical_cyclone_enabled", false));
                 snapshot.cyclone_dt_days = kf("weather_transition_dt_days", 1.0f);
                 snapshot.cyclone_max_radius_cells =
-                    ki("tropical_cyclone_max_radius_cells", 5);
+                    int(cyclone_setting("tropical_cyclone_max_radius_cells", 5));
                 snapshot.cyclone_world_bounds_pos_y =
                     kf("world_bounds_pos_y", 0.0f);
                 snapshot.cyclone_world_bounds_size_y =
                     kf("world_bounds_size_y", 1.0f);
                 snapshot.cyclone_wrap_width_x =
                     kf("weather_wrap_width_x", 0.0f);
-                snapshot.cyclone_storm_type_id = ki("cyclone_storm_type_id", -1);
+                snapshot.cyclone_storm_type_id = k.cyclone_storm_type_id;
                 snapshot.cyclone_capacity =
-                    ki("tropical_cyclone_capacity", 24);
+                    int(cyclone_setting("tropical_cyclone_capacity", 24));
                 snapshot.cyclone_births_per_commit =
-                    ki("tropical_cyclone_births_per_commit", 2);
+                    int(cyclone_setting("tropical_cyclone_births_per_commit", 2));
                 snapshot.cyclone_min_temp =
-                    kf("tropical_cyclone_min_temp", 0.58f);
+                    float(cyclone_setting("tropical_cyclone_min_temp", 0.58f));
                 snapshot.cyclone_min_instability =
-                    kf("tropical_cyclone_min_instability", 0.40f);
+                    float(cyclone_setting("tropical_cyclone_min_instability", 0.40f));
                 snapshot.cyclone_max_shear =
-                    kf("tropical_cyclone_max_shear", 0.42f);
+                    float(cyclone_setting("tropical_cyclone_max_shear", 0.42f));
                 snapshot.cyclone_min_lat =
-                    kf("tropical_cyclone_min_lat", 0.06f);
+                    float(cyclone_setting("tropical_cyclone_min_lat", 0.06f));
                 snapshot.cyclone_max_lat =
-                    kf("tropical_cyclone_max_lat", 0.40f);
+                    float(cyclone_setting("tropical_cyclone_max_lat", 0.40f));
                 snapshot.cyclone_wake_days =
                     kf("cyclone_wake_days", 32.0f);
                 wx->elevation = snapshot.cell_elevation;

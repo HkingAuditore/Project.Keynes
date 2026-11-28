@@ -220,6 +220,12 @@ func _prepare_world_simulation(host) -> Dictionary:
 		var report: Dictionary = host._runtime_control_state()
 		host._apply_climate_writeback_if_authoritative(report)
 		host._publish_player_confirmation(report)
+	if host._web_worker_start_ok:
+		var extension = host._generator.get_data_core_world_ext()
+		if extension != null and extension.has_method("read_runtime_initial_valley_fog"):
+			var fog: Dictionary = extension.read_runtime_initial_valley_fog(host._current_map)
+			if not fog.is_empty():
+				host._generator.publish_worker_climate_visuals(false, {"valley_fog": fog})
 	if host._is_web_build() and host._runtime_worker_fault_paused:
 		return {"ok": false, "code": host._web_worker_start_code}
 	host._clock_binding.attach(host._world_clock, host._forward_runtime_clock,

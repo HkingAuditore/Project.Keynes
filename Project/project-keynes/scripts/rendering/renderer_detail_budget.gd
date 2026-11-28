@@ -144,15 +144,21 @@ static func _apply_detail_budget_to_layer(host, layer, fraction: float) -> bool:
 
 	if layer == null or not is_instance_valid(layer):
 		return false
+	# 路线 A：静态树冠层脱离全局动态配额抽稀，避免视野移动或其他草/灌木层波动导致树木闪烁消失。
+	var effective_fraction := fraction
+	if bool(host.detail_scatter_static_canopy_enabled) \
+			and layer.has_method("is_static_canopy_layer") \
+			and bool(layer.is_static_canopy_layer()):
+		effective_fraction = 1.0
 	if layer.has_method("apply_visible_instance_fraction_weighted"):
 		var weighted = layer.apply_visible_instance_fraction_weighted(
-			fraction, host._camera_world_rect, host._camera_zoom, host._pixel_world_size,
+			effective_fraction, host._camera_world_rect, host._camera_zoom, host._pixel_world_size,
 			host.detail_scatter_rebuild_log_enabled)
 		if weighted is Dictionary and not (weighted as Dictionary).is_empty():
 			host._last_detail_budget_weighted_report = weighted
 		return true
 	if layer.has_method("apply_visible_instance_fraction"):
-		layer.apply_visible_instance_fraction(fraction)
+		layer.apply_visible_instance_fraction(effective_fraction)
 		return true
 	return false
 
@@ -216,6 +222,10 @@ static func _apply_detail_global_budget(host, force_complete: bool = false, allo
 			scanned_total = int(host._detail_family_layer.active_instance_count())
 		else:
 			for layer in host._detail_layers:
+				if bool(host.detail_scatter_static_canopy_enabled) \
+						and layer != null and layer.has_method("is_static_canopy_layer") \
+						and bool(layer.is_static_canopy_layer()):
+					continue
 				if layer != null and layer.has_method("active_instance_count"):
 					scanned_total += int(layer.active_instance_count())
 				elif layer != null and layer.has_method("instance_count"):

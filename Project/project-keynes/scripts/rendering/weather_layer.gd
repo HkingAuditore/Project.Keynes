@@ -10,6 +10,7 @@ extends Node2D
 const WeatherRenderStep = preload("res://scripts/rendering/weather_layer_render_step.gd")
 const WeatherFrontBlend = preload("res://scripts/rendering/weather_layer_front_blend.gd")
 const WeatherMaterialPublish = preload("res://scripts/rendering/weather_layer_material_publish.gd")
+const ValleyFogRendering = preload("res://scripts/rendering/weather_layer_valley_fog.gd")
 
 const WeatherLayerParticlesScript = preload("res://scripts/rendering/weather_layer_particles.gd")
 const WeatherCellCurtains = preload("res://scripts/rendering/weather_cell_curtains.gd")
@@ -32,6 +33,7 @@ const PK_WEB_ENABLE_WEATHER_SHADERS := true
 ## 桌面/移动端不受影响（宏未定义 → 走原来的桌面路径）。
 const WEB_WEATHER_MIN_DEFINE := "#define PK_WEB_WEATHER_MIN\n"
 const OVERLAY_SHADER_PATH := "res://shaders/weather_overlay.gdshader"
+const VALLEY_FOG_SETTING := "project_keynes/rendering/weather/valley_fog_enabled"
 
 # ═══════════════════════════════════════════════════════════════════════════
 # [cell-field-overlays 2026-11-18 / O2] 天气 overlay 改走共享场函数（PK_CELL_FIELD）
@@ -145,6 +147,7 @@ var _edge_distance_tex: Texture2D = null
 var _edge_transition_width: float = 0.84
 var _world_ref = null  # WorldData 引用(取 weather_lut_prev_tex 做帧间插值)
 var _visual_tiles = null
+var _valley_fog := ValleyFogRendering.new()
 var _wx_lut_last_usec: int = 0          # 上次检测到的 LUT 更新时刻
 var _wx_lut_t0_usec: int = 0            # 本插值周期起点(检测到 LUT 换帧的时刻)
 var _wx_commit_interval_usec: float = 500000.0  # 自适应 commit 间隔(默认 0.5s)
@@ -165,6 +168,8 @@ var _endpoints_revision := -1
 var _wx_pushed_weather_table: Texture2DArray = null
 var _wx_pushed_weather_cur: int = -2
 var _wx_pushed_weather_bound: bool = false
+var _wx_pushed_cell_table: Texture2DArray
+var _wx_pushed_cell_bound := false
 # [cell-field-overlays 2026-11-18 / O2] 场函数开关的"已警告一次"标记：开关开着但
 # weather_table / cell_table 没发布时只报一次，避免每帧刷日志。
 var _wx_cell_field_warned: bool = false
@@ -218,6 +223,15 @@ var _drift_debug_last_log_time: float = -1.0
 ## 读不到键时走**关闭**默认值（方案 §4：出货默认关）。
 func _init() -> void:
 	weather_cell_field_enabled = cell_field_setting_enabled()
+	valley_fog_enabled = bool(ProjectSettings.get_setting(VALLEY_FOG_SETTING, not OS.has_feature("mobile")))
+
+
+@export var valley_fog_enabled := true:
+	set(value):
+		if valley_fog_enabled == value:
+			return
+		valley_fog_enabled = value
+		_apply_cell_field_enabled()
 
 
 ## [cell-field-overlays 2026-11-18 / O2] 项目设置侧的天气场函数开关（**默认 false**）。
@@ -266,9 +280,11 @@ func set_clock_speed_multiplier(multiplier: float) -> void:
 # 按物理 hex 直径换算（替代之前在 uv 域写死的 0.0090~0.0125 魔数），避免和地块尺度共振。
 func set_world_ref(w) -> void:
 	if _world_ref != w:
+		_valley_fog.release(_overlay_mat)
 		_world_ref = w
 		_curtains.invalidate_inputs()
 		_push_weather_table(true)
+		_push_cell_field_uniforms()
 
 func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture, hex_size: float = 22.0, weather_lut: ImageTexture = null, lut_dims: Vector2i = Vector2i.ZERO, wrap_period_x: float = 0.0, map: MapData = null) -> void:
 	WeatherRenderStep.setup(self, bounds, map_index_atlas, noise_tex, hex_size, weather_lut, lut_dims, wrap_period_x, map)
@@ -338,8 +354,10 @@ func set_render_gate(open: bool) -> void:
 		return
 	_render_gate_open = open
 	if open:
+		_valley_fog.push(self)
 		_refresh_visibility()
 	else:
+		_valley_fog.release(_overlay_mat)
 		visible = false
 
 
@@ -358,7 +376,8 @@ func _refresh_visibility() -> void:
 			or _has_weather_lut_source())
 
 func _has_weather_lut_source() -> bool:
-	return _weather_lut_tex != null and _weather_lut_dims.x > 0 and _weather_lut_dims.y > 0
+	return (_weather_lut_tex != null and _weather_lut_dims.x > 0 and _weather_lut_dims.y > 0) \
+			or (_world_ref != null and _world_ref.weather_lut_tex != null)
 
 
 # vector_atlas 已退役；保留 setter 让旧调用点安全退化。

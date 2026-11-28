@@ -330,9 +330,9 @@ static func _shadow_min_zoom(host) -> float:
 		return float(configured_min)
 	if OS.has_feature("mobile"):
 		return 1.25
-	# [veg-lod-high 2026-10-18] 高画质在总览 zoom 也保留树影：树木在 0.45 以上仍有 89% 密度，
-	# 影子却到 0.80 才出现，拉远后整片森林没有投影，画面立刻变平。
-	return 0.45 if host.ShrubScatter._active_quality_tier(host) >= 2 else 0.70
+	# [veg-lod-high 2026-10-18] 高画质在总览 zoom 也保留树影：拉远到极远总览仍保持
+	# 柔和树下投影，避免画面变平。
+	return 0.15 if host.ShrubScatter._active_quality_tier(host) >= 2 else 0.70
 
 
 # [shadow-zoom-fade 2026-10-18] 投影不在某个 zoom 上硬开关：门槛就是开始淡入的位置，
@@ -532,6 +532,9 @@ static func detail_chunk_has_resident_cache(host, chunk_id: int) -> bool:
 
 static func evict_dormant_detail_chunks(host, now_msec: int, retention_msec: int) -> int:
 
+	# 路线 A：静态树冠层开局生成后常驻不驱逐，避免镜头移开 2 秒后清空、拉回时成块闪现重建。
+	if host.has_method("is_static_canopy_layer") and bool(host.is_static_canopy_layer()):
+		return 0
 	var evicted = 0
 	for raw_chunk_id in host._chunk_cell_payloads.keys():
 		var chunk_id = int(raw_chunk_id)

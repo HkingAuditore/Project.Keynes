@@ -1,4 +1,4 @@
-extends Node2D
+extends "res://scripts/rendering/renderer_detail_settings.gd"
 
 ## Owns the renderer scene's serialized settings and their live material setters.
 
@@ -480,37 +480,6 @@ const terrain_horizon_max_angle: float = MapBaker.TERRAIN_HORIZON_MAX_ANGLE
 	set(value):
 		decoration_manifest = value
 		RendererDetailLayers._after_decoration_manifest(self)
-@export_group("Detail Refresh")
-# 新家族渲染器必须先通过图形 A/B；默认保持旧渲染器，避免未验收路径直接影响玩家。
-@export var detail_scatter_family_renderer_enabled: bool = false
-@export var detail_scatter_refresh_layers_per_frame: int = 1
-@export var detail_scatter_refresh_cells_per_batch: int = 32
-@export var detail_scatter_chunked_multimesh_enabled: bool = true
-@export_range(2, 32, 1) var detail_scatter_chunk_size_cells: int = 16
-@export var detail_scatter_refresh_chunks_per_frame: int = 4
-@export_range(1, 128, 1) var detail_scatter_refresh_plan_items_per_frame: int = 16
-@export_range(0.25, 10.0, 0.25) var detail_scatter_resident_retention_seconds: float = 2.0
-# drain 信用预算：实测 4.0 时高倍速下 backlog 永不排空、帧均 drain 顶满预算
-# （tail_vegetation 持续 4-5ms）。配合全链路在途去重后重排队速率大幅下降，
-# 2.5ms 足以收敛 backlog，稳态帧成本直接减半。
-@export_range(0.0, 20.0, 0.25) var detail_scatter_refresh_apply_budget_ms: float = 2.5
-# 入队节流：succession 单元先并入去重累积器，按真实时间窗成批入队。高倍速下
-# 跨多天翻转的单元只重建一次，批次数不再随天数线性增长；低速下窗口 < 一日，
-# 延迟不可感知。0 表示逐次直通（旧行为）。
-@export_range(0.0, 1000.0, 10.0) var detail_scatter_enqueue_coalesce_ms: float = 120.0
-# 累积器硬上限：超过即提前冲刷，防止无限堆积。
-@export_range(64, 8192, 64) var detail_scatter_enqueue_max_pending_cells: int = 1024
-# 积压兜底：待处理批次数超过该阈值时，存量批次与新单元整体去重合并后重新切批，
-# 避免同一 chunk 在多个批次里被反复重建的复利积压。
-@export_range(2, 64, 1) var detail_scatter_merge_batch_threshold: int = 8
-@export var detail_scatter_refresh_log_enabled: bool = false
-@export var detail_scatter_rebuild_log_enabled: bool = false
-@export_range(0.0, 100.0, 0.25) var detail_scatter_slow_layer_ms: float = 2.0
-# 21 层清单接入与散布配额化后总实例数显著上升，旧预算会让全局配额长期
-# 触顶、所有层被同比稀释，反过来又抹平生物群系差异。
-@export var detail_scatter_desktop_total_instance_budget: int = 120000
-@export var detail_scatter_mobile_total_instance_budget: int = 12000
-
 # ─── Visual Pass 2：TOD 消费端开关 ─────────────────────────────────────
 # 这三个开关由 main.gd 的同名 @export 推进，到达 shader 内同名 uniform。
 # rain_density_boost_enabled：粒子数量提升（renderer 仅转发到 WeatherLayer）

@@ -144,6 +144,9 @@ func _run() -> void:
 		_finish()
 		return
 	var expected_overlays := _capture_map_overlays(first_host)
+	var expected_valley_fog := first_host.world_data().valley_fog.current
+	_expect("the saved weather has one fog pair per map cell",
+		expected_valley_fog.size() == first_host.current_map().cell_count() * 2)
 	await _verify_wiped_fog_is_never_persisted(first_host)
 
 	# Compare frozen military bytes at load completion, before the worker starts
@@ -163,10 +166,24 @@ func _run() -> void:
 	var previous_generation: int = previous_session.generation
 	var load_begin: Dictionary = _game_flow.call("begin_load_game", "manual_3")
 	_expect("load request accepted", bool(load_begin.get("ok", false)))
-	var loaded_host: WorldRuntimeHost = await _wait_for_runtime(first_scene)
+	var first_fog_frames: Array[Dictionary] = []
+	var capture_first_fog := func(_map: MapData, world: WorldData, _generator: MapGenerator, _view) -> void:
+		var fog := world.valley_fog
+		first_fog_frames.append({"current": fog.current, "previous": fog.previous,
+			"generation": fog.generation, "previous_generation": fog.previous_generation,
+			"fog_stamp": fog.stamp, "weather_stamp": world.weather_lut_update_usec})
+	var loaded_host: WorldRuntimeHost = await _wait_for_runtime(first_scene, capture_first_fog)
 	_expect("load reached ready runtime", loaded_host != null)
 	_expect("scene replacement closes the previous world before release", previous_session.report().state == "CLOSED")
 	if loaded_host != null:
+		_expect("the first cold-load weather frame is observed", first_fog_frames.size() == 1)
+		if first_fog_frames.size() == 1:
+			var fog := first_fog_frames[0]
+			_expect("cold-load fog is reconstructed from the saved committed weather",
+				not expected_valley_fog.is_empty() and fog.current == expected_valley_fog)
+			_expect("cold-load fog starts on a single generation shared with weather",
+				fog.generation > 0 and fog.previous_generation == fog.generation and fog.previous == fog.current
+				and fog.fog_stamp > 0 and fog.fog_stamp == fog.weather_stamp)
 		_expect("load restores the generation controls", _has_generation_controls(loaded_host))
 		_expect("loaded world has a distinct session generation",
 			int(loaded_host.session_report().generation) != previous_generation)
@@ -433,13 +450,16 @@ func _has_generation_controls(host: WorldRuntimeHost) -> bool:
 		and cfg.mineral_abundance == GENERATION_CONTROLS.mineral_abundance
 
 
-func _wait_for_runtime(previous_scene) -> WorldRuntimeHost:
+func _wait_for_runtime(previous_scene, observe_first_display: Callable = Callable()) -> WorldRuntimeHost:
 	for _frame in range(2400):
 		await get_tree().process_frame
 		var scene_ref := get_tree().current_scene
 		if scene_ref == null or scene_ref == previous_scene or not scene_ref is PlayerGame:
 			continue
 		var host := scene_ref.get_node_or_null("RuntimeHost") as WorldRuntimeHost
+		if host != null and observe_first_display.is_valid():
+			host.world_ready.connect(observe_first_display, CONNECT_ONE_SHOT)
+			observe_first_display = Callable()
 		if host != null and not host.last_world_generation_error.is_empty():
 			print("[save-roundtrip] world failed: %s" % JSON.stringify(host.last_world_generation_error))
 			return null

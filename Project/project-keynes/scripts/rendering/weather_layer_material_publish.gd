@@ -44,6 +44,7 @@ static func _push_overlay_runtime_state(layer: WeatherLayer) -> void:
 	layer._push_fronts_to_overlay(layer._front_visual_snapshots)
 	layer._push_fog_mask_uniforms()
 	layer._push_edge_transition_data()
+	layer._valley_fog.push(layer)
 
 
 static func set_wind_luts(layer: WeatherLayer, current: Texture2D, previous: Texture2D, has_previous: bool) -> void:
@@ -162,6 +163,8 @@ static func _push_cell_field_uniforms(layer: WeatherLayer) -> void:
 		dims = layer._world_ref.cell_table_dims
 		bound = bool(layer._world_ref.cell_table_bound) and table != null \
 			and dims.x > 0 and dims.y > 0
+	layer._wx_pushed_cell_table = table
+	layer._wx_pushed_cell_bound = bound
 	if bound:
 		layer._overlay_mat.set_shader_parameter("cell_table", table)
 		layer._overlay_mat.set_shader_parameter("cell_table_size", Vector2(dims.x, dims.y))
@@ -235,6 +238,8 @@ static func _push_curtain_runtime_state(layer: WeatherLayer) -> void:
 
 
 static func _load_overlay_shader(layer: WeatherLayer) -> void:
+	layer._valley_fog.release(layer._overlay_mat)
+	layer._valley_fog.compiled = false
 	# Web 首帧编译预算：桌面版 weather_overlay.gdshader（35KB 全屏 canvas）在 ANGLE 上首绘
 	# 约 45 秒，是"进世界卡在 98%"的唯一原因（探针：跳过天气层之后整条加载链 7.2 秒 ready）。
 	# [web-weather-min] 现在 web 走裁剪变体（见 WEB_WEATHER_MIN_DEFINE 与 shader 头部注释），
@@ -255,6 +260,9 @@ static func _load_overlay_shader(layer: WeatherLayer) -> void:
 	var shader_tier := layer._weather_shader_tier()
 	var tier_quality := CloudShadowField.quality_for_tier(layer._weather_quality(), shader_tier)
 	var prefix := "#define %s\n" % ["PK_WEATHER_LOW", "PK_WEATHER_MID", "PK_WEATHER_HIGH"][tier_quality]
+	layer._valley_fog.compiled = layer.valley_fog_enabled and tier_quality == 2 and not OS.has_feature("web")
+	if layer._valley_fog.compiled:
+		prefix += "#define PK_VALLEY_FOG\n"
 	# 平台裁剪宏必须排在质量档宏之前：web 变体要能压过 MOBILE_QUALITY_* 的分支判断。
 	if OS.has_feature("web"):
 		prefix += WeatherLayer.WEB_WEATHER_MIN_DEFINE

@@ -741,6 +741,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     for (auto &character : _fault_code) character.store('\0', std::memory_order_relaxed);
     if (!install_era_advancement_setup()) return false;
     player_confirmation_block(start_day);
+    publish_initial_valley_fog(restore_pending || resuming_previous_lifetime);
     return launch_executor(paused);
 }
 

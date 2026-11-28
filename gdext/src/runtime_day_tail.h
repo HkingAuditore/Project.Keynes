@@ -15,6 +15,7 @@ namespace pk {
 
 struct RuntimeVisionFrame;
 struct RuntimeClimateSnapshot;
+struct RuntimeValleyFogFrame;
 struct RuntimeEffectReadView;
 struct RuntimeEraRewardView;
 struct RuntimeNarrativeView;
@@ -70,6 +71,7 @@ struct RuntimeDayTail {
     std::vector<int32_t> occupancy;
     std::shared_ptr<const RuntimeVisionFrame> vision;
     std::shared_ptr<const RuntimeClimateSnapshot> climate;
+    std::shared_ptr<const RuntimeValleyFogFrame> valley_fog;
     RuntimeCountryReadView country;
     std::shared_ptr<const RuntimeGdpDisplay> gdp;
     std::shared_ptr<const RuntimeModifierPodSnapshot> modifier;

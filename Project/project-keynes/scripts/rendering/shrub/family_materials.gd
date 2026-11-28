@@ -2,6 +2,22 @@ extends RefCounted
 
 ## Stateless collaborator for ShrubLayer.
 
+static func is_static_canopy_layer(host) -> bool:
+	if not host._static_canopy_enabled or host.profile == null or not ("detail_kind" in host.profile):
+		return false
+	var kind := int(host.profile.detail_kind)
+	return kind == host.DETAIL_TREE or kind == host.DETAIL_CONIFER or kind == host.DETAIL_PALM
+
+
+static func set_vegetation_ao_tuning(host, ground_ao: float, ground_radius: float,
+		floor_shadow: float, contact_ao: float) -> void:
+	if host._material != null:
+		host._material.set_shader_parameter("ground_ao_strength", ground_ao)
+		host._material.set_shader_parameter("ground_ao_radius", ground_radius)
+		host._material.set_shader_parameter("floor_shadow_strength", floor_shadow)
+		host._material.set_shader_parameter("contact_ao_strength", contact_ao)
+
+
 static func detail_render_family(host) -> int:
 
 	var cfg = host._profile()
@@ -355,6 +371,9 @@ static func detail_change_affects_profile(host,
 
 	if (axis_mask & 0x80) != 0:
 		return true
+	# 路线 A：静态树冠层开局定型，不响应每日生态演替的位置重算（仅响应 0x80 城市占位等显式刷新）。
+	if host.has_method("is_static_canopy_layer") and bool(host.is_static_canopy_layer()):
+		return false
 	if (axis_mask & 0x01) != 0 \
 			and (host.ShrubScatter._vegetation_weight(host, old_veg) > 0.0 or host.ShrubScatter._vegetation_weight(host, new_veg) > 0.0):
 		return true

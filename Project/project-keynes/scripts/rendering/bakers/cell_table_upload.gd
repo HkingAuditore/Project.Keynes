@@ -220,6 +220,8 @@ static func _cell_table_static_words(map: MapData, world: WorldData, enums: Pack
 	classes.resize(count)
 	aux.resize(count)
 	var landforms := map.landform_arr
+	var visible := map.visible_arr
+	var vision_ready := map.fog_solved and visible.size() == count
 	var sea_norm := maxf(world.sea_level, 1e-4)
 	var words := enums.to_int32_array()
 	for row in (count if full else indices.size()):
@@ -234,7 +236,8 @@ static func _cell_table_static_words(map: MapData, world: WorldData, enums: Pack
 			depth = CellTableCodecScript.q01_byte(maxf(cell.water_depth - cell.elevation, 0.0) / norm)
 		var word := words[index]
 		classes[index] = (word & 0x00ffffff) | (landform << 24)
-		aux[index] = ((word >> 24) & 0xff) | (depth << 8)
+		var exact_visibility := 255 if vision_ready and visible[index] != 0 else 0
+		aux[index] = ((word >> 24) & 0xff) | (depth << 8) | (exact_visibility << 16)
 	return [classes, aux]
 
 
@@ -337,7 +340,7 @@ static func weather_table_commit_plan(weather_src: PackedByteArray, wind_src: Pa
 ##   * 失败一律 `weather_table_valid = false` + `weather_table_cur = -1`（shader 退回旧 LUT），
 ##     绝不留半成品，也绝不越界写。
 static func _publish_weather_table(baker: MapBaker, map: MapData, world: WorldData,
-		weather_bytes: PackedByteArray, wind_bytes: PackedByteArray) -> Dictionary:
+		weather_bytes: PackedByteArray, wind_bytes: PackedByteArray, reset_previous: bool = false) -> Dictionary:
 	var t0_us: int = Time.get_ticks_usec()
 	var report: Dictionary = {
 		"weather_table_published": false,
@@ -365,7 +368,7 @@ static func _publish_weather_table(baker: MapBaker, map: MapData, world: WorldDa
 	var layout := _cell_offset_layout(baker, map, map_w, map_h)
 	var plan: Dictionary = weather_table_commit_plan(
 		weather_bytes, wind_bytes, layout.offsets, map_w, map_h, n_cells,
-		world.weather_table_cur, layout.identity)
+		-1 if reset_previous else world.weather_table_cur, layout.identity)
 	if not bool(plan.get("ok", false)):
 		world.weather_table_valid = false
 		world.weather_table_cur = -1

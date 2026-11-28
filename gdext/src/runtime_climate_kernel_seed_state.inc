@@ -1,4 +1,5 @@
     report = RuntimeClimateKernelReport{};
+    _research_cyclone_day = -1;
     struct DiagStageTrace {
         std::string line; int64_t day;
         DiagStageTrace(int64_t d, const RuntimeClimateStore &s) : day(d) {

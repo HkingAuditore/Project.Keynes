@@ -11,7 +11,10 @@ namespace pk {
 class ModifierRuntime;
 class NativeEconomyRuntime;
 class RuntimeClimateAuthority;
+struct RuntimeClimateStore;
 struct RuntimeEnvironmentSnapshot;
+struct RuntimeValleyFogFrame;
+namespace pk_async_physics { struct RuntimeClimatePhysicsState; }
 
 struct RuntimeClimateCalendar {
     int64_t year = 0;
@@ -49,6 +52,9 @@ public:
     const RuntimeEnvironmentSnapshot &narrative_geography() const;
     const std::vector<uint8_t> &opening_landform() const;
     const uint8_t *water_terrain_lookup() const;
+    std::shared_ptr<const RuntimeValleyFogFrame> publish_valley_fog(
+        const RuntimeClimateStore *climate,
+        const pk_async_physics::RuntimeClimatePhysicsState *physics, bool new_weather);
 
 private:
     struct State;

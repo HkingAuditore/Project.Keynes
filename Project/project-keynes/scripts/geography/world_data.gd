@@ -247,6 +247,7 @@ var weather_lut_prev_tex: ImageTexture  # 上一仿真帧 LUT(渲染帧间插值
 # Native worker commits stage pixel bytes until this world's renderer presents them.
 var staged_cell_lut_upload: Dictionary = {}
 var weather_lut_update_usec: int = 0  # LUT 上次更新时刻(weather_layer 据此与 LUT 节奏对齐推进 weather_lerp)
+var valley_fog := preload("res://scripts/rendering/bakers/valley_fog_publication.gd").new()
 var lut_dims: Vector2i = Vector2i.ZERO
 # This world's last weather publication, in cell.index order.
 var _weather_wind_publication: Dictionary = {}
@@ -283,7 +284,7 @@ var weather_table_valid: bool = false              # 成败标志（失败时 sh
 #   （不改三张 LUT 的字节与时机），层布局见契约 §3 + Web 方案 §3.1：
 #     layer0 class          = biome / vegetation / cover / landform（生成期或地形改变时重写）
 #     layer1 state          = temp / wet / snow / vitality|sea_ice（与 dyn_lut 逐字节同源，每日）
-#     layer2 aux            = fog_k / water_depth / flags（预留）/ 0（探索或水深变化时）
+#     layer2 aux            = fog_k / water_depth / exact visibility / 0（探索或水深变化时）
 #     layer3 class_by_index = 同 layer0 的四个通道，**不重排**（与 layer0 同一次判定刷新；
 #                             前提 n_cells ≤ map_w × map_h，装不下时整层占位、不对外承诺）
 #   cell_table_tex == null 或 cell_table_bound == false ⇒ shader 必须按"无表"退化
@@ -308,12 +309,14 @@ var cell_table_fog_coverage: FogTerrainCoverage
 # program 各推一次，必须同值）。初始化就是 0，所以旧存档天然"不读 layer3"。
 var cell_table_layers: int = 0
 
-func publish_weather_wind(map: MapData, dims: Vector2i, stamp: int, bytes: PackedByteArray) -> void:
+func publish_weather_wind(map: MapData, dims: Vector2i, stamp: int, bytes: PackedByteArray,
+		reset_previous: bool = false) -> void:
 	_weather_wind_publication = {
 		"map_id": map.get_instance_id() if map != null else 0,
 		"dims": dims,
 		"stamp": stamp,
 		"bytes": PackedByteArray(bytes),
+		"reset_previous": reset_previous,
 	}
 	weather_lut_update_usec = stamp
 
@@ -326,6 +329,10 @@ func published_weather_wind_bytes(map: MapData) -> Variant:
 	# The packed-array constructor shares storage until a caller writes to it.
 	# An empty array is a published result too, meaning there is no valid local wind.
 	return PackedByteArray(publication.bytes)
+
+
+func weather_wind_resets_previous() -> bool:
+	return bool(_weather_wind_publication.get("reset_previous", false))
 
 
 func fog_covers_surface(world_samples: Rect2, hex_size: float) -> bool:

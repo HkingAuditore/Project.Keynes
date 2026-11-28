@@ -4,6 +4,10 @@ shader_type canvas_item;
 render_mode blend_mix, unshaded;
 
 #include "res://shaders/include/shader_quality.gdshaderinc"
+#if defined(PK_VALLEY_FOG) && !defined(PK_WEATHER_LOW) && !defined(PK_WEATHER_MID) \
+		&& !defined(PK_MOBILE_ANY) && !defined(PK_WEB_WEATHER_MIN)
+#define PK_WEATHER_VALLEY_FOG
+#endif
 // [mobile-high-full 2026-11-17] HIGH 档取消了 PK_MOBILE_ANY（见 shader_quality.gdshaderinc），
 // 但**天气云**的全量 4/3/2 octave fbm + 域扭曲是这份 shader 里最贵的部分，而且和
 // 玩家抱怨的"光照丑 / 迷雾没细节"不是同一条路径（那是 water / land / vegetation /
@@ -26,8 +30,7 @@ render_mode blend_mix, unshaded;
 //     对偶三角形与原始重心权重 w_raw，连续量三格插值、类型先查 profile 再混结果；
 //     读 offset 空间的 weather_table（4 层，层号双缓冲）。sampler 8 → 2。
 //     开关注释见 weather_layer.gd 的 CELL_FIELD_SETTING。
-// 单噪声系统：解析梯度噪声（Perlin-like，quintic 插值），无任何纹理噪声依赖。
-// 三层云：cumulus（中层主云）/ cirrus（高层卷云）/ fog（低层山雾）。
+// 主云和卷云使用解析梯度噪声。高档谷雾使用独立的雾场、高度和一张可平铺的噪声纹理。
 // 降水：按天气类型 profile flag 叠加（闪电已移除）。
 // filter_nearest 采样：旧路径是 map_index_atlas（biome）+ 三张 index 空间 LUT；
 //   场函数路径是 cell_table（迷雾 k）与 weather_table（天气 + 风），全部 texelFetch。
@@ -85,7 +88,26 @@ uniform float wrap_period_x = 0.0;
 #define VT_USE_MAP_INDEX
 #define VT_USE_EDGE_NEIGHBOR
 #define VT_USE_EDGE_DISTANCE
+#endif
+#ifdef PK_WEATHER_VALLEY_FOG
+#define VT_USE_HEIGHT
+#endif
+#if !defined(PK_CELL_FIELD) || defined(PK_WEATHER_VALLEY_FOG)
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
+#endif
+#if defined(PK_CELL_FIELD) || defined(PK_WEATHER_VALLEY_FOG)
+#include "res://shaders/include/cell_field_overlays.gdshaderinc"
+uniform float hex_size = 22.0;
+uniform vec2 map_dims = vec2(0.0);
+uniform sampler2DArray cell_table : filter_nearest, repeat_disable;
+uniform vec2 cell_table_size = vec2(0.0);
+uniform bool cell_table_bound = false;
+const int PK_WX_CELL_LAYER_CLASS = 0;
+const int PK_WX_CELL_LAYER_AUX = 2;
+// 天气场的低频形变打散三格插值轮廓，freq 为世界单位的倒数，amp 以 hex 半径为单位。
+// 两种查表路径的谷雾使用同一位置；像素地表和视野归属仍从未形变的位置求值。
+uniform float weather_warp_freq = 0.004;
+uniform float weather_warp_amp = 0.75;
 #endif
 
 #ifdef PK_CELL_FIELD
@@ -117,19 +139,6 @@ uniform float wrap_period_x = 0.0;
 //   `hex_size` / `map_dims` / `cell_table` / `weather_table` / `wrap_period_x` 等名字
 //   只作 uniform 使用，helper 的形参用 c / g / layer / v 这类短名。
 // ════════════════════════════════════════════════════════════════════════════
-#include "res://shaders/include/cell_field_overlays.gdshaderinc"
-
-// 世界单位 / hex（= hex 半径；宿主推 host.hex_size）。
-// ⚠ 不要用 hex_world_diameter 反推：那个 uniform 在天气 / 迷雾 / 地形三处默认值不同
-//   （38 / 未声明 / 44，方案 §1.4），新代码只用本 uniform。
-uniform float hex_size = 22.0;
-// (map_w, map_h)，宿主推 Vector2(map.width, map.height)。
-uniform vec2 map_dims = vec2(0.0);
-// per-cell 属性表（offset 空间，4 层 RGBA8）。这里只用 layer2.R = 迷雾知识度 k，
-// 让天气的视野门控与迷雾显示**共用同一个函数**（方案 §3.7）。
-uniform sampler2DArray cell_table : filter_nearest, repeat_disable;
-uniform vec2 cell_table_size = vec2(0.0);
-uniform bool cell_table_bound = false;
 // 天气 + 风的 offset 空间表（4 层，见文件头）。**不加 source_color**：字节
 // （R=类型 / G=intensity / ...）是数据不是颜色，sRGB 转换会把 type 通道也一起改掉。
 uniform sampler2DArray weather_table : filter_nearest, repeat_disable;
@@ -137,15 +146,6 @@ uniform vec2 weather_table_size = vec2(0.0);
 uniform bool weather_table_bound = false;
 uniform int weather_cur_layer = 0;
 uniform int weather_prev_layer = 1;
-// 查表前的低频域扭曲（方案 §2「为什么天气也要扭曲」）：纯 w_raw 插值时，一个下雨格
-// 被晴天包围会得到一顶以格心为顶点的"软六边形帐篷"，轮廓仍带六边形感。加一层
-// 约 0.3~0.5 格的**可平铺**扭曲（横向周期 = wrap_period_x，否则回绕接缝两侧会取到
-// 不同的格）把帐篷打散成不规则团块。
-//   weather_warp_freq : 1 / 世界单位。默认 0.004 ⇒ 波长 ≈ 250 wu ≈ 5~6 个 hex。
-//   weather_warp_amp  : × hex_size（世界单位位移幅度）。默认 0.75 ⇒ 每轴 ≈ 0.37 hex 直径。
-// 参数值待美术联调（方案 §8-2），走 uniform 就是为了不重编 shader。
-uniform float weather_warp_freq = 0.004;
-uniform float weather_warp_amp = 0.75;
 // 迷雾带宽（gap 单位）：与迷雾显示**必须同值**，否则天气云消失的位置与薄纱边界错开
 // （方案 §3.7）。约束 fog_field_band < √3/2（PK_FIELD_BAND_MAX），建议 0.6。
 uniform float fog_field_band = 0.6;
@@ -165,9 +165,6 @@ uniform float fog_warp_amp = 0.55;
 const int PK_WX_LAYER_WEATHER_A = 0;
 const int PK_WX_LAYER_WEATHER_B = 1;
 const int PK_WX_LAYER_WIND_BASE = 2;
-// cell_table 层号：必须与 bakers/cell_table_codec.gd 的 LAYER_* 同值。
-const int PK_WX_CELL_LAYER_CLASS = 0;
-const int PK_WX_CELL_LAYER_AUX = 2;
 #endif
 uniform float world_time = 0.0;
 // 与洋流和云影一致：双相位交替，重置时权重为零。
@@ -282,7 +279,8 @@ int effective_weather_quality() {
 #endif
 }
 
-// 廉价算术 hash（非纹理）——仅用于低雾 mountain_w 的邻域抖动，破除六边形对称。
+#if !defined(PK_WEATHER_VALLEY_FOG) && !defined(PK_WEATHER_LOW) && !defined(PK_WEATHER_MID)
+// 廉价算术 hash（非纹理）——仅用于旧低雾的邻域抖动。
 float hash21(vec2 p) {
 	p = fract(p * vec2(123.34, 456.21));
 	p += dot(p, p + 45.32);
@@ -291,6 +289,7 @@ float hash21(vec2 p) {
 float hash_signed(vec2 p) {
 	return hash21(p) - 0.5;
 }
+#endif
 
 // ── 解析梯度噪声（Perlin，quintic）：云形唯一来源，平滑、无纹理网格 ──
 // cloud_hash22 / cloud_grad_noise / cloud_fbm / cloud_fbm_evolve 已抽到共享
@@ -504,7 +503,8 @@ float sample_high_cloud(vec2 wp, vec2 axis, float coverage) {
 }
 
 
-// 低云 / 山雾：贴地、慢漂，biome_weight（山地权重）调制可见度。
+#if !defined(PK_WEATHER_VALLEY_FOG) && !defined(PK_WEATHER_LOW) && !defined(PK_WEATHER_MID)
+// 旧低雾对照路径。
 float sample_low_fog_raw(vec2 wp, vec2 axis, float intensity, float biome_weight) {
 	if (biome_weight <= 0.001 || intensity <= 0.001) {
 		return 0.0;
@@ -532,6 +532,7 @@ float sample_low_fog(vec2 wp, vec2 axis, float intensity, float biome_weight) {
 	return mix(base, sample_low_fog_raw(wx_cloud_seam_partner(primary_wp), axis, intensity, biome_weight), seam_w);
 #endif
 }
+#endif
 
 float cumulus_flow_density(vec2 wp, vec2 axis, float coverage) {
 	vec3 phases = weather_flow_phases();
@@ -581,11 +582,16 @@ struct FrontField {
 	float edge;
 	int type;
 	vec2 axis;
+#ifdef PK_WEATHER_VALLEY_FOG
+	vec2 valley_fog;
+	vec2 valley_fog_wind;
+#else
 	// [cell-field-overlays 2026-11-18 / O2] 低雾用的「山地权重」。旧路径在 fragment 里现算
 	// （4 点 golden-angle 邻域），场函数路径在 sample_field_weather 里用三格 biome 混合，
 	// 顺便复用已经求出的三角形与 w_raw —— 所以带在结构里。旧路径恒为 0（并由 fragment
 	// 的旧分支覆盖它自己的 mountain_w），字段只被 PK 分支读取。
 	float mountain_w;
+#endif
 };
 
 FrontField empty_field() {
@@ -599,7 +605,12 @@ FrontField empty_field() {
 	f.edge = 0.0;
 	f.type = WT_CLEAR;
 	f.axis = vec2(1.0, 0.0);
+#ifdef PK_WEATHER_VALLEY_FOG
+	f.valley_fog = vec2(0.0);
+	f.valley_fog_wind = vec2(0.0);
+#else
 	f.mountain_w = 0.0;
+#endif
 	return f;
 }
 
@@ -721,7 +732,7 @@ vec4 wx_sample_lut(int cid) {
 }
 #endif // PK_CELL_FIELD（旧路径：sampler 辅助 / Bayer 选格 / 副格 / 6 邻环）
 
-#ifdef PK_CELL_FIELD
+#if defined(PK_CELL_FIELD) || defined(PK_WEATHER_VALLEY_FOG)
 // ─── 场函数路径的装配层（方案 §3.4）─────────────────────────────────────────
 // 网格参数：几何一律来自 uniform（hex_size / map_dims），**不从 hex_world_diameter
 // 反推、不信默认值**（方案 §3.2 第 2 条）。map_w 同时是横向回绕周期。
@@ -732,6 +743,26 @@ PkHexGrid wx_field_grid() {
 	g.map_h = max(int(map_dims.y + 0.5), 1);
 	return g;
 }
+#endif
+
+#ifdef PK_WEATHER_VALLEY_FOG
+#include "res://shaders/include/height.gdshaderinc"
+#include "res://shaders/include/valley_fog.gdshaderinc"
+
+#ifndef PK_CELL_FIELD
+vec2 wx_valley_fog_legacy_wind(ivec2 cell, float weight) {
+	if (weight <= 0.0 || !has_local_wind || lut_dims.x < 1.0) {
+		return vec2(0.0);
+	}
+	vec2 center = hex_size * vec2(PK_HEX_SQRT3 * (float(cell.x) + 0.5 * float(cell.y & 1)),
+			1.5 * float(cell.y));
+	int cid = wx_decode_cell_index((center - world_origin) / world_size);
+	return wx_sample_wind(cid) * weight;
+}
+#endif
+#endif
+
+#ifdef PK_CELL_FIELD
 
 // 三格之一在 weather_table 里的 texel（offset 空间；col 已 posmod、row 未 clamp）。
 // row 越界 = 南北 padding：先把 row clamp 进纹理（绝不越界读），再乘 inside 掩码清零。
@@ -803,6 +834,7 @@ vec2 wx_clamp_length(vec2 v, float max_len) {
 // 混合三格权重 —— 抖动与邻域采样存在的理由一起消失。
 // 权重取值沿用桌面旧公式（M=1.0 / H=0.65 / 其它陆=0.35 / 水=0）：移动·Web 旧的二值近似
 // （0.55、其它陆 0）是省采样的妥协，场函数下两者采样次数一样，没必要再近似。
+#if !defined(PK_WEATHER_VALLEY_FOG) && !defined(PK_WEATHER_LOW) && !defined(PK_WEATHER_MID)
 float wx_biome_mountain_weight(ivec2 c, PkHexGrid g) {
 	int row = clamp(c.y, 0, g.map_h - 1);
 	int biome = int(texelFetch(cell_table,
@@ -811,6 +843,7 @@ float wx_biome_mountain_weight(ivec2 c, PkHexGrid g) {
 			|| (biome == B_REEF) || (biome == B_KELP) || (biome == B_SEA_ICE);
 	return (biome == B_MOUNTAIN) ? 1.0 : ((biome == B_HILL) ? 0.65 : (water ? 0.0 : 0.35));
 }
+#endif
 
 // 天气类型 → profile 行。**先查表**：颜色 / 透明度由调用方按 w 混合结果（方案 §3.5）。
 // type 字节只在这里被解释一次，绝不参与插值；clamp 是因为 padding / 空槽字节写坏时
@@ -981,6 +1014,12 @@ FrontField sample_field_weather(vec2 world_pos) {
 	vec2 ws = pk_soft_warp_tiled(wp, wrap_period_x, weather_warp_freq, weather_warp_amp * hex_size);
 	PkHexTri t = pk_overlay_tri(wp, g, ws);
 	vec3 w = t.w_raw;
+#ifdef PK_WEATHER_VALLEY_FOG
+	vec3 fog_weights = vec3(0.0);
+	if (valley_fog_active) {
+		best.valley_fog = wx_sample_valley_fog(t, pk_hex_tri(wp, g), g, fog_weights);
+	}
+#endif
 
 	// 视野门控（方案 §3.7）：与迷雾显示**同一组函数 + 同一组参数**（pk_overlay_fog_weights +
 	// pk_overlay_fog_k + pk_overlay_fog_visibility），三格 k 读 cell_table.aux.R。
@@ -1088,11 +1127,14 @@ FrontField sample_field_weather(vec2 world_pos) {
 	best.type = wt_dom;
 	// 风：Σ w_i · wind_i（同样 w_raw；prev 已在上面按解码域插值）。
 	best.axis = w.x * wind0 + w.y * wind1 + w.z * wind2;
+#ifdef PK_WEATHER_VALLEY_FOG
+	best.valley_fog_wind = fog_weights.x * wind0 + fog_weights.y * wind1 + fog_weights.z * wind2;
+#endif
 
 	// 低雾的「山地权重」：旧路径在 fragment 里做 4 点邻域（桌面）/ 1 点（移动 · Web）；
 	// 这里改成三格 class.biome 的 w_raw 混合。门控与旧路径完全一致（q>=2 且 w.cloud>0.05，
 	// 即 fog_intensity > 0.001），而且低/中档根本没编译低雾 ⇒ 这 3 次读取一般被整段跳过。
-#if !defined(PK_WEATHER_LOW) && !defined(PK_WEATHER_MID)
+#if !defined(PK_WEATHER_VALLEY_FOG) && !defined(PK_WEATHER_LOW) && !defined(PK_WEATHER_MID)
 	if (effective_weather_quality() >= 2 && best.cloud > 0.10) {
 		best.mountain_w = clamp(w.x * wx_biome_mountain_weight(t.c0, g)
 				+ w.y * wx_biome_mountain_weight(t.c1, g)
@@ -1127,18 +1169,34 @@ void fragment() {
 #endif
 
 	int q_weather = effective_weather_quality();
+#ifdef PK_WEATHER_VALLEY_FOG
+	vec4 valley_fog = vec4(0.0);
+	vec3 valley_fog_probe = vec3(0.0);
+	if (valley_fog_active && q_weather >= 2) {
+		// 接缝导数在 uniform 分支内，从未回绕世界坐标取值。
+		vec2 fog_dx = dFdx(v_world);
+		vec2 fog_dy = dFdy(v_world);
 #ifndef PK_CELL_FIELD
-	// 旧路径的 biome 采样：is_water 自 2026-06 起已无下游读取（低雾单独取一次 fog_biome），
-	// 场函数路径连 map_index_atlas 都不绑定，所以整段只在旧路径编译。
-	int biome = 0;
-#if !defined(PK_MOBILE_ANY)
-	biome = int(visual_sample_map_index(wx_wrap_uv(uv)).r * 255.0 + 0.5);
+		PkHexGrid fog_grid = wx_field_grid();
+		vec2 fog_warp = pk_soft_warp_tiled(wp, wrap_period_x, weather_warp_freq, weather_warp_amp * hex_size);
+		PkHexTri fog_tri = pk_overlay_tri(wp, fog_grid, fog_warp);
+		vec3 fog_weights;
+		w.valley_fog = wx_sample_valley_fog(fog_tri, pk_hex_tri(wp, fog_grid), fog_grid, fog_weights);
+		if (w.valley_fog.x > 0.0 && valley_fog_detail > 0) {
+			w.valley_fog_wind = wx_valley_fog_legacy_wind(fog_tri.c0, fog_weights.x)
+					+ wx_valley_fog_legacy_wind(fog_tri.c1, fog_weights.y)
+					+ wx_valley_fog_legacy_wind(fog_tri.c2, fog_weights.z);
+		}
 #endif
-	bool is_water = (biome == B_OCEAN) || (biome == B_COAST) || (biome == B_LAKE)
-			|| (biome == B_REEF) || (biome == B_KELP) || (biome == B_SEA_ICE);
+		valley_fog = wx_shade_valley_fog(wp, uv, fog_dx, fog_dy, w.valley_fog,
+				w.valley_fog_wind, ed, valley_fog_probe);
+	}
 #endif
 
-	// 低雾仅高档启用；无雾时跳过山地采样。移动/Web 使用中心格近似。
+	float low_fog = 0.0;
+	CloudLayerSample fog_layer = empty_cloud_layer();
+#if !defined(PK_WEATHER_VALLEY_FOG) && !defined(PK_WEATHER_LOW) && !defined(PK_WEATHER_MID)
+	// 对照变体的低雾仅高档启用；移动/Web 使用中心格近似。
 	float fog_intensity = (q_weather >= 2 && w.cloud > 0.10) ? smoothstep(0.10, 0.65, w.cloud) * 0.65 : 0.0;
 	float mountain_w = 0.0;
 #ifdef PK_CELL_FIELD
@@ -1151,8 +1209,6 @@ void fragment() {
 	// 抖动）。省掉 4 次邻域贴图取样、8 次 hash，以及一个可动态索引的 vec2[4] 局部数组 ——
 	// 后者在 ANGLE→HLSL 里会变成真实数组/寄存器溢出，是编译期与运行期的双重成本。
 	if (fog_intensity > 0.001) {
-		// 不能复用上面的 biome：mobile 质量档下它被编译成常量 0，所以这里单独取一次
-		// （filter_nearest，命中同一 texel，代价可忽略）。
 		int fog_biome = int(visual_sample_map_index(wx_wrap_uv(uv)).r * 255.0 + 0.5);
 		mountain_w = (fog_biome == B_MOUNTAIN) ? 1.0 : ((fog_biome == B_HILL) ? 0.55 : 0.0);
 	}
@@ -1190,6 +1246,15 @@ void fragment() {
 #endif
 #endif // PK_CELL_FIELD（旧路径的山地权重邻域采样）
 
+	low_fog = (fog_intensity > 0.001) ? sample_low_fog(wp, w.axis, fog_intensity, mountain_w) : 0.0;
+	fog_layer = make_cloud_layer(
+		remap_cloud_density(low_fog, max(fog_intensity, mountain_w), 0.24),
+		smoothstep(0.04, 0.42, low_fog) * (1.0 - smoothstep(0.54, 0.96, low_fog)),
+		max(fog_intensity, mountain_w),
+		0.18
+	);
+#endif
+
 	vec2 cumulus_axis = w.axis;
 	vec2 cirrus_axis = w.axis;
 
@@ -1210,20 +1275,6 @@ void fragment() {
 	float cumulus_intensity = w.cloud;
 	CloudLayerSample cumulus_layer = sample_cumulus_layer(wp, cumulus_axis, cumulus_intensity);
 	float cumulus = cumulus_layer.density;
-
-	// 低雾强度也只随云量和山地权重，不按天气类型改变；q0 完全跳过。
-	float local_fog_w = mountain_w;
-	float low_fog = 0.0;
-#if !defined(PK_WEATHER_LOW) && !defined(PK_WEATHER_MID)
-	low_fog = (fog_intensity > 0.001) ? sample_low_fog(wp, w.axis, fog_intensity, local_fog_w) : 0.0;
-#endif
-
-	CloudLayerSample fog_layer = make_cloud_layer(
-		remap_cloud_density(low_fog, max(fog_intensity, local_fog_w), 0.24),
-		smoothstep(0.04, 0.42, low_fog) * (1.0 - smoothstep(0.54, 0.96, low_fog)),
-		max(fog_intensity, local_fog_w),
-		0.18
-	);
 
 	// [tod-point-light 2026-06-25] 云响应逐像素点光源 TOD 光照：用 earth_daylight 的 ed.sun_dir
 	// （含纬度/时角的"类点光源太阳方向"，与地形/水面/植被同源）取代旧全局 tod_sun_dir。
@@ -1263,9 +1314,8 @@ void fragment() {
 #endif
 
 	bool has_layer = (cumulus > 0.001) || (cirrus > 0.001) || (low_fog > 0.001) || (w.precip > 0.001);
-	if (!has_layer) {
-		COLOR = vec4(0.0);
-	} else {
+	vec4 output_color = vec4(0.0);
+	if (has_layer) {
 		// 局部云核/羽边（密度驱动）：先算，供压暗与亮度调制复用（cloud_core 后续阴影也用）。
 		float cloud_core = smoothstep(0.38, 0.92, cumulus_layer.density);
 		float cloud_edge_soft = 1.0 - smoothstep(0.18, 0.58, cumulus_layer.density);
@@ -1328,6 +1378,20 @@ void fragment() {
 
 		float tod_alpha = mix(0.65, 1.0, ed.local_day);
 		// 云层随 TOD 变暗/变薄，避免夜侧像白色贴片盖在地表上。
-		COLOR = vec4(clamp(col, vec3(0.0), vec3(1.0)), min(alpha * tod_alpha, 0.94));
+		output_color = vec4(clamp(col, vec3(0.0), vec3(1.0)), min(alpha * tod_alpha, 0.94));
 	}
+#ifdef PK_WEATHER_VALLEY_FOG
+	// 已有主云、卷云的合成结果叠在谷雾上；输出时还原 blend_mix 的直通色。
+	if (valley_fog.a > 0.0) {
+		float beneath = valley_fog.a * (1.0 - output_color.a);
+		vec3 premultiplied = output_color.rgb * output_color.a + valley_fog.rgb * beneath;
+		float combined_alpha = output_color.a + beneath;
+		output_color = vec4(premultiplied / combined_alpha, combined_alpha);
+	}
+	if (valley_fog_debug != 0) {
+		float value = valley_fog_probe[clamp(valley_fog_debug - 1, 0, 2)];
+		output_color = vec4(vec3(value), 1.0);
+	}
+#endif
+	COLOR = output_color;
 }

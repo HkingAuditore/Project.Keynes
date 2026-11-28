@@ -1,6 +1,8 @@
 #include "world_ext.h"
 #include "native_simulation_host.h"
+#include "native_simulation_weather_research_test.h"
 #include "runtime_snapshot_ring.h"
+#include "runtime_valley_fog.h"
 #include "native_parallel_executor.h"
 #include "runtime_domain_pod.h"
 #include "runtime_country_pod.h"
@@ -45,7 +47,7 @@ bool DCWorldExt::runtime_authoritative_domains_self_test() const {
 
 bool DCWorldExt::runtime_climate_authority_self_test() const {
     std::string error;
-    return RuntimeClimateAuthority::self_test(error);
+    return RuntimeClimateAuthority::self_test(error) && RuntimeValleyFogTerrain::self_test();
 }
 
 bool DCWorldExt::runtime_climate_trace_self_test() const {
@@ -128,7 +130,9 @@ bool DCWorldExt::runtime_ideology_pod_self_test() const {
 bool DCWorldExt::runtime_events_authority_self_test() const {
     std::string error;
     const bool ok = RuntimeEventsAuthority::self_test(error) &&
-        RuntimeEventsSnapshotRing::self_test();
+        RuntimeEventsSnapshotRing::self_test() &&
+        (!_runtime_host || _runtime_host->trigger_pod_catalog().definitions.empty() ||
+         weather_research_self_test(_runtime_host->trigger_pod_catalog(), error));
     if (!ok) {
         godot::UtilityFunctions::printerr(
             godot::String("runtime_events_authority_self_test: ") +

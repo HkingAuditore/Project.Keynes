@@ -14,7 +14,7 @@
 #
 #   layer 0 `class` : R=biome   G=vegetation  B=cover   A=landform                （生成期）
 #   layer 1 `state` : R=temp    G=wet         B=snow    A=vitality（陆）/ sea_ice（水）（每日）
-#   layer 2 `aux`   : R=fog_k   G=water_depth B=flags   A=reserved             （探索 / 水深）
+#   layer 2 `aux`   : R=fog_k   G=water_depth B=exact visibility A=reserved    （探索 / 水深）
 #   layer 3 `class_by_index` : 同 layer0 的四个通道，但坐标空间是 **cell.index 空间**
 #                     （Web 方案 §3.1）：第 i 格放在 (i % map_w, i / map_w)，**不重排**。
 #                     用途是把 `enum_lut[cell.index].r`（GI 弹射色）从 legacy 槽里搬出来。

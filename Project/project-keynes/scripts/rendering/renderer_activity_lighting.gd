@@ -71,3 +71,7 @@ static func _sync_detail_and_activity_materials(host) -> void:
 	if host.detail_scatter_family_renderer_enabled and host._detail_family_layer != null \
 			and is_instance_valid(host._detail_family_layer):
 		host._detail_family_layer.sync_dynamic_materials()
+	if "_forest_canopy_layer" in host and host._forest_canopy_layer != null \
+			and is_instance_valid(host._forest_canopy_layer):
+		host._forest_canopy_layer.set_daylight_parameters(_instance_daylight_parameters(host))
+		host._forest_canopy_layer.sync_shared_textures_from_terrain_material(host._shader_mat)

@@ -4,6 +4,7 @@
     void prepare_climate_day(DayExecution &);
     bool capture_day_input(DayExecution &, const RuntimeEnvironmentSnapshot &);
     bool run_day_events(DayExecution &, int64_t);
+    const char *stage_weather_research(DayExecution &);
     bool stage_input_capture(DayExecution &, RuntimeDomainPlan &);
     bool stage_climate(DayExecution &, RuntimeDomainPlan &);
     bool stage_country(DayExecution &, RuntimeDomainPlan &);

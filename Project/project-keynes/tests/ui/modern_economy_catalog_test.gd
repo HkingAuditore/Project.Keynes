@@ -471,10 +471,23 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("hand-copied content is one unified good",
 		manuscripts != null and manuscripts.display_name == "手抄本" and
 		goods.find("codices") < 0)
-	_expect("writing materials are folded into scriptorium recipes",
+	_expect("scriptoria copy onto paper, never onto food",
 		classical_scriptorium != null and monastic_scriptorium != null and
-		classical_scriptorium.input_good_ids.has("gathered_plants") and
-		monastic_scriptorium.input_good_ids.has("raw_hide") and
+		classical_scriptorium.input_good_ids == PackedStringArray(["paper", "tools"]) and
+		monastic_scriptorium.input_good_ids == PackedStringArray(["paper", "tools"]) and
+		not classical_scriptorium.input_good_ids.has("gathered_plants") and
+		not monastic_scriptorium.input_good_ids.has("gathered_plants"))
+	_expect("raw writing supports stay alternatives to paper",
+		classical_scriptorium.input_candidate_offsets == PackedInt32Array([0, 3, 3]) and
+		classical_scriptorium.input_candidate_good_ids == PackedStringArray(
+			["paper", "bast_fiber", "reed_bundle"]) and
+		classical_scriptorium.input_candidate_efficiency_q16 == PackedInt32Array(
+			[65536, 24576, 13107]) and
+		monastic_scriptorium.input_candidate_offsets == PackedInt32Array([0, 2, 2]) and
+		monastic_scriptorium.input_candidate_good_ids == PackedStringArray(
+			["paper", "raw_hide"]) and
+		monastic_scriptorium.input_candidate_efficiency_q16 == PackedInt32Array(
+			[65536, 49152]) and
 		not buildings.has("papyrus_workshop") and not buildings.has("parchmenter"))
 	var iron_tool_workshop = load("res://data/economy/buildings/iron_tool_workshop.tres")
 	var steel_tool_plant = load("res://data/economy/buildings/tools_plant.tres")

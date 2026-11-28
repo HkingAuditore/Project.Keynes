@@ -1,6 +1,6 @@
 {
   "class": "DCWorldExt",
-  "count": 678,
+  "count": 679,
   "methods": [
     "_debug_poke_f32",
     "_debug_poke_f32_with_flush",
@@ -429,6 +429,7 @@
     "read_economy_save_chunk",
     "read_f32",
     "read_i32",
+    "read_runtime_initial_valley_fog",
     "read_runtime_map_lut_frame",
     "read_u8",
     "reconcile_completed_research_signals",

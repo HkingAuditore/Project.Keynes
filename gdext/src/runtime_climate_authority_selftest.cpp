@@ -3,6 +3,7 @@
 #include "runtime_climate_parity.h"
 #include "runtime_climate_physics.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -59,6 +60,22 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
         if (!authority.serialize(v4, error) || v4.size() <= 88u) {
             return migration_fail(error.empty()
                 ? "climate_abi_migration_serialize_failed" : error);
+        }
+        {
+            RuntimeClimateAuthority restored;
+            if (authority.research_weather().previous_temperature != nullptr ||
+                !restored.restore(v4.data(), v4.size(), error))
+                return migration_fail("climate_freeze_thaw_checkpoint_setup_failed:" + error);
+            RuntimeEnvironmentSnapshot following = env;
+            following.day = 1;
+            following.generation = 2;
+            if (!restored.plan_day(1, following, report) || !restored.commit_day(1, report))
+                return migration_fail("climate_freeze_thaw_checkpoint_resume_failed");
+            const auto weather = restored.research_weather();
+            if (weather.previous_temperature == nullptr ||
+                !std::equal(authority.store().temperature.begin(), authority.store().temperature.end(),
+                            weather.previous_temperature))
+                return migration_fail("climate_freeze_thaw_lost_previous_committed_temperature");
         }
         // 下面的布局常量描述 ABI 9（含历史 lane）：本函数会先把当前 ABI 10 的
         // payload 还原成 ABI 9 再逐级裁剪。

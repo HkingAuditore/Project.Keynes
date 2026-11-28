@@ -67,8 +67,9 @@ static func build_batch(map: MapData, country_facade, day: int,
 			if cell < map.wind_speed_arr.size() else 0.0
 		var temperature_prev := float(map.temp_arr_prev[cell]) \
 			if cell < map.temp_arr_prev.size() else temperature
-		var soil_moisture := float(map.soil_moisture_arr[cell]) \
-			if cell < map.soil_moisture_arr.size() else 1.0
+		# The stored lane is an anomaly in [-0.5, 0.5].
+		var soil_moisture := 0.5 + float(map.soil_moisture_arr[cell]) \
+			if cell < map.soil_moisture_arr.size() else 0.5
 		if weather_type == int(WeatherType.WT.DROUGHT) \
 				and intensity >= WEATHER_INTENSITY_THRESHOLD:
 			_add_evidence(evidence, handle, RULE_DROUGHT, cell, intensity)

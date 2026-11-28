@@ -17,15 +17,16 @@ constexpr int64_t kMobQ16 = 65536;
 // 0.50: below this a profession starts accumulating organization.
 constexpr int64_t kMobThetaLowQ16 = 32768;
 // Stage gates on organization, then on combined power.
-constexpr int64_t kMobStageGate[5] = {0, 19661, 29491, 40632, 51118};
+constexpr int64_t kMobStageGate[5] = {0, 19661, 39322, 58983, kMobQ16 - 1};
 constexpr int64_t kMobTierGate[5] = {0, 16384, 29491, 40632, 52429};
 constexpr int64_t kMobBaseHazardQ16 = 6554;      // 10% per epoch at full severity
 constexpr int64_t kMobMaxHazardQ16 = 3277;       // 5% cap
-constexpr int64_t kMobTauUpDays = 60;
+constexpr int64_t kMobTauUpDays = 180;
 constexpr int64_t kMobTauDownDays = 35;
 constexpr int64_t kMobEmaTauDays = 12;
 constexpr int64_t kMobStageDelayDays[5] = {0, 14, 12, 10, 0};
 constexpr int64_t kMobStallDelayDays = 10;
+constexpr int64_t kMobPreviousReviewDelayDays = 240;
 constexpr int64_t kMobChainCooldownDays = 240;
 constexpr int64_t kMobDormantMobQ16 = 656; // 1%
 constexpr int64_t kMobPlayerFlag = 1;
@@ -238,7 +239,10 @@ void NativeEconomyRuntime::advance_cell_mobilization(
 
         int64_t mobilization = row.mobilization_q16;
         const int64_t tau = capacity >= mobilization ? kMobTauUpDays : kMobTauDownDays;
-        mobilization += (capacity - mobilization) * dt / tau;
+        const int64_t delta = (capacity - mobilization) * dt / tau;
+        // 满额目标的最后一段仍须增长，否则整数截断会让叛乱门槛一直差一点。
+        mobilization += capacity == kMobQ16 - 1 && mobilization < capacity
+            ? std::max<int64_t>(1, delta) : delta;
         mobilization = mob_clamp_q16(mobilization);
         row.mobilization_q16 = static_cast<uint16_t>(mobilization);
 
@@ -250,6 +254,15 @@ void NativeEconomyRuntime::advance_cell_mobilization(
 
         const int32_t previous_stage = row.stage;
         int32_t stage = row.stage;
+        if (stage > 0 && stage < 4 && row.next_check_day > day + kMobStallDelayDays &&
+            row.last_event_day >= 0 &&
+            row.last_event_day >= row.cooldown_until_day &&
+            static_cast<int64_t>(row.next_check_day) - row.last_event_day ==
+                kMobPreviousReviewDelayDays) {
+            // 旧调试构建没有区分首次升阶复查和失败复查，统一恢复该阶的正常日期。
+            row.next_check_day = static_cast<int32_t>(
+                row.last_event_day + kMobStageDelayDays[stage]);
+        }
         if (stage == 0) {
             if (mobilization >= kMobStageGate[1] &&
                 day >= row.cooldown_until_day) {
@@ -278,18 +291,14 @@ void NativeEconomyRuntime::advance_cell_mobilization(
                 }
             }
         } else if (day >= row.next_check_day && day >= row.cooldown_until_day) {
-            bool escalated = false;
-            // Victoria-style progression: the chain advances when organization
-            // (plus local pressure) actually reaches the next gate. There is no
-            // extra dice roll; a failed action only delays the next check.
             if (stage < 4 && mobilization >= kMobStageGate[stage + 1] &&
                 power >= kMobTierGate[stage + 1]) {
                 ++stage;
-                escalated = true;
+                row.last_event_day = static_cast<int32_t>(day);
+                row.next_check_day = static_cast<int32_t>(day + kMobStageDelayDays[stage]);
+            } else {
+                row.next_check_day = static_cast<int32_t>(day + kMobStallDelayDays);
             }
-            row.next_check_day = static_cast<int32_t>(
-                day + (escalated ? kMobStageDelayDays[stage] : kMobStallDelayDays));
-            if (escalated) row.last_event_day = static_cast<int32_t>(day);
         }
         // The capital is a political anchor: it can be blockaded and protested,
         // but it never becomes an independence event.
@@ -675,7 +684,7 @@ bool NativeEconomyRuntime::apply_mobilization_result(
         // when the next stage's organization gate is actually reached. A failed
         // final-stage action is the one exception: the city is already in armed
         // revolt, so the old sovereign loses it.
-        mobilization += stage >= 3 ? 13107 : (stage == 2 ? 6554 : 3277);
+        mobilization += stage >= 3 ? 2621 : (stage == 2 ? 1966 : 1311);
         if (action == 2) trauma += 6554;
         row.next_check_day = static_cast<int32_t>(day + kMobStallDelayDays);
         if (stage == 4 && (action == 2 || action == 4 || action == 5)) {

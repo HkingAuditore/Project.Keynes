@@ -6,6 +6,7 @@
 #include "runtime_climate_authority.h"
 #include "runtime_climate_physics.h"
 #include "runtime_climate_weather_input.h"
+#include "runtime_valley_fog.h"
 #include "world_ext_season_stage.h"
 
 #include <godot_cpp/classes/random_number_generator.hpp>
@@ -99,6 +100,17 @@ struct RuntimeWorldEnvironment::State {
           ice_form(double(config.get("ice_form", 0.06))),
           ice_melt(double(config.get("ice_melt", 0.11))) {
         columns[RIVER_FLOW].arr_f32 = config.get("river_flow", PackedFloat32Array());
+        const PackedInt32Array offsets = config.get("valley_fog_offset_to_index", PackedInt32Array());
+        if (!offsets.is_empty()) {
+            const PackedFloat32Array vapor = config.get("valley_fog_opening_vapor", PackedFloat32Array());
+            if (vapor.size() == opening.cell_count) read_lane(valley_fog_opening_vapor, vapor);
+            valley_fog_terrain = std::make_unique<RuntimeValleyFogTerrain>(
+                int32_t(opening.climate_map_width), int32_t(opening.climate_map_height),
+                std::max<uint64_t>(1, opening.topology_generation),
+                uint64_t(int64_t(config.get("valley_fog_map_id", 0))),
+                std::vector<int32_t>(offsets.ptr(), offsets.ptr() + offsets.size()),
+                opening.cell_elevation, opening.is_water, opening.neighbor_indices);
+        }
         rng.instantiate();
         rng->set_seed(uint64_t(int64_t(config.get("rng_seed", 0))));
         rng->set_state(uint64_t(calendar_committed.rng_state));
@@ -118,6 +130,10 @@ struct RuntimeWorldEnvironment::State {
     uint8_t volcano_landform;
     double drift, anomaly_limit, ice_form, ice_melt;
     Ref<RandomNumberGenerator> rng;
+    std::unique_ptr<RuntimeValleyFogTerrain> valley_fog_terrain;
+    std::vector<float> valley_fog_opening_vapor;
+    std::shared_ptr<const RuntimeValleyFogFrame> valley_fog;
+    uint64_t valley_fog_generation = 0;
 };
 
 RuntimeWorldEnvironment::RuntimeWorldEnvironment(RuntimeEnvironmentSnapshot &&seed,
@@ -426,6 +442,25 @@ const RuntimeEnvironmentSnapshot &RuntimeWorldEnvironment::narrative_geography()
 
 const std::vector<uint8_t> &RuntimeWorldEnvironment::opening_landform() const {
     return _state->opening.landform;
+}
+
+std::shared_ptr<const RuntimeValleyFogFrame> RuntimeWorldEnvironment::publish_valley_fog(
+        const RuntimeClimateStore *climate,
+        const pk_async_physics::RuntimeClimatePhysicsState *physics, bool new_weather) {
+    auto &state = *_state;
+    if (!state.valley_fog_terrain || (!new_weather && state.valley_fog_generation > 0))
+        return state.valley_fog;
+    // Fog is a projection of the committed weather, so the same committed
+    // lanes reconstruct the opening image after a cold load.
+    const auto &opening = state.opening;
+    const auto &temperature = climate ? climate->temperature : opening.cell_temp;
+    const auto &opening_vapor = state.valley_fog_opening_vapor.empty()
+        ? opening.cell_weather_vapor : state.valley_fog_opening_vapor;
+    const auto &vapor = climate ? climate->vapor : opening_vapor;
+    const auto &wind = physics ? physics->wind_speed : opening.cell_wind_speed;
+    state.valley_fog = state.valley_fog_terrain->build(++state.valley_fog_generation,
+        opening.cell_elevation, temperature, vapor, wind);
+    return state.valley_fog;
 }
 
 RuntimeClimateCalendar RuntimeWorldEnvironment::calendar(int64_t day) const {

@@ -215,8 +215,14 @@
             lanes.sea_ice = lane_ok(wx.sea_ice) ? wx.sea_ice.data() : nullptr;
             lanes.pos_x = wx.pos_x.data();
             lanes.pos_y = wx.pos_y.data();
-            lanes.temp_anomaly =
-                lane_ok(wx.temp_anomaly) ? wx.temp_anomaly.data() : nullptr;
+            if (input.climate_worker_authoritative) {
+                _weather_classification_anomaly.resize(cells);
+                for (size_t i = 0; i < cells; ++i)
+                    _weather_classification_anomaly[i] = wx.temp_read[i] - next.temperature_30d_ema[i];
+                lanes.temp_anomaly = _weather_classification_anomaly.data();
+            } else {
+                lanes.temp_anomaly = lane_ok(wx.temp_anomaly) ? wx.temp_anomaly.data() : nullptr;
+            }
             lanes.snow_cover =
                 lane_ok(wx.snow_cover) ? wx.snow_cover.data() : nullptr;
             lanes.neighbor_indices = neighbors.data();
@@ -413,6 +419,11 @@
                 state.cyclone_lift = _cyclone_lift.data();
                 state.cyclone_x = _cyclone_force_x.data();
                 state.cyclone_y = _cyclone_force_y.data();
+                if (report.cyclone_touched > 0) {
+                    _research_cyclone_day = day;
+                    if (physics_owned) _research_cyclone_captured_wind.clear();
+                    else _research_cyclone_captured_wind = wx.wind_speed;
+                }
             } else if (wx.cyclone_tag.size() == cells) {
                 state.cyclone_tag = wx.cyclone_tag.data();
                 state.cyclone_tag_count = static_cast<int>(cells);
@@ -502,6 +513,7 @@
 
             pk_async_climate::WeatherCommitStats cs;
             pk_async_climate::weather_commit_pure(ck, cl, cs);
+            _weather_commit_day = day;
 
             // B8-2 genesis（出生）：与生产 native-entity 路径同一位置（field solve /
             // commit / distribute 之后的当天后段），但判据改用 worker 自己的状态：

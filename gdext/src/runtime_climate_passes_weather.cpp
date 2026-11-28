@@ -244,9 +244,7 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
         float base_m = MR[i];
         if (base_m < 0.0f) base_m = 0.0f;
         else if (base_m > 1.0f) base_m = 1.0f;
-        float vapor_capacity = 0.18f + 0.82f * temp - 0.18f * ELEV[i];
-        if (vapor_capacity < 0.14f) vapor_capacity = 0.14f;
-        else if (vapor_capacity > 1.0f) vapor_capacity = 1.0f;
+        const float vapor_capacity = weather_vapor_capacity(temp, ELEV[i]);
 
         const bool on_water = wf_is_water_terrain(TERR[i]);
         // ── perf P3: 融合 3 个 6-邻域 gather 为一次遍历（逐 d 顺序与原版一致→bit-equal）──

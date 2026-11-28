@@ -33,18 +33,16 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/hud_status_card.tscn" id="35_status_card"]
 [ext_resource type="PackedScene" path="res://scenes/ui/military_peace_window.tscn" id="36_peace"]
 [ext_resource type="PackedScene" path="res://scenes/ui/military_map_toolbar.tscn" id="37_military_map"]
-
-[ext_resource type="Script" path="res://scripts/rendering/map_draw_visibility.gd" id="38_map_visibility"]
-
-[ext_resource type="Script" path="res://scripts/rendering/player_map_viewport.gd" id="39_map_viewport"]
+[ext_resource type="Script" uid="uid://bxwg08thwofbj" path="res://scripts/rendering/map_draw_visibility.gd" id="38_map_visibility"]
+[ext_resource type="Script" uid="uid://ctp20cv1eoa2u" path="res://scripts/rendering/player_map_viewport.gd" id="39_map_viewport"]
 
 [node name="PlayerGame" type="Node2D" unique_id=198229795]
 script = ExtResource("1_player")
 
-[node name="MapOutput" type="CanvasLayer" parent="."]
+[node name="MapOutput" type="CanvasLayer" parent="." unique_id=1229076837]
 layer = -1
 
-[node name="MapImage" type="TextureRect" parent="MapOutput"]
+[node name="MapImage" type="TextureRect" parent="MapOutput" unique_id=2067062503]
 visible = false
 anchors_preset = 15
 anchor_right = 1.0
@@ -54,7 +52,7 @@ grow_vertical = 2
 mouse_filter = 2
 expand_mode = 1
 
-[node name="MapViewport" type="SubViewport" parent="."]
+[node name="MapViewport" type="SubViewport" parent="." unique_id=823167163]
 disable_3d = true
 gui_disable_input = true
 size_2d_override_stretch = true
@@ -236,6 +234,15 @@ anchors_preset = 0
 [node name="MilitaryMapToolbar" parent="UI/UIRoot/HUDLayer" unique_id=1329221015 instance=ExtResource("37_military_map")]
 unique_name_in_owner = true
 layout_mode = 0
+anchors_preset = 0
+anchor_left = 0.0
+anchor_right = 0.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 56.0
+offset_bottom = 412.0
+grow_horizontal = 1
+grow_vertical = 1
 
 [node name="CountryActionBar" parent="UI/UIRoot/HUDLayer" unique_id=416698945 instance=ExtResource("18_country_bar")]
 unique_name_in_owner = true

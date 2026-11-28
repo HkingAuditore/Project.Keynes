@@ -38,6 +38,10 @@ static func _lod_visible_count(host, total: int, far_count: int) -> int:
 
 	if total <= 0:
 		return 0
+	# 路线 A：静态树冠层在非合批路径下保持稳定可见数，不随缩放滚轮或配额抖动增减实例造成闪烁。
+	if not host._family_batch_suppressed and host.has_method("is_static_canopy_layer") \
+			and bool(host.is_static_canopy_layer()):
+		return total
 	if not host._family_batch_suppressed:
 		var near_budget_count = clampi(int(floor(float(total) * host._shadow_fraction)), 0, total)
 		var budgeted_far_count = mini(clampi(far_count, 0, total), near_budget_count)
@@ -181,6 +185,20 @@ static func apply_visible_instance_fraction_weighted(host,
 	if host._vp_budget_cache_valid and _vp_budget_signature_matches(host, rect, zoom_value, fraction):
 		host._vp_budget_skips += 1
 		return host._vp_budget_cache_diag
+	# 静态树冠层在 fraction≈1 时保持满额可见数，跳过加权重分配循环，防止视野移动时边缘抽稀闪烁。
+	if fraction >= 0.999 and host.has_method("is_static_canopy_layer") \
+			and bool(host.is_static_canopy_layer()):
+		apply_visible_instance_fraction(host, 1.0)
+		return {
+			"kept": host._instance_count,
+			"budget": host._instance_count,
+			"chunks": host._chunk_nodes.size(),
+			"rebalanced": false,
+			"global_fraction": 1.0,
+			"zoom": zoom_value,
+			"lod_total": host._instance_count,
+			"ms": float(Time.get_ticks_usec() - t0_us) / 1000.0,
+		}
 	# 退化：单 MultiMesh（非分块）只能给一个前缀长度，退回原均匀行为。
 	# 小图 / mobile LOW（单层 ≤5000）常见，此时行为必须与旧路径一致。
 	if not host._chunked_multimesh_enabled or host._chunk_nodes.is_empty():

@@ -4,6 +4,7 @@
 #include "native_parallel_executor.h"
 #include "runtime_domain_pod.h"
 #include "runtime_day_tail.h"
+#include "runtime_valley_fog.h"
 #include "world_ext_golden.h"
 #include "runtime_country_pod.h"
 #include "country_runtime.h"
@@ -23,6 +24,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 
 namespace pk {
 
@@ -402,6 +404,74 @@ void DCWorldExt::finish_runtime_display_frame() {
     _runtime_display_commit = {};
 }
 
+namespace {
+
+PackedInt32Array valley_fog_offset_mapping(Object *map, const RuntimeEnvironmentSnapshot &snapshot) {
+    const int64_t width = snapshot.climate_map_width;
+    const int64_t height = snapshot.climate_map_height;
+    const int64_t count = snapshot.cell_count;
+    if (!map || width <= 0 || height <= 0 || count <= 0 || count / width != height ||
+            count % width != 0 || count > std::numeric_limits<int32_t>::max()) return {};
+    const Variant raw_cells = map->get("_cell_array");
+    if (raw_cells.get_type() != Variant::ARRAY) return {};
+    const Array cells = raw_cells;
+    PackedInt32Array offsets;
+    if (cells.size() != count || offsets.resize(count) != OK) return {};
+    offsets.fill(-1);
+    int32_t *layout = offsets.ptrw();
+    for (int64_t index = 0; index < count; ++index) {
+        const Variant entry = cells[index];
+        Object *cell = entry;
+        if (!cell) return {};
+        const Variant q_value = cell->get("q");
+        const Variant r_value = cell->get("r");
+        if (q_value.get_type() != Variant::INT || r_value.get_type() != Variant::INT) return {};
+        const int64_t q = q_value;
+        const int64_t r = r_value;
+        if (r < 0 || r >= height) return {};
+        const int64_t col = (q % width + (r / 2) % width + width) % width;
+        const int64_t slot = r * width + col;
+        if (layout[slot] >= 0) return {};
+        layout[slot] = static_cast<int32_t>(index);
+    }
+    return offsets;
+}
+
+Dictionary pack_valley_fog(const RuntimeValleyFogFrame *frame, uint64_t map_id, int cell_count) {
+    if (!frame || frame->map_id != map_id || frame->generation == 0 ||
+        frame->rg.size() != size_t(cell_count) * 2) return {};
+    PackedFloat32Array rg;
+    if (rg.resize(static_cast<int64_t>(frame->rg.size())) != OK) return {};
+    std::memcpy(rg.ptrw(), frame->rg.data(), frame->rg.size() * sizeof(float));
+    Dictionary result;
+    result["map_id"] = static_cast<int64_t>(frame->map_id);
+    result["terrain_generation"] = static_cast<int64_t>(frame->terrain_generation);
+    result["generation"] = static_cast<int64_t>(frame->generation);
+    result["size"] = Vector2i(frame->width, frame->height);
+    result["has_density"] = frame->has_density;
+    result["rg"] = rg;
+    return result;
+}
+
+} // namespace
+
+void append_valley_fog_world_layout(Dictionary &config, Object *map,
+        const RuntimeEnvironmentSnapshot &snapshot) {
+    config["valley_fog_map_id"] = map ? static_cast<int64_t>(map->get_instance_id()) : int64_t(0);
+    config["valley_fog_offset_to_index"] = valley_fog_offset_mapping(map, snapshot);
+    // The production climate seed deliberately omits several initial
+    // weather lanes. The display can still use the freshly baked weather.
+    const Variant vapor = map ? map->get("weather_vapor_arr") : Variant();
+    config["valley_fog_opening_vapor"] = vapor.get_type() == Variant::PACKED_FLOAT32_ARRAY
+        ? vapor : Variant(PackedFloat32Array());
+}
+
+Dictionary DCWorldExt::read_runtime_initial_valley_fog(Object *map) const {
+    if (!map || map != _map_data || !_runtime_host || _native_world_cell_count <= 0) return {};
+    const auto frame = _runtime_host->latest_valley_fog_display();
+    return pack_valley_fog(frame.get(), map->get_instance_id(), _native_world_cell_count);
+}
+
 Dictionary DCWorldExt::read_runtime_map_lut_frame(Object *map, int64_t day, int64_t generation,
                                                   int cell_count, bool measure_copy) const {
     const auto fail = [](const char *reason) {
@@ -436,6 +506,8 @@ Dictionary DCWorldExt::read_runtime_map_lut_frame(Object *map, int64_t day, int6
             std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - started).count());
     frame["transition_age"] = ages;
     frame["previous_vitality"] = vitalities;
+    const auto fog = pack_valley_fog(commit->day_tail->valley_fog.get(), map->get_instance_id(), cell_count);
+    if (!fog.is_empty()) frame["valley_fog"] = fog;
     return frame;
 }
 

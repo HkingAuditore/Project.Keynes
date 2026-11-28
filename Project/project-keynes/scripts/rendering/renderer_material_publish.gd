@@ -12,6 +12,8 @@ static func _rebuild(host) -> void:
 		host._for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 			layer.clear()
 		)
+		if host._forest_canopy_layer != null and is_instance_valid(host._forest_canopy_layer):
+			host._forest_canopy_layer.clear_world()
 		host._mark_detail_budget_total_dirty()
 		return
 
@@ -28,6 +30,12 @@ static func _rebuild(host) -> void:
 		host._detail_family_layer.configure(host._detail_layers, host.detail_scatter_family_renderer_enabled)
 		if host._camera_view_initialized:
 			host._detail_family_layer.set_camera_view(host._camera_world_rect, host._camera_world_center, host._camera_zoom)
+	if host._forest_canopy_layer != null and is_instance_valid(host._forest_canopy_layer):
+		host._forest_canopy_layer.set_geometry_mode(host.forest_canopy_geometry_mode)
+		host._forest_canopy_layer.configure_world(host._map, host._world, host.hex_size, host._wrap_period_x())
+		host._sync_detail_and_activity_materials()
+		if host._camera_view_initialized:
+			host._forest_canopy_layer.set_camera_view(host._camera_world_rect, host._camera_world_center, host._camera_zoom)
 	if host.detail_scatter_family_renderer_enabled and host._camera_view_initialized:
 		host._queue_missing_prefetch_detail_chunks()
 		host._reactivate_deferred_detail_chunks()
@@ -160,6 +168,9 @@ static func _apply_cell_lut_rebind(host, lut_name: String, world_tex: Texture2D)
 	host._lut_bound[lut_name] = world_tex
 	print("[hex_renderer] %s rebind (material held a stale LUT texture object)" % lut_name)
 	host._push_world_uniform(lut_name, world_tex)
+	if "_forest_canopy_layer" in host and host._forest_canopy_layer != null \
+			and is_instance_valid(host._forest_canopy_layer):
+		host._forest_canopy_layer.sync_shared_textures_from_terrain_material(host._shader_mat)
 	# [web-water-pass] 水面 pass 采的是同一张 enum/dyn LUT（同一对象漂移），
 	# bounce_lut 它不用。漏了这条，日刷之后水面会停在旧快照上。
 	if host._water_mat != null and lut_name != "bounce_lut":

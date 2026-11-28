@@ -120,6 +120,7 @@ static func bake_cell_luts(baker: MapBaker, map: MapData, world: WorldData, cach
 		report.reason = "invalid_lut_dims"
 		return report
 	var frame = runtime_commit.get("cell_lut_frame", {})
+	var valley_fog: Variant = runtime_commit.get("valley_fog", frame.get("valley_fog") if frame is Dictionary else null)
 	if runtime_commit.has("cell_lut_frame"):
 		var ages = frame.get("transition_age") if frame is Dictionary else null
 		var vitalities = frame.get("previous_vitality") if frame is Dictionary else null
@@ -193,19 +194,19 @@ static func bake_cell_luts(baker: MapBaker, map: MapData, world: WorldData, cach
 				var full := bool(out.get("full_encode", force_full_encode))
 				var classes: PackedInt32Array = runtime_commit.get("display_class_cells", dirty_indices)
 				if defer_upload:
-					_stage_cell_lut_upload(baker, world, e, d, c, wlut, dirty_indices, classes, full)
+					_stage_cell_lut_upload(baker, world, e, d, c, wlut, dirty_indices, classes, full, valley_fog)
 				else:
 					_publish_cell_lut_textures(baker, world, e, d, c, report,
 							dirty_indices, full, classes)
 					if not wlut.is_empty():
-						report.merge(baker._publish_weather_lut_bytes(wlut, world, lw, lh), true)
+						report.merge(_publish_weather_lut_bytes(baker, wlut, world, lw, lh, false, valley_fog), true)
 				report["lut_total_ms"] = float(Time.get_ticks_usec() - total_t0_us) / 1000.0
 				return report
 	# A legacy/fallback encode publishes immediately. Flush an earlier native
 	# batch first so a newer synchronous update cannot be replaced by it.
 	flush_staged_cell_lut_upload(baker, world)
 	_bake_cell_luts_gd(baker, map, world, lw, lh, snow_cover_override,
-		publish_weather_lut, fog_k_override, frame)
+		publish_weather_lut, fog_k_override, frame, valley_fog)
 
 	report["lut_encode_path"] = "gdscript"
 	report["path"] = "gdscript"
@@ -299,7 +300,7 @@ static func _publish_cell_lut_textures(baker: MapBaker, world: WorldData,
 static func _stage_cell_lut_upload(baker: MapBaker, world: WorldData,
 		enum_bytes: PackedByteArray, dyn_bytes: PackedByteArray, eco_bytes: PackedByteArray,
 		weather_bytes: PackedByteArray, dirty: PackedInt32Array,
-		classes: PackedInt32Array, full: bool) -> void:
+		classes: PackedInt32Array, full: bool, valley_fog: Variant = null) -> void:
 	var pending := world.staged_cell_lut_upload
 	pending["full_encode"] = full or bool(pending.get("full_encode", false))
 	if not pending.full_encode:
@@ -309,6 +310,10 @@ static func _stage_cell_lut_upload(baker: MapBaker, world: WorldData,
 	pending["dyn_bytes"] = dyn_bytes
 	pending["eco_bytes"] = eco_bytes
 	if weather_bytes.is_empty():
+		return
+	if valley_fog != null or pending.has("valley_fog"):
+		pending["valley_fog"] = valley_fog
+		pending["weather_current"] = weather_bytes
 		return
 	# Keep the last two distinct snapshots so a batch feeds the same interpolation pair
 	# as individual uploads. Packed arrays keep their old bytes via copy-on-write.
@@ -343,8 +348,12 @@ static func flush_staged_cell_lut_upload(baker: MapBaker, world: WorldData) -> v
 			pending["dyn_bytes"], pending["eco_bytes"], {}, pending.get("dirty", PackedInt32Array()),
 			pending.full_encode, pending.get("classes", PackedInt32Array()))
 	if pending.has("weather_current"):
-		_upload_weather_lut_pair(baker, world, world.lut_dims.x, world.lut_dims.y,
-				pending["weather_previous"], pending["weather_current"])
+		if pending.has("valley_fog"):
+			_publish_weather_lut_bytes(baker, pending.weather_current, world,
+				world.lut_dims.x, world.lut_dims.y, false, pending.valley_fog)
+		else:
+			_upload_weather_lut_pair(baker, world, world.lut_dims.x, world.lut_dims.y,
+					pending["weather_previous"], pending["weather_current"])
 
 
 # GDScript fallback：per-cell LUT 全量烘焙（C++ encode_cell_luts 不可用时）。
@@ -352,7 +361,8 @@ static func flush_staged_cell_lut_upload(baker: MapBaker, world: WorldData) -> v
 static func _bake_cell_luts_gd(baker: MapBaker, map: MapData, world: WorldData, lw: int, lh: int,
 		snow_cover_override: PackedFloat32Array = PackedFloat32Array(),
 		publish_weather_lut: bool = true,
-		fog_k_override: PackedByteArray = PackedByteArray(), cell_lut_frame: Dictionary = {}) -> void:
+		fog_k_override: PackedByteArray = PackedByteArray(), cell_lut_frame: Dictionary = {},
+		valley_fog: Variant = null) -> void:
 	var slots: int = lw * lh
 	var transition_ages: PackedByteArray = cell_lut_frame.get("transition_age", PackedByteArray())
 	var previous_vitalities: PackedByteArray = cell_lut_frame.get("previous_vitality", PackedByteArray())
@@ -416,7 +426,7 @@ static func _bake_cell_luts_gd(baker: MapBaker, map: MapData, world: WorldData, 
 	_publish_cell_table(baker, map, world, enum_data, dyn_data, true, true)
 	_publish_bounce_lut_gd(baker, enum_data, dyn_data, world, lw, lh)
 	if publish_weather_lut:
-		baker._publish_weather_lut_bytes(weather_data, world, lw, lh)
+		_publish_weather_lut_bytes(baker, weather_data, world, lw, lh, false, valley_fog)
 
 
 
@@ -470,8 +480,8 @@ static func weather_table_commit_plan(weather_src: PackedByteArray, wind_src: Pa
 	return CellTableUpload.weather_table_commit_plan(weather_src, wind_src, o2i, map_w, map_h, n_cells, cur_before, identity)
 
 static func _publish_weather_table(baker: MapBaker, map: MapData, world: WorldData,
-		weather_bytes: PackedByteArray, wind_bytes: PackedByteArray) -> Dictionary:
-	return CellTableUpload._publish_weather_table(baker, map, world, weather_bytes, wind_bytes)
+		weather_bytes: PackedByteArray, wind_bytes: PackedByteArray, reset_previous: bool = false) -> Dictionary:
+	return CellTableUpload._publish_weather_table(baker, map, world, weather_bytes, wind_bytes, reset_previous)
 
 static func _create_weather_table_array(images: Array[Image]) -> Texture2DArray:
 	return CellTableUpload._create_weather_table_array(images)
@@ -489,7 +499,8 @@ static func _lut_tex_from_data(baker: MapBaker, data: PackedByteArray, w: int, h
 
 
 
-static func _publish_weather_lut_bytes(baker: MapBaker, data: PackedByteArray, world: WorldData, lw: int, lh: int, force_changed: bool = false) -> Dictionary:
+static func _publish_weather_lut_bytes(baker: MapBaker, data: PackedByteArray, world: WorldData,
+		lw: int, lh: int, force_changed: bool = false, valley_fog: Variant = null) -> Dictionary:
 
 	var report: Dictionary = {
 		"weather_lut_published": false,
@@ -502,20 +513,33 @@ static func _publish_weather_lut_bytes(baker: MapBaker, data: PackedByteArray, w
 	flush_staged_cell_lut_upload(baker, world)
 	var has_current_tex: bool = world.weather_lut_tex != null and world.weather_lut_tex.get_size() == Vector2(float(lw), float(lh))
 	var changed: bool = (not has_current_tex) or baker._prev_weather_lut_bytes.size() != data.size() or baker._prev_weather_lut_bytes != data
-	if not changed:
+	var stamp := maxi(Time.get_ticks_usec(), world.weather_lut_update_usec + 1)
+	var fog := world.valley_fog
+	var fog_advanced := false
+	var map: MapData = baker._last_bake_map
+	if map != null and valley_fog != null:
+		var old_generation := fog.generation
+		var accepted := fog.publish(valley_fog, map.get_instance_id(), Vector2i(map.width, map.height),
+			stamp, not has_current_tex or not world.weather_table_valid)
+		fog_advanced = accepted and fog.generation != old_generation
+		report["valley_fog_status"] = "advanced" if fog_advanced else ("duplicate" if accepted else "rejected")
+	if not changed and not fog_advanced:
 		report.weather_lut_reason = "unchanged"
 		return report
 	var prev_bytes: PackedByteArray = baker._prev_weather_lut_bytes if baker._prev_weather_lut_bytes.size() == data.size() and baker._prev_weather_lut_bytes.size() > 0 else data
 	report.weather_lut_published = true
 	report.weather_lut_changed = true
 	report.weather_lut_reason = "changed"
-	report.merge(_upload_weather_lut_pair(baker, world, lw, lh, prev_bytes, data), true)
+	var reset_previous := fog_advanced and fog.previous_generation == fog.generation
+	report.merge(_upload_weather_lut_pair(baker, world, lw, lh,
+		data if reset_previous else prev_bytes, data, stamp, reset_previous, fog_advanced), true)
 	return report
 
 
 # Immediate and staged uploads share this publication boundary.
 static func _upload_weather_lut_pair(baker: MapBaker, world: WorldData, lw: int, lh: int,
-		previous: PackedByteArray, current: PackedByteArray) -> Dictionary:
+		previous: PackedByteArray, current: PackedByteArray, stamp: int = 0,
+		reset_previous: bool = false, fog_advanced: bool = false) -> Dictionary:
 	world.weather_lut_prev_tex = baker._lut_tex_from_data(
 			previous, lw, lh, Image.FORMAT_RGBA8, world.weather_lut_prev_tex)
 	world.weather_lut_tex = baker._lut_tex_from_data(
@@ -523,13 +547,16 @@ static func _upload_weather_lut_pair(baker: MapBaker, world: WorldData, lw: int,
 	# Keep the exact bytes used by the rain/snow meshes available without a GPU readback.
 	world.weather_lut_tex.set_meta(WEATHER_CURTAIN_LUT_PAIR, [previous, current])
 	baker._prev_weather_lut_bytes = current
-	var stamp := maxi(Time.get_ticks_usec(), world.weather_lut_update_usec + 1)
+	if stamp == 0:
+		stamp = maxi(Time.get_ticks_usec(), world.weather_lut_update_usec + 1)
+	if not fog_advanced:
+		world.valley_fog.invalidate(stamp)
 	var map: MapData = baker._last_bake_map
 	var dims := Vector2i(lw, lh)
 	var wind_bytes := WeatherWindSourceScript.build_bytes(map, dims)
-	var report := _publish_weather_table(baker, map, world, current, wind_bytes)
+	var report := _publish_weather_table(baker, map, world, current, wind_bytes, reset_previous)
 	# Expose the new timestamp after the table and index-ordered wind are ready.
-	world.publish_weather_wind(map, dims, stamp, wind_bytes)
+	world.publish_weather_wind(map, dims, stamp, wind_bytes, reset_previous)
 	return report
 
 

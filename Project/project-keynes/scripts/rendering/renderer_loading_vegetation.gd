@@ -37,6 +37,8 @@ static func _rebuild_cooperative(host) -> void:
 		host._for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 			layer.clear()
 		)
+		if host._forest_canopy_layer != null and is_instance_valid(host._forest_canopy_layer):
+			host._forest_canopy_layer.clear_world()
 		host._mark_detail_budget_total_dirty()
 		return
 
@@ -55,6 +57,12 @@ static func _rebuild_cooperative(host) -> void:
 		host._detail_family_layer.configure(host._detail_layers, host.detail_scatter_family_renderer_enabled)
 		if host._camera_view_initialized:
 			host._detail_family_layer.set_camera_view(host._camera_world_rect, host._camera_world_center, host._camera_zoom)
+	if host._forest_canopy_layer != null and is_instance_valid(host._forest_canopy_layer):
+		host._forest_canopy_layer.set_geometry_mode(host.forest_canopy_geometry_mode)
+		host._forest_canopy_layer.configure_world(host._map, host._world, host.hex_size, host._wrap_period_x())
+		host._sync_detail_and_activity_materials()
+		if host._camera_view_initialized:
+			host._forest_canopy_layer.set_camera_view(host._camera_world_rect, host._camera_world_center, host._camera_zoom)
 	if host.detail_scatter_family_renderer_enabled and host._camera_view_initialized:
 		host._queue_missing_prefetch_detail_chunks()
 	if deferred_layers > 0:
@@ -76,6 +84,7 @@ static func _rebuild_cooperative(host) -> void:
 	if host._shader_mat == null:
 		return
 	host._apply_uniforms()
+	host._sync_detail_and_activity_materials()
 
 
 ## 逐层"最便宜的初始化"，返回真正走了 defer 的层数（0 = 全量同步构建，老行为）。

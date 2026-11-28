@@ -112,7 +112,10 @@ uniform float terrain_normal_influence = 1.0;
 uniform float hillshade_coarse_strength = 2.10;
 uniform float sun_shade_strength = 0.55;
 uniform float ambient_floor = 0.22;
-uniform float contact_ao_strength = 0.42;
+uniform float contact_ao_strength = 0.48;
+uniform float ground_ao_strength = 0.55;
+uniform float ground_ao_radius = 1.35;
+uniform float floor_shadow_strength = 0.72;
 uniform float terrain_valley_ao_strength = 0.40;
 uniform float terrain_valley_ao_gain = 6.0;
 
@@ -447,8 +450,13 @@ void vertex() {
 	scale = max(scale, mix(scale, size_floor, snow_restore));
 	float bury = clamp(cs.snow * burial, 0.0, 0.85);
 	scale *= 1.0 - bury * 0.36;
-	bool hidden = body_alpha < disappear_alpha_threshold;
-	VERTEX *= hidden ? 0.0 : scale;
+	// [static-canopy-no-pop] 树冠不在 disappear_alpha_threshold 处一帧硬缩成 0，
+	// 避免干旱/积雪/活力在阈值上下抖动时整簇树冠闪烁消失；改用平滑过渡。
+	bool hidden = !canopy && (body_alpha < disappear_alpha_threshold);
+	float canopy_fade = canopy
+		? smoothstep(disappear_alpha_threshold * 0.4, disappear_alpha_threshold * 2.0, body_alpha)
+		: 1.0;
+	VERTEX *= hidden ? 0.0 : (scale * mix(0.84, 1.0, canopy_fade));
 	// 与声明同源：无条件写，见 varying 处的说明（fragment 无条件要用它）。
 	v_ground_uv = ((MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy - world_origin)
 		/ max(world_size, vec2(0.00001));
@@ -555,7 +563,10 @@ void fragment() {
 #ifdef PK_MOBILE_ANY
 	bool far = elem_px < 6.0;
 #else
-	bool far = elem_px < 3.0;
+	// PC 高画质（veg_shade_quality >= 2）在拉远总览视距也保留法线、AO 与树下阴影，
+	// 避免画面变平，同时消除 elem_px ≈ 3.0 附近的逐像素法线/阴影开关闪烁。
+	float far_cutoff = (veg_shade_quality >= 2) ? 0.75 : 3.0;
+	bool far = elem_px < far_cutoff;
 #endif
 #ifdef PK_VEG_NEAR_MIN
 	// LOW uses the same sprite coverage and skips the relief-normal fetch.
@@ -605,9 +616,23 @@ void fragment() {
 	}
 #endif
 
+	float ground_ao = 0.0;
+#if !defined(PK_MOBILE_ANY)
+	if (veg_form_is_canopy(form) && veg_shade_quality >= 2 && ground_ao_strength > 0.001) {
+		vec2 ap_ao = abs(p);
+		float border_ao = 1.0 - smoothstep(0.72, 0.98, max(ap_ao.x, ap_ao.y));
+		if (!far && s.shadow_crown.w > 0.001) {
+			float d_ao = length(pe - s.shadow_crown.xy) / max(s.shadow_crown.z, 0.001);
+			ground_ao = (1.0 - smoothstep(0.60, max(0.85, ground_ao_radius), d_ao))
+				* border_ao * ground_ao_strength;
+		}
+	}
+#endif
+
 	float body_a = s.cov * v_f.z;
-	float floor_a = floor_shadow * 0.70 * local_day * daylight.w * cloud_visibility
-		* v_f.w * (1.0 - s.cov);
+	float sun_floor_a = floor_shadow * floor_shadow_strength * local_day * daylight.w * cloud_visibility * v_f.w;
+	float ao_floor_a = ground_ao * mix(0.55, 1.0, local_day) * v_f.w;
+	float floor_a = clamp(max(sun_floor_a, ao_floor_a), 0.0, 0.88) * (1.0 - s.cov);
 	if (body_a + floor_a < 0.004) {
 		discard;
 	}
@@ -704,9 +729,8 @@ void fragment() {
 		rgb = vec3(lod_alpha);
 	}
 	vec3 floor_col = mix(vec3(0.035, 0.05, 0.045), vec3(0.26, 0.31, 0.42), v_f.x * 0.7);
-	if (veg_form_follows_ground(form)) {
-		// Contact/snow in the gaps is still ground material, not an emissive
-		// overlay. Keep its cool night palette and exposure with the vegetation.
+	if (veg_form_follows_ground(form) || veg_form_is_canopy(form)) {
+		// Contact AO / shadow under canopies is ground shading, not an emissive overlay.
 		floor_col *= mix(EARTH_NIGHT_AMBIENT / EARTH_DAY_AMBIENT, vec3(1.0), local_day) * tod_exposure;
 	}
 	// [veg-fog-knowledge 2026-11-18] 与地形**同一份**灰化（fog_memory.gdshaderinc）：

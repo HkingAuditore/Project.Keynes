@@ -48,7 +48,8 @@ func update() -> bool:
 			image = Image.create_from_data(dims.x, dims.y, false, Image.FORMAT_RGBA8, bytes)
 		current = ImageTexture.create_from_image(image) if image != null else null
 		_current_wind_bytes = bytes
-	has_previous = current != null and previous != null and _dims == dims
+	has_previous = current != null and previous != null and _dims == dims \
+		and (published_bytes == null or not world.weather_wind_resets_previous())
 	if not has_previous:
 		previous = current
 	_stamp = stamp

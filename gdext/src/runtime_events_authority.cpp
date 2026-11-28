@@ -1,5 +1,5 @@
 #include <cassert>
-#include "runtime_events_authority.h"
+#include "runtime_event_append_packet.h"
 #include "economy_cost_probe.h"
 #include "runtime_switch_registry.h"
 #include <algorithm>
@@ -103,10 +103,11 @@ std::vector<RuntimeEventsIdempotencyEvidence>::iterator find_evidence(
         });
 }
 
-RuntimeCommandPacket make_append_packet(uint64_t request, uint32_t producer,
-                                        uint64_t sequence, int64_t day,
-                                        const RuntimeEventsRecord &record,
-                                        uint64_t idempotency = 0) {
+} // namespace
+
+RuntimeCommandPacket make_event_append_packet(
+        uint64_t request, uint32_t producer, uint64_t sequence, int64_t day,
+        const RuntimeEventsRecord &record, uint64_t idempotency) {
     RuntimeCommandPacket packet{};
     packet.envelope.request_id = request;
     packet.envelope.producer_id = producer;
@@ -123,8 +124,6 @@ RuntimeCommandPacket make_append_packet(uint64_t request, uint32_t producer,
     std::memcpy(packet.payload.data(), payload.data(), payload.size());
     return packet;
 }
-
-} // namespace
 
 RuntimeEventsAuthority::RuntimeEventsAuthority() { reset(); }
 
@@ -616,9 +615,9 @@ bool RuntimeEventsAuthority::self_test(std::string &error) {
     RuntimeEventsRecord third = first;
     third.type = 5; third.cell_idx = 8;
     std::vector<RuntimeCommandPacket> commands;
-    commands.push_back(make_append_packet(20u, 2u, 1u, 1, second, 900u));
-    commands.push_back(make_append_packet(10u, 1u, 1u, 1, first, 800u));
-    commands.push_back(make_append_packet(30u, 3u, 1u, 1, third));
+    commands.push_back(make_event_append_packet(20u, 2u, 1u, 1, second, 900u));
+    commands.push_back(make_event_append_packet(10u, 1u, 1u, 1, first, 800u));
+    commands.push_back(make_event_append_packet(30u, 3u, 1u, 1, third));
     RuntimeEventsSnapshot planned;
     std::vector<RuntimeCommandReceipt> receipts;
     RuntimeEventsReport report;
@@ -709,7 +708,7 @@ bool RuntimeEventsAuthority::self_test(std::string &error) {
     append_le<int64_t>(ack_payload, 50);
     future_ack.envelope.payload_size = static_cast<uint32_t>(ack_payload.size());
     std::memcpy(future_ack.payload.data(), ack_payload.data(), ack_payload.size());
-    commands = {future_ack, make_append_packet(41u, 1u, 2u, 1, first, 700u)};
+    commands = {future_ack, make_event_append_packet(41u, 1u, 2u, 1, first, 700u)};
     if (!isolated.plan_day(1, commands, planned, receipts, report, error) ||
         !isolated.commit_day(planned, error) || report.rejected_commands != 1u ||
         receipts.size() != 2u || receipts[0].code == RuntimeReceiptCode::OK ||
@@ -722,7 +721,7 @@ bool RuntimeEventsAuthority::self_test(std::string &error) {
     }
     commands.clear();
     for (uint64_t i = 0; i < 4u; ++i)
-        commands.push_back(make_append_packet(50u + i, 1u, 3u + i, 2, second, 600u + i));
+        commands.push_back(make_event_append_packet(50u + i, 1u, 3u + i, 2, second, 600u + i));
     if (!isolated.plan_day(2, commands, planned, receipts, report, error) ||
         !isolated.commit_day(planned, error) ||
         isolated.snapshot().events.size() != 2u ||
@@ -758,7 +757,7 @@ bool RuntimeEventsAuthority::self_test(std::string &error) {
             } else {
                 // Repeated idempotency keys must remain visible until the original
                 // end-of-day prune, even when their events were logically evicted.
-                commands.push_back(make_append_packet(1000u + i, 1u, i, day,
+                commands.push_back(make_event_append_packet(1000u + i, 1u, i, day,
                     i % 2 ? first : second, 5000u + i % 23u));
             }
         }

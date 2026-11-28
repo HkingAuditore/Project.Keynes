@@ -302,6 +302,21 @@ bool RuntimeClimateAuthority::commit_day(
     return true;
 }
 
+RuntimeClimateResearchWeather RuntimeClimateAuthority::research_weather() const {
+    RuntimeClimateResearchWeather view;
+    if (_plan_ready || _store.committed_day < 0) return view;
+    // Commit swaps the buffers. On the first day after loading, the restored
+    // temperature becomes yesterday's lane the same way as on a live day.
+    if (_next.committed_day >= 0 && _next.committed_day == _store.committed_day - 1)
+        view.previous_temperature = _next.temperature.data();
+    const auto &soil = _kernel.distribute_soil_moisture();
+    if (soil.size() == _store.cell_count) view.soil_moisture = soil.data();
+    view.cyclone_tags = _kernel.research_cyclone_tags(
+        _store.committed_day, view.cyclone_generation);
+    view.wind_speed = _kernel.research_cyclone_wind(_store.committed_day);
+    return view;
+}
+
 bool RuntimeClimateAuthority::commit_day_forced(
         int64_t day, const RuntimeClimateStore &reference,
         RuntimeClimateVerticalReport &report) {

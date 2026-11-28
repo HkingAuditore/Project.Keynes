@@ -6,8 +6,13 @@
 script = ExtResource("1")
 detail_kind = 1
 render_z_index = 3
-density_scale = 0.70
+density_scale = 0.96
 wind_strength = 0.48
+sub_form_enabled = true
+crown_diameter_hex = 0.28
+grove_density_threshold = 0.5
+grove_crown_min = 9
+grove_crown_max = 21
 vegetation_weight_overrides = {
 "12": 0.45,
 "14": 0.55,
@@ -22,12 +27,12 @@ landform_weight_overrides = {
 }
 base_color_override_enabled = true
 base_color_override = Color(0.07, 0.3, 0.2, 0.94)
-desktop_max_instances_quality0 = 260
-desktop_max_instances_quality1 = 1080
-desktop_max_instances_quality2 = 1900
+desktop_max_instances_quality0 = 360
+desktop_max_instances_quality1 = 1700
+desktop_max_instances_quality2 = 3200
 desktop_max_per_cell_quality0 = 1
-desktop_max_per_cell_quality1 = 2
-desktop_max_per_cell_quality2 = 3
+desktop_max_per_cell_quality1 = 3
+desktop_max_per_cell_quality2 = 5
 mobile_max_instances_quality0 = 50
 mobile_max_instances_quality1 = 110
 mobile_max_instances_quality2 = 190
@@ -52,8 +57,3 @@ color_value_gain = 0.96
 snow_body_color_retention = 0.22
 snow_alpha_loss_strength = 0.18
 snow_hide_strength = 0.28
-sub_form_enabled = true
-crown_diameter_hex = 0.28
-grove_density_threshold = 0.5
-grove_crown_min = 9
-grove_crown_max = 21

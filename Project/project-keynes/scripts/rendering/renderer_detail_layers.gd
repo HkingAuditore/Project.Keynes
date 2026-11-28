@@ -1,5 +1,7 @@
 extends RefCounted
 
+const ForestCanopyLayerScript = preload("res://scripts/rendering/forest/forest_canopy_layer.gd")
+
 ## Stateless collaborator for ShrubLayer.
 
 # ─── web / 移动端植被降档（性能换密度） ─────────────────────────────────
@@ -106,6 +108,9 @@ static func _spawn_detail_layers(host) -> void:
 	if host._detail_family_layer != null and is_instance_valid(host._detail_family_layer):
 		host._detail_family_layer.queue_free()
 	host._detail_family_layer = null
+	if host._forest_canopy_layer != null and is_instance_valid(host._forest_canopy_layer):
+		host._forest_canopy_layer.queue_free()
+	host._forest_canopy_layer = null
 	host._detail_family_dirty_chunks.clear()
 	for layer in host._detail_layers:
 		if is_instance_valid(layer):
@@ -157,8 +162,11 @@ static func _spawn_detail_layers(host) -> void:
 	var hide_sources: bool = hide_all or (family_hidden and host.detail_scatter_family_renderer_enabled)
 	var profiles: Array = [] if hide_sources else _detail_profiles(host)
 	var veg_tier = host._mobile_quality_tier_from_define(host._mobile_quality_tier_define)
+	var canopy_proto: bool = bool(host.forest_canopy_prototype_enabled) and not hide_all
 	for i in range(profiles.size()):
 		var prof: Resource = profiles[i]
+		if canopy_proto and ForestCanopyLayerScript.is_replaced_canopy_profile(prof):
+			continue
 		var layer_name := _detail_layer_name(host, prof, i)
 		if DCFeatureFlags.render_debug_hides_layer(layer_name, hidden_layers):
 			continue
@@ -169,6 +177,8 @@ static func _spawn_detail_layers(host) -> void:
 		layer.set_density_detail(host._graphics_details.vegetation_detail)
 		if layer.has_method("set_defer_initial_rebuild"):
 			layer.set_defer_initial_rebuild(host.detail_scatter_family_renderer_enabled)
+		if layer.has_method("set_static_canopy_enabled"):
+			layer.set_static_canopy_enabled(host.detail_scatter_static_canopy_enabled)
 		if layer.has_method("set_chunked_multimesh_enabled"):
 			layer.set_chunked_multimesh_enabled(host.detail_scatter_chunked_multimesh_enabled, host.detail_scatter_chunk_size_cells)
 		layer.set_world_ext(host._world_ext)
@@ -192,11 +202,23 @@ static func _spawn_detail_layers(host) -> void:
 		if host._camera_view_initialized and layer.has_method("set_camera_view"):
 			layer.set_camera_view(host._camera_world_rect, host._camera_world_center, host._camera_zoom)
 		layer.set_lod_debug_view(host.terrain_surface_debug_view == 6)
+		if layer.has_method("set_vegetation_ao_tuning"):
+			layer.set_vegetation_ao_tuning(
+				host.vegetation_ground_ao_strength,
+				host.vegetation_ground_ao_radius,
+				host.vegetation_floor_shadow_strength,
+				host.vegetation_contact_ao_strength
+			)
 		host._detail_layers.append(layer)
-	if not family_hidden:
+	if not family_hidden and not canopy_proto:
 		host._detail_family_layer = host.VegetationFamilyLayerScript.new()
 		host._detail_family_layer.name = family_name
 		host.add_child(host._detail_family_layer)
+	if canopy_proto:
+		host._forest_canopy_layer = ForestCanopyLayerScript.new()
+		host._forest_canopy_layer.name = &"ForestCanopyLayer"
+		host._forest_canopy_layer.set_geometry_mode(host.forest_canopy_geometry_mode)
+		host.add_child(host._forest_canopy_layer)
 	if host._cloud_shadow_field != null:
 		host._push_cloud_shadow_material_inputs()
 

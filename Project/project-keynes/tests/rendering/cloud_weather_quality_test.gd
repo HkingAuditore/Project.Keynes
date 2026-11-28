@@ -1,6 +1,7 @@
 extends SceneTree
 # 运行中切档必须重建 shader，并恢复天气/风场绑定；防止只改 uniform 而仍执行高档。
 const WindSource = preload("res://scripts/rendering/weather_wind_source.gd")
+const ValleyFogPublication = preload("res://scripts/rendering/bakers/valley_fog_publication.gd")
 
 var failures := 0
 func _initialize() -> void:
@@ -144,6 +145,8 @@ func run() -> void:
 	weather.queue_free()
 	await process_frame
 	await _check_curtain_instances()
+	_check_valley_fog_publication()
+	await _check_valley_fog_quality()
 	print("[cloud-weather-quality] failures=",failures)
 	quit(0 if failures == 0 else 1)
 
@@ -198,5 +201,134 @@ func _check_curtain_instances() -> void:
 		"an in-place LUT upload refreshes contributors even when the instance count is unchanged")
 	weather.set_weather_strength(0.0)
 	check(not weather._curtains.root.visible, "zero global weather strength hides all curtain layers")
+	weather.queue_free()
+	await process_frame
+
+
+func _check_valley_fog_publication() -> void:
+	var fog := ValleyFogPublication.new()
+	var dimensions := Vector2i(2, 1)
+	var map_id := 42
+	var source := {
+		"map_id": map_id, "generation": 7, "size": dimensions, "terrain_generation": 1,
+		"rg": PackedFloat32Array([0.8, 0.34, 0.0, 0.21]), "has_density": true,
+	}
+	check(fog.publish(source, map_id, dimensions, 100), "fog accepts the first matching weather frame")
+	check(fog.current == fog.previous and fog.generation == 7 and fog.previous_generation == 7
+		and fog.has_density and fog.previous_has_density, "first fog frame interpolates to itself")
+	var initial_current: Variant = fog.current
+	check(fog.publish(source, map_id, dimensions, 100) and fog.current == initial_current and fog.stamp == 100,
+		"repeated submission is idempotent")
+	var next := source.duplicate()
+	next["generation"] = 8
+	next["rg"] = PackedFloat32Array([0.0, 0.35, 0.0, 0.21])
+	next["has_density"] = false
+	check(fog.publish(next, map_id, dimensions, 200), "fog accepts the next weather generation")
+	check(fog.previous == initial_current and fog.generation == 8 and fog.previous_generation == 7
+		and not fog.has_density and fog.previous_has_density, "contiguous dry weather retains the wet previous layer")
+	var accepted_current: Variant = fog.current
+	var refused_cases := {
+		"missing payload": null,
+		"missing values": {"generation": 9},
+		"wrong world": _fog_patch(source, {"map_id": 43, "generation": 9}),
+		"wrong dimensions": _fog_patch(source, {"size": Vector2i.ONE, "generation": 9}),
+		"wrong length": _fog_patch(source, {"rg": PackedFloat32Array([1.0, 0.30]), "generation": 9}),
+		"wrong array type": _fog_patch(source, {"rg": [0.8, 0.34, 0.0, 0.21], "generation": 9}),
+		"invalid terrain generation": _fog_patch(source, {"terrain_generation": 0, "generation": 9}),
+		"stale generation": source,
+		"non-finite density": _fog_patch(source, {"rg": PackedFloat32Array([NAN, 0.34, 0.0, 0.21]), "generation": 9}),
+		"non-finite fog top": _fog_patch(source, {"rg": PackedFloat32Array([0.8, INF, 0.0, 0.21]), "generation": 9}),
+		"negative density": _fog_patch(source, {"rg": PackedFloat32Array([-1.0, 0.34, 0.0, 0.21]), "generation": 9}),
+		"fog top outside altitude range": _fog_patch(source, {"rg": PackedFloat32Array([0.8, 1.01, 0.0, 0.21]), "generation": 9}),
+		"incorrect empty summary": _fog_patch(source, {"has_density": false, "generation": 9}),
+	}
+	for label in refused_cases:
+		check(not fog.publish(refused_cases[label], map_id, dimensions, 300), "fog rejects %s" % label)
+		check(fog.generation == 8 and fog.previous_generation == 7 and fog.stamp == 200
+			and fog.current == accepted_current and fog.previous == initial_current,
+			"rejecting %s preserves the accepted pair" % label)
+	var later := _fog_patch(source, {"generation": 10})
+	check(fog.publish(later, map_id, dimensions, 400) and fog.current == fog.previous
+		and fog.previous_generation == 10, "skipping a weather generation starts from the latest pair")
+	var restored := _fog_patch(source, {"generation": 11})
+	check(fog.publish(restored, map_id, dimensions, 500, true) and fog.current == fog.previous
+		and fog.previous_generation == 11, "restore forces both layers to the same generation")
+	var reterrain := _fog_patch(next, {"generation": 12, "terrain_generation": 2})
+	check(fog.publish(reterrain, map_id, dimensions, 600) and fog.current == fog.previous
+		and fog.previous_generation == 12 and not fog.previous_has_density,
+		"changing terrain resets interpolation even on consecutive weather generations")
+	fog.invalidate(700)
+	check(fog.current.is_empty() and fog.previous.is_empty() and fog.generation == 12 and fog.stamp == 700,
+		"missing fog for a new weather generation drops both drawable endpoints")
+	var recovered := _fog_patch(source, {"generation": 14, "terrain_generation": 2})
+	check(fog.publish(recovered, map_id, dimensions, 800) and fog.current == fog.previous
+		and fog.previous_generation == 14 and fog.has_density, "valid weather recovers after a missing fog publication")
+
+
+func _fog_patch(source: Dictionary, values: Dictionary) -> Dictionary:
+	var result := source.duplicate()
+	result.merge(values, true)
+	return result
+
+
+func _check_valley_fog_quality() -> void:
+	if OS.has_feature("web") or OS.has_feature("mobile"):
+		return
+	var weather := WeatherLayer.new()
+	weather.weather_cell_field_enabled = false
+	weather.valley_fog_enabled = true
+	root.add_child(weather)
+	weather.set_process(false)
+	var world := WorldData.new()
+	world.world_bounds = Rect2(0, 0, 40, 40)
+	world.lut_dims = Vector2i.ONE
+	world.weather_table_dims = Vector2i.ONE
+	world.height_tex = texture(Color(0.18, 0, 0, 1))
+	world.weather_lut_tex = texture(Color(0, 0, 0, 0))
+	world.weather_lut_update_usec = 200
+	var payload := {"map_id": 41, "generation": 1, "terrain_generation": 1, "size": Vector2i.ONE,
+		"rg": PackedFloat32Array([0.7, 0.34]), "has_density": true}
+	check(world.valley_fog.publish(payload, 41, Vector2i.ONE, 200), "accept the clear-sky valley-fog fixture")
+	weather.set_world_ref(world)
+	weather.setup(world.world_bounds, null, null, 22.0, world.weather_lut_tex, world.lut_dims, 40.0)
+	var mat: ShaderMaterial = weather.get("_overlay_mat")
+	check(weather.visible and mat.get_shader_parameter("valley_fog_active") == true,
+		"high weather keeps the overlay live for a clear sky with valley fog")
+	check(mat.get_shader_parameter("valley_fog_cur_layer") == mat.get_shader_parameter("valley_fog_prev_layer"),
+		"first bound fog frame uses one texture layer at both interpolation endpoints")
+	for quality in [0, 1]:
+		weather.set_visual_quality(quality)
+		check(not weather._valley_fog.compiled and weather._valley_fog._texture == null,
+			"weather quality %d releases the valley-fog texture" % quality)
+		check(world.valley_fog.generation == 1 and world.valley_fog.has_density,
+			"render quality %d preserves the published fog data" % quality)
+	weather.set_visual_quality(2)
+	mat = weather.get("_overlay_mat")
+	check(mat.get_shader_parameter("valley_fog_active") == true and weather._valley_fog._texture != null,
+		"returning to high quality binds the latest valley fog frame")
+	weather.set_render_gate(false)
+	check(not weather.visible and weather._valley_fog._texture == null,
+		"closing the weather layer gate releases all dedicated fog texture state")
+	weather.set_render_gate(true)
+	check(weather.visible and mat.get_shader_parameter("valley_fog_active") == true,
+		"reopening the weather gate restores the current fog frame")
+	var dry := _fog_patch(payload, {"generation": 2, "has_density": false, "rg": PackedFloat32Array([0.0, 0.21])})
+	check(world.valley_fog.publish(dry, 41, Vector2i.ONE, 300), "accept dry weather after the foggy frame")
+	world.weather_lut_update_usec = 300
+	weather._wx_lut_last_usec = 300
+	weather._wx_lut_t0_usec = Time.get_ticks_usec() - 2000
+	weather._wx_commit_interval_usec = 1000.0
+	weather._wx_pushed_lerp = 0.9985
+	weather._valley_fog.push(weather)
+	check(mat.get_shader_parameter("valley_fog_active") == true,
+		"a contributing previous frame remains active just before the interpolation endpoint")
+	weather._process(0.0)
+	check(mat.get_shader_parameter("weather_lerp") == 1.0 and mat.get_shader_parameter("valley_fog_active") == false,
+		"the final sub-threshold interpolation step still completes and stops sampling fog")
+	var replacement := WorldData.new()
+	replacement.weather_lut_update_usec = world.weather_lut_update_usec
+	weather.set_world_ref(replacement)
+	check(weather._valley_fog._texture == null and mat.get_shader_parameter("valley_fog_active") == false,
+		"world replacement drops the previous fog even if its weather stamp matches")
 	weather.queue_free()
 	await process_frame

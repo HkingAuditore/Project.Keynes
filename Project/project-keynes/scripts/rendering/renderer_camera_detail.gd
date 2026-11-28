@@ -94,6 +94,8 @@ static func set_camera_view(host, world_rect: Rect2, center: Vector2, zoom_value
 		host._resource_visual_layer.set_camera_view(world_rect, center, host._camera_zoom)
 	if host._building_visual_layer != null:
 		host._building_visual_layer.set_camera_view(world_rect, center, host._camera_zoom)
+	if host._forest_canopy_layer != null and is_instance_valid(host._forest_canopy_layer):
+		host._forest_canopy_layer.set_camera_view(world_rect, center, host._camera_zoom)
 	host._for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		if layer.has_method("set_camera_view"):
 			layer.set_camera_view(world_rect, center, host._camera_zoom)

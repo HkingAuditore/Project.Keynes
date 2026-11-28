@@ -20,6 +20,8 @@ func update(host, fog_draw: CanvasItem, screen: Rect2, covers: Callable,
 	for layer in host._detail_layers:
 		_consider_batches(layer, fog_draw, fog_z, screen, covers, whole_screen)
 	_consider_batches(host._detail_family_layer, fog_draw, fog_z, screen, covers, whole_screen)
+	if "_forest_canopy_layer" in host and host._forest_canopy_layer != null:
+		_consider_forest_canopy(host._forest_canopy_layer, fog_draw, fog_z, screen, covers, whole_screen)
 	_consider_batches(host._resource_visual_layer, fog_draw, fog_z, screen, covers, whole_screen)
 	_consider_batches(host._building_visual_layer, fog_draw, fog_z, screen, covers, whole_screen)
 	var cover: MeshInstance2D
@@ -58,12 +60,25 @@ func _consider_batches(layer: Node2D, fog_draw: CanvasItem, fog_z: int,
 			_consider(item, fog_draw, fog_z, screen, covers, whole_screen)
 
 
+func _consider_forest_canopy(layer: Node2D, fog_draw: CanvasItem, fog_z: int,
+		screen: Rect2, covers: Callable, whole_screen: bool) -> void:
+	if layer == null or not layer.is_visible_in_tree():
+		return
+	for group in layer.get_children():
+		if not (group is Node2D) or not group.is_visible_in_tree():
+			continue
+		for item in group.get_children():
+			if item is MeshInstance2D:
+				_consider(item, fog_draw, fog_z, screen, covers, whole_screen)
+
+
 func _consider(item: CanvasItem, fog_draw: CanvasItem, fog_z: int, screen: Rect2,
 		covers: Callable, whole_screen: bool) -> void:
 	if not _below_fog(item, fog_draw, fog_z):
 		return
 	if not whole_screen:
-		var local := Bounds.local_rect(item)
+		var local: Rect2 = Bounds.local_rect(item) if item is MultiMeshInstance2D \
+			else (item.get_meta(Bounds.REST_RECT, Rect2()) as Rect2)
 		if not local.has_area():
 			return
 		var to_screen := item.get_viewport().get_global_canvas_transform() \

@@ -173,6 +173,14 @@ private:
     std::shared_ptr<const RuntimeEnvironmentSnapshot> _latest;
 };
 
+struct RuntimeClimateResearchWeather {
+    const float *previous_temperature = nullptr;
+    const float *soil_moisture = nullptr;
+    const float *wind_speed = nullptr;
+    const uint32_t *cyclone_tags = nullptr;
+    uint32_t cyclone_generation = 0;
+};
+
 class RuntimeClimateAuthority {
 public:
     void reset(uint32_t cell_count);
@@ -212,10 +220,14 @@ public:
     bool copy_committed_view(int64_t day, uint32_t cells, size_t lane_size,
                              RuntimeClimateCommittedView &out) const;
     int64_t committed_day() const { return _store.committed_day; }
+    bool weather_committed_on(int64_t day) const {
+        return _store.committed_day == day && _kernel.weather_committed_on(day);
+    }
     bool observe_economy_view(const RuntimeClimateCommittedView &view) const {
         return _economy_view_cursor.observe(view);
     }
     const RuntimeClimateStore &store() const { return _store; }
+    RuntimeClimateResearchWeather research_weather() const;
     // The next-lane state produced by plan_day. Meaningful only between
     // plan_day and the following commit_day/discard_plan, which is exactly the
     // window in which a parity comparison happens.

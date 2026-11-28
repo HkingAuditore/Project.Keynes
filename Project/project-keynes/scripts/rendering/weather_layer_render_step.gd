@@ -47,6 +47,8 @@ static func _process(layer: WeatherLayer, delta: float) -> void:
 		layer._active_count = 0
 		layer.visible = false
 		return
+	if not layer.visible:
+		layer._refresh_visibility()
 	var visual_time_scale := layer._clock_speed_multiplier if layer._clock_running else 1.0
 	layer._world_time += delta * visual_time_scale
 	if layer._overlay_mat != null:
@@ -78,6 +80,9 @@ static func _process(layer: WeatherLayer, delta: float) -> void:
 			# 层号翻转与 weather_lut 换纹理发生在同一次提交（cell_lut_baker 里紧贴），
 			# 所以这里看到的 (tex, cur) 永远是配套的一对。
 			layer._push_weather_table()
+			if layer._wx_pushed_cell_table != layer._world_ref.cell_table_tex \
+					or layer._wx_pushed_cell_bound != layer._world_ref.cell_table_bound:
+				layer._push_cell_field_uniforms()
 			# 时间平滑:weather_lerp 按 LUT 的【实际更新节奏】推进 0→1,与 prev/curr 严格对齐(不再复用 front blend)。
 			var _now_us: int = Time.get_ticks_usec()
 			var _upd: int = int(layer._world_ref.weather_lut_update_usec)
@@ -93,11 +98,13 @@ static func _process(layer: WeatherLayer, delta: float) -> void:
 			if layer._wx_commit_interval_usec > 1.0:
 				_wlerp = clampf(float(_now_us - layer._wx_lut_t0_usec) / layer._wx_commit_interval_usec, 0.0, 1.0)
 			# 只在变化超过 1/512 时推，稳态下每帧的 uniform 写回到 0。
-			if absf(_wlerp - layer._wx_pushed_lerp) > 0.002 or layer._wx_pushed_lerp < 0.0:
+			if absf(_wlerp - layer._wx_pushed_lerp) > 0.002 or layer._wx_pushed_lerp < 0.0 \
+					or (_wlerp == 1.0 and layer._wx_pushed_lerp < 1.0):
 				layer._wx_pushed_lerp = _wlerp
 				layer._overlay_mat.set_shader_parameter("weather_lerp", _wlerp)
 				for mat in layer._curtains.materials:
 					mat.set_shader_parameter("weather_lerp", _wlerp)
+			layer._valley_fog.push(layer)
 			layer._refresh_curtain_instances(_upd, layer._wx_pushed_lerp < 0.999)
 			if _upd != 0 and (layer._wx_lut_diag_count < 12 or _now_us / 1000 - layer._wx_lut_diag_last_msec >= 2000):
 				layer._wx_lut_diag_count += 1
@@ -172,6 +179,7 @@ static func setup(layer: WeatherLayer, bounds: Rect2, map_index_atlas: ImageText
 		# [cell-field-overlays 2026-11-18 / O2] 场函数路径的世界坐标 / per-cell 表绑定
 		# （hex_size、map_dims、cell_table*）。旧路径不声明这些 uniform，多推是空操作。
 		layer._push_cell_field_uniforms()
+		layer._valley_fog.push(layer)
 	layer._rebuild_curtain_layers()
 	layer._push_curtain_runtime_state()
 	layer._update_curtain_visibility()
@@ -204,6 +212,7 @@ static func set_visual_tiles(layer: WeatherLayer, tiles) -> void:
 	var is_tiled := layer._visual_tiles_active()
 	if was_tiled != is_tiled and layer._overlay_quad != null:
 		layer._load_overlay_shader()
+		layer._push_overlay_runtime_state()
 	layer._push_visual_tile_uniforms()
 
 
@@ -244,6 +253,8 @@ static func _push_fog_mask_uniforms(layer: WeatherLayer) -> void:
 	var tex: Texture2D = layer._fog_enum_lut_tex
 	if layer._overlay_mat != null:
 		layer._overlay_mat.set_shader_parameter("fog_mask_enabled", layer._fog_mask_enabled and tex != null)
+		if layer._valley_fog.compiled:
+			layer._overlay_mat.set_shader_parameter("valley_fog_visibility_required", layer._fog_mask_enabled)
 		if tex != null:
 			layer._overlay_mat.set_shader_parameter("enum_lut", tex)
 	for mat in layer._curtains.materials:

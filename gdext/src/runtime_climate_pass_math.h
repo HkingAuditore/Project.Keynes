@@ -43,6 +43,10 @@ static inline float dc_clampf(float v, float lo, float hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
+inline float weather_vapor_capacity(float temperature, float elevation) {
+    return dc_clampf(0.18f + 0.82f * temperature - 0.18f * elevation, 0.14f, 1.0f);
+}
+
 // 圆柱地球最小映像修正（seam-advection-fix 2026-08-03，搬自
 // world_ext_internal.h:271-286）。
 // 六邻居表在东西方向用 posmod 环绕（map_data.gd::_build_indices），最左列与最右列互为

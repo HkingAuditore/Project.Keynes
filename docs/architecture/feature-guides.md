@@ -449,6 +449,13 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
   Shader 日/游戏年的比例在 HexRenderer 的 `shader_days_per_game_year` 调整，默认2，允许0和小数；renderer 经窄 Callable 配置 WorldClock，默认相位按累计年进度映射，跨年不重置小数比例。
   永昼最大时角和最低高度在 HexRenderer 的“永昼太阳”分组通过 `eternal_max_hour_angle_deg` / `eternal_min_elevation_deg` 调整（默认 70°/10°）；setter 统一换算弧度并推送各材质，初始化/重建时重放，不随日相位重复推送。
 
+- 谷雾随后台天气提交发布密度、归一化雾顶与地形版本，地形邻域参考在开局和冷重建时计算。
+  渲染层用天气的插值端点配对格点风和雾，跳代时将前后端点对齐到最新帧。高档天气覆盖层
+  用地面共享高度采样裁出雾厚，在同一绘制内把雾合成到主云和卷云下方。视野打开时，
+  `cell_table` aux 的 B 通道存逐格实际可见性，各插值格按该通道过滤。
+  桌面可用 `project_keynes/rendering/weather/valley_fog_enabled` 或 `WeatherLayer.valley_fog_enabled`
+  切换旧低雾与谷雾。低、中和 Web 变体编译掉谷雾，移动设备需显式启用待验证的高档变体。
+
 ## 电脑和手机画质设置
 
 - 主菜单与暂停菜单共用 `GraphicsQualityOptions`。预设位于
@@ -540,6 +547,9 @@ Replay 使用、不跨调用存活，诊断计数在 Plan 后一次汇入报告�
 ## GM 屏蔽与叙事弹窗
 
 阶层动员由后台评价，选择与结果由后台按生效日结算。地图告警与弹窗读取同一份已发布事实。
+第 1–3 阶行动失败分别增加 2、3、4 个百分点的组织度，10 个游戏日后复查组织度和动员力量门槛。
+进入前三阶的首次复查间隔分别为 14、12、10 个游戏日。四阶组织度门槛分别为 30%、60%、90%、100%。
+抗议、示威、叛乱还分别要求 45%、62%、80% 的动员力量。
 让步和收买按原生报价计算，首都和仅余城市不能弃城。经济接受选择后写入叙事史册。相关回归入口为
 `tests/game/narrative_event_runtime_test.gd`、`tests/game/narrative_popup_suppression_test.gd`
 和 `tests/economy/economy_stratum_save_restore_test.gd`。

@@ -35,6 +35,7 @@
     std::vector<uint8_t> _executor_cell_lut_pending;
     std::vector<std::array<uint32_t, 4>> _cell_lut_words;
     void publish_cell_lut_changes(RuntimeDayTail &tail, const RuntimeDayTail *previous);
+    void publish_initial_valley_fog(bool restored);
     std::atomic<bool> _inline_day_pending{false};
     std::vector<RuntimeCommandPacket> _prestart_modifier_commands;
 

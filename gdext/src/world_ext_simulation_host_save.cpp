@@ -513,10 +513,14 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
 #include "world_ext_simulation_host_save_section_economy_capture.inc"
     const float captured_dt_days = snapshot.dt_days;
     const bool complete = snapshot.climate_input_complete;
-    const bool accepted = inputs.has("world_environment_config")
-        ? _runtime_host->initialize_world_environment(std::move(snapshot),
-              Dictionary(inputs["world_environment_config"]), publish_error)
-        : _runtime_host->publish_environment(std::move(snapshot), publish_error);
+    bool accepted;
+    if (inputs.has("world_environment_config")) {
+        Dictionary config = Dictionary(inputs["world_environment_config"]).duplicate();
+        append_valley_fog_world_layout(config, _map_data, snapshot);
+        accepted = _runtime_host->initialize_world_environment(std::move(snapshot), config, publish_error);
+    } else {
+        accepted = _runtime_host->publish_environment(std::move(snapshot), publish_error);
+    }
     if (!accepted) {
         out["ok"] = false;
         out["code"] = String(publish_error.empty()

@@ -12,6 +12,7 @@
     uint64_t allocate_producer_sequence(uint32_t producer_id) override;
     bool poll_commit(uint64_t after_generation, RuntimeCommit &out);
     std::shared_ptr<const RuntimeClimateSnapshot> latest_climate_display() const;
+    std::shared_ptr<const RuntimeValleyFogFrame> latest_valley_fog_display() const;
     std::shared_ptr<const struct RuntimeDisplayBatch> take_day_publications(uint64_t after);
     bool poll_receipt(RuntimeCommandReceipt &out);
     bool poll_country_command_receipts(

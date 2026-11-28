@@ -59,8 +59,8 @@ struct StratumMobilizationRow {
 s_ema  += (s − s_ema) × min(1, dt/12)
 grievance = clamp((0.50 − s_ema)/0.50, 0, 1)
 capacity  = floor(p) + (1−floor(p)) × grievance × (0.6 + 0.4×min(1, share/0.25))
-mob      += (capacity − mob) × dt / (capacity≥mob ? 60 : 35)
 capacity += trauma/2（钳 0..1）
+mob      += (capacity − mob) × dt / (capacity≥mob ? 180 : 35)
 ```
 
 职业 `floor` 与政治权重由 stable id 在首次使用时编译：
@@ -80,7 +80,7 @@ capacity += trauma/2（钳 0..1）
 
 ```text
 power = mob × (0.55 + 0.45×min(1, share/0.25)) + 0.20 × (1 − local_sat)
-stage_gate = [0, 0.30, 0.45, 0.62, 0.78]
+stage_gate = [0, 0.30, 0.60, 0.90, 1.00]
 tier_gate  = [0, 0.25, 0.45, 0.62, 0.80]
 
 stage 0 → 1：mob ≥ 0.30 且冷却结束，按 epoch 掷骰
@@ -88,12 +88,14 @@ stage 0 → 1：mob ≥ 0.30 且冷却结束，按 epoch 掷骰
   上限 5%
 stage k → k+1：到达 next_check_day（且冷却已过）时，需同时满足
   mob ≥ stage_gate[k+1] 且 power ≥ tier_gate[k+1]
-  满足即升阶（不再掷骰）；否则停在当前阶，next_check 再延 10 天
+  满足即升阶。未达到任一门槛时，10 天后复查
 ```
 
 - 掷骰是无状态哈希：`hash64(day, cell, profession, stage, salt)`；不保存 RNG 状态。
-- **失败不升阶**：行动失败只增加组织度/后遗症，`next_check_day` 推后 10 天，模拟继续；
-  下一个事件只在组织度（和 power）越过下一阶门槛、检查日到达时才出现。
+- 满额组织度在 Q16 存储中为 65535。自然组织度的目标达到满额时，每次更新至少向目标推进一个 Q16 单位，避免整数截断卡在门槛下。
+- 第 1–3 阶进入新阶段后分别在 14、12、10 个游戏日后复查。行动失败增加组织度，
+  前三阶分别增加 2、3、4 个百分点，10 天后复查。
+- 短期调试版本写入的 240 天首次复查排程，在下一次动员更新中按最近事件日和该阶正常间隔恢复。
 - **成功买时间**：成功降阶并把 `next_check_day` 推到 `cooldown_until_day`，冷却期内不升阶。
 - 第 4 阶行动失败（招安、镇压，或弃城）才置 `flags & 8`；第 3 阶行动失败不会直接独立。
 - **首都免疫**：`cell == _epoch_country_capital_cells[country]` 且该格仍属该国 → `stage` 封顶 3，`flags` 置首都位，不发第 4 阶事实。
