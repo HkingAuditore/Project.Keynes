@@ -10,8 +10,60 @@
     _epoch_compiled_cell_tax_default_rates.clear();
     _epoch_compiled_cell_tax_default_modes.clear();
     _epoch_has_cell_tax_policies = false;
-    std::unordered_map<uint64_t, uint32_t> compiled_policy_ids;
-    std::unordered_map<uint64_t, int32_t> default_row_ids;
+    struct CompiledCellTaxPolicyKey {
+        int32_t country = -1;
+        uint32_t authority_id = 0;
+
+        bool operator==(const CompiledCellTaxPolicyKey &other) const noexcept {
+            return country == other.country &&
+                   authority_id == other.authority_id;
+        }
+    };
+    struct CompiledCellTaxPolicyKeyHash {
+        size_t operator()(const CompiledCellTaxPolicyKey &k) const noexcept {
+            uint64_t h = 14695981039346656037ULL;
+            h = (h ^ static_cast<uint64_t>(static_cast<uint32_t>(k.country))) *
+                1099511628211ULL;
+            h = (h ^ static_cast<uint64_t>(k.authority_id)) *
+                1099511628211ULL;
+            return static_cast<size_t>(h);
+        }
+    };
+    struct CompiledCellTaxDefaultRowKey {
+        int32_t country = -1;
+        int32_t kind = -1;
+        int32_t base_mode = 0;
+        int32_t base_rate = 0;
+
+        bool operator==(
+                const CompiledCellTaxDefaultRowKey &other) const noexcept {
+            return country == other.country &&
+                   kind == other.kind &&
+                   base_mode == other.base_mode &&
+                   base_rate == other.base_rate;
+        }
+    };
+    struct CompiledCellTaxDefaultRowKeyHash {
+        size_t operator()(
+                const CompiledCellTaxDefaultRowKey &k) const noexcept {
+            uint64_t h = 14695981039346656037ULL;
+            h = (h ^ static_cast<uint64_t>(static_cast<uint32_t>(k.country))) *
+                1099511628211ULL;
+            h = (h ^ static_cast<uint64_t>(static_cast<uint32_t>(k.kind))) *
+                1099511628211ULL;
+            h = (h ^ static_cast<uint64_t>(static_cast<uint32_t>(k.base_mode))) *
+                1099511628211ULL;
+            h = (h ^ static_cast<uint64_t>(static_cast<uint32_t>(k.base_rate))) *
+                1099511628211ULL;
+            return static_cast<size_t>(h);
+        }
+    };
+    std::unordered_map<CompiledCellTaxPolicyKey, uint32_t,
+                       CompiledCellTaxPolicyKeyHash>
+        compiled_policy_ids;
+    std::unordered_map<CompiledCellTaxDefaultRowKey, int32_t,
+                       CompiledCellTaxDefaultRowKeyHash>
+        default_row_ids;
     const auto item_count_for_kind = [&](int32_t kind) -> size_t {
         switch (kind) {
             case CountryApi::TAX_INCOME:
@@ -47,12 +99,8 @@
     const auto ensure_default_row = [&](int32_t country, int32_t kind,
                                         int32_t base_rate,
                                         int32_t base_mode) -> int32_t {
-        const uint64_t key =
-            (static_cast<uint64_t>(static_cast<uint32_t>(country)) << 40U) |
-            (static_cast<uint64_t>(static_cast<uint8_t>(kind)) << 32U) |
-            (static_cast<uint64_t>(static_cast<uint8_t>(base_mode & 0xff))
-             << 24U) |
-            static_cast<uint32_t>(base_rate);
+        const CompiledCellTaxDefaultRowKey key{
+            country, kind, base_mode, base_rate};
         const auto found = default_row_ids.find(key);
         if (found != default_row_ids.end()) return found->second;
         const size_t item_count = item_count_for_kind(kind);
@@ -101,9 +149,7 @@
             country < 0 || country >= _epoch_country_count)
             continue;
         _epoch_has_cell_tax_policies = true;
-        const uint64_t key =
-            (static_cast<uint64_t>(static_cast<uint32_t>(country)) << 32U) |
-            authority_id;
+        const CompiledCellTaxPolicyKey key{country, authority_id};
         auto compiled_found = compiled_policy_ids.find(key);
         if (compiled_found == compiled_policy_ids.end()) {
             const auto &authority = snapshot_cell_tax_policies[authority_id];

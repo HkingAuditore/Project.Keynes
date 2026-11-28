@@ -14,6 +14,31 @@ FREEZE_READS = {
     'country': 'gdext/src/native_simulation_stage_country.cpp',
     'economy': 'gdext/src/native_simulation_stage_economy.cpp',
 }
+TAX_ROW_KEY_SOURCE = 'gdext/src/economy_runtime_country_epoch_capture_tax_rows.inc'
+_TAX_MAP_KEY_RE = re.compile(r'\bstd::(?:unordered_)?map\s*<\s*([^,>]+?)\s*,')
+_STRUCT_DEF_RE = re.compile(r'\bstruct\s+([A-Za-z_]\w*)\s*\{')
+_ALLOWED_MASK_SHIFT_RE = re.compile(r'(?<!\w)1[uUlL]*\s*<<\s*kind\b')
+
+
+def tax_row_key_violations(root, require_file=False):
+    path = root / TAX_ROW_KEY_SOURCE
+    if not path.exists():
+        return [f'missing tax row key source: {TAX_ROW_KEY_SOURCE}'] if require_file else []
+    code = code_only(read_cpp_source(path))
+    errors = []
+    defined_structs = set(_STRUCT_DEF_RE.findall(code))
+    for match in _TAX_MAP_KEY_RE.finditer(code):
+        key_type = match.group(1).strip()
+        if key_type not in defined_structs:
+            errors.append(
+                f'{TAX_ROW_KEY_SOURCE}: tax row lookup map key "{key_type}" must be a local struct, not a scalar or alias'
+            )
+    stripped_shifts = _ALLOWED_MASK_SHIFT_RE.sub('', code)
+    if '<<' in stripped_shifts:
+        errors.append(
+            f'{TAX_ROW_KEY_SOURCE}: bit-shift packing (<<) is forbidden in tax row keys (only 1U << kind mask is allowed)'
+        )
+    return errors
 
 def freeze_read_violations(root):
     errors = []
@@ -66,6 +91,7 @@ def violations(root, data):
     modules.update({m['id']: m for m in data.get('consumers', [])})
     errors.extend(freeze_read_violations(root))
     errors.extend(stage_order_violations(data))
+    errors.extend(tax_row_key_violations(root, require_file=(root.resolve() == ROOT.resolve())))
     # Known read APIs on these surfaces must have a registration; unknown APIs
     # still require the committed-view guard and code review.
     apis = {x['call'] for x in data['reviewed_reads']}

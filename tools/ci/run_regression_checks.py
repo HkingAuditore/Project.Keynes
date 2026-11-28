@@ -103,6 +103,7 @@ TESTS = (
     "tests/economy/bootstrap_catalog_contract_test.gd",
     "tests/economy/goods_storage_schema_test.gd",
     "tests/economy/economy_cadence_runtime_test.gd",
+    "tests/economy/cell_tax_row_settlement_test.gd",
     "tests/economy/economy_fiscal_reservation_continuation_test.gd",
     "tests/economy/economy_stratum_save_restore_test.gd",
     "tests/economy/stratum_chain_pacing_test.gd",

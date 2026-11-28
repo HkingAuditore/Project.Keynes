@@ -1306,5 +1306,47 @@ facade.native_only()
         with tmp:
             self.assertTrue(any("missing file" in p for p in world_ext_bindings.inventory(root)[1]))
 
+    def test_tax_row_key_guard_accepts_struct_keys_and_rejects_bit_packing(self):
+        # Current repository must pass cleanly with struct keys.
+        self.assertEqual(modules.tax_row_key_violations(modules.ROOT, require_file=True), [])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            # Missing source must be refused when require_file=True.
+            self.assertTrue(modules.tax_row_key_violations(root, require_file=True))
+            target = root / modules.TAX_ROW_KEY_SOURCE
+            target.parent.mkdir(parents=True, exist_ok=True)
+            good = (
+                "struct CompiledCellTaxDefaultRowKey { int32_t country; int32_t kind; "
+                "int32_t base_mode; int32_t base_rate; };\n"
+                "std::unordered_map<CompiledCellTaxDefaultRowKey, int32_t, Hash> default_row_ids;\n"
+                "compiled.active_mask |= static_cast<uint8_t>(1U << kind);\n"
+            )
+            target.write_text(good, encoding="utf-8")
+            self.assertEqual(modules.tax_row_key_violations(root, require_file=True), [])
+            bad_cases = [
+                # Original K1 bug: << combined with |
+                good + "const uint64_t key = (static_cast<uint64_t>(country) << 40U) | "
+                       "(static_cast<uint64_t>(base_mode & 0xff) << 24U) | static_cast<uint32_t>(base_rate);\n",
+                # Arbitrary-width bit-packing with << and |
+                good + "const uint64_t key = (static_cast<uint64_t>(country) << 12U) | static_cast<uint32_t>(base_rate);\n",
+                # Multi-byte shift without | (e.g. + or ^ packing)
+                good + "const uint64_t key = (static_cast<uint64_t>(country) << 32U) ^ static_cast<uint32_t>(authority_id);\n",
+                # Integer-keyed map for tax rows
+                "std::unordered_map<uint64_t, int32_t> default_row_ids;\n",
+                # std::-prefixed integer-keyed map
+                "std::unordered_map<std::uint64_t, int32_t> default_row_ids;\n",
+                # Type-aliased integer-keyed map (using / typedef)
+                "using RowKey = uint64_t;\nstd::unordered_map<RowKey, int32_t> default_row_ids;\n",
+                "typedef uint64_t RowKey;\nstd::map<RowKey, int32_t> default_row_ids;\n",
+                # Split-statement |= bit packing with non-byte-multiple shift
+                good + "uint64_t key = static_cast<uint64_t>(country) << 20U;\nkey |= static_cast<uint32_t>(base_rate);\n",
+                # Non-byte-multiple shift combined with +
+                good + "const uint64_t key = (static_cast<uint64_t>(country) << 41U) + static_cast<uint32_t>(base_rate);\n",
+            ]
+            for idx, bad in enumerate(bad_cases):
+                with self.subTest(case=idx):
+                    target.write_text(bad, encoding="utf-8")
+                    self.assertTrue(modules.tax_row_key_violations(root, require_file=True), bad)
+
 if __name__ == "__main__":
     unittest.main()
