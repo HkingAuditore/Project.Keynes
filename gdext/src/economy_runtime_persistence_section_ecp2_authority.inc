@@ -423,6 +423,11 @@ bool NativeEconomyRuntime::apply_ecp2_authority_internal(
 bool NativeEconomyRuntime::apply_ecp2_authority(
         const RuntimeEconomyEcp2State &in, std::string &error) {
     error.clear();
+    if ((in.authority_domain_mask & ECP2_DOMAIN_EPOCH_RESUME) != 0) {
+        error = "ecp2_mid_epoch_resume_unsupported";
+        set_restore_rejected_reason(error);
+        return false;
+    }
 
     if (!_configured || _epoch_active || _save.active || _restore.active ||
         _fiscal_reservation_continuation.active ||
@@ -458,7 +463,8 @@ bool NativeEconomyRuntime::apply_ecp2_authority(
 
     std::string apply_error;
     if (!staged->apply_ecp2_authority_internal(in, apply_error)) {
-        error = apply_error;
+        _demand_basis_cache = {};
+        error = apply_error + ";rolled_back";
         set_restore_rejected_reason(error);
         return false;
     }
