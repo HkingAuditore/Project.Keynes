@@ -15,21 +15,40 @@ bool RuntimeModifierPodAuthority::plan_day(
     if (day < _current.committed_day) { error = "modifier_pod_day_regression"; set_error(report, error.c_str()); return false; }
     _next = _current;
     acks.clear();
-    // Expiry is part of the plan lane. It is intentionally applied before
-    // commands, matching the legacy daily boundary semantics.
-    for (DomainState &domain : _next.domains) {
-        for (size_t i = 0; i < domain.entries.size(); ++i) {
-            auto &entry = domain.entries[i];
-            if (entry.modifier_handle != 0 && entry.expires_day >= 0 &&
-                entry.expires_day <= day) {
-                entry.modifier_handle = 0;
-                domain.free_indices.push_back(static_cast<uint32_t>(i));
-                ++domain.version;
-                ++report.expired_entries;
+    const bool advancing_day = day > _current.committed_day;
+    if (advancing_day) {
+        _next.applied_day_requests.clear();
+        // Expiry is part of the plan lane. It is intentionally applied before
+        // commands, matching the legacy daily boundary semantics.
+        for (DomainState &domain : _next.domains) {
+            for (size_t i = 0; i < domain.entries.size(); ++i) {
+                auto &entry = domain.entries[i];
+                if (entry.modifier_handle != 0 && entry.expires_day >= 0 &&
+                    entry.expires_day <= day) {
+                    entry.modifier_handle = 0;
+                    domain.free_indices.push_back(static_cast<uint32_t>(i));
+                    ++domain.version;
+                    ++report.expired_entries;
+                }
             }
+            rebuild_expiry_queue(domain);
         }
-        rebuild_expiry_queue(domain);
     }
+    const auto has_request_identity =
+        [](const RuntimeModifierPodCommand &command) noexcept {
+            return command.request_id != 0 || command.sequence != 0;
+        };
+    const auto make_request_identity =
+        [](const RuntimeModifierPodCommand &command) noexcept {
+            return RequestIdentity{command.request_id, command.producer_id,
+                                   command.sequence};
+        };
+    const auto is_already_applied =
+        [this](const RequestIdentity &id) noexcept {
+            return std::find(_next.applied_day_requests.begin(),
+                             _next.applied_day_requests.end(),
+                             id) != _next.applied_day_requests.end();
+        };
     struct OrderedCommand {
         RuntimeModifierPodCommand command;
         bool is_intent = false;
@@ -58,13 +77,9 @@ bool RuntimeModifierPodAuthority::plan_day(
         });
     for (size_t ordered_index = 0; ordered_index < ordered.size(); ++ordered_index) {
         const auto &command = ordered[ordered_index].command;
-        std::string command_error;
-        bool valid = validate_command(command, command_error);
-        if (valid && command.input_generation != 0 &&
-            command.input_generation != input_generation) {
-            valid = false;
-            command_error = "modifier_pod_input_generation_stale";
-        }
+        const bool is_intent = ordered[ordered_index].is_intent;
+        const bool track_identity = has_request_identity(command);
+        const RequestIdentity identity = make_request_identity(command);
         RuntimeDomainAck ack;
         ack.request_id = command.request_id;
         ack.transaction_id = command.request_id;
@@ -74,6 +89,26 @@ bool RuntimeModifierPodAuthority::plan_day(
         ack.effective_day = command.effective_day;
         ack.producer_id = command.producer_id;
         ack.sequence = command.sequence;
+        if (track_identity && is_already_applied(identity)) {
+            ack.code = RuntimeDomainAckCode::OK;
+            if (is_intent) {
+                if (acks.size() >= RUNTIME_DOMAIN_INTENT_CAPACITY) {
+                    error = "modifier_pod_ack_capacity_exceeded";
+                    set_error(report, error.c_str());
+                    _plan_ready = false;
+                    return false;
+                }
+                acks.push_back(ack);
+            }
+            continue;
+        }
+        std::string command_error;
+        bool valid = validate_command(command, command_error);
+        if (valid && command.input_generation != 0 &&
+            command.input_generation != input_generation) {
+            valid = false;
+            command_error = "modifier_pod_input_generation_stale";
+        }
         bool changed = false;
         bool ok = false;
         if (valid) {
@@ -126,13 +161,13 @@ bool RuntimeModifierPodAuthority::plan_day(
         if (ok) {
             ++report.applied_commands;
             ack.code = RuntimeDomainAckCode::OK;
+            if (track_identity) _next.applied_day_requests.push_back(identity);
         } else {
             ++report.rejected_commands;
             if (ack.code == RuntimeDomainAckCode::OK)
                 ack.code = command_error == "modifier_pod_stale_generation"
                     ? RuntimeDomainAckCode::STALE_GENERATION : RuntimeDomainAckCode::REJECTED;
         }
-        const bool is_intent = ordered[ordered_index].is_intent;
         // Only Effect/cross-domain intents require domain ACKs. Host command
         // receipts remain on the existing RuntimeCommandReceipt path.
         if (is_intent) {
@@ -192,7 +227,11 @@ bool RuntimeModifierPodAuthority::plan_day(
         }
     }
     for (DomainState &domain : _next.domains) rebuild_expiry_queue(domain);
-    _next.generation = _current.generation + 1;
+    const bool state_mutated =
+        report.work_units > 0 || report.expired_entries > 0;
+    _next.generation = (advancing_day || state_mutated)
+        ? (_current.generation + 1)
+        : _current.generation;
     _next.committed_day = day;
     _next.state_hash = state_hash(_next);
     build_snapshot(_next, planned_snapshot);

@@ -63,6 +63,27 @@ bool NativeSimulationHost::stage_modifier(DayExecution &day, RuntimeDomainPlan &
                 _effect_day_stage_ok = false;
             }
         }
+        const bool has_pending_effect_intents =
+            effect_upstream_ok && !_effect_day_modifier_intents.empty();
+        const bool has_pending_ideology_modifiers =
+            ideology_modifier_bridge_active() &&
+            (!_ideology_modifier_inflight.empty() ||
+             !_ideology_loose_modifier_rows.empty());
+        if (_modifier_completed_day == plan.context.day &&
+            _modifier_pod_authority.snapshot().committed_day ==
+                plan.context.day &&
+            !has_pending_effect_intents && !has_pending_ideology_modifiers) {
+            stage.dirty_families = _modifier_completed_dirty_families;
+            stage.work_units = _modifier_completed_work_units;
+            stage.completed = 1;
+            commit.dirty_families |= stage.dirty_families;
+            commit.work_units += stage.work_units;
+            commit.completed_domain_mask |=
+                runtime_domain_mask(RuntimeDomainId::MODIFIER);
+            resolve_pending_country_effect_peers();
+            ++commit.completed_stage_count;
+            return true;
+        }
         std::string modifier_error;
         std::string unused_authority_error;
         // ACTIVE: no diagnostic domain runner. Failure isolates Modifier —
@@ -75,6 +96,9 @@ bool NativeSimulationHost::stage_modifier(DayExecution &day, RuntimeDomainPlan &
             stage.work_units = _modifier_pod_work_units.load(
                 std::memory_order_relaxed);
             stage.completed = 1;
+            _modifier_completed_day = plan.context.day;
+            _modifier_completed_dirty_families = stage.dirty_families;
+            _modifier_completed_work_units = stage.work_units;
             commit.dirty_families |= stage.dirty_families;
             commit.work_units += stage.work_units;
             commit.completed_domain_mask |=

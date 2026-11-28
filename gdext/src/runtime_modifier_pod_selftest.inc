@@ -316,6 +316,93 @@ bool RuntimeModifierPodAuthority::self_test(std::string &error) {
             return fail("modifier_pod_aggregate_top2_self_test_failed");
     }
 
+    // K2: same-day revisit idempotency and generation stability.
+    // Re-submitting identical (request_id, producer_id, sequence) commands and
+    // intents on the same day must not double-stack POLICY_STACK_REFRESH or
+    // duplicate POLICY_INDEPENDENT entries, must preserve generation and
+    // state_hash, and must still emit OK ACKs for intents. A new day must
+    // clear applied_day_requests and advance generation normally.
+    {
+        error.clear();
+        RuntimeModifierPodAuthority revisit;
+        if (!revisit.configure(catalog, error))
+            return fail("modifier_pod_revisit_configure_failed");
+        RuntimeModifierPodCommand stack_cmd;
+        stack_cmd.request_id = 701; stack_cmd.producer_id = 11; stack_cmd.sequence = 1;
+        stack_cmd.effective_day = 2; stack_cmd.opcode = COMMAND_APPLY; stack_cmd.domain = 0;
+        stack_cmd.definition_id = 0; stack_cmd.scope = 2; stack_cmd.entity_handle = 7;
+        stack_cmd.duration_days = 5; stack_cmd.stacks = 1; stack_cmd.magnitude_q16 = Q16_ONE;
+        RuntimeModifierPodCommand indep_cmd;
+        indep_cmd.request_id = 702; indep_cmd.producer_id = 11; indep_cmd.sequence = 2;
+        indep_cmd.effective_day = 2; indep_cmd.opcode = COMMAND_APPLY; indep_cmd.domain = 2;
+        indep_cmd.definition_id = 2; indep_cmd.scope = 2; indep_cmd.entity_handle = 8;
+        indep_cmd.duration_days = -1; indep_cmd.stacks = 1; indep_cmd.magnitude_q16 = Q16_ONE;
+        RuntimeModifierPodCommand indep_intent = indep_cmd;
+        indep_intent.request_id = 703; indep_intent.producer_id = 12; indep_intent.sequence = 3;
+        indep_intent.domain = 3; indep_intent.definition_id = 3; indep_intent.entity_handle = 9;
+        RuntimeModifierPodSnapshot revisit_planned;
+        std::vector<RuntimeDomainAck> revisit_acks;
+        RuntimeModifierPodReport revisit_report;
+        if (!revisit.plan_day(1, 1, {}, {}, revisit_planned, revisit_acks, revisit_report, error) ||
+            !revisit.commit_day(revisit_planned, error) ||
+            revisit.snapshot().generation != 1)
+            return fail("modifier_pod_revisit_day1_failed");
+        if (!revisit.plan_day(2, 1, {stack_cmd, indep_cmd}, {indep_intent},
+                revisit_planned, revisit_acks, revisit_report, error) ||
+            !revisit.commit_day(revisit_planned, error))
+            return fail("modifier_pod_revisit_day2_first_failed");
+        const RuntimeModifierPodSnapshot d2_first = revisit.snapshot();
+        if (d2_first.generation != 2 || d2_first.entries.size() != 3 ||
+            revisit_acks.size() != 1 || revisit_acks[0].code != RuntimeDomainAckCode::OK)
+            return fail("modifier_pod_revisit_day2_first_state_failed");
+        // Revisit day 2 with the exact same commands and intent.
+        if (!revisit.plan_day(2, 1, {stack_cmd, indep_cmd}, {indep_intent},
+                revisit_planned, revisit_acks, revisit_report, error) ||
+            !revisit.commit_day(revisit_planned, error))
+            return fail("modifier_pod_revisit_day2_second_failed");
+        const RuntimeModifierPodSnapshot d2_second = revisit.snapshot();
+        if (d2_second.generation != d2_first.generation ||
+            d2_second.state_hash != d2_first.state_hash ||
+            d2_second.entries.size() != 3 ||
+            revisit_acks.size() != 1 || revisit_acks[0].code != RuntimeDomainAckCode::OK ||
+            revisit_report.applied_commands != 0)
+            return fail("modifier_pod_revisit_day2_idempotency_failed");
+        const auto d2_stack = std::find_if(d2_second.entries.begin(), d2_second.entries.end(),
+            [](const RuntimeModifierPodEntry &entry) { return entry.domain == 0; });
+        if (d2_stack == d2_second.entries.end() || d2_stack->stacks != 1)
+            return fail("modifier_pod_revisit_day2_stack_double_applied");
+        // New day 3 advances generation and applies new commands normally.
+        RuntimeModifierPodCommand d3_stack = stack_cmd;
+        d3_stack.request_id = 704; d3_stack.sequence = 4; d3_stack.effective_day = 3;
+        if (!revisit.plan_day(3, 1, {d3_stack}, {}, revisit_planned, revisit_acks, revisit_report, error) ||
+            !revisit.commit_day(revisit_planned, error))
+            return fail("modifier_pod_revisit_day3_failed");
+        const RuntimeModifierPodSnapshot d3 = revisit.snapshot();
+        const auto d3_stack_entry = std::find_if(d3.entries.begin(), d3.entries.end(),
+            [](const RuntimeModifierPodEntry &entry) { return entry.domain == 0; });
+        if (d3.generation != 3 || d3_stack_entry == d3.entries.end() || d3_stack_entry->stacks != 2)
+            return fail("modifier_pod_revisit_day3_state_failed");
+        // Same-day revisit with a genuinely new state-mutating intent must advance
+        // generation monotonically so SnapshotRing and apply_pod_snapshot accept it.
+        RuntimeModifierPodCommand d3_catchup = indep_intent;
+        d3_catchup.request_id = 705; d3_catchup.sequence = 5; d3_catchup.effective_day = 3;
+        if (!revisit.plan_day(3, 1, {}, {d3_catchup}, revisit_planned, revisit_acks, revisit_report, error) ||
+            !revisit.commit_day(revisit_planned, error) ||
+            revisit.snapshot().generation != 4 ||
+            revisit.snapshot().state_hash == d3.state_hash ||
+            revisit_acks.size() != 1 || revisit_acks[0].code != RuntimeDomainAckCode::OK)
+            return fail("modifier_pod_revisit_day3_mutating_catchup_failed");
+        // Anonymous commands (request_id == 0 && sequence == 0) are not deduplicated.
+        RuntimeModifierPodCommand anon = indep_cmd;
+        anon.request_id = 0; anon.producer_id = 0; anon.sequence = 0; anon.effective_day = 3;
+        const size_t entries_before_anon = revisit.snapshot().entries.size();
+        if (!revisit.plan_day(3, 1, {anon}, {}, revisit_planned, revisit_acks, revisit_report, error) ||
+            !revisit.commit_day(revisit_planned, error) ||
+            revisit.snapshot().entries.size() != entries_before_anon + 1 ||
+            revisit.snapshot().generation != 5)
+            return fail("modifier_pod_revisit_anonymous_cmd_failed");
+    }
+
     error.clear();
     return true;
 }

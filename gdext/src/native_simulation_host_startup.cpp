@@ -582,6 +582,9 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _country_pod_ready.store(false, std::memory_order_release);
     if (modifier_candidate_ready) {
         _modifier_pod_authority = std::move(modifier_candidate);
+        _modifier_completed_day = -1;
+        _modifier_completed_dirty_families = 0;
+        _modifier_completed_work_units = 0;
         uint32_t initial_slot = 0;
         if (!_modifier_snapshots.try_begin_write(initial_slot)) {
             set_fault("modifier_initial_snapshot_ring_full");

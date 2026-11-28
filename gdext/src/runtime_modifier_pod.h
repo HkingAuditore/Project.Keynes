@@ -210,11 +210,24 @@ private:
         std::vector<uint32_t> expiry_queue;
         uint64_t version = 0;
     };
+    struct RequestIdentity {
+        uint64_t request_id = 0;
+        uint32_t producer_id = 0;
+        uint64_t sequence = 0;
+        bool operator==(const RequestIdentity &other) const noexcept {
+            return request_id == other.request_id &&
+                producer_id == other.producer_id &&
+                sequence == other.sequence;
+        }
+    };
     struct State {
         std::array<DomainState, 4> domains;
         uint64_t generation = 0;
         uint64_t state_hash = 1469598103934665603ull;
         int64_t committed_day = -1;
+        // Ephemeral per-day idempotency set for same-day revisits.
+        // Intentionally excluded from MDF2 saves and state_hash().
+        std::vector<RequestIdentity> applied_day_requests;
     };
 
     static uint64_t hash_mix(uint64_t value, uint64_t input) noexcept;

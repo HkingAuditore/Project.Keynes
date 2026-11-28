@@ -88,6 +88,9 @@
     RuntimeModifierPodAuthority _modifier_pod_authority;
     RuntimeModifierPodCatalog _modifier_pod_catalog;
     bool _modifier_pod_configured = false;
+    int64_t _modifier_completed_day = -1;
+    uint32_t _modifier_completed_dirty_families = 0;
+    uint64_t _modifier_completed_work_units = 0;
     // Effect command definition_key_hash → Modifier POD definition_id.
     std::unordered_map<uint64_t, int32_t> _modifier_definition_id_by_key_hash;
     RuntimeModifierSnapshotRing _modifier_snapshots;

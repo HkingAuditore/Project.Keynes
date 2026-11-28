@@ -146,6 +146,9 @@
     for (auto &character : _climate_pod_fallback_reason) {
         character.store('\0', std::memory_order_relaxed);
     }
+    _modifier_completed_day = -1;
+    _modifier_completed_dirty_families = 0;
+    _modifier_completed_work_units = 0;
     _modifier_pod_ready.store(false, std::memory_order_release);
     _modifier_pod_plan_ms.store(0.0, std::memory_order_release);
     _modifier_pod_replay_ms.store(0.0, std::memory_order_release);

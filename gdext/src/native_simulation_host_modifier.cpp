@@ -507,6 +507,11 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
     std::vector<uint8_t> ideology_batch_ok;
     if (ideology_bridge)
         stage_ideology_modifier_commands(day, input_generation);
+    const int64_t previous_committed_day =
+        _modifier_pod_authority.snapshot().committed_day;
+    const uint64_t previous_state_hash =
+        _modifier_pod_authority.snapshot().state_hash;
+    const bool advancing_day = day > previous_committed_day;
     const auto plan_started = std::chrono::steady_clock::now();
     modifier_ok = _modifier_pod_authority.plan_day(
         day, input_generation, modifier_commands, modifier_intents,
@@ -552,9 +557,13 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
         }
     }
 
+    const bool state_changed =
+        modifier_ok && modifier_snapshot.state_hash != previous_state_hash;
+    const bool should_publish_snapshot =
+        modifier_ok && (advancing_day || state_changed);
     uint32_t modifier_slot = 0;
     bool modifier_slot_reserved = false;
-    if (modifier_ok) {
+    if (should_publish_snapshot) {
         if (!_modifier_snapshots.try_begin_write(modifier_slot)) {
             modifier_ok = false;
             modifier_error = "modifier_snapshot_ring_full";
@@ -576,7 +585,8 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
             _modifier_snapshots.publish(modifier_slot);
             modifier_slot_reserved = false;
             _modifier_pod_snapshot_generation.store(
-                modifier_snapshot.generation, std::memory_order_release);
+                _modifier_pod_authority.snapshot().generation,
+                std::memory_order_release);
             refresh_economy_modifier_view(_modifier_pod_authority.snapshot());
         }
     } else {
