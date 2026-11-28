@@ -168,8 +168,13 @@ bool RuntimeEffectPodAuthority::restore(const uint8_t *data, size_t size,
     if (!read_count(data, payload_end, cursor, count, _instance_capacity)) {
         error = "effect_pod_instance_count_invalid"; return false;
     }
+    const size_t metric_count = _catalog.metric_key_hashes.size();
+    if (restored.metric_values.size() != count * metric_count) {
+        error = "effect_pod_metric_slab_shape_invalid"; return false;
+    }
     restored.instances.resize(count);
-    for (auto &instance : restored.instances) {
+    for (size_t i = 0; i < restored.instances.size(); ++i) {
+        auto &instance = restored.instances[i];
         if (!read_le(data,payload_end,cursor,instance.instance_id) ||
             !read_le(data,payload_end,cursor,instance.generation) ||
             !read_le(data,payload_end,cursor,instance.program_id) ||
@@ -226,7 +231,13 @@ bool RuntimeEffectPodAuthority::restore(const uint8_t *data, size_t size,
             instance.latched > 1) {
             error = "effect_pod_instance_truncated_or_invalid"; return false;
         }
-        if (instance.metric_base + _catalog.metric_key_hashes.size() >
+        if (i > 0 && instance.instance_id <= restored.instances[i - 1].instance_id) {
+            error = "effect_pod_instance_order_invalid"; return false;
+        }
+        if (instance.metric_base != static_cast<uint32_t>(i * metric_count)) {
+            error = "effect_pod_instance_metric_base_invalid"; return false;
+        }
+        if (instance.metric_base + metric_count >
                 restored.metric_values.size()) {
             error = "effect_pod_instance_metric_range_invalid"; return false;
         }

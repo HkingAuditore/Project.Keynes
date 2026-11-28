@@ -217,8 +217,18 @@ bool EffectRuntime::upsert_external_binding_pod(
     binding.active = 1;
     binding.template_signature = template_signature;
     binding.program_hash = program_hash;
-    _external_binding_ids[binding_id] = static_cast<int32_t>(_external_bindings.size());
-    _external_bindings.push_back(binding);
+    const auto insert_it = std::lower_bound(
+        _external_bindings.begin(), _external_bindings.end(), binding_id,
+        [](const ExternalSourceBinding &entry, int64_t id) {
+            return entry.binding_id < id;
+        });
+    const size_t insert_index =
+        static_cast<size_t>(insert_it - _external_bindings.begin());
+    _external_bindings.insert(insert_it, binding);
+    for (size_t i = insert_index; i < _external_bindings.size(); ++i) {
+        _external_binding_ids[_external_bindings[i].binding_id] =
+            static_cast<int32_t>(i);
+    }
     advance_committed_generation();
     return true;
 }

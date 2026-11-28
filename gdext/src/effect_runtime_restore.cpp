@@ -592,6 +592,8 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             if (binding.binding_id <= 0 || binding.generation == 0 ||
                 binding.target_handle == 0 || binding.target_generation == 0 ||
                 binding.level < -1 || binding.location > 2 || binding.active > 1 ||
+                (!restored_bindings.empty() &&
+                 binding.binding_id <= restored_bindings.back().binding_id) ||
                 !restored_binding_ids.emplace(binding.binding_id,
                     static_cast<int32_t>(restored_bindings.size())).second)
                 return failure("pkef_external_binding_invalid");

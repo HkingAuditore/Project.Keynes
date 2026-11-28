@@ -3,28 +3,37 @@ bool RuntimeEffectPodAuthority::upsert_instance(
     error.clear();
     if (!validate_instance(input, error)) return false;
     const auto &definition = _catalog.definitions[static_cast<size_t>(input.program_id)];
-    int32_t index = -1;
-    for (size_t i = 0; i < _current.instances.size(); ++i) {
-        if (_current.instances[i].instance_id == input.instance_id) {
-            index = static_cast<int32_t>(i);
-            break;
-        }
-    }
-    if (index < 0) {
+    const auto insert_it = std::lower_bound(
+        _current.instances.begin(), _current.instances.end(), input.instance_id,
+        [](const RuntimeEffectPodInstance &entry, int64_t id) {
+            return entry.instance_id < id;
+        });
+    const size_t index =
+        static_cast<size_t>(insert_it - _current.instances.begin());
+    const bool found = insert_it != _current.instances.end() &&
+        insert_it->instance_id == input.instance_id;
+    const size_t metric_count = _catalog.metric_key_hashes.size();
+    if (!found) {
         if (_current.instances.size() >= _instance_capacity) {
             error = "effect_pod_instance_capacity_exhausted";
             return false;
         }
-        index = static_cast<int32_t>(_current.instances.size());
-        _current.instances.emplace_back();
-        _current.metric_values.resize(
-            (static_cast<size_t>(index) + 1u) * _catalog.metric_key_hashes.size());
-        _current.metric_revisions.resize(
-            (static_cast<size_t>(index) + 1u) * _catalog.metric_key_hashes.size());
+        _current.instances.insert(insert_it, RuntimeEffectPodInstance{});
+        if (metric_count > 0) {
+            const auto metric_offset =
+                static_cast<std::ptrdiff_t>(index * metric_count);
+            _current.metric_values.insert(
+                _current.metric_values.begin() + metric_offset, metric_count, 0);
+            _current.metric_revisions.insert(
+                _current.metric_revisions.begin() + metric_offset, metric_count, 0);
+        }
+        for (size_t i = index + 1u; i < _current.instances.size(); ++i) {
+            _current.instances[i].metric_base =
+                static_cast<uint32_t>(i * metric_count);
+        }
     }
-    RuntimeEffectPodInstance &instance = _current.instances[static_cast<size_t>(index)];
-    const uint32_t metric_base = static_cast<uint32_t>(
-        static_cast<size_t>(index) * _catalog.metric_key_hashes.size());
+    RuntimeEffectPodInstance &instance = _current.instances[index];
+    const uint32_t metric_base = static_cast<uint32_t>(index * metric_count);
     // Re-ENSURE from Country soft-skip must not wipe an in-flight fire ACK
     // sequence. Preserve fire / ack / pending transaction identity when the
     // same (instance_id, generation) is upserted again.

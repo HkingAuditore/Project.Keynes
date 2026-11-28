@@ -663,5 +663,137 @@ bool RuntimeEffectPodAuthority::self_test(std::string &error) {
             error = "effect_self_test_latched_lost_by_restore"; return false;
         }
     }
+
+    // K4: independent bindings must be ordered by instance_id regardless of
+    // upsert arrival order, and save/restore must retain both active and
+    // retired records with their own metric slabs intact.
+    {
+        RuntimeEffectPodCatalog order_catalog;
+        order_catalog.metric_key_hashes = {hash_text("k4.metric")};
+        RuntimeEffectPodDefinition order_def;
+        order_def.key_hash = hash_text("k4.order.program");
+        order_def.cadence_days = 1;
+        order_def.max_work = 16;
+        order_def.instruction_begin = 0;
+        order_def.instruction_count = 2;
+        order_def.command_begin = 0;
+        order_def.command_count = 1;
+        order_catalog.definitions.push_back(order_def);
+        order_catalog.commands.push_back(RuntimeEffectPodCommandDefinition{
+            RuntimeEffectPodAction::MODIFIER_COMMAND, 0, 1,
+            RuntimeEffectPodTargetResolver::INSTANCE, 0,
+            RuntimeEffectPodValueMode::STACK_TOP, 0, -1, 1,
+            hash_text("k4.order.modifier"), 0, {}});
+        RuntimeEffectPodInstruction read_metric;
+        read_metric.op = RuntimeEffectPodInstructionOp::READ_METRIC;
+        read_metric.arg0 = 0;
+        order_catalog.instructions.push_back(read_metric);
+        RuntimeEffectPodInstruction emit_cmd;
+        emit_cmd.op = RuntimeEffectPodInstructionOp::EMIT_COMMAND;
+        emit_cmd.arg0 = 0;
+        order_catalog.instructions.push_back(emit_cmd);
+
+        auto seed_order = [&](RuntimeEffectPodAuthority &target,
+                              const std::array<int64_t, 3> &ids) -> bool {
+            if (!target.configure(order_catalog, error)) return false;
+            for (const int64_t id : ids) {
+                RuntimeEffectPodInstanceInput row;
+                row.instance_id = id;
+                row.generation = 1;
+                row.program_id = 0;
+                row.source_handle = static_cast<uint64_t>(id);
+                row.target_handle = static_cast<uint64_t>(id + 100);
+                row.target_generation = 1;
+                row.next_due_day = 0;
+                if (!target.upsert_instance(row, error)) return false;
+                if (!target.set_metric(id, 1, 0, 1, id * Q16_ONE, error)) return false;
+            }
+            return target.remove_instance(20, 1, error);
+        };
+
+        RuntimeEffectPodAuthority first;
+        RuntimeEffectPodAuthority second;
+        if (!seed_order(first, {10, 20, 30}) || !seed_order(second, {30, 20, 10}))
+            return fail("effect_k4_order_setup_failed");
+        RuntimeEffectPodPlan plan_a;
+        RuntimeEffectPodPlan plan_b;
+        if (!first.plan_day(0, 1, plan_a, error) || !second.plan_day(0, 1, plan_b, error))
+            return fail("effect_k4_order_plan_failed");
+        if (plan_a.deterministic_plan_hash != plan_b.deterministic_plan_hash ||
+            plan_a.next_snapshot.deterministic_state_hash !=
+                plan_b.next_snapshot.deterministic_state_hash) {
+            return fail("effect_k4_order_hash_mismatch");
+        }
+        if (plan_a.intents.size() != 2u || plan_b.intents.size() != 2u)
+            return fail("effect_k4_order_intent_count_invalid");
+        for (size_t i = 0; i < plan_a.intents.size(); ++i) {
+            const auto &ia = plan_a.intents[i];
+            const auto &ib = plan_b.intents[i];
+            if (ia.request_id != ib.request_id ||
+                ia.target_handle != ib.target_handle ||
+                ia.magnitude_q16 != ib.magnitude_q16 ||
+                ia.idempotency_key != ib.idempotency_key) {
+                return fail("effect_k4_order_intent_mismatch");
+            }
+        }
+        if (!first.commit_day(plan_a, error) || !second.commit_day(plan_b, error))
+            return fail("effect_k4_order_commit_failed");
+        if (first.snapshot().deterministic_state_hash !=
+                second.snapshot().deterministic_state_hash ||
+            first.snapshot().instances.size() != 3u ||
+            second.snapshot().instances.size() != 3u) {
+            return fail("effect_k4_order_snapshot_mismatch");
+        }
+        for (size_t i = 0; i < 3u; ++i) {
+            const int64_t expected_id = static_cast<int64_t>((i + 1u) * 10u);
+            if (first.snapshot().instances[i].instance_id != expected_id ||
+                second.snapshot().instances[i].instance_id != expected_id) {
+                return fail("effect_k4_order_instance_sequence_invalid");
+            }
+        }
+        std::vector<uint8_t> bytes_a;
+        std::vector<uint8_t> bytes_b;
+        first.serialize(bytes_a);
+        second.serialize(bytes_b);
+        if (bytes_a != bytes_b) return fail("effect_k4_order_efp1_bytes_mismatch");
+        RuntimeEffectPodAuthority roundtrip;
+        std::vector<uint8_t> bytes_rt;
+        if (!roundtrip.configure(order_catalog, error) ||
+            !roundtrip.restore(bytes_b.data(), bytes_b.size(), error) ||
+            roundtrip.snapshot().instances.size() != 3u)
+            return fail("effect_k4_order_roundtrip_failed");
+        roundtrip.serialize(bytes_rt);
+        if (bytes_rt != bytes_b) return fail("effect_k4_order_roundtrip_bytes_mismatch");
+        const auto &rt_instances = roundtrip.snapshot().instances;
+        const auto &rt_metrics = roundtrip.snapshot().metric_values;
+        if (rt_instances[0].instance_id != 10 || rt_instances[0].active != 1 ||
+            rt_instances[1].instance_id != 20 || rt_instances[1].active != 0 ||
+            rt_instances[1].retire_requested != 0 ||
+            rt_instances[2].instance_id != 30 || rt_instances[2].active != 1 ||
+            rt_metrics[rt_instances[0].metric_base] != 10 * Q16_ONE ||
+            rt_metrics[rt_instances[1].metric_base] != 20 * Q16_ONE ||
+            rt_metrics[rt_instances[2].metric_base] != 30 * Q16_ONE)
+            return fail("effect_k4_order_roundtrip_records_corrupted");
+        // Reject unsorted instance_id payload on restore (with valid checksum).
+        std::vector<uint8_t> bad_order = bytes_b;
+        const size_t first_id_off = 60u + 4u + rt_metrics.size() * 8u + 4u +
+            roundtrip.snapshot().metric_revisions.size() * 8u + 4u;
+        int64_t found_id = 0;
+        if (first_id_off + sizeof(int64_t) <= bad_order.size())
+            std::memcpy(&found_id, bad_order.data() + first_id_off, sizeof(int64_t));
+        if (found_id != 10) return fail("effect_k4_unsorted_offset_mismatch");
+        const int64_t out_of_order_id = 25;
+        std::memcpy(bad_order.data() + first_id_off, &out_of_order_id, sizeof(int64_t));
+        const uint64_t csum = mix_bytes(FNV_OFFSET, bad_order.data(),
+            bad_order.size() - sizeof(uint64_t));
+        std::memcpy(bad_order.data() + bad_order.size() - sizeof(uint64_t),
+            &csum, sizeof(uint64_t));
+        RuntimeEffectPodAuthority rejected;
+        std::string rej_err;
+        if (!rejected.configure(order_catalog, rej_err) ||
+            rejected.restore(bad_order.data(), bad_order.size(), rej_err) ||
+            rej_err != "effect_pod_instance_order_invalid")
+            return fail("effect_k4_unsorted_restore_not_rejected");
+    }
     return true;
 }
