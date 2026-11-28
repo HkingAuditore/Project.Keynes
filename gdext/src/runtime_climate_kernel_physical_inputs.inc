@@ -59,38 +59,9 @@
     if (std::isfinite(input.climate_anomaly)) {
         next.climate_anomaly = static_cast<float>(input.climate_anomaly);
     }
-    // 季末地理级重算在当天 climate round 之前跑（SUS priority 50 vs 210）。
-    // capture 里的 cell_moisture 是 tick 开头、refresh 之前的快照，不能当权威。
-    // 生产 pass_a 的输入才是 stage 0/1/3/4 全部写完之后的值。没有 production
-    // overlay 时退回 stage 0：陆地 moisture = clamp(base, 0, 1)，水体 = base。
-    // ACTIVE 之后这条语义依然成立：season refresh 保持在主线程，它是地理权威。
-    if (input.climate_season_refresh_ran &&
-        next.moisture.size() == current.cell_count) {
-        const auto &round_moist = input.climate_round_input.moisture;
-        const auto &round_base = input.climate_round_input.base_moisture;
-        if (input.climate_round_ran &&
-            round_moist.size() == current.cell_count) {
-            for (size_t i = 0; i < current.cell_count; ++i) {
-                const float m = round_moist[i];
-                if (std::isfinite(m)) next.moisture[i] = m;
-            }
-        } else {
-            const auto &bases = !round_base.empty() ? round_base
-                                                    : input.cell_base_moisture;
-            const auto &water = input.climate_round_input.is_water.empty()
-                ? input.is_water : input.climate_round_input.is_water;
-            if (bases.size() == current.cell_count) {
-                for (size_t i = 0; i < current.cell_count; ++i) {
-                    const float base = bases[i];
-                    if (!std::isfinite(base)) continue;
-                    const bool is_water = i < water.size() && water[i] != 0u;
-                    const float m = is_water ? base
-                        : climate_formula::clamp01(base);
-                    next.moisture[i] = m;
-                }
-            }
-        }
-    }
+    // Runtime cell_moisture is continuous across season_refresh boundaries:
+    // season_refresh stages 0/1/3 no longer overwrite cell_moisture with
+    // base_moisture, so next.moisture retains the committed daily state.
     // PAW 每天在这里重算，而不是从 input 收回。它是 f(moisture, WB30, soil) 的纯派生
     // 量，没有跨天累积，所以「收回」这个动作本身就是错的抽象。
     //

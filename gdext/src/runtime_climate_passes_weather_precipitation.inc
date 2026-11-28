@@ -203,17 +203,24 @@
         if (cyclone_lift >= 0.58f && on_water && wf_is_precip_weather_type(wt)) {
             wt = cyclone_storm_type_id;
         }
-        if (!wf_is_precip_weather_type(wt) && precip > 0.0f) {
-            vapor += precip * 0.65f;
-            if (vapor > 1.0f) vapor = 1.0f;
-            vapor_after_precip = vapor;
-            precip = 0.0f;
-        } else if (precip > 0.0f) {
-            // Stage6 放电：实际降水抽干本格水汽→自发停雨/消散+随上风水汽移动+海面自生成。镜像 field_solver.gd。
-            // Stage6b：持续降水(PP[i])放电翻倍→砍"连下一周"长尾，不动新生短雨段。
-            const float discharge_amp = 1.0f + DISCHARGE_SUSTAIN * wf_smoothstep(0.04f, 0.10f, PP[i]);
-            vapor_after_precip -= precip * VAPOR_DISCHARGE * discharge_amp;
-            if (vapor_after_precip < 0.0f) vapor_after_precip = 0.0f;
+        if (precip > 0.0f) {
+            // Keep physical precipitation & vapor discharge continuous across the
+            // weather-icon classification gate so cells near the threshold do not
+            // enter a 2-tick zero/refund <-> rain/discharge oscillation that drives
+            // tick-to-tick moisture flickering in Pass-A.
+            if (precip < effective_precip_floor && !wf_is_precip_weather_type(wt)) {
+                vapor += precip * 0.65f;
+                if (vapor > 1.0f) vapor = 1.0f;
+                vapor_after_precip = vapor;
+                precip = 0.0f;
+            } else {
+                // Stage6 放电：实际降水抽干本格水汽→自发停雨/消散+随上风水汽移动+海面自生成。镜像 field_solver.gd。
+                // Stage6b：持续降水(PP[i])放电翻倍→砍"连下一周"长尾，不动新生短雨段。
+                const float discharge_gate = wf_smoothstep(effective_precip_floor, 0.06f, precip);
+                const float discharge_amp = 1.0f + DISCHARGE_SUSTAIN * wf_smoothstep(0.04f, 0.10f, PP[i]);
+                vapor_after_precip -= precip * VAPOR_DISCHARGE * discharge_amp * discharge_gate;
+                if (vapor_after_precip < 0.0f) vapor_after_precip = 0.0f;
+            }
         }
         // Stage6g 更新对流抑制(按时长两段)：充能期连续降水累加→满进不应期；不应期衰减→落回清零重启。镜像 field_solver.gd。
         if (INHIB != nullptr) {

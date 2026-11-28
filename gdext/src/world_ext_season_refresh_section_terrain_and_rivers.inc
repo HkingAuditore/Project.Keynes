@@ -42,84 +42,15 @@
         auto &jitter_arr = arrays.jitter;
         if (jitter_arr.size() != n_cells) return fail("stage_1 jitter_arr size mismatch");
 
-        const uint8_t * const __restrict TERR = s_t.arr_u8.ptr();
-        float         * const __restrict M    = s_m.arr_f32.ptrw();
-        const float   * const __restrict ELEV = s_e.arr_f32.ptr();
-        const float   * const __restrict WX   = s_wx.arr_f32.ptr();
-        const float   * const __restrict WY   = s_wy.arr_f32.ptr();
-        const float   * const __restrict LAT  = s_lat.arr_f32.ptr();
-        const int32_t * const __restrict NB   = nb_arr.ptr();
-        const float   * const __restrict JITTER = jitter_arr.ptr();
-
-        // 6 hex 方向（与 pk_upwind_dir_index_from_wind 内 DIRS 同源），
-        // 用于把 wind 向量映射到 0..5 索引。
-        constexpr int DIRS[6][3] = {
-            { 1,  0, -1}, { 1, -1,  0}, { 0, -1,  1},
-            {-1,  0,  1}, {-1,  1,  0}, { 0,  1, -1},
-        };
-        constexpr double inv_sqrt2 = 0.7071067811865475;
-
-        auto pick_dir_from_wind = [=](double wx, double wy) -> int {
-            const double len2 = wx * wx + wy * wy;
-            if (len2 <= 0.0001) return -1;
-            const double inv_len = 1.0 / std::sqrt(len2);
-            const double nx = wx * inv_len;
-            const double ny_ = wy * inv_len;
-            const double wq = std::sqrt(3.0) / 3.0 * nx - ny_ / 3.0;
-            const double wr = 2.0 / 3.0 * ny_;
-            const double ws = -wq - wr;
-            const double clen = std::sqrt(wq * wq + wr * wr + ws * ws);
-            if (clen <= 0.0001) return -1;
-            const double uq = -wq / clen;
-            const double ur = -wr / clen;
-            const double us = -ws / clen;
-            int best = 0;
-            double best_dot = -std::numeric_limits<double>::infinity();
-            for (int d = 0; d < 6; ++d) {
-                const double dot = uq * double(DIRS[d][0]) * inv_sqrt2
-                                 + ur * double(DIRS[d][1]) * inv_sqrt2
-                                 + us * double(DIRS[d][2]) * inv_sqrt2;
-                if (dot > best_dot) { best_dot = dot; best = d; }
-            }
-            return best;
-        };
-
+        // Daily pass_b and the weather solver already apply continuous rain
+        // shadow drying; re-multiplying cell_moisture every season_refresh
+        // period created a periodic discontinuity. Keep stage 1 as a zero-copy
+        // no-op to preserve the 12-stage contract.
+        (void)lookback; (void)threshold; (void)factor; (void)season_phase;
         PreparedSeasonStage prepared;
-        prepared.slots = {sid_moist};
-        prepared.compute = [=]() -> SeasonStageCounts {
-            int touched = 0;
-            for (int i = 0; i < n_cells; ++i) {
-                if (pk_is_water_terrain(TERR[i])) continue;
-                if (lookback <= 0) continue;
-                int dir;
-                // 先用 cell.wind_vector（地形扰动后的实际盛行风），与 _pick_upwind_dir 一致。
-                const double cell_wx = double(WX[i]);
-                const double cell_wy = double(WY[i]);
-                const double wv_len2 = cell_wx * cell_wx + cell_wy * cell_wy;
-                if (wv_len2 > 0.0001) { // wv.length() > 0.01 等价
-                    dir = pick_dir_from_wind(cell_wx, cell_wy);
-                } else {
-                    // Fallback：WindBelt.wind_at(ny, season_phase, lat_jitter)
-                    const double ny = double(LAT[i]);
-                    const double jitter = double(JITTER[i]);
-                    const PkWind2 w = pk_wind_belt_wind_at(ny, season_phase, jitter);
-                    dir = pick_dir_from_wind(double(w.x), double(w.y));
-                }
-                if (dir < 0) continue;
-
-                int probe = i;
-                for (int step = 0; step < lookback; ++step) {
-                    const int ni = NB[probe * 6 + dir];
-                    if (ni < 0 || ni >= n_cells) { probe = -1; break; }
-                    probe = ni;
-                }
-                if (probe < 0) continue;
-                if (ELEV[probe] > ELEV[i] + threshold) {
-                    M[i] = M[i] * factor;
-                    ++touched;
-                }
-            }
-            return {touched};
+        prepared.slots = {};
+        prepared.compute = []() -> SeasonStageCounts {
+            return {0};
         };
         return prepared;
     }
@@ -323,7 +254,6 @@
         }
 
         uint8_t       * const __restrict TERR = s_t.arr_u8.ptrw();
-        float         * const __restrict M    = s_m.arr_f32.ptrw();
         const float   * const __restrict ELEV = s_e.arr_f32.ptr();
         const uint8_t * const __restrict RIV  = s_r.arr_u8.ptr();
         const float   * const __restrict RFLOW= s_rf.arr_f32.ptr();
@@ -333,7 +263,7 @@
         const double inv_max_row = 1.0 / double(max_row > 0 ? max_row : 1);
 
         PreparedSeasonStage prepared;
-        prepared.slots = {sid_terrain, sid_moist, sid_landform};
+        prepared.slots = {sid_terrain, sid_landform};
         prepared.compute = [=]() -> SeasonStageCounts {
             int touched = 0;
             for (int i = 0; i < n_cells; ++i) {
@@ -349,8 +279,6 @@
                 const double lh = (double(ELEV[i]) - double(sea_level)) * inv_above_sea;
                 const bool strong_river = RFLOW[i] >= 0.55f;
                 const bool lowland_river = lh <= 0.18 || (strong_river && lh <= 0.28);
-                const float target_m = strong_river ? 0.72f : 0.66f;
-                if (M[i] < target_m) { M[i] = target_m; ++touched; }
                 if (t == 22 || t == 23 || t == 29) continue;
 
                 uint8_t new_t = t;

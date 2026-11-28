@@ -96,22 +96,21 @@ PreparedSeasonStage prepare_season_stage(
         }
         const uint8_t * const __restrict TERR = s_t.arr_u8.ptr();
         const float   * const __restrict BASE = s_bm.arr_f32.ptr();
-        float         * const __restrict M    = s_m.arr_f32.ptrw();
+        const float   * const __restrict M_RD = s_m.arr_f32.ptr();
+        (void)TERR;
+        (void)BASE;
+        (void)M_RD;
+        (void)moist_scale;
 
+        // Runtime cell_moisture is continuously owned by daily Pass-A/Pass-B/
+        // transpiration/hydrology. Hard-resetting it to base_moisture every
+        // season_refresh period (30d) erased accumulated soil/water-balance
+        // moisture and caused a map-wide cliff followed by immediate rebound.
+        // Keep stage 0 as a zero-copy no-op to preserve the 12-stage contract.
         PreparedSeasonStage prepared;
-        prepared.slots = {sid_moist};
-        prepared.compute = [=]() -> SeasonStageCounts {
-            for (int i = 0; i < n_cells; ++i) {
-                if (pk_is_water_terrain(TERR[i])) {
-                    M[i] = BASE[i];
-                } else {
-                    double m = double(BASE[i]) * moist_scale;
-                    if (m < 0.0) m = 0.0;
-                    else if (m > 1.0) m = 1.0;
-                    M[i] = float(m);
-                }
-            }
-            return {n_cells};
+        prepared.slots = {};
+        prepared.compute = []() -> SeasonStageCounts {
+            return {0};
         };
         return prepared;
     }
@@ -463,62 +462,17 @@ godot::Dictionary DCWorldExt::run_season_refresh_micro_pass(godot::Dictionary kn
         return fail("slot array size mismatch");
     }
 
-    const uint8_t * const __restrict TERR = s_t.arr_u8.ptr();
-    float         * const __restrict M    = s_m.arr_f32.ptrw();
-    const float   * const __restrict ELEV = s_e.arr_f32.ptr();
-    const float   * const __restrict WX   = s_wx.arr_f32.ptr();
-    const float   * const __restrict WY   = s_wy.arr_f32.ptr();
-    const int32_t * const __restrict NB   = nb_arr.ptr();
-
-    auto t0 = std::chrono::high_resolution_clock::now();
-    int touched = 0;
-    int processed = 0;
-    bool budget_yield = false;
-
-    for (; cursor < n_cells; ++cursor) {
-        if (!pk_is_water_terrain(TERR[cursor]) && lookback > 0) {
-            const int dir = pk_upwind_dir_index_from_wind(WX[cursor], WY[cursor]);
-            if (dir < 0) {
-                continue;
-            }
-            int probe = cursor;
-            for (int step = 0; step < lookback; ++step) {
-                const int ni = NB[probe * 6 + dir];
-                if (ni < 0 || ni >= n_cells) {
-                    probe = -1;
-                    break;
-                }
-                probe = ni;
-            }
-            if (probe >= 0 && ELEV[probe] > ELEV[cursor] + threshold) {
-                M[cursor] = M[cursor] * factor;
-                ++touched;
-            }
-        }
-
-        ++processed;
-        if ((processed & 63) == 0) {
-            auto now = std::chrono::high_resolution_clock::now();
-            const double elapsed_us = std::chrono::duration<double, std::micro>(now - t0).count();
-            if (elapsed_us >= double(max_usec)) {
-                ++cursor;
-                budget_yield = true;
-                break;
-            }
-        }
-    }
-
-    _flush_slot_to_map(sid_moist);
-
-    auto t1 = std::chrono::high_resolution_clock::now();
-    const bool done = cursor >= n_cells;
-    out["done"] = done;
-    out["next_stage"] = done ? stage + 1 : stage;
-    out["cursor"] = cursor;
-    out["elapsed_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    out["touched"] = touched;
+    // Mirror stage 1 in prepare_season_stage: runtime cell_moisture is
+    // continuously owned by daily Pass-A/Pass-B/transpiration/hydrology; do
+    // not re-multiply it every season_refresh period.
+    (void)max_usec; (void)lookback; (void)threshold; (void)factor;
+    out["done"] = true;
+    out["next_stage"] = stage + 1;
+    out["cursor"] = n_cells;
+    out["elapsed_ms"] = 0.0;
+    out["touched"] = 0;
     out["fallback"] = false;
-    out["reason"] = budget_yield ? String("budget_yield") : String();
+    out["reason"] = String();
     return out;
 }
 

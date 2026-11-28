@@ -224,14 +224,26 @@ static inline void pass_b_land_cell(const ClimatePassBKnobs &knobs,
                         max_upwind_h = ELEV[probe_idx];
                     }
                 }
-                if (max_upwind_h - ELEV[i] >= rs_threshold) {
-                    d_rain_shadow = rs_factor;
-                }
+                const float relief = max_upwind_h - ELEV[i];
+                const float rs_lo = rs_threshold * 0.5f;
+                const float rs_span = (rs_threshold > 1e-4f) ? rs_threshold : 1e-4f;
+                float rs_t = (relief - rs_lo) / rs_span;
+                if (rs_t < 0.0f) rs_t = 0.0f;
+                else if (rs_t > 1.0f) rs_t = 1.0f;
+                const float shadow_w = rs_t * rs_t * (3.0f - 2.0f * rs_t);
+                d_rain_shadow = 1.0f + (rs_factor - 1.0f) * shadow_w;
             }
         }
 
         // (line 4520-4523) write moisture
-        float moisture_final = (moisture_now + d_evap) * d_rain_shadow;
+        // Relax smoothly toward the local evap + rain-shadow target instead of
+        // multiplying raw moisture by d_rain_shadow every tick (avoiding a
+        // sharp single-tick drop when entering/leaving a rain shadow).
+        float moisture_local_target = (moisture_now + d_evap) * d_rain_shadow;
+        if (moisture_local_target < 0.0f) moisture_local_target = 0.0f;
+        else if (moisture_local_target > 1.0f) moisture_local_target = 1.0f;
+        constexpr float PASS_B_MOISTURE_RELAX = 0.25f;
+        float moisture_final = moisture_now + (moisture_local_target - moisture_now) * PASS_B_MOISTURE_RELAX;
         if (moisture_final < 0.0f) moisture_final = 0.0f;
         else if (moisture_final > 1.0f) moisture_final = 1.0f;
         M[i] = moisture_final;

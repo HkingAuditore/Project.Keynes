@@ -698,10 +698,10 @@ const NATIVE_MODE_ACTIVE: int = 2
 # Seasonal solar forcing must reach it through evaporation, wind/ocean transport,
 # precipitation, soil water, and the rolling water balance, never through a direct
 # insolation multiplier in Pass-A.
-@export_range(0.0, 1.0, 0.01) var runtime_moisture_base_relax_rate: float = 0.24
+@export_range(0.0, 1.0, 0.01) var runtime_moisture_base_relax_rate: float = 0.14
 @export var weather_direct_moisture_enabled: bool = false
 @export_range(0.0, 1.0, 0.01) var runtime_moisture_weather_vapor_weight: float = 0.12
-@export_range(0.0, 2.5, 0.01) var runtime_moisture_precip_weight: float = 0.78
+@export_range(0.0, 2.5, 0.01) var runtime_moisture_precip_weight: float = 0.35
 @export_range(0.0, 2.5, 0.01) var runtime_moisture_soil_weight: float = 1.82
 @export_range(0.0, 2.5, 0.01) var runtime_moisture_soil_dry_weight: float = 2.71
 @export_range(0.0, 2.5, 0.01) var runtime_moisture_water_balance_weight: float = 1.04

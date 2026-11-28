@@ -334,7 +334,7 @@ static func run_slice(solver: DCWeatherFieldSolver, cell_budget: int) -> Diction
 		# rh*5门控致干空气被硬拉成半饱和→温暖陆地处处弱对流→产云水平流扩散→遍地雾+小雨。convective双峰
 		# (p50=0,p75=0.39),谷底0.28硬截断:砍弱对流(损失6.5%降水)转晴/多云、保强对流核突显明显降水。(C++主路径同值)
 		var conv_raw: float = 0.0 if on_water else smoothstep(0.48, 0.74, temp) * clampf(relative_humidity * 2.6, 0.0, 1.0)  # B1(2026-06-28) 3.6→2.6 去 rh 虚高:对流改由"湿暖"(沿海)触发而非"干暖"(内陆)→降水脱离纯温度。镜像 world_ext.cpp
-		var convective: float = 0.0 if conv_raw < 0.42 else conv_raw
+		var convective: float = 0.0 if on_water else conv_raw * smoothstep(0.36, 0.50, conv_raw)
 		var ocean_convective: float = 0.0
 		if on_water:
 			ocean_convective = smoothstep(0.10, 0.22, ocean_an) * smoothstep(0.58, 0.78, temp) * clampf(relative_humidity, 0.0, 1.0)
@@ -517,15 +517,17 @@ static func run_slice(solver: DCWeatherFieldSolver, cell_budget: int) -> Diction
 			cloud = lerpf(prev_cloud_arr[i], cloud, solver._weather_system._field_cloud_inertia)  # Stage15 云量时间 EMA，镜像 C++ field_cloud_inertia
 
 		var wt: int = solver._weather_system._classify_field_weather_at(temp, vapor, cloud, cloud_water, precip, instability, ocean_an, raw_wind_speed, temp_anom_i, maxf(onshore_moist_flux, coastal_monsoon_flux), on_water, snow_cover_cls)
-		if not solver._weather_system._is_precip_weather_type(wt) and precip > 0.0:
-			vapor = clampf(vapor + precip * 0.65, 0.0, 1.0)
-			vapor_after_precip = vapor
-			precip = 0.0
-		elif precip > 0.0:
-			# Stage6 放电：实际降水抽干本格水汽→气柱失水→RH降→自发停雨→需充电恢复(雨团生命周期+随上风新鲜水汽移动+海面自生成)。
-			# Stage6b：持续降水(prev_precip 高)放电翻倍→定点清除"连下一周"长尾，不动新生短雨段。
-			var discharge_amp: float = 1.0 + DISCHARGE_SUSTAIN * smoothstep(0.04, 0.10, prev_precip[i])
-			vapor_after_precip = maxf(0.0, vapor_after_precip - precip * VAPOR_DISCHARGE * discharge_amp)
+		if precip > 0.0:
+			if precip < effective_precip_floor and not solver._weather_system._is_precip_weather_type(wt):
+				vapor = clampf(vapor + precip * 0.65, 0.0, 1.0)
+				vapor_after_precip = vapor
+				precip = 0.0
+			else:
+				# Stage6 放电：实际降水抽干本格水汽→气柱失水→RH降→自发停雨→需充电恢复(雨团生命周期+随上风新鲜水汽移动+海面自生成)。
+				# Stage6b：持续降水(prev_precip 高)放电翻倍→定点清除"连下一周"长尾，不动新生短雨段。
+				var discharge_gate: float = smoothstep(effective_precip_floor, 0.06, precip)
+				var discharge_amp: float = 1.0 + DISCHARGE_SUSTAIN * smoothstep(0.04, 0.10, prev_precip[i])
+				vapor_after_precip = maxf(0.0, vapor_after_precip - precip * VAPOR_DISCHARGE * discharge_amp * discharge_gate)
 		var intensity: float = solver._weather_system._field_intensity_for_type(wt, temp, vapor, cloud, precip, instability, ocean_an)
 		# Stage6g 更新对流抑制(按时长两段)：充能期连续降水累加→满进不应期；不应期衰减→落回清零重启。
 		if solver._convective_inhib.size() == n_cells:

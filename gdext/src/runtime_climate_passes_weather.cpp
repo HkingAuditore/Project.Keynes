@@ -470,7 +470,7 @@ void weather_field_solve_pure(const WeatherFieldKnobs &knobs,
         // 0.28 硬截断 → 砍遍地弱对流(仅损失6.5%降水)使其转晴/多云，保留强对流核 → 明显降水突显、拉开
         // "晴↔强降水"对比。(GDScript field_solver 镜像同值)
         float conv_raw = wf_smoothstep(0.48f, 0.74f, temp) * dc_clampf(relative_humidity * 2.6f, 0.0f, 1.0f);
-        const float convective = (on_water || conv_raw < 0.42f) ? 0.0f : conv_raw;
+        const float convective = on_water ? 0.0f : conv_raw * wf_smoothstep(0.36f, 0.50f, conv_raw);
         float ocean_convective = 0.0f;
         if (on_water) {
             ocean_convective = wf_smoothstep(0.10f, 0.22f, ocean_an)

@@ -278,7 +278,13 @@ bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
             const float raw = in.moisture[size_t(i)];
             if (std::isfinite(raw) && raw >= 0.0f && raw <= 1.0f) previous = raw;
         }
-        moisture_now = previous + (moisture_target - previous) * moisture_relax_eff;
+        float moisture_delta = (moisture_target - previous) * moisture_relax_eff;
+        if (moisture_relax < 0.999f) {
+            const float moisture_delta_cap = 0.025f * thermal_dt;
+            if (moisture_delta > moisture_delta_cap) moisture_delta = moisture_delta_cap;
+            else if (moisture_delta < -moisture_delta_cap) moisture_delta = -moisture_delta_cap;
+        }
+        moisture_now = previous + moisture_delta;
         if (moisture_now > 1.0f) moisture_now = 1.0f;
         else if (moisture_now < 0.0f) moisture_now = 0.0f;
 

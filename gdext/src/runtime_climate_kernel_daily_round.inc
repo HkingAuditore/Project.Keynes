@@ -341,8 +341,14 @@
             }
             const float moisture_alpha = climate_formula::thermal_alpha_eff(
                 catalog.runtime_moisture_base_relax_rate, dt);
-            const float moisture_now = climate_formula::clamp01(previous_moisture +
-                (moisture_target - previous_moisture) * moisture_alpha);
+            float moisture_delta = (moisture_target - previous_moisture) * moisture_alpha;
+            if (catalog.runtime_moisture_base_relax_rate < 0.999f) {
+                const float moisture_delta_cap = 0.025f * dt;
+                moisture_delta = climate_formula::clamp(
+                    moisture_delta, -moisture_delta_cap, moisture_delta_cap);
+            }
+            const float moisture_now = climate_formula::clamp01(
+                previous_moisture + moisture_delta);
 
             float temp_year = read_or(input.cell_temp_baseline_year, i,
                                       0.0f) - static_cast<float>(
