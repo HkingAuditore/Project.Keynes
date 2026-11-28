@@ -296,14 +296,28 @@ func _check_valley_fog_quality() -> void:
 		"high weather keeps the overlay live for a clear sky with valley fog")
 	check(mat.get_shader_parameter("valley_fog_cur_layer") == mat.get_shader_parameter("valley_fog_prev_layer"),
 		"first bound fog frame uses one texture layer at both interpolation endpoints")
+	var inspector_parameters := weather.get_property_list().filter(func(entry: Dictionary) -> bool:
+		return entry.name == &"valley_fog_opacity" and (entry.usage & PROPERTY_USAGE_EDITOR) != 0)
+	check(inspector_parameters.size() == 1 and is_equal_approx(weather.get("valley_fog_opacity"), 0.78),
+		"the Remote Inspector exposes the current fog opacity and its default")
+	weather.set("valley_fog_opacity", 0.35)
+	mat.set_shader_parameter("valley_fog_side_light", 0.21)
+	check(is_equal_approx(mat.get_shader_parameter("valley_fog_opacity"), 0.35)
+		and is_equal_approx(weather.get("valley_fog_side_light"), 0.21),
+		"Remote node and material edits resolve to the same live uniforms")
 	for quality in [0, 1]:
 		weather.set_visual_quality(quality)
 		check(not weather._valley_fog.compiled and weather._valley_fog._texture == null,
 			"weather quality %d releases the valley-fog texture" % quality)
 		check(world.valley_fog.generation == 1 and world.valley_fog.has_density,
 			"render quality %d preserves the published fog data" % quality)
+	weather.set("valley_fog_detail", 1)
 	weather.set_visual_quality(2)
 	mat = weather.get("_overlay_mat")
+	check(is_equal_approx(mat.get_shader_parameter("valley_fog_opacity"), 0.35)
+		and is_equal_approx(mat.get_shader_parameter("valley_fog_side_light"), 0.21)
+		and mat.get_shader_parameter("valley_fog_detail") == 1,
+		"fog tuning survives shader rebuilds and accepts edits while a lower tier is bound")
 	check(mat.get_shader_parameter("valley_fog_active") == true and weather._valley_fog._texture != null,
 		"returning to high quality binds the latest valley fog frame")
 	weather.set_render_gate(false)

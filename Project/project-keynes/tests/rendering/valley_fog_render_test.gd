@@ -66,6 +66,7 @@ func _run() -> void:
 					"%s matches the regular cell-field ground contour" % variant)
 			await _check_visibility(mat, field, variant)
 			if use_field and not tiled:
+				await _check_tuning(mat, field, fog)
 				await _check_time_and_wrap(mat, field, fog)
 				await _check_cloud_composition(mat, field)
 	if _benchmark:
@@ -136,6 +137,7 @@ func _set_clouds(mat: ShaderMaterial, coverage: float, wind_strength: float = 0.
 
 func _set_visibility(mat: ShaderMaterial, hidden_col: int, lake_col: int = -1) -> void:
 	var terrain_class := _image(GRID, Color(LAND, 0, 0, 1))
+	terrain_class.fill_rect(Rect2i(0, 0, 1, GRID.y), Color.BLACK)
 	var visibility := _image(GRID, Color(1, 0, 1, 1))
 	if hidden_col >= 0:
 		for row in GRID.y:
@@ -158,10 +160,12 @@ func _check_cutout(fog: Image, variant: String) -> void:
 	var ridge := fog.get_pixel(120, SAMPLE_Y).a
 	var east := fog.get_pixel(172, SAMPLE_Y).a
 	var slope := fog.get_pixel(96, SAMPLE_Y).a
-	var sea := fog.get_pixel(26, SAMPLE_Y).a
+	var sea := fog.get_pixel(12, SAMPLE_Y).a
 	_expect(west > 0.08 and east > 0.08 and ridge < 0.01 and sea < 0.01,
 		"%s clear sky still shows fog in both valleys and clears the ridge and sea (%.3f, %.3f, %.3f, %.3f)"
 			% [variant, west, east, ridge, sea])
+	_expect(fog.get_pixel(26, SAMPLE_Y).a > 0.08,
+		"%s keeps fog over below-sea-level terrain classified as land" % variant)
 	_expect(slope > ridge + 0.01 and slope < west - 0.01,
 		"%s fog thins continuously up the slope (%.3f)" % [variant, slope])
 
@@ -242,6 +246,19 @@ func _check_time_and_wrap(mat: ShaderMaterial, field: Image, wet: Image) -> void
 	var disabled := await _capture("disabled")
 	_expect(_max_alpha_delta(dry, disabled) <= 1.0 / 255.0,
 		"shader bypass and zero density both leave the same clear weather")
+
+
+func _check_tuning(mat: ShaderMaterial, field: Image, baseline: Image) -> void:
+	_set_fog(mat, field, field)
+	mat.set_shader_parameter("valley_fog_opacity", 0.0)
+	var transparent := await _capture("tuning_zero_opacity")
+	_expect(_alpha_sum(transparent) < 1.0, "editing fog opacity immediately clears the fog")
+	mat.set_shader_parameter("valley_fog_opacity", 0.78)
+	mat.set_shader_parameter("valley_fog_top_offset", 0.04)
+	var raised := await _capture("tuning_raised_top")
+	_expect(raised.get_pixel(96, SAMPLE_Y).a > baseline.get_pixel(96, SAMPLE_Y).a + 0.1,
+		"raising the fog top immediately increases opacity on the slope")
+	mat.set_shader_parameter("valley_fog_top_offset", 0.0)
 
 
 func _check_cloud_composition(mat: ShaderMaterial, field: Image) -> void:

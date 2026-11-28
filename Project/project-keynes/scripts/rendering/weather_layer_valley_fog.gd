@@ -2,7 +2,22 @@ extends RefCounted
 
 const NOISE_PATH := "res://assets/textures/weather/valley_fog_noise.png"
 
+const TUNABLES := {
+	&"valley_fog_extinction": [32.0, "0,128,0.5"],
+	&"valley_fog_opacity": [0.78, "0,1,0.01"],
+	&"valley_fog_top_offset": [0.0, "-0.05,0.05,0.0005"],
+	&"valley_fog_noise_height": [0.005, "0,0.02,0.0005"],
+	&"valley_fog_noise_period_hex": [28.0, "4,64,1"],
+	&"valley_fog_drift": [40.0, "0,160,1"],
+	&"valley_fog_filament_strength": [0.24, "0,0.75,0.01"],
+	&"valley_fog_side_light": [0.13, "0,0.5,0.01"],
+	&"valley_fog_far_opacity": [0.58, "0,1,0.01"],
+	&"valley_fog_detail": [2, "Static,Flow,Flow and Lighting"],
+	&"valley_fog_debug": [0, "Off,Ground Height,Thickness,Alpha"],
+}
+
 var compiled := false
+var _tuning: Dictionary = {}
 var _texture: Texture2DArray
 var _noise: Texture2D
 var _height: TextureLayered
@@ -14,6 +29,53 @@ var _previous_layer := 0
 var _generation := 0
 var _active := false
 var upload_usec := 0
+
+
+static func inspector_properties() -> Array[Dictionary]:
+	var properties: Array[Dictionary] = [{
+		"name": "Valley Fog", "type": TYPE_NIL, "usage": PROPERTY_USAGE_CATEGORY,
+	}]
+	for parameter in TUNABLES:
+		var setting: Array = TUNABLES[parameter]
+		var type := typeof(setting[0])
+		properties.append({"name": parameter, "type": type, "usage": PROPERTY_USAGE_EDITOR,
+			"hint": PROPERTY_HINT_ENUM if type == TYPE_INT else PROPERTY_HINT_RANGE,
+			"hint_string": setting[1]})
+	return properties
+
+
+func get_tuning(parameter: StringName, material: ShaderMaterial) -> Variant:
+	if not TUNABLES.has(parameter):
+		return null
+	var live: Variant = material.get_shader_parameter(parameter) if compiled and material != null else null
+	return live if live != null else _tuning.get(parameter, TUNABLES[parameter][0])
+
+
+func set_tuning(parameter: StringName, value: Variant, material: ShaderMaterial) -> bool:
+	if not TUNABLES.has(parameter):
+		return false
+	_tuning[parameter] = value
+	if compiled and material != null:
+		material.set_shader_parameter(parameter, value)
+	return true
+
+
+# Material Inspector edits can also be made directly on the overlay resource.
+func capture_tuning(material: ShaderMaterial) -> void:
+	if not compiled or material == null:
+		return
+	_tuning.clear()
+	for parameter in TUNABLES:
+		var value: Variant = material.get_shader_parameter(parameter)
+		if value != null:
+			_tuning[parameter] = value
+
+
+func restore_tuning(material: ShaderMaterial) -> void:
+	if not compiled:
+		return
+	for parameter in _tuning:
+		material.set_shader_parameter(parameter, _tuning[parameter])
 
 
 func release(material: ShaderMaterial) -> void:

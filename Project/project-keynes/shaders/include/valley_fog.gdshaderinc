@@ -6,12 +6,21 @@ uniform int valley_fog_prev_layer = 0;
 uniform bool valley_fog_active = false;
 uniform bool valley_fog_visibility_required = false;
 uniform float valley_fog_sea_level = 0.0;
-uniform int valley_fog_debug : hint_range(0, 3) = 0;
-uniform int valley_fog_detail : hint_range(0, 2) = 2;
+group_uniforms Valley_Fog;
+uniform float valley_fog_extinction : hint_range(0.0, 128.0, 0.5) = 32.0;
+uniform float valley_fog_opacity : hint_range(0.0, 1.0, 0.01) = 0.78;
+uniform float valley_fog_top_offset : hint_range(-0.05, 0.05, 0.0005) = 0.0;
+uniform float valley_fog_noise_height : hint_range(0.0, 0.02, 0.0005) = 0.005;
+uniform float valley_fog_noise_period_hex : hint_range(4.0, 64.0, 1.0) = 28.0;
+uniform float valley_fog_drift : hint_range(0.0, 160.0, 1.0) = 40.0;
+uniform float valley_fog_filament_strength : hint_range(0.0, 0.75, 0.01) = 0.24;
+uniform float valley_fog_side_light : hint_range(0.0, 0.5, 0.01) = 0.13;
+uniform float valley_fog_far_opacity : hint_range(0.0, 1.0, 0.01) = 0.58;
+uniform int valley_fog_detail : hint_enum("Static", "Flow", "Flow and Lighting") = 2;
+uniform int valley_fog_debug : hint_enum("Off", "Ground Height", "Thickness", "Alpha") = 0;
+group_uniforms;
 
-const float WX_VALLEY_FOG_EXTINCTION_SCALE = 32.0;
 const float WX_VALLEY_FOG_NOISE_SLOPE_RANGE = 16.0;
-const float WX_VALLEY_FOG_NOISE_HEIGHT = 0.005;
 
 bool wx_valley_fog_in_bounds(ivec2 cell, PkHexGrid grid) {
 	return cell.y >= 0 && cell.y < grid.map_h;
@@ -97,8 +106,8 @@ vec4 wx_shade_valley_fog(vec2 wp, vec2 ground_uv, vec2 world_dx, vec2 world_dy,
 		return vec4(0.0);
 	}
 
-	float base_thickness = fog.y - ground;
-	if (base_thickness <= -WX_VALLEY_FOG_NOISE_HEIGHT * 0.5) {
+	float base_thickness = fog.y + valley_fog_top_offset - ground;
+	if (base_thickness <= -valley_fog_noise_height * 0.5) {
 		return vec4(0.0);
 	}
 	float footprint = max(length(world_dx), length(world_dy)) / max(hex_size, 0.001);
@@ -106,7 +115,7 @@ vec4 wx_shade_valley_fog(vec2 wp, vec2 ground_uv, vec2 world_dx, vec2 world_dy,
 	vec2 surface_slope = vec2(0.0);
 	float filament = 0.0;
 	if (valley_fog_detail > 0) {
-		float base_period = max(hex_size * 28.0, 1.0);
+		float base_period = max(hex_size * valley_fog_noise_period_hex, 1.0);
 		float wrap_tiles = max(round(wrap_period_x / base_period), 1.0);
 		vec2 noise_scale = vec2(wrap_period_x > 0.0001 ? wrap_tiles / wrap_period_x : 1.0 / base_period,
 				1.0 / base_period);
@@ -116,12 +125,12 @@ vec4 wx_shade_valley_fog(vec2 wp, vec2 ground_uv, vec2 world_dx, vec2 world_dy,
 		vec3 phases = weather_flow_phases();
 		// 云的风解码有 0.25 的最低速度偏置，谷雾静风时应停在原地。
 		float wind_length = length(fog_wind);
-		float drift = clamp((wind_length - 0.251) * 40.0, 0.0, hex_size * 0.7);
+		float drift = clamp((wind_length - 0.251) * valley_fog_drift, 0.0, hex_size * 0.7);
 		vec2 displacement = fog_wind * (drift / max(wind_length, 0.001));
 		vec4 a = textureGrad(valley_fog_noise, noise_uv - displacement * noise_scale * phases.x, grad_x, grad_y);
 		vec4 b = textureGrad(valley_fog_noise, noise_uv - displacement * noise_scale * phases.y, grad_x, grad_y);
 		vec4 noise_data = mix(b, a, phases.z);
-		float amplitude = WX_VALLEY_FOG_NOISE_HEIGHT * smoothstep(0.0, 0.38, fog.x);
+		float amplitude = valley_fog_noise_height * smoothstep(0.0, 0.38, fog.x);
 		height_noise = amplitude * (noise_data.r - 0.5);
 		// GB 存同一高度的 UV 斜率。缩放同时应用于位移和斜率，保证方向光与雾面一致。
 		surface_slope = (noise_data.gb * 2.0 - 1.0) * WX_VALLEY_FOG_NOISE_SLOPE_RANGE
@@ -130,23 +139,23 @@ vec4 wx_shade_valley_fog(vec2 wp, vec2 ground_uv, vec2 world_dx, vec2 world_dy,
 	}
 
 	float thickness = max(base_thickness + height_noise, 0.0);
-	float optical_depth = fog.x * thickness * WX_VALLEY_FOG_EXTINCTION_SCALE;
+	float optical_depth = fog.x * thickness * valley_fog_extinction;
 	float transmission = exp(-optical_depth);
 	// 雾丝只调制半透明部分；远景保留大轮廓，降低对道路和国界的遮挡。
 	float body = 4.0 * transmission * (1.0 - transmission);
-	float distance_fade = mix(1.0, 0.58, smoothstep(0.35, 1.25, footprint));
-	float alpha = (1.0 - exp(-optical_depth * (1.0 + filament * 0.24 * body)))
-			* 0.78 * distance_fade * weather_strength;
+	float distance_fade = mix(1.0, valley_fog_far_opacity, smoothstep(0.35, 1.25, footprint));
+	float alpha = (1.0 - exp(-optical_depth * (1.0 + filament * valley_fog_filament_strength * body)))
+			* valley_fog_opacity * distance_fade * weather_strength;
 	vec3 color = vec3(0.80, 0.88, 0.94);
 	if (cloud_tod_tint_enabled) {
 		color = clamp(daylight.amb_col * vec3(1.38, 1.33, 1.22), vec3(0.0), vec3(1.0));
 		if (valley_fog_detail >= 2) {
 			vec3 normal = normalize(vec3(-surface_slope, 1.0));
 			float side = clamp(dot(normal.xy, daylight.sun_dir.xy), -0.65, 0.65);
-			color += daylight.sun_col * (0.13 * side * daylight.local_day);
+			color += daylight.sun_col * (valley_fog_side_light * side * daylight.local_day);
 		}
 		color = clamp(color * tod_exposure, vec3(0.0), vec3(1.0));
 	}
-	probe.yz = vec2(clamp(thickness * WX_VALLEY_FOG_EXTINCTION_SCALE, 0.0, 1.0), alpha);
+	probe.yz = vec2(clamp(thickness * valley_fog_extinction, 0.0, 1.0), alpha);
 	return vec4(color, alpha);
 }

@@ -455,6 +455,9 @@ Country 账目并发布不可变读视图，再确认消费回执；确认会同
   `cell_table` aux 的 B 通道存逐格实际可见性，各插值格按该通道过滤。
   桌面可用 `project_keynes/rendering/weather/valley_fog_enabled` 或 `WeatherLayer.valley_fog_enabled`
   切换旧低雾与谷雾。低、中和 Web 变体编译掉谷雾，移动设备需显式启用待验证的高档变体。
+  编辑器运行游戏后，在 Remote 场景树选择 WeatherLayer，展开 Valley Fog 即可实时调整
+  消光、透明度、雾顶偏移、噪声、风动与侧光，也可查看高度、厚度和透明度诊断视图。
+  这些参数随当前节点保留，切换画质重建材质后会重新应用。
 
 ## 电脑和手机画质设置
 

@@ -218,9 +218,6 @@ var _front_snapshot_interval_sec: float = _WEATHER_FRONT_INITIAL_BLEND_SEC
 const DRIFT_DEBUG_LOG: bool = false
 var _drift_debug_last_log_time: float = -1.0
 
-## [cell-field-overlays 2026-11-18 / O2] "项目设置 + 导出变量"惯例如
-## HexRenderer.terrain_cell_field_enabled：_init() 读设置作为本变量的初值。
-## 读不到键时走**关闭**默认值（方案 §4：出货默认关）。
 func _init() -> void:
 	weather_cell_field_enabled = cell_field_setting_enabled()
 	valley_fog_enabled = bool(ProjectSettings.get_setting(VALLEY_FOG_SETTING, not OS.has_feature("mobile")))
@@ -234,11 +231,16 @@ func _init() -> void:
 		_apply_cell_field_enabled()
 
 
-## [cell-field-overlays 2026-11-18 / O2] 项目设置侧的天气场函数开关（**默认 false**）。
-## 刻意不接受 host：export 初值与测试必须读到同一个答案（形状同
-## RendererShaderWater.cell_field_setting_enabled）。
-## **出货默认开**（2026-11-18 收尾）：`project.godot` 里显式写了 true，这里的 fallback 也是
-## `true`，所以「读不到键」与「没有 project.godot」都不会把它悄悄关掉。
+func _get_property_list() -> Array[Dictionary]:
+	return ValleyFogRendering.inspector_properties()
+
+func _get(property: StringName) -> Variant:
+	return _valley_fog.get_tuning(property, _overlay_mat)
+
+func _set(property: StringName, value: Variant) -> bool:
+	return _valley_fog.set_tuning(property, value, _overlay_mat)
+
+
 static func cell_field_setting_enabled() -> bool:
 	return bool(ProjectSettings.get_setting(CELL_FIELD_SETTING, true))
 

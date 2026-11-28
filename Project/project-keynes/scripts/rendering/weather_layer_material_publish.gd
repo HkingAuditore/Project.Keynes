@@ -238,6 +238,7 @@ static func _push_curtain_runtime_state(layer: WeatherLayer) -> void:
 
 
 static func _load_overlay_shader(layer: WeatherLayer) -> void:
+	layer._valley_fog.capture_tuning(layer._overlay_mat)
 	layer._valley_fog.release(layer._overlay_mat)
 	layer._valley_fog.compiled = false
 	# Web 首帧编译预算：桌面版 weather_overlay.gdshader（35KB 全屏 canvas）在 ANGLE 上首绘
@@ -282,6 +283,7 @@ static func _load_overlay_shader(layer: WeatherLayer) -> void:
 		shader.code = prefix + shader.code
 	layer._overlay_mat = ShaderMaterial.new()
 	layer._overlay_mat.shader = shader
+	layer._valley_fog.restore_tuning(layer._overlay_mat)
 	layer._overlay_quad.material = layer._overlay_mat
 	# 切档建立新材质，旧材质的提交缓存不能阻止 LUT/插值参数重新绑定。
 	layer._wx_pushed_weather_lut = null
