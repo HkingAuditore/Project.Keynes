@@ -159,6 +159,21 @@ void NativeEconomyRuntime::publish_commit_slice(int64_t &work_done) {
             0, _rolling_due_cells - _rolling_processed_cells);
         _last_committed_day = _sample_day;
         _commit_day = _current_day.get();
+        // K6: reflect committed resource consumption into resource_stock_lanes()
+        // so PKEC/ECP2 checkpoints persist closing stock instead of stale opening
+        // stock on non-worker paths (worker path already updates via write_worker_resource_stock).
+        if (!_worker_resource_seeded && !_resource_touched_lanes.empty()) {
+            auto &stock_lanes = resource_stock_lanes();
+            const auto &delta_lanes = resource_delta_lanes();
+            for (const size_t lane : _resource_touched_lanes) {
+                if (lane >= stock_lanes.size() || lane >= delta_lanes.size()) continue;
+                const int64_t delta = delta_lanes[lane];
+                if (delta >= 0) continue;
+                const int64_t updated = std::max<int64_t>(0,
+                    saturating_add(stock_lanes[lane], delta, _saturation_count));
+                stock_lanes.write_scalar(lane, updated);
+            }
+        }
         // X13a: this is the last committed hazard mask. Keeping it in the
         // commit tail makes save/restore and the next day's edge exact.
         // Skip unchanged cells so quiet days do not dirty the entire map.

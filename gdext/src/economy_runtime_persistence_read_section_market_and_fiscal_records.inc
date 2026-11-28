@@ -183,7 +183,12 @@
             }
             _restore.last_resource_key = key;
             resource_stock_lanes().write_scalar(static_cast<size_t>(key), stock);
-            resource_lane_generation_lanes()[static_cast<size_t>(key)] = generation;
+            // K6: lane_generation tracks transient epoch scratch (resource_remaining_lanes),
+            // which is zeroed on cold restore. Restoring a non-zero generation collides with
+            // _resource_current_generation == 1 on the first post-restore epoch and zeroes
+            // available resources. Keep it 0 so ensure_resource_lane re-seeds from closing stock.
+            (void)generation;
+            resource_lane_generation_lanes()[static_cast<size_t>(key)] = 0;
             ++_restore.restored_resource_rows;
         }
     } else if (schema >= 52 && section == SAVE_SECTION_CADENCE_STATE) {
