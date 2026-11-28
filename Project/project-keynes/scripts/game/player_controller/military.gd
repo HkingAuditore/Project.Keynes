@@ -181,7 +181,8 @@ func _is_own_army(host, facade, army: int) -> bool:
 		return true
 	var detail = facade.call("army", army)
 	if not (detail is Dictionary) or not bool((detail as Dictionary).get("ok", false)):
-		return false
+		# 过期或未知 handle 放行给后台权威裁决（command_unknown_army），不在前台拦截。
+		return true
 	var owner_slot := int((detail as Dictionary).get("owner_slot", -1))
 	var player_slot := -1
 	if facade.has_method("country_snapshot"):
@@ -190,8 +191,8 @@ func _is_own_army(host, facade, army: int) -> bool:
 			player_slot = int((snap as Dictionary).get("country_slot", -1))
 	if player_slot < 0 and host._player_country_handle > 0:
 		player_slot = int(host._player_country_handle & 0xFFFFFFFF)
-	if player_slot >= 0 and owner_slot >= 0:
-		return owner_slot == player_slot
+	if owner_slot >= 0 and player_slot >= 0 and owner_slot != player_slot:
+		return false
 	return true
 
 

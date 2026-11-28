@@ -161,7 +161,9 @@ func _sample_military_world(host: WorldRuntimeHost, clock: WorldClock) -> Dictio
 					if row.sequence == 950003:
 						refused = row.effective_day == 8 and row.settled_day == 8 \
 							and row.code == "colonization_route_not_visible"
-				_expect("re-enabled fog keeps the explored destination eligible", not refused)
+				# target 在关迷雾期间拿到 quote，本身从未被探索过（explored[target] == 0）；
+				# 第 6 日重新开启迷雾后，后台权威必须在第 8 日以 colonization_route_not_visible 拒收。
+				_expect("re-enabled fog rejects an unexplored destination quote", refused)
 	print("FOG_VISIBILITY_COMMANDS off_day=2 on_day=6 hidden_route=", target)
 	return {}
 

@@ -37,9 +37,10 @@ func _run() -> void:
 	var catalog: Dictionary = compiled.duplicate(true)
 	catalog.erase("ok")
 	var ext: Object = _new_ext(catalog, 3)
+	var starting_techs := PackedStringArray(["tech.hunting", "tech.gathering"])
 	var country_profile := {
 		"country_runtime_mode": "ACTIVE",
-		"starting_technology_ids": PackedStringArray(),
+		"starting_technology_ids": starting_techs,
 	}
 	_expect("three-country Country runtime configures", bool(ext.configure_country(
 		catalog, country_profile, 3, 20260909).get("ok", false)))
@@ -50,8 +51,6 @@ func _run() -> void:
 		"country_cash": PackedInt64Array([1000000, 1000000, 1000000]),
 		"territory_offsets": PackedInt32Array([0, 1, 2, 3]),
 		"territory_cells": PackedInt32Array([0, 1, 2]),
-		"technology_offsets": PackedInt32Array([0, 0, 0, 0]),
-		"technology_indices": PackedInt32Array(),
 		"research_auto_purchase": PackedByteArray([0, 0, 0]),
 		"treasury_offsets": PackedInt32Array([0, 0, 0, 0]),
 		"treasury_good_indices": PackedInt32Array(),
@@ -284,8 +283,9 @@ func _observe_settlement(ext: Object, report: Dictionary) -> void:
 
 func _run_country_active_fiscal_bridge(catalog: Dictionary, merchant: int) -> void:
 	var ext: Object = _new_ext(catalog, 1)
+	var starting_techs := PackedStringArray(["tech.hunting", "tech.gathering"])
 	_expect("bridge Country runtime configures", bool(ext.configure_country(
-		catalog, {"country_runtime_mode": "ACTIVE", "starting_technology_ids": PackedStringArray()},
+		catalog, {"country_runtime_mode": "ACTIVE", "starting_technology_ids": starting_techs},
 		1, 20260911).get("ok", false)))
 	var packet := {
 		"country_ids": PackedStringArray(["country.bridge"]),
@@ -293,8 +293,6 @@ func _run_country_active_fiscal_bridge(catalog: Dictionary, merchant: int) -> vo
 		"country_cash": PackedInt64Array([1000000]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 0]),
-		"technology_indices": PackedInt32Array(),
 		"research_auto_purchase": PackedByteArray([0]),
 		"treasury_offsets": PackedInt32Array([0, 0]),
 		"treasury_good_indices": PackedInt32Array(),
