@@ -609,6 +609,10 @@ private:
     uint64_t _deferred_country_generation = 0;
     uint64_t _deferred_country_state_hash = 0;
     bool _deferred_country_identity_recorded = false;
+    // Temporary staging session for atomic restore rejection (K5). Live state
+    // stays untouched until every decode/validation step succeeds on the
+    // staged copy, then commit_staged_restore() swaps business state in once.
+    RestoreStagingSessionPtr _restore_staged_session;
 
 #include "economy_runtime_internal_continuation_api.h"
 };

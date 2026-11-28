@@ -308,10 +308,9 @@ bool NativeEconomyRuntime::apply_ecp2_authority_internal(
         error = "ecp2_publication_state_invalid";
         return false;
     }
-    if (!begin_restore_internal(error)) return false;
-    // Live was preserved through begin_restore; only now open the candidate
-    // rebuild surface (caller already holds a rollback backup when live was
-    // previously bootstrapped).
+    _restore = {};
+    _restore.active = true;
+    _restore.scratch_prepared = false;
     prepare_restore_candidate_scratch();
 
     std::vector<std::vector<uint8_t>> ordered_chunks;
@@ -342,21 +341,17 @@ bool NativeEconomyRuntime::apply_ecp2_authority_internal(
     }
 
     for (const std::vector<uint8_t> &bytes : ordered_chunks) {
-        godot::PackedByteArray chunk;
-        chunk.resize(static_cast<int64_t>(bytes.size()));
-        if (!bytes.empty())
-            std::memcpy(chunk.ptrw(), bytes.data(), bytes.size());
-        const Dictionary fed = feed_restore_chunk(chunk);
-        if (!static_cast<bool>(fed.get("ok", false))) {
-            error = String(fed.get("reason", "ecp2_restore_chunk_failed"))
-                        .utf8()
-                        .get_data();
+        if (!decode_restore_chunk(bytes, error)) {
             _restore = {};
             return false;
         }
     }
 
-    if (!end_restore_internal(error)) {
+    const Dictionary end_out = end_restore_in_place();
+    if (!static_cast<bool>(end_out.get("ok", false))) {
+        error = String(end_out.get("reason", "restore_end_failed"))
+                    .utf8()
+                    .get_data();
         _restore = {};
         return false;
     }
@@ -429,15 +424,28 @@ bool NativeEconomyRuntime::apply_ecp2_authority(
         const RuntimeEconomyEcp2State &in, std::string &error) {
     error.clear();
 
-    if (_epoch_active) {
-        error = "restore_requires_committed_boundary";
+    if (!_configured || _epoch_active || _save.active || _restore.active ||
+        _fiscal_reservation_continuation.active ||
+        _epoch_begin_post_fiscal_pending ||
+        _fiscal_settlement_continuation.active ||
+        _country_research_procurement_continuation.active) {
+        error = !_configured ? "configure_catalog_before_restore"
+                : (_fiscal_reservation_continuation.active ||
+                   _epoch_begin_post_fiscal_pending
+                    ? "restore_fiscal_reservation_pending"
+                : (_fiscal_settlement_continuation.active
+                    ? "restore_fiscal_settlement_pending"
+                : (_country_research_procurement_continuation.active
+                    ? "restore_research_procurement_pending"
+                : (_epoch_active ? "restore_requires_committed_boundary"
+                    : "save_restore_already_active"))));
+        set_restore_rejected_reason(error);
         return false;
     }
 
-    // Fixed restore flow (stage 4):
-    // decode candidate (caller) → semantic validation → backup live →
-    // canonical rebuild into candidate scratch → isolated snapshot validation
-    // → commit (keep candidate) / atomic rollback via re-apply of backup.
+    // Atomic staged restore (K5): validate and decode entirely into a
+    // temporary NativeEconomyRuntime + cloned ModifierRuntime. Any failure
+    // drops the staged copy and leaves live state completely untouched.
     std::string validate_error;
     if (!validate_ecp2_candidate(in, validate_error)) {
         error = validate_error;
@@ -445,84 +453,17 @@ bool NativeEconomyRuntime::apply_ecp2_authority(
         return false;
     }
 
-    const uint64_t live_generation = _committed_generation;
-    const int64_t live_committed_day = _last_committed_day.get();
-    const int64_t live_state_hash =
-        _bootstrapped ? state_hash() : 0;
-
-    RuntimeEconomyEcp2State backup;
-    bool backup_ready = false;
-    if (_bootstrapped) {
-        uint32_t capture_flags = ECP2_CAPTURE_ROLLBACK_BACKUP;
-        if (_epoch_active) {
-            capture_flags |= ECP2_CAPTURE_ALLOW_MID_EPOCH |
-                             ECP2_CAPTURE_INCLUDE_RESUME;
-        }
-        std::string backup_error;
-        if (!capture_ecp2_authority(backup, backup_error, capture_flags)) {
-            // The backup makes the apply atomic, so a missing one is a real loss --
-            // but only for the ONE known situation where the live state is legitimately
-            // not capturable yet, and where refusing would make loading a save
-            // impossible instead of safer.
-            //
-            // That situation is the worker bootstrap: `native_simulation_host.cpp`
-            // applies the ECP2 bundle to the economy runtime FIRST and installs it into
-            // the POD authority afterwards, so this capture reads a live state whose POD
-            // mirror is still empty (measured:
-            // `[save-shape] market_cell_to_market actual=0 expected=192`). Any OTHER
-            // failure -- a genuinely corrupt live state, a mid-apply leftover, a hash
-            // mismatch -- still fails closed exactly as before: silently applying over
-            // an unknown live state is how a rollback stops meaning anything.
-            //
-            // Allowlist, not "always": the previous revision skipped the backup on every
-            // failure, which is wider than the evidence justified.
-            //
-            // The two codes that mean "the POD mirror has not been restored yet":
-            //   * `economy_save_state_shape_invalid` -- `begin_save` refused because a
-            //     derived column was still empty (`market_cell_to_market 0 vs 192`).
-            //   * `ecp2_owned_state_capture_invalid:<ledger shape>` -- the owned ledger
-            //     could not be validated, i.e. the mirror is half-installed.
-            // Both can only happen before the POD state exists; a genuinely corrupt live
-            // state has different codes and still fails closed below.
-            const bool pod_mirror_not_restored =
-                backup_error == "economy_save_state_shape_invalid" ||
-                backup_error.rfind("ecp2_owned_state_capture_invalid", 0) == 0;
-            if (!pod_mirror_not_restored) {
-                error = "ecp2_atomic_backup_failed:" + backup_error;
-                set_restore_rejected_reason(error);
-                return false;
-            }
-            _last_restore_backup_skipped_reason = backup_error;
-        } else {
-            backup_ready = true;
-        }
-    }
+    auto session = create_staged_restore_session();
+    NativeEconomyRuntime *staged = session_runtime(*session);
 
     std::string apply_error;
-    if (apply_ecp2_authority_internal(in, apply_error)) {
-        _restore_rejected_reason.clear();
-        return true;
+    if (!staged->apply_ecp2_authority_internal(in, apply_error)) {
+        error = apply_error;
+        set_restore_rejected_reason(error);
+        return false;
     }
 
-    // Ensure the restore session is idle before rollback rebuild.
-    _restore = {};
-    if (backup_ready) {
-        std::string rollback_error;
-        if (apply_ecp2_authority_internal(backup, rollback_error)) {
-            error = apply_error + ";rolled_back";
-            // Live committed identity must match the pre-apply snapshot after
-            // a successful rollback.
-            if (_committed_generation != live_generation ||
-                _last_committed_day.get() != live_committed_day ||
-                (_bootstrapped && state_hash() != live_state_hash)) {
-                error += ";rollback_identity_drift";
-            }
-        } else {
-            error = apply_error + ";rollback_failed:" + rollback_error;
-        }
-    } else {
-        error = apply_error;
-    }
-    set_restore_rejected_reason(error);
-    return false;
+    commit_staged_restore_session(*session);
+    _restore_rejected_reason.clear();
+    return true;
 }

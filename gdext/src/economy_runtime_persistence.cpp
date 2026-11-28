@@ -68,15 +68,17 @@ Dictionary NativeEconomyRuntime::begin_restore() {
             String(out["reason"]).utf8().get_data());
         return out;
     }
-    // The public chunked restore API is itself an ECP2 transaction boundary.
-    // Prepare the candidate surface here so callers using the documented
-    // begin -> feed -> end sequence do not need the internal migrate helper.
-    // The caller's live state remains recoverable through the restore backup
-    // established by begin_restore_internal().
+    // Stage restore into an isolated candidate runtime so any rejection leaves
+    // live state, OwnedState, and ModifierRuntime completely untouched.
+    _restore_staged_session = create_staged_restore_session();
+    NativeEconomyRuntime *staged = staged_restore_runtime();
+    staged->_restore = {};
+    staged->_restore.active = true;
+    staged->_restore.scratch_prepared = false;
+    staged->prepare_restore_candidate_scratch();
     _restore = {};
     _restore.active = true;
-    _restore.scratch_prepared = false;
-    prepare_restore_candidate_scratch();
+    _restore.scratch_prepared = true;
     out["ok"] = true;
     out["schema_version"] = SCHEMA_VERSION;
     out["scratch_prepared"] = true;
@@ -92,54 +94,86 @@ void NativeEconomyRuntime::set_restore_rejected_reason(
 
 Dictionary NativeEconomyRuntime::feed_restore_chunk(const PackedByteArray &chunk) {
     Dictionary out;
-    if (!_restore.active || _restore.failed || _restore.end_seen || chunk.is_empty()) {
+    NativeEconomyRuntime *staged = staged_restore_runtime();
+    if (!_restore.active || staged == nullptr || _restore.failed ||
+        _restore.end_seen || chunk.is_empty()) {
         out["ok"] = false;
-        out["reason"] = !_restore.active ? "restore_not_active"
-                         : (_restore.failed ? String(_restore.error.c_str())
-                                            : (_restore.end_seen ? "restore_end_already_seen"
-                                                                 : "restore_chunk_empty"));
+        out["reason"] = !_restore.active || staged == nullptr
+                            ? "restore_not_active"
+                            : (_restore.failed
+                                   ? String(_restore.error.c_str())
+                                   : (_restore.end_seen ? "restore_end_already_seen"
+                                                        : "restore_chunk_empty"));
         set_restore_rejected_reason(
             String(out["reason"]).utf8().get_data());
+        if (_restore.active) discard_staged_restore();
         return out;
     }
-    if (!_restore.scratch_prepared) {
+    if (!staged->_restore.scratch_prepared) {
         out["ok"] = false;
         out["reason"] = "restore_scratch_not_prepared";
         set_restore_rejected_reason("restore_scratch_not_prepared");
+        discard_staged_restore();
         return out;
     }
     std::vector<uint8_t> bytes(static_cast<size_t>(chunk.size()));
     std::memcpy(bytes.data(), chunk.ptr(), bytes.size());
     std::string error;
-    if (!decode_restore_chunk(bytes, error)) {
-        _restore.failed = true;
-        _restore.error = error;
+    if (!staged->decode_restore_chunk(bytes, error)) {
         out["ok"] = false;
         out["reason"] = String(error.c_str());
         set_restore_rejected_reason(error);
+        discard_staged_restore();
         return out;
     }
+    const RestoreState &st = staged->_restore;
+    _restore.header_seen = st.header_seen;
+    _restore.end_seen = st.end_seen;
     out["ok"] = true;
-    out["header_seen"] = _restore.header_seen;
-    out["end_seen"] = _restore.end_seen;
-    out["restored_pages"] = _restore.restored_pages;
-    out["restored_markets"] = _restore.restored_markets;
-    out["restored_cells"] = _restore.restored_cells;
-    out["restored_commands"] = _restore.restored_commands;
-    out["restored_audits"] = _restore.restored_audits;
-    out["restored_signals"] = _restore.restored_signals;
-    out["restored_labor_signals"] = _restore.restored_labor_signals;
-    out["restored_trade_orders"] = _restore.restored_trade_orders;
-    out["restored_trade_flows"] = _restore.restored_trade_flows;
-    out["restored_persons"] = _restore.restored_persons;
-    out["restored_person_needs"] = _restore.restored_person_needs;
+    out["header_seen"] = st.header_seen;
+    out["end_seen"] = st.end_seen;
+    out["restored_pages"] = st.restored_pages;
+    out["restored_markets"] = st.restored_markets;
+    out["restored_cells"] = st.restored_cells;
+    out["restored_commands"] = st.restored_commands;
+    out["restored_audits"] = st.restored_audits;
+    out["restored_signals"] = st.restored_signals;
+    out["restored_labor_signals"] = st.restored_labor_signals;
+    out["restored_trade_orders"] = st.restored_trade_orders;
+    out["restored_trade_flows"] = st.restored_trade_flows;
+    out["restored_persons"] = st.restored_persons;
+    out["restored_person_needs"] = st.restored_person_needs;
     return out;
 }
 
-Dictionary NativeEconomyRuntime::end_restore() {
+Dictionary NativeEconomyRuntime::end_restore_in_place() {
 #include "economy_runtime_persistence_section_restore_validation.inc"
 #include "economy_runtime_persistence_section_restore_inventory.inc"
 #include "economy_runtime_persistence_section_restore_peers_and_publish.inc"
+}
+
+Dictionary NativeEconomyRuntime::end_restore() {
+    Dictionary out;
+    NativeEconomyRuntime *staged = staged_restore_runtime();
+    if (!_restore.active || staged == nullptr) {
+        out["ok"] = false;
+        out["reason"] = "restore_not_active";
+        set_restore_rejected_reason("restore_not_active");
+        discard_staged_restore();
+        return out;
+    }
+    out = staged->end_restore_in_place();
+    if (!static_cast<bool>(out.get("ok", false))) {
+        set_restore_rejected_reason(
+            String(out.get("reason", "restore_end_failed")).utf8().get_data());
+        discard_staged_restore();
+        return out;
+    }
+    RestoreStagingSessionPtr session = std::move(_restore_staged_session);
+    _restore = {};
+    commit_staged_restore_session(*session);
+    _restore_rejected_reason.clear();
+    return out;
 }
 
 bool NativeEconomyRuntime::begin_restore_internal(std::string &error) {
@@ -199,5 +233,6 @@ bool NativeEconomyRuntime::verify_deferred_country_identity(
     return true;
 }
 
+#include "economy_runtime_persistence_section_restore_staging.inc"
 #include "economy_runtime_persistence_section_ecp2_authority.inc"
 } // namespace pk

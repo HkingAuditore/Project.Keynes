@@ -514,9 +514,21 @@ private:
     bool begin_restore_internal(std::string &error);
     bool end_restore_internal(std::string &error);
     // Clears live SoA into an empty candidate rebuild surface. Must only run
-    // after apply_ecp2_authority has captured a rollback backup (or from the
-    // explicit PKEC migrate helper).
+    // on a staged restore target (or from unit tests).
     void prepare_restore_candidate_scratch();
+    struct RestoreStagingSession;
+    struct RestoreStagingSessionDeleter {
+        void operator()(RestoreStagingSession *session) const;
+    };
+    void discard_staged_restore();
+    NativeEconomyRuntime *staged_restore_runtime() const;
+    static NativeEconomyRuntime *session_runtime(RestoreStagingSession &session);
+    using RestoreStagingSessionPtr =
+        std::unique_ptr<RestoreStagingSession, RestoreStagingSessionDeleter>;
+    RestoreStagingSessionPtr create_staged_restore_session() const;
+    void commit_staged_restore_session(RestoreStagingSession &session);
+    void sync_restored_trigger_bindings(NativeEconomyRuntime &staged);
+    godot::Dictionary end_restore_in_place();
     bool apply_ecp2_authority_internal(const RuntimeEconomyEcp2State &in,
                                        std::string &error);
     void set_restore_rejected_reason(const std::string &reason);

@@ -157,12 +157,9 @@ Dictionary DCWorldExt::begin_economy_restore() {
     if (_economy_runtime == nullptr) {
         return unavailable();
     }
-    // Public streaming restore is ECP2-gated: begin_restore no longer clears
-    // live state, and feed rejects until an ECP2/migrate path prepares scratch.
-    Dictionary out = runtime_from(_economy_runtime)->begin_restore();
-    if (static_cast<bool>(out.get("ok", false)))
-        invalidate_economy_input_capture_cache(true);
-    return out;
+    // Public streaming restore stages into a temporary runtime; live state and
+    // input capture cache stay untouched until end_economy_restore() commits.
+    return runtime_from(_economy_runtime)->begin_restore();
 }
 
 
@@ -184,8 +181,8 @@ Dictionary DCWorldExt::end_economy_restore() {
         return unavailable();
     }
     Dictionary out = runtime_from(_economy_runtime)->end_restore();
-    invalidate_economy_read_view();
     if (static_cast<bool>(out.get("ok", false))) {
+        invalidate_economy_read_view();
         invalidate_economy_input_capture_cache(true);
         _economy_read_report_cache = runtime_from(_economy_runtime)->report();
     }

@@ -738,11 +738,42 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
     for (const size_t row : expired_triggers)
         _family_trigger_bindings.erase(_family_trigger_bindings.begin() + row);
     for (const auto &item : desired_triggers) {
-        if (reconcile_trigger_branch_binding(_trigger_runtime, item.first,
+        if (_trigger_runtime == nullptr && !submit_changes) {
+            _family_trigger_bindings.push_back(
+                {branch_handle, item.first, item.second});
+        } else if (reconcile_trigger_branch_binding(_trigger_runtime, item.first,
                 branch_handle, family_influences().cell[branch], item.second,
                 true)) {
             _family_trigger_bindings.push_back(
                 {branch_handle, item.first, item.second});
+        }
+    }
+}
+
+void NativeEconomyRuntime::sync_restored_trigger_bindings(
+        NativeEconomyRuntime &staged) {
+    const auto desired = staged._family_trigger_bindings.values();
+    if (_trigger_runtime != nullptr) {
+        for (const auto &old_binding : _family_trigger_bindings.values()) {
+            int32_t branch = -1;
+            const int32_t old_cell = family_influences().valid_handle(old_binding.branch_handle, branch)
+                ? family_influences().cell[branch] : 0;
+            reconcile_trigger_branch_binding(_trigger_runtime, old_binding.definition_key,
+                old_binding.branch_handle, old_cell, old_binding.reward_target, false);
+        }
+    }
+    _family_trigger_bindings.clear();
+    if (_trigger_runtime == nullptr) return;
+    for (const auto &binding : desired) {
+        int32_t branch = -1;
+        if (!staged._family_influences_local.valid_handle(binding.branch_handle, branch) ||
+            staged._family_influences_local.active[branch] == 0) {
+            continue;
+        }
+        if (reconcile_trigger_branch_binding(_trigger_runtime, binding.definition_key,
+                binding.branch_handle, staged._family_influences_local.cell[branch],
+                binding.reward_target, true)) {
+            _family_trigger_bindings.push_back(binding);
         }
     }
 }
